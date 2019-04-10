@@ -1,0 +1,53 @@
+DESCRIPTION
+
+Micro-optimize reduceCommonStartEnd for RawText
+
+This is a faster exact match based form that tries to improve
+performance for the common case of the header and trailer of
+a text file not changing at all. After this fast path we use
+the slower path based on the super class' using equals() to
+allow for whitespace ignore modes to still work.
+
+Some simple performance testing showed a major improvement over the
+older implementation for a common edit we see in JGit.  The test
+compared blob 29a89bc and 372a978, which is the ObjectDirectory.java
+file difference in commit 41dd9ed1c054f9f9e1ab52fc7bbf1a55a56cf543.
+The two text files are approximately 22 KiB in size.
+
+  DEFAULT        old   203900 ns
+  DEFAULT        new   100400 ns
+
+This new version is 2x faster for the DEFAULT comparator, which does
+not treat space specially.  This is because we can now examine a
+larger swath of text with fewer instructions per byte compared.  The
+older algorithm had to stop at each line break and recompute how to
+examine the next line, while the new algorithm only stops when the
+first difference is found.
+
+  WS_IGNORE_ALL  old   298500 ns
+  WS_IGNORE_ALL  new    63300 ns
+
+Its 4.7x faster for the whitespace ignore comparator, as the common
+header and footer do not have a whitespace difference.  Avoiding the
+special case handling for whitespace on each byte considered saves a
+lot of time.
+
+Since most edits to source code (and other text like files) appears in
+the interior of the file, fast elimination of common header/footer
+means faster diff throughput.  In the less common case of an actual
+header or footer edit, the common header/footer elimination is stopped
+rather quickly either way, so there is very little downside to the
+optimiation applied here.
+
+Change-Id: I1d501b4c3ff80ed086b20bf12faf51ae62167db7
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-09-16 02:01:57.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------

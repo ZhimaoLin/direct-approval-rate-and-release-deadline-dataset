@@ -1,0 +1,127 @@
+DESCRIPTION
+
+[wip] Possible fix for backspace handling in ignore rules
+
+Just ideas, need to be validated if the git CLI behavior matches tests,
+add more test cases etc.
+
+Bug: 478065
+Change-Id: I3dc973475d1943c5622103701fa8cb3ea0684e3e
+Signed-off-by: Jayvion Booth xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Jayvion Booth
+date: 2015-09-25 09:49:35.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-09-25 09:49:41.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7148/
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-09-25 09:51:44.000000000
+
+Patch Set 2:
+
+> (1 comment)
+ > 
+ > I think I found a bug in Strings.deleteBackslash
+
+Thanks, this was not the root cause (different matcher is used if escaped backslashes are found), but still wrong.
+
+I've added now your test case and fixed? the glob parser.
+
+I would really appreciate more test cases and comparison with Git CLI behavior - if we still have some differences.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-09-25 09:57:50.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7148/ : SUCCESS
+
+-------------------------------------
+author: Grady Morse
+date: 2015-09-25 13:01:10.000000000
+
+Patch Set 2:
+
+I hacked some test generating random patterns and path and comparing result of c git "check-ignore" to the result of FastIgnoreRule.isMatch.
+
+
+
+It finds some discrepencies but I don't understand why.
+
+Here are the assertion to add to IgnoreRuleSpecialCasesTest to cover the problems I found.
+assertMatch("|][#]1|2*", "|][#]1|2*", false /*cgit result*/);
+assertMatch("[/\\", "[/\\", false /*cgit result*/);
+assertMatch("b/][\\|", "b/][\\|", false /*cgit result*/);
+assertMatch("1#(1]1a[}!", "1#(1]1a[}!", false /*cgit result*/);
+
+
+I can commit the test somewhere but not sure where. It's  not really a unit test and requires c git to be installed and on the path.
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-09-26 16:22:20.000000000
+
+Patch Set 2:
+
+> I hacked some test generating random patterns and path and
+ > comparing result of c git "check-ignore" to the result of
+ > FastIgnoreRule.isMatch.
+ 
+Cool.
+ 
+ > It finds some discrepencies but I don't understand why.
+ > 
+ > Here are the assertion to add to IgnoreRuleSpecialCasesTest to
+ > cover the problems I found.
+ > assertMatch("|][#]1|2*", "|][#]1|2*", false /*cgit result*/);
+
+See https://git.eclipse.org/r/56760/
+
+ > assertMatch("[/\\", "[/\\", false /*cgit result*/);
+
+Fixed with next patchset
+
+ > assertMatch("b/][\\|", "b/][\\|", false /*cgit result*/);
+
+Fixed with next patchset
+
+ > assertMatch("1#(1]1a[}!", "1#(1]1a[}!", false /*cgit result*/);
+
+That's the funniest one. C git shows this:
+1#(1]1a is properly ignored via 1#(1]1a rule but none of the following patterns
+1#(1]1a[   is not matched by 1#(1]1a[
+1#(1]1a[}  is not matched by 1#(1]1a[}
+1#(1]1a[}! is not matched by 1#(1]1a[}!
+
+C Git seems to have a bug: it doesn't like opening bracket without closing one.
+
+So a file "[" is not matched by "[", "[*" rules. I've added extra tests, see https://git.eclipse.org/r/56770
+
+ > I can commit the test somewhere but not sure where. It's  not
+ > really a unit test and requires c git to be installed and on the
+ > path.
+
+Please attach the script to the bug, or submit as a "disabled" test. It is valuable since it found more then one bug.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-09-26 22:42:40.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

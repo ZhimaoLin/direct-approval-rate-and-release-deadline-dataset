@@ -1,0 +1,109 @@
+DESCRIPTION
+
+Bug 430829 - [CSS] CSSEngine styles all pages of a MultiPageEditorPart, slowing down editor switching
+
+Add ability for CSS engines to skip elements based on their visibility.
+Visibility is determined by the parent element which can implement a
+new interface, ChildVisibilityAwareElement.  We expose the actual
+CTabItems, but only the composite of the currently selected item.
+
+Change-Id: I5b5d3d3975dd4364f5d96bbab64f5013896a1245
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2014-04-14 08:38:31.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/1880/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-04-14 08:51:46.000000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/1880/ : SUCCESS
+
+-------------------------------------
+author: Addison Irwin
+date: 2014-04-14 09:21:19.000000000
+
+Patch Set 4:
+
+(2 comments)
+
+Line:59, bundles/org.eclipse.e4.ui.css.swt/src/org/eclipse/e4/ui/css/swt/dom/CTabItemElement.java -> There is no change in this file
+
+Line:425, bundles/org.eclipse.e4.ui.css.core/src/org/eclipse/e4/ui/css/core/impl/engine/AbstractCSSEngine.java -> Why do we need the new ChildVisibilityAwareElement interface?
+What about overriding the 'getChildNodes' method for the CTabFolderElement in order to return the visible elements only?
+
+In such case the 'isVisible(elt)' would check if the list is empty
+
+-------------------------------------
+author: Addison Irwin
+date: 2014-04-14 09:25:13.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:425, bundles/org.eclipse.e4.ui.css.core/src/org/eclipse/e4/ui/css/core/impl/engine/AbstractCSSEngine.java -> > In such case the 'isVisible(elt)' would check if the list is empty
+
+I meant, we would check if the list contains the elt, but using the 'getChildNodes' to retrieve the children
+
+-------------------------------------
+author: Teagan Marsh
+date: 2014-04-14 18:54:45.000000000
+
+Patch Set 4:
+
+Thanks for giving this a look-over Daniel.  I introduced a new interface for a few reasons.
+
+First, I didn't want to filter getChildNodes() directly so as to maintain the original DOM.  The interface instead allows navigators of the DOM, such as the CSSEngine, to decide to use visibility as a shortcut.  This is useful for the CSS Spy.
+
+Second, a developer should be able to query the CSSEngine for the computed styles of an invisible widget.  I'm not sure that it's explicitly stated, but it would seem to be a reasonable expectation that if P = parent of C, then C should be a child of P.
+
+Third, I thought it might be a better pattern than cause CSSStylableElement to implement a getVisibleChildNodes(), and implement a default in ElementAdapter.  We may well have other document models that don't have a concept of visibility.
+
+I initially tried implementing this as providing an isVisible(child) method to act as a filter, but abandoned it as implementing isVisible() is particularly complicated on CTabFolder.  A CTF's children includes internal Composites and ToolBars that we can't reach programmatically, and so we can't determine their purpose.  Some of the composites exist to hold the CTabItem contents, but we can't tell which CTI.  So CTabFolderElement#getVisibleChildNodes() returns the CTabItem's control instead (perhaps it should walk and add the parents until it reaches the CTF too).  You'll also notice that getVisibleChildNodes() also returns all the CTabItem instances as they represent the tab information and they need to be exposed for tab-item properties.  Trying to shoehorn all of this into isVisible() was painful.
+
+-------------------------------------
+author: Addison Irwin
+date: 2014-04-15 08:59:11.000000000
+
+Patch Set 4:
+
+Thanks for explanations. So the patch looks fine for me. Let's wait for the Paul's comments
+
+Daniel
+
+-------------------------------------
+author: Slade Moran
+date: 2014-04-16 20:29:45.000000000
+
+Patch Set 4: Code-Review+1
+
+So it's up to the Element to provide visibility knowledge to the engine (or anything else that walks the dom and cares to ask)?
+
+-------------------------------------
+author: Teagan Marsh
+date: 2014-04-16 20:35:05.000000000
+
+Patch Set 4:
+
+That's correct.  It's the only way to be extensible that I can think of.
+
+-------------------------------------
+author: Slade Moran
+date: 2014-04-22 15:05:27.000000000
+
+Patch Set 4:
+
+I'm fine with this, if you want to go ahead.
+
+-------------------------------------

@@ -1,0 +1,70 @@
+DESCRIPTION
+
+MB-5264: Use correct ep_engine stats to check if XDCR items persisted
+
+This change-set removes using ep_engine checkpoint stat in CAPI before
+updating the document, which is unnecessary and has caused slow XDCR
+rate. Instead, it is using write queue size and number of completed
+flushes stats to make sure XDCR items have been persisted.
+
+Change-Id: I84ef3b002753597fb7fbb4b7dc73a73bad67e3f3
+
+
+COMMENTS
+
+author: Macie Morton
+date: 2012-05-30 19:52:16.410000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-05-30 20:05:03.896000000
+
+Patch Set 4: I would prefer that you didn't submit this
+
+(1 inline comment)
+
+
+
+Line:166, src/capi_frontend.erl -> grabbing stats here, making decision based on this and then grabbing stats again inside wait_for_flusher_stats is raceful. You can miss event mentioned in case 2 above.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-05-30 20:37:41.657000000
+
+Patch Set 4: (1 inline comment)
+
+This is not using correct two counters approach we've agreed on. Implementation in it's current form is raceful.
+
+Line:169, src/capi_frontend.erl -> ep_startup_time is seconds since epoch. Not sure it's ok to use that low-res time
+
+-------------------------------------
+author: Macie Morton
+date: 2012-05-30 20:47:44.436000000
+
+Patch Set 4: (2 inline comments)
+
+What is the two-counter approach?
+
+Line:166, src/capi_frontend.erl -> Not sure I understand this comment. It would more helpful if you can elaborate a bit more and how to fix it. Thanks.
+
+Line:169, src/capi_frontend.erl -> According to Chiyoung, it should be OK to use epoch time here.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-05-30 20:52:52.788000000
+
+Patch Set 4:
+
+Your condition (1) can be true first time you request stats.
+
+Then you go to waitXXX loop and (1) becomes false. You wait infinitely without good reason.
+
+We devised approach with either one counter that is incremented twice or two counters that we agreed on and that's completely race-free. Damien can explain it to you.
+
+Regarding epoch.
+
+That thing with instance startup time is used in order to ensure that between replication has started and full commit no crashes happened. That a) requires database info call to actually work b) requires a bit better clock precision than 1 second imho. Damien can explain this to you better I'm sure.
+
+-------------------------------------

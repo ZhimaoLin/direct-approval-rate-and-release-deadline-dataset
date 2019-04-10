@@ -1,0 +1,93 @@
+DESCRIPTION
+
+Provide file utilities for file deletion
+
+Provide file helper methods in a reusable utility class to
+replace many local implementations. java.io.File has some
+methods reporting failure by returning false. We prefer to
+throw IOException on failure so that callers can't forget
+checking the return value.
+
+Change-Id: I430c77b5d2cffcf8b47584326ad4817a7291845e
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-12-07 00:21:25.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(5 inline comments)
+
+This is a good idea, especially given your next change.  But the style is bugging me a bit.
+
+Line:61, org.eclipse.jgit/src/org/eclipse/jgit/util/FileUtils.java -> We should document this is thrown if xxx@xxx.xxx f} did not exist when the method was called.
+
+This can therefore cause IOExceptions during race conditions when multiple concurrent threads all try to delete the same file.  If the caller doesn't care, they need to be careful about using this method.
+
+Line:79, org.eclipse.jgit/src/org/eclipse/jgit/util/FileUtils.java -> Why does this method pass silently when d does not exist, but delete(f) above fails?
+
+Line:92, org.eclipse.jgit/src/org/eclipse/jgit/util/FileUtils.java -> I don't think we should document the exact number of times in our public Javadoc.  Just saying its retried several times before giving up and throwing an exception should be sufficient.
+
+Line:99, org.eclipse.jgit/src/org/eclipse/jgit/util/FileUtils.java -> deleteRepeated() sounds like we keep deleting the file to ensure its really removed.  deleteOrRetry() seems to be better to me.
+
+Line:127, org.eclipse.jgit/src/org/eclipse/jgit/util/FileUtils.java -> I wonder if we can't have a single implementation of the whole class:
+
+  public static final int NONE = 0;
+  public static final int RECURSIVE = 1;
+  public static final int RETRY = 2;
+
+  public static void delete(File f) {
+    delete(f, NONE);
+  }
+
+  public static void delete(File f, int options) {
+    if ((options & RECURSIVE) != 0 && f.isDirectory()) {
+      final File[] items = f.listFiles();
+      if (items != null) {
+        for (File c : items)
+          delete(c, options);
+      }
+    }
+
+    if (!f.delete() && (options & RETRY) != 0 && f.exists()) {
+      for (int i = 1; i < 10; i++) {
+        try {
+          Thread.sleep(100);
+        } catch (InterruptedException e) {
+          throw new InterruptedIOException();
+        }
+
+        if (f.delete())
+          return;
+      }
+    }
+
+    throw new IOException();
+  }
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2010-12-08 00:16:17.000000000
+
+Patch Set 1: (3 inline comments)
+
+
+
+Line:61, org.eclipse.jgit/src/org/eclipse/jgit/util/FileUtils.java -> Done
+
+Line:79, org.eclipse.jgit/src/org/eclipse/jgit/util/FileUtils.java -> Done
+
+Line:127, org.eclipse.jgit/src/org/eclipse/jgit/util/FileUtils.java -> thanks for this tip, used that as starting point for next patchset
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2010-12-08 00:17:56.000000000
+
+Your change could not be merged due to a path conflict.
+
+Please merge (or rebase) the change locally and upload the resolution for review.
+
+-------------------------------------

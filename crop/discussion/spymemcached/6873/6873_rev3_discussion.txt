@@ -1,0 +1,171 @@
+DESCRIPTION
+
+Added tap client
+
+The tap client currently supports doing tap backfill as well as
+being able to specify custom tap streams. Unit tests are included
+to test backfill functionality.
+
+Change-Id: I214d39b2c16ea68867f42a3c75aac565d36e8c21
+
+
+COMMENTS
+
+author: Kenny Maynard
+date: 2011-06-08 09:05:06.936000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Noah Dean
+date: 2011-06-08 09:13:15.273000000
+
+Patch Set 3: I would prefer that you didn't submit this
+
+Arg, can't do line comments on my iPad.  There are a few things in here I think are a bit bad and I'd like to see addressed.  I'll go into more detail from a computer, but I saw a tiny bit of unrelated code, a public field, and some other stuff I forgot because I'm falling asleep.
+
+-------------------------------------
+author: Andreas Short
+date: 2011-06-08 09:35:46.296000000
+
+Patch Set 3: I would prefer that you didn't submit this
+
+(5 inline comments)
+
+I think I need to consider the ResponseMethod more, but there are some things that do need to change a bit in here.
+
+Line:50, src/main/java/net/spy/memcached/tapmessage/ResponseMessage.java -> can these be enumerated?  Nicer for the caller to match it to something.
+
+Line:58, src/main/java/net/spy/memcached/tapmessage/ResponseMessage.java -> If this is truly public, you probably want to say what unit TTL is.
+
+Line:151, src/main/java/net/spy/memcached/tapmessage/ResponseMessage.java -> We really shouldn't be touching System.out.  Why not a toString() and then you can debug log it from wherever?
+
+Line:42, src/main/java/net/spy/memcached/tapmessage/RequestMessage.java -> Are these all really Public methods?
+
+Line:117, src/main/java/net/spy/memcached/tapmessage/RequestMessage.java -> This probably can't work correctly with real SASL.  There is a challenge/response required, and we have code that does that.
+
+-------------------------------------
+author: Noah Dean
+date: 2011-06-08 17:18:45.192000000
+
+Patch Set 3: (14 inline comments)
+
+
+
+Line:29, src/main/java/net/spy/memcached/TapClient.java -> Public mutable field is really bad.
+
+Line:78, src/main/java/net/spy/memcached/TapClient.java -> You ate an interrupted exception here.  That doesn't seem like a good idea.
+
+Line:94, src/main/java/net/spy/memcached/TapClient.java -> It's not clear why this object is inconsistently synchronized throughout this class.
+
+Line:212, src/main/java/net/spy/memcached/TapClient.java -> Empty catch blocks are always wrong.
+
+Line:426, src/main/java/net/spy/memcached/MemcachedConnection.java -> These seems like it was part of another change that should come in with a separate changeset.
+
+e.g. did it fix a bug?  What's the bug?  Should we have it regardless of tap support?
+
+Line:70, src/main/java/net/spy/memcached/tapmessage/Flag.java -> Why isn't this a masking op?
+
+Line:71, src/main/java/net/spy/memcached/tapmessage/Flag.java -> {}
+
+Line:208, src/main/java/net/spy/memcached/TapConnectionProvider.java -> Shouldn't some of these exceptions be fatal?
+
+Line:334, src/main/java/net/spy/memcached/TapConnectionProvider.java -> There's some weird indentation inconsistency in this file.  Should probably pick tabs or spaces.
+
+Line:62, src/main/java/net/spy/memcached/tapmessage/RequestMessage.java -> {}
+
+Line:75, src/main/java/net/spy/memcached/tapmessage/RequestMessage.java -> {}
+
+Line:87, src/main/java/net/spy/memcached/tapmessage/RequestMessage.java -> {}
+
+(etc... you can have eclipse help make this do the right thing)
+
+Line:107, src/main/java/net/spy/memcached/tapmessage/RequestMessage.java -> I think Matt mentioned System.out somewhere -- we can't do it anywhere.  If this is an IllegalArgumentException, we should throw it.
+
+Line:243, src/main/java/net/spy/memcached/OperationFactory.java -> I don't like including Date in the API if we can avoid it.  Date is kind of hard to work with and requires the user to generate an object instead of just passing in a number.
+
+It's not a *huge* deal, but it seems a bit odd.
+
+I think the filters are a bigger issue, though.
+
+If we're going to have filters, I think we need a proper TapFilter interface that takes the message and returns whether we should process it.
+
+We can have an implementation of that that will do a regex on the key, and perhaps one on the value, but we can't generally assume a value is something we can make a String out of and do a regex on.  The value may very well be a JPG and I want all the ones where the GPS coordinates in the EXIF data land somewhere in Switzerland.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2011-06-09 19:25:59.563000000
+
+Patch Set 3: (19 inline comments)
+
+Posted comments on change set 3. I also removed filters from tap.
+
+Line:29, src/main/java/net/spy/memcached/TapClient.java -> Oops. I changed this when I was testing something. I'll change it back.
+
+Line:78, src/main/java/net/spy/memcached/TapClient.java -> Now we just shutdown since this should really never be interrupted anyways. If it is something that shouldn't have happened did.
+
+Line:94, src/main/java/net/spy/memcached/TapClient.java -> Synchronized omap in all places in the code. Only one thread should even be accessing it at any given time. If there is a better construct I can use for this model let me know.
+
+Line:212, src/main/java/net/spy/memcached/TapClient.java -> I added comments here for why I have an empty catch block here.
+
+The reason is that after x amount of time or an interrupt we want to shutdown. Adding code to the catch block would just cause code duplication.
+
+Line:426, src/main/java/net/spy/memcached/MemcachedConnection.java -> The issue was that when processing tap streams I came across selectors that were invalid sometimes and I got errors. I never saw the issue with normal memcached operations.
+
+It could go in as a separate commit since I think the code is more correct like this even without tap, but in my experience testing it only seemed to affect tap.
+
+You make the call. Separate commits or same commit. I think either way is correct.
+
+Line:50, src/main/java/net/spy/memcached/tapmessage/ResponseMessage.java -> They kind of are. We can have multiple flags in the same field so it doesn't make sense here.
+
+Line:58, src/main/java/net/spy/memcached/tapmessage/ResponseMessage.java -> Done
+
+Line:151, src/main/java/net/spy/memcached/tapmessage/ResponseMessage.java -> Removed this function since I never actually used it in debugging.
+
+Line:70, src/main/java/net/spy/memcached/tapmessage/Flag.java -> It is now.
+
+Line:71, src/main/java/net/spy/memcached/tapmessage/Flag.java -> Done
+
+Line:208, src/main/java/net/spy/memcached/TapConnectionProvider.java -> You wrote it so no? Anyways, this is a good comment, but it shouldn't be fixed in this commit. I'll add it to my list of things to do.
+
+Line:334, src/main/java/net/spy/memcached/TapConnectionProvider.java -> Done. I don't know why eclipse seems to do this sometimes. Anyways, I plan on having a common indentation scheme soon.
+
+Line:42, src/main/java/net/spy/memcached/tapmessage/RequestMessage.java -> Yes. We allow users to create custom tap streams. On a side note I plan to refactor this class at some point.
+
+Line:62, src/main/java/net/spy/memcached/tapmessage/RequestMessage.java -> Done
+
+Line:75, src/main/java/net/spy/memcached/tapmessage/RequestMessage.java -> Done
+
+Line:87, src/main/java/net/spy/memcached/tapmessage/RequestMessage.java -> Done
+
+Line:107, src/main/java/net/spy/memcached/tapmessage/RequestMessage.java -> Now throws IllegalArgumentException
+
+Line:117, src/main/java/net/spy/memcached/tapmessage/RequestMessage.java -> We don't use any of the new tap stuff for sasl. This got left over from JTap. Removed this function.
+
+Line:243, src/main/java/net/spy/memcached/OperationFactory.java -> No more Date. It's a long now.
+
+-------------------------------------
+author: Noah Dean
+date: 2011-06-09 20:09:08.903000000
+
+Patch Set 3: (2 inline comments)
+
+
+
+Line:54, src/main/java/net/spy/memcached/TapClient.java -> Is this actually required to be ordered, or can it be Collection<URI> ?
+
+Line:426, src/main/java/net/spy/memcached/MemcachedConnection.java -> Let's go ahead and put it in front of this one.  That'll be easy and I rarely regret splitting such a thing.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2011-06-09 20:54:51.641000000
+
+Patch Set 3: (2 inline comments)
+
+
+
+Line:54, src/main/java/net/spy/memcached/TapClient.java -> If that's the case then this is also an issue in MemcachedConnection. Should I fix it there as well. If so the MemcachedConnection fix should happen before this code gets submitted.
+
+Line:426, src/main/java/net/spy/memcached/MemcachedConnection.java -> Done
+
+-------------------------------------

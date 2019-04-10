@@ -1,0 +1,281 @@
+DESCRIPTION
+
+Add preliminary synchronization support within Eclipse for branches.
+
+Implements synchronization participants and resource variants for
+allowing clients to synchronize Eclipse resources against the Git
+index and a given branch.
+
+Synchronization can be launched for project's context menu by 'Team ->
+Synchronize...' and from 'Repositories View' from branch context menu.
+
+CQ: 4122
+Bug: 309582
+Also-by: Jaylon Avila xxx@xxx.xxx
+Change-Id: Ib838a6c88eccbef8c7ffb6aa1c602bdc8778dbc6
+Signed-off-by: Leslie Stephenson xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Leslie Stephenson
+date: 2010-05-22 23:50:17.000000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Malia Sampson
+date: 2010-05-24 00:17:25.000000000
+
+Patch Set 6: No score; No score
+
+While trying to compare my local to 0.7.1 I got this exception...
+
+!MESSAGE "Unable to read repository for org.eclipse.jgit
+!STACK 0
+org.eclipse.jgit.errors.IncorrectObjectTypeException: Object a0850fe2ee26a67a45d425b79a9cfdc4d43b6742 is not a commit.
+	at org.eclipse.jgit.lib.Repository.mapCommit(Repository.java:526)
+	at org.eclipse.jgit.lib.Repository.mapCommit(Repository.java:477)
+	at org.eclipse.egit.ui.internal.synchronize.GitResourceVariantTree.initialize(GitResourceVariantTree.java:152)
+	at org.eclipse.egit.ui.internal.synchronize.GitResourceVariantTree.fetchVariant(GitResourceVariantTree.java:333)
+	at org.eclipse.egit.ui.internal.synchronize.GitResourceVariantTree.fetchVariant(GitResourceVariantTree.java:357)
+	at org.eclipse.egit.ui.internal.synchronize.GitResourceVariantTree.getResourceVariant(GitResourceVariantTree.java:201)
+	at org.eclipse.team.core.variants.ResourceVariantTreeSubscriber.getSyncInfo(ResourceVariantTreeSubscriber.java:52)
+	at org.eclipse.team.internal.core.subscribers.SubscriberSyncInfoEventHandler.handleChange(SubscriberSyncInfoEventHandler.java:89)
+	at org.eclipse.team.internal.core.subscribers.SubscriberEventHandler.collect(SubscriberEventHandler.java:219)
+	at org.eclipse.team.internal.core.subscribers.SubscriberEventHandler.processEvent(SubscriberEventHandler.java:310)
+	at org.eclipse.team.internal.core.BackgroundEventHandler.processEvents(BackgroundEventHandler.java:369)
+	at org.eclipse.team.internal.core.BackgroundEventHandler$1.run(BackgroundEventHandler.java:203)
+	at org.eclipse.core.internal.jobs.Worker.run(Worker.java:54)
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2010-05-24 21:20:47.000000000
+
+Patch Set 6: No score; No score
+
+good progress, thanks :-)
+
+I mostly did some blackbox testing trying out the functionality you provide, here my feedback for this round:
+
+Some problems I see with the current synchronize dialog:
+- the title says:
+    Sychronize project: org.eclipse.egit.ui
+  and the synchronize view does this, but what if changes in the same repository 
+  span multiple projects ? Or subsequent changes are in the same repository but not
+  the same eclipse project. E.g. first change only affects project a and second change
+  only affects project b and both projects are in the same repository. Splitting 
+  changes during synchronization on project borders is a no-go in my view.
+
+- in the two combos in this dialog I can also select local branches
+- in the left combo the local repository is name "local", what if I happen to have a
+  Remote called "local" which is pointing to another repository I have on my local
+  machine ? Which of the two would be hidden ? I think you need to find a different
+  way to express that you want to synchronize against another branch in the same repo.
+- if I select local, then I can also select HEAD and heads/master, but this comparison
+  doesn't make sense since comparing a branch against itself will always yield an empty 
+  result.
+- if I select "origin" / "master" the ref for the master branch is just "master", but if
+  I try "local" / "heads/master" the ref is "heads/master" -> this is inconsistent
+
+In the repositories view I see a menu entry "Synchronize" on remote branches, but this
+is always grayed out so I can't use it
+
+Tried the following scenario
+- clone egit repository and import all the projects
+- on this clone run: git reset --hard 55fb47b3e942fc75
+- now we should get the commits we threw away on the local branch as the set of changes which 
+  need to be synchronized (and could be fast forwarded)
+- multi-select all egit projects and start synchronize
+- this has no effect (why that ? git changes are transferred in commits not regarding 
+  if these commits span 1 or multiple eclipse projects)
+- running the same on project org.eclipse.egit.ui works: the synchronize diff
+displayed against origin/master seems to be reasonable
+- running synchronize operation has no effect, that's surely due to the fact that merge 
+  for fast forward is available just since today (Stefan's and Christian's changes). 
+  Without merge (or rebase) there is no way to pull the upstream changes into the local 
+  branch. Hence the diff shown in the synchronize view doesn't go away.
+- did another change in org.eclipse.egit.ui but didn't commit this one
+- again open synchronize on that project -> the not committed change is also shown, this 
+  shouldn't be the case as the synchronize dialog said it would compare against current 
+  local HEAD, but this change did not yet reach the current local HEAD.
+
+Tried another scenario:
+- do a fresh clone of jgit
+- do some changes in org.eclipse.jgit.junit and org.eclipse.jgit.test
+- commit these changes in one commit
+- start synchronize from org.eclipse.jgit.junit
+- this displays only the changes in that project but not the changes in the other
+  project which have been committed in one single commit. 
+- I think this doesn't make sense since the smallest unit I could transfer 
+  during sychronize is one commit, it's not possible to push or pull half of a commit 
+  (or this is no longer git)
+- hence it looks to me like we should see the sychronize operation always as an 
+  operation acting on repository level (not project level). Of course it makes sense
+  to see which projects will be affected by a synchronization and group the changes
+  accordingly but artificially splitting changes on project borders doesn't make 
+  sense in my opinion. With CVS this looks much different since CVS doesn't know 
+  atomic commits of changesets but only of single file revisions.
+
+Line:712, org.eclipse.egit.ui/src/org/eclipse/egit/ui/uitext.properties -> more consistent with e.g. Fetch dialog would be
+
+Remote Repository:
+
+Line:713, org.eclipse.egit.ui/src/org/eclipse/egit/ui/uitext.properties -> I would just use (similar to Fetch dialog)
+
+Ref:
+
+Line:715, org.eclipse.egit.ui/src/org/eclipse/egit/ui/uitext.properties -> better (some typos, unclear what's source what's destination):
+
+Select which branch or tag to synchronize against the current local HEAD.
+
+-------------------------------------
+author: Carlie Harper
+date: 2010-05-25 15:35:37.000000000
+
+Patch Set 6: I would prefer that you didn't submit this; No score
+
+I think we do not use the SynchronizeView API correctly here if we compare with another branch:
+GitResourceVariantTreeSubscriber returns a baseTree and a remoteTree. As the baseTree we return the current Head. But the current Head is not the base for a three way compare in this case. Open the compare editor and select "Show ancestor pane": then the current Head is presented. This is wrong.
+
+I think the correct way would be to calculate the common ancestor of the Head and the other branch and to set this as the base. We would then have the other branch as remote and the local resource as entities to compare.
+
+Line:572, org.eclipse.egit.ui/plugin.xml -> This seems to be the wrong class, it should be GitBranchSubscriberParticipant.
+
+See also comment on patch set 1
+
+Line:40, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/synchronize/GitSynchronize.java -> typo: getParticipant
+
+-------------------------------------
+author: Leslie Stephenson
+date: 2010-05-25 21:21:08.000000000
+
+Patch Set 6: No score
+
+Douglas Trujillo:
+> Some problems I see with the current synchronize dialog:
+> - the title says:
+>     Sychronize project: org.eclipse.egit.ui
+>   and the synchronize view does this, but what if changes in the same repository 
+>   span multiple projects ? Or subsequent changes are in the same repository but not
+>   the same eclipse project. E.g. first change only affects project a and second change
+>   only affects project b and both projects are in the same repository. Splitting 
+>   changes during synchronization on project borders is a no-go in my view.
+
+Good point! Right now we should allow only synchronize on repository level. Right now I didn't notice that C Git would allow to synchronize on single resource level. Of course we can implement resource level synchronization in EGit but this could mess things up. Additionally I would prefer to merge this patch set as fast as it is possible and then work on next features for it.
+
+> - in the two combos in this dialog I can also select local branches
+> - in the left combo the local repository is name "local", what if I happen to have a
+>   Remote called "local" which is pointing to another repository I have on my local
+>   machine ? Which of the two would be hidden ? I think you need to find a different
+>   way to express that you want to synchronize against another branch in the same repo.
+
+For now I've changed 'local' to 'local .git' with should be more convenient. Maybe we can come up with better proposition later because IMHO this isn't the best solution that we can have here.
+
+> - if I select local, then I can also select HEAD and heads/master, but this comparison
+>   doesn't make sense since comparing a branch against itself will always yield an empty 
+>   result.
+
+Wheel not exactly, in this case we should see untracked and uncommited files. To be honest we don't compare branch against branch but current local state against selected branch.
+
+> - if I select "origin" / "master" the ref for the master branch is just "master", but if
+>   I try "local" / "heads/master" the ref is "heads/master" -> this is inconsistent
+
+OK, I'll fix that.
+
+> In the repositories view I see a menu entry "Synchronize" on remote branches, but this
+> is always grayed out so I can't use it
+
+It is enabled *only* for repositories that are connected with project in workspace. It doesn't make sense to me to compare branches form project that doesn't exist in current workspace.
+
+> Tried the following scenario
+> - clone egit repository and import all the projects
+> - on this clone run: git reset --hard 55fb47b3e942fc75
+> - now we should get the commits we threw away on the local branch as the set of changes which 
+>   need to be synchronized (and could be fast forwarded)
+> - multi-select all egit projects and start synchronize
+> - this has no effect (why that ? git changes are transferred in commits not regarding 
+>   if these commits span 1 or multiple eclipse projects)
+> - running the same on project org.eclipse.egit.ui works: the synchronize diff
+> displayed against origin/master seems to be reasonable
+> - running synchronize operation has no effect, that's surely due to the fact that merge 
+>   for fast forward is available just since today (Stefan's and Christian's changes). 
+>   Without merge (or rebase) there is no way to pull the upstream changes into the local 
+>   branch. Hence the diff shown in the synchronize view doesn't go away.
+> - did another change in org.eclipse.egit.ui but didn't commit this one
+> - again open synchronize on that project -> the not committed change is also shown, this 
+>   shouldn't be the case as the synchronize dialog said it would compare against current 
+>   local HEAD, but this change did not yet reach the current local HEAD.
+
+Yes, dialog message is inconsistent ... IMHO we should establish what we want to have in synchronize view. Do we want to have only comparison of changes that are commited to repository, or we want to see all changes that are made in repository. Right now I think that we can add extra button into tool bar of synchronization view that will be include or exclude changes that are made in repository but not yet commited (eg. show/hide untracked, unstaged, uncommited files). Getting this idea more further we can add an option to context menu like "stage" and "unstage" that will simplify building commits.
+
+Another solution would be to have two separate views. Synchronize view for comparing commited changes in one of branch/tag against another branch/tag.
+
+To we honest I'm huge fan of first solution (one view for synchronizing and staging changes) and I'll prefer reducing number of views that user need to have open to be able to fully use EGit features.
+
+Returning to main issue, I'll try to reproduce this issue and fix it.
+
+> Tried another scenario:
+> - do a fresh clone of jgit
+> - do some changes in org.eclipse.jgit.junit and org.eclipse.jgit.test
+> - commit these changes in one commit
+> - start synchronize from org.eclipse.jgit.junit
+> - this displays only the changes in that project but not the changes in the other
+>   project which have been committed in one single commit. 
+> - I think this doesn't make sense since the smallest unit I could transfer 
+>   during sychronize is one commit, it's not possible to push or pull half of a commit 
+>   (or this is no longer git)
+> - hence it looks to me like we should see the sychronize operation always as an 
+>   operation acting on repository level (not project level). Of course it makes sense
+>   to see which projects will be affected by a synchronization and group the changes
+>   accordingly but artificially splitting changes on project borders doesn't make 
+>   sense in my opinion. With CVS this looks much different since CVS doesn't know 
+>   atomic commits of changesets but only of single file revisions.
+
+Yes, this is a tricky thing here, because wen we launch compare view on a file we can play with changes on a single file level. This can brake git history so maybe when we compare two branches we should represent changes in this way:
+
+|- project name
+|\
+| |- commit
+| |\
+| | |- changes that are in this particular commit
+| |- another commit
+
+and allow user only to merge changes on commit level and in case of conflicts allow to edit areas that are in conflict.
+
+
+Carlie Harper:
+> I think we do not use the SynchronizeView API correctly here if we compare with another branch:
+> GitResourceVariantTreeSubscriber returns a baseTree and a remoteTree. As the baseTree we return the current Head. But the current Head is not the base for a three way compare in this case. Open the compare editor and select "Show ancestor pane": then the current Head is presented. This is wrong.
+> 
+> I think the correct way would be to calculate the common ancestor of the Head and the other branch and to set this as the base. We would then have the other branch as remote and the local resource as entities to compare.
+
+This sounds reasonable, I'll investigate on it.
+
+Line:572, org.eclipse.egit.ui/plugin.xml -> I should more investigate on this because right now this don't tell me anything.
+
+Line:712, org.eclipse.egit.ui/src/org/eclipse/egit/ui/uitext.properties -> Done
+
+Line:713, org.eclipse.egit.ui/src/org/eclipse/egit/ui/uitext.properties -> Done
+
+Line:715, org.eclipse.egit.ui/src/org/eclipse/egit/ui/uitext.properties -> Done
+
+Line:40, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/synchronize/GitSynchronize.java -> Done
+
+-------------------------------------
+author: Leslie Stephenson
+date: 2010-05-25 21:26:26.000000000
+
+Patch Set 6:
+
+Gerrit brakes formatting in my last commit ... at least he don't do that in mail message ...
+
+-------------------------------------
+author: Gerrit Johnathan Pham
+date: 2010-06-18 00:07:45.000000000
+
+Your change could not be merged due to a path conflict.
+
+Please merge (or rebase) the change locally and upload the resolution for review.
+
+-------------------------------------

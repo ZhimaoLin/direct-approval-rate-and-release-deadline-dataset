@@ -1,0 +1,71 @@
+DESCRIPTION
+
+MB-23987: Ignore repeatedly scheduled tasks
+
+A timeout was observed in a test when running against an ephemeral
+bucket.
+
+This arose during tear down from a deadlock between
+ExecutorPool::_unregisterTaskable and ExecutorPool::_cancel.
+
+Normally, this should not be possible, as _unregisterTaskable waits for
+the task locator to be empty after cancelling each of the tasks,
+indicating that all tasks have been taken up by a thead and cleaned up.
+
+The problem developed from the ItemPager as used in ephemeral buckets.
+KVBucket::enableItemPager cancels and schedules the same task object.
+Cancelling a task simply marks it as dead; it must later be cleaned up
+by a ExecutorThread.
+
+ExecutorPool::_schedule was altered to reset dead tasks to running to
+facilitate enableItemPager. Therefore, if a thread did not clean up the
+task between the cancel and schedule, enableItemPager reduced down to
+just a schedule. If the task was already scheduled, this would be a
+duplicate schedule.
+
+Duplicate scheduling does not adversely affect the taskLocator as it is
+a map. However, the taskQueues /will/ have a second copy of the task
+added.
+
+Now, when unregisterTaskable finds the taskLocator to be empty, it is
+still possible for a thread to take up the duplicate copy of the task.
+The task is already marked dead, and so the thread immediately calls
+_cancel to clean it up.
+
+if _unregisterTaskable already holds the mutex, _cancel will block.
+_unregisterTaskable will then join all the ExecutorThreads, deadlocking
+when it reaches the thread blocked on _cancel.
+
+Change-Id: Ia0dc7e8e8c3423e1098c71cf376653b23b4393e6
+
+
+COMMENTS
+
+author: Jace Townsend
+date: 2017-04-24 14:44:21.652000000
+
+Uploaded patch set 8.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-04-24 15:11:56.043000000
+
+Patch Set 8: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4726/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/5948/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5428/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6199/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-24 16:52:41.412000000
+
+Patch Set 8: Code-Review+2
+
+-------------------------------------

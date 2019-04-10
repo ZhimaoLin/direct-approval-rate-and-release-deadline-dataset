@@ -1,0 +1,50 @@
+DESCRIPTION
+
+Let mc-kvstore control mccouch write batch jobs
+
+This change allows mc-kvstore to control mcocuch batch jobs as
+follows:
+- A new engine parameter is added to put the limit on the
+number of concurrent workers at the mccouch side.
+- Batch size per mcocuch worker is now determined by dividing
+the transaction size by the max number of concurrent workers.
+- Items from the persistence queue are reordered so that each
+mccouch worker works only with a single vbucket database:
+ 1) Divide the list of items for each vbucket into multiple
+    chunks such that each chunk size is equal to the
+    above batch size.
+ 2) Iterate each vbucket and push its current chunk into the
+    outgoing queue. Remove the current chunk from each vbucket.
+ 3) Repeat step 2 until all the chunks are visited.
+
+    For example, suppose that the persistence queue currently has
+    (vb0,k1)...(v0,k2000)
+    (v1,k2001)...(v1,k4000)...
+    (v7,k14001)...(v7,k16000)
+
+    The batch size is 1000.
+
+    After reordering, the persistence queue will have
+    (vb0,k1)...(vb0,k1000)
+    (vb1,k2001)...(vb1,k3000)...
+    (vb7,k14001)...(vb7,k15000)
+    (vb0,k1001)...(vb0,k2000)
+    (vb1,k3001)...(vb1,k4000)...
+    (vb7,k15001)...(vb7,k16000).
+
+In the mccouch side, it will first receive the message indicating
+the max number of concurrent workers allowed from ep-engine, and
+then create a new worker whenever it receives an item with the new
+vbucket Id.
+
+Change-Id: I07036ad45b5cc80f4a09415a009c9e6f60807901
+
+
+COMMENTS
+
+author: Abby Duran
+date: 2011-11-04 00:01:21.093000000
+
+Uploaded patch set 4.
+
+-------------------------------------

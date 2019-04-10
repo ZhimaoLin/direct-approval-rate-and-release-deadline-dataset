@@ -1,0 +1,92 @@
+DESCRIPTION
+
+Provide native lstat() via JNI
+
+To avoid building or testing the native code, use
+
+  mvn -Djgit.native.skip=true ...
+
+to disable the code.  If the native library isn't available at
+runtime, the native code is disabled automatically, and the root
+cause exception is saved for inquiry by applications.
+
+Currently only MacOS X (x86_64) and Linux (x86 and x86_64) are
+supported.  Solaris and many other POSIX systems should be simple
+to support from the existing common code, but require tweaking of
+the libjgit_native build process.  Some placeholder code already
+exists for FreeBSD/NetBSD/OpenBSD, as it is required to support
+the desired Mac OS X target.
+
+Skeleton plugins are supplied to host the native library within
+the Eclipse ecosystem, but these contain no code as the library is
+built from the common libjgit_native package.
+
+Win32 support is more difficult as an lstat(2) replacement must
+be supplied.  This is tricker than just wrapping lstat(2) as the
+native Windows APIs need to be used, and their results translated
+into the POSIX standard structure.
+
+Bug: 331072
+Change-Id: Iffb12334b5440d49b6d2623ceb91f4d873f217a0
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Douglas Trujillo
+date: 2011-01-20 23:36:41.000000000
+
+Uploaded patch set 12.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2011-01-20 23:45:24.000000000
+
+Patch Set 12: Looks good to me, but someone else must approve; Build Successful; IP review completed
+
+- rebased and resolved conflicts
+- adapted to junit 4
+- flipped versions to 0.11
+- verified on Mac OSX 10.6.6
+
+-------------------------------------
+author: Samuel Christensen
+date: 2013-03-10 20:54:56.000000000
+
+Patch Set 12:
+
+This looks very good to me.
+
+You'll need to make sure that you compile the native bits with -pthreads because you access errno; I've had one wicked case in the past where I was debugging 2 days just to find out that a Solaris machine gave incorrect errno due to threading problems since not -pthread compiled code used non-reentrant errno.
+
+Personally, I find the Eclipse EFS approach of the JNI interface a little more elegant since it does more on the Java side (create the FileInfo object on Java, just fill it in natives; convert String to platform bytes on Java). That keeps the native bits simpler with less error handling. See here:
+
+https://git.eclipse.org/c/platform/eclipse.platform.resources.git/tree/bundles/org.eclipse.core.filesystem/src/org/eclipse/core/internal/filesystem/local/LocalFileNatives.java
+
+While this is EPL code and you want EDL, I think it should be acceptable to look at the concept and do something similar if desired.
+
+One other advantage of the EFS approach is that it also does the readdir() in Natives, thus if the conversion of Platform Bytes to Java should be incorrect due to a wrong locale, then the Platform Bytes for lstat() are identical to what readdir() provided ... you'd see incorrect interpretation of the Platform Bytes to UTF in a UI but file access would still be correct.
+
+The EFS natives have been successfully used since many years now. Doing natives again for jgit still makes sense since EFS doesn't provide a true lstat() -- the modtime for symlinks can never be accessed -- and it doesn't provide nanosecond accuracy.
+
+More tests would make sense to bang on the Platform<->String char conversion a bit, test multi-threaded access and test symlink resolution. Like the symlink tests I've done for EFS here:
+
+https://git.eclipse.org/c/platform/eclipse.platform.resources.git/tree/tests/org.eclipse.core.tests.resources/src/org/eclipse/core/tests/filesystem/SymlinkTest.java
+
+-------------------------------------
+author: Samuel Christensen
+date: 2013-03-10 21:08:29.000000000
+
+Patch Set 12:
+
+Checking again, I was actually wrong and the latest Eclipse unixfilenatives implementation does provide a true lstat 
+ - it's only hidden under the outer EFS API:
+
+https://git.eclipse.org/c/platform/eclipse.platform.resources.git/tree/bundles/org.eclipse.core.filesystem/src/org/eclipse/core/internal/filesystem/local/unix/UnixFileNatives.java
+
+Even though it makes sense for the main FS implementation to be backed by a native lib under EDL from jgit, I think it would be good if it was possible to inject an Ecilpse EFS -> jgit FS bridge into FS. That would immediately provide support on Solaris, AIX, HP-UX; would ensure that the timestamps read by jgit are 100% identical to timestamps seen by Eclipse Workspace core.resources; and it could serve as a proven reference implementation to test the new implementation against.
+
+I could contribute an EFS -> jgit FS bridge if desired by the team and the API for injecting it is provided.
+
+-------------------------------------

@@ -1,0 +1,83 @@
+DESCRIPTION
+
+MB-16500 [BP]: MB-16496 Fix the race on vbucket state between persistVBState() and compactVB()
+
+The following data race is reported by thread sanitizer:
+
+WARNING: ThreadSanitizer: data race (pid=29921)
+  Write of size 8 at 0x7d680001f580 by thread T5 (mutexes: write M12734):
+    #0 VBucket::setPurgeSeqno() ep-engine/src/vbucket.h:215:9 (ep.so+0x000000086204)
+    #1 EventuallyPersistentStore::compactVBucket() ep-engine/src/ep.cc:1584 (ep.so+0x000000086204)
+    #2 CompactVBucketTask::run() ep-engine/src/tasks.cc:94:12 (ep.so+0x00000012971e)
+    #3 ExecutorThread::run() ep-engine/src/executorthread.cc:115:26 (ep.so+0x0000000ea41d)
+    #4 launch_executor_thread() ep-engine/src/executorthread.cc:33:9 (ep.so+0x0000000e9fe5)
+    #5 platform_thread_wrap platform/src/cb_pthreads.c:23:5 (libplatform.so.0.1.0+0x000000004161)
+
+  Previous read of size 8 at 0x7d680001f580 by thread T7:
+    #0 VBucket::getPurgeSeqno() ep-engine/src/vbucket.h:211:16 (ep.so+0x0000000821d3)
+    #1 EventuallyPersistentStore::persistVBState() ep-engine/src/ep.cc:1217 (ep.so+0x0000000821d3)
+    #2 VBStatePersistTask::run() ep-engine/src/tasks.cc:86:12 (ep.so+0x000000129636)
+    #3 ExecutorThread::run() ep-engine/src/executorthread.cc:115:26 (ep.so+0x0000000ea41d)
+    #4 launch_executor_thread() ep-engine/src/executorthread.cc:33:9 (ep.so+0x0000000e9fe5)
+    #5 platform_thread_wrap platform/src/cb_pthreads.c:23:5 (libplatform.so.0.1.0+0x000000004161)
+
+  Location is heap block of size 1392 at 0x7d680001f200 allocated by main thread:
+    #0 operator new() <null> (engine_testapp+0x00000045cded)
+    #1 EventuallyPersistentStore::setVBucketState() ep-engine/src/ep.cc:1300:30 (ep.so+0x000000082b1a)
+    #2 EventuallyPersistentEngine::setVBucketState() ep-engine/src/ep_engine.h:718:16 (ep.so+0x0000000ca308)
+    #3 setVBucket()) ep-engine/src/ep_engine.cc:884 (ep.so+0x0000000ca308)
+    #4 processUnknownCommand()) ep-engine/src/ep_engine.cc:1178 (ep.so+0x0000000ca308)
+    #5 EvpUnknownCommand()) ep-engine/src/ep_engine.cc:1389:38 (ep.so+0x0000000aafc8)
+    #6 mock_unknown_command()) memcached/programs/engine_testapp/engine_testapp.cc:380:19 (engine_testapp+0x0000004c56b9)
+    #7 set_vbucket_state() ep-engine/tests/ep_test_apis.cc:607:9 (ep_testsuite.so+0x0000000a3a4b)
+    #8 test_setup() ep-engine/tests/ep_testsuite_common.cc:146:28 (ep_testsuite.so+0x00000009cdda)
+    #9 execute_test() memcached/programs/engine_testapp/engine_testapp.cc:1085:47 (engine_testapp+0x0000004c4103)
+    #10 main memcached/programs/engine_testapp/engine_testapp.cc:1439 (engine_testapp+0x0000004c4103)
+
+To address the above issue, vbucket states should be read after grabbing
+the vbucket writer lock in EPStore::persistVBState().
+
+Change-Id: I5a42b3e15a1cf5c941d399897bc68d6f35746ff3
+Reviewed-on: http://review.Piper Jefferson.org/55972
+Tested-by: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+Reviewed-by: Londyn Salazar xxx@xxx.xxx Jefferson.com>
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2015-10-13 20:09:34.584000000
+
+Uploaded patch set 4: Commit message was updated.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-10-13 20:43:39.903000000
+
+Patch Set 4:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/150/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-10-13 20:58:14.963000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/150/ : SUCCESS
+
+-------------------------------------
+author: Abby Duran
+date: 2015-10-13 23:11:52.960000000
+
+Patch Set 4: Code-Review+2
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-10-13 23:11:54.700000000
+
+Change has been successfully cherry-picked as d388995c85c0b00ca3a9b0d76a18a0b7a2086f6d
+
+-------------------------------------

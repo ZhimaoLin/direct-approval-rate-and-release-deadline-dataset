@@ -1,0 +1,77 @@
+DESCRIPTION
+
+Buffer "shallow" response until request parsing has done
+
+This is a continuation from https://git.eclipse.org/r/#/c/4716/. For
+non-bidirectional request, we need to consume the request before writing
+any response. In UploadPack, we write "shallow"/"unshallow" responses
+before parsing "have" lines. This happened not to be a problem most of
+the cases because the underlying InputStream has a 4KiB buffer.
+
+Change-Id: I3b63c74d6d3b83258e5a0f704a8001753f0d83c0
+Signed-off-by: Sandra Garrison xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Sandra Garrison
+date: 2017-03-30 23:26:02.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-03-30 23:26:10.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/10065/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-03-30 23:56:10.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/10065/ : SUCCESS
+
+-------------------------------------
+author: Eden Lin
+date: 2017-03-31 00:14:00.000000000
+
+Patch Set 1: Code-Review-1
+
+(5 comments)
+
+Does ReceivePack need a similar change too?
+
+Line:154, org.eclipse.jgit.http.server/src/org/eclipse/jgit/http/server/ServletUtils.java -> Unrelated change?
+
+I like this change but I think it should go in a separate commit.
+
+BTW, the catch in the next line is harmful. I want to deprecated consumeRequestBody and replace it with a function that throws IOException.
+
+Line:67, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPackResponse.java -> I wonder if it would make sense to buffer a few lists of ObjectId instead. That would decrease memory usage a little and might be easier to read.
+
+Line:157, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPackResponse.java -> It is subtle that some methods assume input is fully read in, others drain input manually, and others buffer until the input is read. Is there some way to make this more systematic?
+
+E.g.
+* parse the full request before deciding on and writing any output. In the caller, use a try{}catch to allow consuming input and writing an ERR response before the full request has been parsed. Or
+* decide on output while parsing the request but don't write any of it. In the caller, use a try{}catch to allow consuming input and writing an ERR response before the full request has been parsed. Or
+* handle input and output at the same time, but use a wrapper for PktLineOut that buffers instead of writing until input has been fully consumed. ERR would still work like the above two cases. Or
+* handle input and output at the same time, but use wrappers for PktLineIn and PktLineOut that buffer all remaining input on first write. Provide a method to consume all input to avoid wasting memory buffering in the ERR case.
+* etc
+
+The first or second of the above (or a hybrid) seems simplest to me if it's possible to make them work. The first means reading to a deserialized representation and then in a second pass deciding what to do with it. The second means writing to a deserialized representation and then in a second pass serializing and writing it.
+
+Line:10, /COMMIT_MSG -> For non-bidirectional requests
+
+or
+
+ For a non-bidirectional request
+
+Line:13, /COMMIT_MSG -> This has happened not to be a problem most of the time
+
+-------------------------------------

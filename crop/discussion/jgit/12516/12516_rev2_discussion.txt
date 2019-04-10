@@ -1,0 +1,127 @@
+DESCRIPTION
+
+Support refspecs with wildcard in middle (not only at end)
+
+The following refspec, which can be used to fetch GitHub pull requests,
+is supported by C Git but was not yet by JGit:
+
+  +refs/pull/*/head:refs/remotes/origin/pr/*
+
+The reason is that the wildcard in the source is in the middle.
+
+This change also includes more validation (e.g. "refs//heads" is not
+valid) and test cases.
+
+Bug: 405099
+Change-Id: I9bcef7785a0762ed0a98ca95a0bdf8879d5702aa
+
+
+COMMENTS
+
+author: Danika Greer
+date: 2013-05-05 12:50:08.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-05-05 12:50:14.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3508/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-05-05 12:56:34.000000000
+
+Patch Set 2: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3508/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2013-05-05 16:47:47.000000000
+
+Patch Set 2: I would prefer that you didn't submit this
+
+(8 inline comments)
+
+
+
+Line:76, org.eclipse.jgit/src/org/eclipse/jgit/transport/RefSpec.java -> So does CGit accept "refs/heads/foo-*:refs/heads/*" to rename references and strip foo- prefix?
+
+I am wondering if we need to test for endsWith("/*") or contains("/*/") or if just contains("*") is correct.
+
+Line:115, org.eclipse.jgit/src/org/eclipse/jgit/transport/RefSpec.java -> Why &#42; and not * here?
+
+Line:279, org.eclipse.jgit/src/org/eclipse/jgit/transport/RefSpec.java -> I think you can simplify the code a little by using a static helper function:
+
+  private static String checkValidRef(String ref) {
+    if (!isValid(ref))
+      throw ...
+    return ref;
+  }
+
+Now all of the places you use replaced the field assignment with a setter just use the field assignment but wrap the right hand side with checkValidRef().
+
+Line:444, org.eclipse.jgit/src/org/eclipse/jgit/transport/RefSpec.java -> I would test this length case first, if it fails there is no way the startsWith or endsWith can be correct.
+
+Line:445, org.eclipse.jgit/src/org/eclipse/jgit/transport/RefSpec.java -> Don't use else here.
+
+Line:455, org.eclipse.jgit/src/org/eclipse/jgit/transport/RefSpec.java -> The line wrapping here is ugly. I think some shorter variable names might actually make the code easier to read, and avoid breaking this line.
+
+Line:461, org.eclipse.jgit/src/org/eclipse/jgit/transport/RefSpec.java -> I think you can write this method as:
+
+  int s = str.indexOf('*');
+  if (s < 1)
+    return true;
+  if (str.indexOf('*', s + 1) > s)
+    return false;
+  if (str.charAt(s - 1) != '/')
+    return false;
+  if (s == str.length() - 1)
+    return true;
+  return str.charAt(s + 1) == '/';
+
+although that version does fail to check for the // case, but we didn't check for that before either.
+
+Line:3, org.eclipse.jgit.test/tst/org/eclipse/jgit/transport/RefSpecTest.java -> Updating the year for my copyright statement when I didn't add code is wrong.
+
+-------------------------------------
+author: Danika Greer
+date: 2013-05-07 21:22:59.000000000
+
+Patch Set 2: (8 inline comments)
+
+
+
+Line:76, org.eclipse.jgit/src/org/eclipse/jgit/transport/RefSpec.java -> It does not accept such a refspec:
+
+    fatal: Invalid refspec 'refs/heads/foo-*:refs/heads/*'
+
+It does however accept "*:*" (for mirroring).
+
+My thinking was that the above method does not need to check whether the refspec is actually valid, as that is done later. So the method is more a "does this look whether it could be a wildcard ref (valid or not)?".
+
+Line:115, org.eclipse.jgit/src/org/eclipse/jgit/transport/RefSpec.java -> Because "*/" ends a comment in Java. I'm not sure if there is another way. Escaping the "/" would also be possible, but either way it looks ugly in source form (but OK in final rendered form).
+
+Line:279, org.eclipse.jgit/src/org/eclipse/jgit/transport/RefSpec.java -> Good idea, I like that better. Done.
+
+Line:444, org.eclipse.jgit/src/org/eclipse/jgit/transport/RefSpec.java -> Done
+
+Line:445, org.eclipse.jgit/src/org/eclipse/jgit/transport/RefSpec.java -> Done
+
+Line:455, org.eclipse.jgit/src/org/eclipse/jgit/transport/RefSpec.java -> Done
+
+Line:461, org.eclipse.jgit/src/org/eclipse/jgit/transport/RefSpec.java -> Done, and added some more test cases to cover all branches. I included a check for "//" because such a ref results in a fatal in C Git, so maybe it's better to be strict than forgiving here:
+
+    fatal: Invalid refspec 'refs/heads//*:refs/remotes/origin/*'
+
+Line:3, org.eclipse.jgit.test/tst/org/eclipse/jgit/transport/RefSpecTest.java -> It was meant for the "... and other copyright owners". Normally there is just one year range with the first author and "... and other". Here there are more entries. Maybe we should simplify the headers a bit, so that it's always just a matter to bump the year if necessary? Would be something to discuss on the mailing list.
+
+I added a separate line for this change.
+
+-------------------------------------

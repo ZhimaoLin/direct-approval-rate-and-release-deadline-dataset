@@ -1,0 +1,89 @@
+DESCRIPTION
+
+JCBC-96: Remove queue mechanism in ViewConnection
+
+This change removes the queueing mechanism that hold operations
+before being given to an individual ViewNode. The operations are
+now passed directly to a ViewNode and if there are too many
+operations then they are held as pending requests until the
+ViewNode is ready to process them. On node shutdown the pending
+ops are requeued through a callback function that redistributes
+them equally to the rest of the ViewNodes.
+
+
+COMMENTS
+
+author: Andreas Short
+date: 2012-08-14 02:17:08.911000000
+
+Patch Set 1: Verified; Do not submit
+
+(4 inline comments)
+
+good news, I can verify this too fixes the issue, and better than my quick hack!
+
+Unfortunately, there are some concurrency issues introduced in here.
+
+Line:238, src/main/java/com/couchbase/client/ViewConnection.java -> this did the scheduling so it could shut it down from the other thread.
+
+Line:139, src/main/java/com/couchbase/client/ViewConnection.java -> is cancel() the right action here?  At the very least we should be logging errors.
+
+Line:141, src/main/java/com/couchbase/client/ViewConnection.java -> concurrency issue here, since couchNodes can change between when you check if it's empty and you try to get a node.  This is one of those cases where you may want to try to get a reference and then check for null.
+
+Line:142, src/main/java/com/couchbase/client/ViewConnection.java -> What if the node is shutting down?  Can it be acquired while some other thread is shutting it down?  I think the answer is yes.
+
+reconfigure() is called by the thread that's looking for config updates.
+
+Might be best to synchronize on couchNodes or something else.  I worry about synchronizing on it directly, but there may be a better way.
+
+-------------------------------------
+author: Andreas Short
+date: 2012-08-14 02:31:44.809000000
+
+Patch Set 1:
+
+One slight concern, running my test a few times I see:
+
+2012-08-13 19:30:39.268 INFO com.couchbase.client.CouchbaseConnection:  Shut down Couchbase client
+2012-08-13 19:30:39.275 WARN com.couchbase.client.ViewConnection:  Shutting down with ops waiting to be written
+2012-08-13 19:30:39.276 INFO com.couchbase.client.ViewNode:  Couchbase I/O reactor terminated
+2012-08-13 19:30:39.279 WARN com.couchbase.client.ViewConnection:  Shutting down with ops waiting to be written
+2012-08-13 19:30:39.279 INFO com.couchbase.client.ViewNode:  Couchbase I/O reactor terminated
+
+Everything completed successfully, so why is it warning me about ops waiting to be written?  related to this change?
+
+-------------------------------------
+author: Kenny Maynard
+date: 2012-08-14 05:46:36.718000000
+
+Patch Set 1: (4 inline comments)
+
+In general all of the comments can be easily fixed. I hastily pushed this code just so I could see if it was fixing the issue. I will update the patch set tomorrow morning.
+
+Line:64, src/main/java/com/couchbase/client/http/AsyncConnectionManager.java -> Another note is that this pending requests queue should probably have a maximum size.
+
+Line:238, src/main/java/com/couchbase/client/ViewConnection.java -> Let's discuss this in more detail. I don't think it makes sense to keep the thread I removed around just for shutdown. We could spawn a shutdown thread whenever we need to remove nodes though.
+
+Line:141, src/main/java/com/couchbase/client/ViewConnection.java -> Yeah, I realized this would have to be some sort of concurrent list earlier, but wanted to get something for you to test. I'll make sure this gets fixed.
+
+Line:142, src/main/java/com/couchbase/client/ViewConnection.java -> This function and the reconfiguring one need to have some synchronized blocks.
+
+-------------------------------------
+author: Andreas Short
+date: 2012-08-14 06:17:11.267000000
+
+Patch Set 1:
+
+Well, I do think you can avoid the locking with the same scheme that was there previously.  Remove it from the list of usable things in the reconfigure() and then handle the shutting down on the other thread.  Of course, checking a volatile list each time is probably like synchronization.
+
+Anyway, yep-- know you'll get it right.  Thanks!
+
+-------------------------------------
+author: Kenny Maynard
+date: 2012-08-14 17:55:16.010000000
+
+Patch Set 1: Abandoned
+
+Gerrit accepted this with no Change-Id
+
+-------------------------------------

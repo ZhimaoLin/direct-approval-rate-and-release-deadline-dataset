@@ -1,0 +1,63 @@
+DESCRIPTION
+
+MB-9192: fix leak caused by cells capturing callstack at creation
+
+Here's how it ended up leaking memory on analytics.js
+
+There's "infinite" future implemented by createSamplesFuture that
+implements stats polling loop. In order to fetch actual data from
+server it's using getCPS function defined nearby that works through
+cell's iocenter facility but behaves like traditional callback-style
+ajax call. In order to do it it creates empty cell for every request.
+
+Now recall that without this commit constructing cell captured full
+stack trace at time of creation for debugging purposes. It turns out
+Chrome debugger finally gives you _full_ access to every stack trace
+element. Including full access to it's environment (all
+variables). That makes all stack fraces "live" for purpose of gc.
+
+Normally that would not be a problem because cell itself would be
+shortlived. It's used for just single request after all and is only
+referred from async variable in getCPS. _But_ subtlety that keeps it
+alive is that getCPS callback typically does another getCPS request
+(via samples restorer and doGet function). So cell of second getCPS
+request will have getCPS's inner function on it's callstack. That
+inner function will keep environment of outer getCPS in it's
+closure. Thus keeping outer getCPS' async variable and it's cell
+"live". Next getCPS will keep second getCPS instance alive etc.
+
+That chain of closures keeps full results of all previous samples (via
+lastValue argument of samples restorer which is part of preserved call
+stacks). So leak is quite big.
+
+It could be fixed in a number of ways. For example:
+
+* make sure that "trampoline" that calls getCPS callback does not see
+  getCPS environment
+
+* clean createdAt property of cell used in getCPS
+
+* do not do next getCPS call immediately from callback of previous
+  getCPS (i.e. via _.defer or setTimeout)
+
+But most simple fix is to stop capturing createdAt property of cells
+which is only useful for debugging and is otherwise useless and
+dangerous overhead in production.
+
+Change-Id: I2ecf7544b9de2d19309d32991f1d3e845251e855
+
+
+COMMENTS
+
+author: Nathalie Landry
+date: 2013-10-04 21:06:40.299000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2013-10-04 21:06:55.075000000
+
+Patch Set 2: Verified+1
+
+-------------------------------------

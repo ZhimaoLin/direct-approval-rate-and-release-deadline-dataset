@@ -1,0 +1,80 @@
+DESCRIPTION
+
+JCBC-475: Harden configuration provider on shutdown and restarting of nodes.
+
+Motivation
+----------
+The current configuration provider runs into issues when nodes are restarted in
+several edge cases. Also, shutdown handling was subject to race conditions, leaving
+threads behind and as a result kept JVMs running.
+
+Modifications
+-------------
+This changeset makes several modifications to the provider:
+	- A shutdown variable is introduced and crucial parts of the code are made
+	  aware of it, stopping their work if shutdown is true.
+	- If a new carrier provider is set, the code now checks if there was an old
+	  one in place, shutting it down. This makes sure that no threads are left
+	  behind.
+	- Only monitor the bucket in http bootstrap, avoiding weird stack overflows
+	  if monitoring and bootstrapping does not succeed (if only one node is used
+	  and it is restarted).
+
+In addition the used CouchbaseConfigConnection has been clarified a bit so that
+from a thread dump it is now visible if a data IO thread is meant or the config
+thread for carrier configs.
+
+Result
+------
+In general, the resulting provider should be more resilient to failure and should not
+leave threads behind on shutdown.
+
+Change-Id: Ic3c4026494c858e03d63767dd953675104687e0b
+
+
+COMMENTS
+
+author: Natasha Sullivan
+date: 2014-06-17 11:58:41.317000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Andreas Short
+date: 2014-06-18 05:11:09.248000000
+
+Patch Set 1: Code-Review+2
+
+(2 comments)
+
+Not sure if either comment should be addressed.  I trust you to do whatever is correct here.
+
+Line:24, pom.xml -> Is this expected here?  I might normally expect this to be in a separate commit.
+
+Line:122, src/main/java/com/couchbase/client/vbucket/provider/BucketConfigurationProvider.java -> I rather liked these as info level.  Why the change?
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2014-06-18 05:21:13.454000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:24, pom.xml -> oh since we use it for pure development purposes I updated it on the fly.
+
+Line:122, src/main/java/com/couchbase/client/vbucket/provider/BucketConfigurationProvider.java -> the problem is that what I found in testing: during reconnect phases it can easily spam your log if it tries to find something and then it does not. I wanted to have it less spammy, but we can keep it at info if you want to.
+
+-------------------------------------
+author: Andreas Short
+date: 2014-06-24 04:13:38.681000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:24, pom.xml -> Okay, please update properly when we're ready to ship?
+
+Line:122, src/main/java/com/couchbase/client/vbucket/provider/BucketConfigurationProvider.java -> Okay, I trust your judgement here.  One thought for the future is getting these via JMX or something like that.
+
+-------------------------------------

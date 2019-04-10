@@ -1,0 +1,162 @@
+DESCRIPTION
+
+MB-18940: Make ExecutorPool::get() thread-safe
+
+ExecutorPool::get() has a similar problem as
+MemoryTracker::getInstance() (although not as bad) - there is a
+potential data-race which could result in multiple ExecutorPools being
+created.
+
+The issue is that the 'instance' pointer is not atomic - this means
+that the compiler /could/ reorder the assignment and object creation
+so the object is assigned /before/ it is created. Paraphrasing from a
+Dr Dobbs article[1] about double-checked locking:
+
+    Singleton* Singleton::instance() {
+       if (pInstance == 0) {
+           Lock lock;
+           if (pInstance == 0) {
+               pInstance = // Step 3
+                  operator new(sizeof(Singleton)); // Step 1
+               new (pInstance) Singleton; // Step 2
+           }
+       }
+       return pInstance;
+    }
+
+    ... consider the following sequence of events:
+
+    * Thread A enters instance, performs the first test of pInstance,
+      acquires the lock, and executes the statement made up of Steps 1
+      and 3. It is then suspended. At this point, pInstance is not
+      null, but no Singleton object has yet been constructed in the
+      memory pInstance points to.
+
+    * Thread B enters instance, determines that pInstance is not null,
+      and returns it to instance's caller. The caller then
+      dereferences the pointer to access the Singleton that, oops, has
+      not yet been constructed.
+
+Fix in the same way as MemoryTracker::getInstance() - make `instance`
+be an atomic variable and perform the object creation using a
+temporary variable; which ensures that the ordering is correct.
+
+[1]: http://www.drdobbs.com/cpp/c-and-the-perils-of-double-checked-locki/184405726
+
+Change-Id: Ic8b5c29e0c404e2a4ce0b1e62545776f97754acc
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2016-04-01 16:51:57.156000000
+
+Uploaded patch set 2: Patch Set 1 was rebased.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-01 16:52:06.580000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/330/ (1/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-01 17:00:33.713000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/234/ (2/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-01 17:05:19.134000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/357/ (3/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-01 17:10:48.350000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/331/ (3/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-01 17:18:59.244000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/331/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/234/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/357/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-01 17:28:49.903000000
+
+Patch Set 2: -Verified
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/332/ (3/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-01 17:37:57.556000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/234/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/357/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/332/ : SUCCESS
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-04-01 17:43:45.868000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:133, src/executorpool.cc -> Won't you need this line (after acquiring the lock) here again:
+
+tmp = instance.load()
+
+-------------------------------------
+author: Abby Duran
+date: 2016-04-01 20:32:45.404000000
+
+Patch Set 2: Code-Review-1
+
+(1 comment)
+
+Line:133, src/executorpool.cc -> Yes, I think the value should be loaded again.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-04-04 08:02:14.719000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:133, src/executorpool.cc -> Done
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-04-04 16:52:51.028000000
+
+Change has been successfully cherry-picked as bd1c64383fedd76510e0b48ec9be9092d6b29b07
+
+-------------------------------------

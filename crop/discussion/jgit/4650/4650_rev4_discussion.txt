@@ -1,0 +1,138 @@
+DESCRIPTION
+
+maxObjectSizeLimit for receive-pack.
+
+ReceivePack (and PackParser) can be configured with the
+maxObjectSizeLimit in order to prevent users from pushing too large
+objects to Git. The limit check is applied to all object types
+although it is most likely that a BLOB will exceed the limit.  In all
+cases the size of the object header is excluded from the object size
+which is checked against the limit as this is the size of which a BLOB
+object would take in the working tree when checked out as a file.
+When an object exceeds the maxObjectSizeLimit the receive-pack will
+abort immediately.
+
+Delta objects (both offset and ref delta) are also checked against the
+limit. However, for delta objects we will first check the size of the
+inflated delta block against the maxObjectSizeLimit and abort
+immediately if it exceeds the limit. In this case we even do not know
+the exact size of the resolved delta object but we assume it will be
+larger than the given maxObjectSizeLimit. Aborting early, in this
+case, avoids unnecessary inflating of the (huge) delta block.
+
+Unfortunately, it is too expensive (especially for a large delta) to
+compute SHA-1 of an object that causes the receive-pack to abort.
+This would decrease the value of this feature whose main purpose is to
+protect server resources from users pushing huge objects.  Therefore
+we don't report the SHA-1 in the error message.
+
+Change-Id: I177ef24553faacda444ed5895e40ac8925ca0d1e
+Signed-off-by: Dillon Cross xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Dillon Cross
+date: 2011-11-18 22:26:26.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-11-18 22:26:37.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1042/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-11-18 22:29:51.000000000
+
+Patch Set 4: Build Successful
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1042/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2011-11-18 22:37:26.000000000
+
+Patch Set 4: (3 inline comments)
+
+
+
+Line:362, org.eclipse.jgit/resources/org/eclipse/jgit/JGitText.properties -> maybe we should report the max allowed length so that the user has an idea what size is accepted by the administrator
+
+Line:10, org.eclipse.jgit/src/org/eclipse/jgit/errors/TooLargeObjectInPackException.java -> style nit: unnecessary second blank line
+
+Line:637, org.eclipse.jgit/src/org/eclipse/jgit/transport/PackParser.java -> style nit: no braces around single line block
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-11-19 00:25:28.000000000
+
+Patch Set 4: I would prefer that you didn't submit this
+
+(5 inline comments)
+
+
+
+Line:362, org.eclipse.jgit/resources/org/eclipse/jgit/JGitText.properties -> Or we should at least report the size the user gave us that we are refusing.
+
+Line:1, org.eclipse.jgit/src/org/eclipse/jgit/errors/TooLargeObjectInPackException.java -> Missing copyright header.
+
+Line:23, /COMMIT_MSG -> Its not known for certain, but it is highly probable that a delta instruction sequence larger than the max size will result in an result object larger than the max size. An evil user could create a delta instruction sequence that produced a smaller result than the delta is, which is evil, but isn't that harmful to the server. A more typical user would only use a delta sequence if it was smaller than the result object, as generally a delta is only chosen if the delta can copy more data from the base object than the delta needs to insert or needs to represent the copy ranges.
+
+So, yes, if a delta was bigger than your limit, its pretty certain the result will be too big to accept.
+
+Line:638, org.eclipse.jgit/src/org/eclipse/jgit/transport/PackParser.java -> Maybe include the size parameter in the exception?
+
+Line:948, org.eclipse.jgit/src/org/eclipse/jgit/transport/PackParser.java -> If we aren't going to compute the SHA-1, just do this when the object header is parsed and then its only 1 insertion, rather than 3 (whole, OBJ_OFS_DELTA, OBJ_REF_DELTA).
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2011-11-21 19:08:47.000000000
+
+Your change could not be merged due to a path conflict.
+
+Please merge (or rebase) the change locally and upload the resolution for review.
+
+-------------------------------------
+author: Dillon Cross
+date: 2011-11-21 19:54:38.000000000
+
+Patch Set 4: (7 inline comments)
+
+
+
+Line:362, org.eclipse.jgit/resources/org/eclipse/jgit/JGitText.properties -> I will provide two versions of the error message.
+
+One will include the object size and the limit size. This one will be used when the object size is known i.e. whole object in the pack or when we inflate the delta block and read the result size.
+
+The other one will be used when we find out that the delta size is already too big and we don't want to inflate it. In this case only the limit size will be included in the error message.
+
+Line:1, org.eclipse.jgit/src/org/eclipse/jgit/errors/TooLargeObjectInPackException.java -> Done
+
+Line:10, org.eclipse.jgit/src/org/eclipse/jgit/errors/TooLargeObjectInPackException.java -> Done
+
+Line:23, /COMMIT_MSG -> copied a part of your comment into the commit message as it nicely summarized the reason behind checking the size of the delta instruction sequence :-)
+
+Line:637, org.eclipse.jgit/src/org/eclipse/jgit/transport/PackParser.java -> Done
+
+Line:638, org.eclipse.jgit/src/org/eclipse/jgit/transport/PackParser.java -> Done
+
+Line:948, org.eclipse.jgit/src/org/eclipse/jgit/transport/PackParser.java -> Done.
+Actually another insertion was needed when the delta is inflated and the result size is read.
+We will have 2 instead of 4 insertions.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2011-11-22 16:38:12.000000000
+
+Your change could not be merged due to a path conflict.
+
+Please merge (or rebase) the change locally and upload the resolution for review.
+
+-------------------------------------

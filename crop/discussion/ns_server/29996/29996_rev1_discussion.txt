@@ -1,0 +1,89 @@
+DESCRIPTION
+
+MB-8726: implemented terse bucket details REST API
+
+And facility to cache those terse bucket details.
+
+New url endpoints are /pools/default/b/<bucket-name> and
+/pools/default/bs/<bucket-name>. The later is streaming one.
+
+New endpoints are HATEOAS-discoverable. /pools/details now contain
+buckets.terseBucketsBase (and terseStramingBucketsBase
+correspondingly) field. That field advertises "prefix" to terse bucket
+details urls: /pools/default/b/. HATEAOS client needs to append bucket
+name to this string and it'll get path to GET in order to receive
+terse bucket details (or streaming bucket details
+correspondingly). Such approach of avoiding buckets list request
+shortens bootstrap and enables mega-buckets concept.
+
+This bucket details response contains "useful" subset of fields of
+usual bucket details response. I.e. it only contains fields that
+matter for smart clients and omits everything else. Response is
+exactly same as output from CCCP-aware memcached on not-my-vbucket
+condition. Notable difference is that it also works for memcached
+buckets.
+
+Only major difference is that in order to send same output as
+CCCP-aware memcached, ns_server does not replace 127.0.0.1 in hostname
+fields with address that's serving response. Empty string is sent
+instead of 127.0.0.1. So hostname would be ":9000" and couchApiBase -
+"http://:9500/default". Clients are expected to be smart enough
+perform that replacement.
+
+Here's how typical terse bucket details look:
+
+{
+    "name": "default",
+    "nodes": [
+        {
+            "couchApiBase": "http://chi.local:9500/default",
+            "hostname": "chi.local:9000",
+            "ports": {
+                "proxy": 12001,
+                "direct": 12000
+            }
+        },
+        {
+            "couchApiBase": "http://chi.local:9501/default",
+            "hostname": "chi.local:9001",
+            "ports": {
+                "proxy": 12003,
+                "direct": 12002
+            }
+        }
+    ],
+    "nodeLocator": "vbucket",
+    "uuid": "ba07a6a720a2631279d743081d5ce2fd",
+    "bucketCapabilitiesVer": "",
+    "bucketCapabilities": [
+        "touch",
+        "couchapi"
+    ],
+    "ddocs": {
+        "uri": "/pools/default/buckets/default/ddocs"
+    },
+    "vBucketServerMap": {
+        "hashAlgorithm": "CRC",
+        "numReplicas": 1,
+        "serverList": [
+            "chi.local:12000",
+            "chi.local:12002"
+        ],
+        "vBucketMap": [
+            [
+                0,
+                1
+            ],
+            [
+                0,
+                1
+            ], ....
+        ]
+    }
+}
+
+Change-Id: Id255ffce40d3cf2bd88919d4b683ec1273563be2
+
+
+COMMENTS
+

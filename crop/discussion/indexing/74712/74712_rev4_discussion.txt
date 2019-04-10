@@ -1,0 +1,79 @@
+DESCRIPTION
+
+CBIDXT-412: Track unindexable skipped index entries
+
+- Index a skipped entry when an item is unindexable
+  (in case of error ex: size limit exceeded)
+- Track number of skipped entries with skippedCount available
+  on snapshot as well as index stat
+- Provide GSI client API for count of skipped items as well
+  as scan for skipped entries
+
+Change-Id: I3ae4b6997cff5e4e4d2fd5043b436734fc4e3d11
+
+
+COMMENTS
+
+author: Alden Ashley
+date: 2017-03-07 16:55:12.906000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Kinsley Fox
+date: 2017-03-07 18:01:00.673000000
+
+Patch Set 4: Code-Review+1
+
+(7 comments)
+
+Few comments in slice implementations
+
+Line:41, secondary/indexer/memdb_slice_impl.go -> Please remove this
+
+Line:389, secondary/indexer/memdb_slice_impl.go -> I would prefer getting rid of this method to optimize for avoiding delete + insert incase an item is already skipped. We want our usual insert path work better.
+
+Line:418, secondary/indexer/memdb_slice_impl.go -> This is going to cause additional back index lookup, which is expensive and may cause perf regression.
+We shouldn't optimize for improving skip performance!
+
+Line:480, secondary/indexer/memdb_slice_impl.go -> It is preferred to treat old entries as yet another old item.
+
+if !isOldSkipped {
+oldEntriesBytes = list.Keys()
+}
+
+By default value of oldEntriesBytes is nil
+
+Line:511, secondary/indexer/memdb_slice_impl.go -> tip: accepting isOldSkipped as arg would be more preferred over if
+
+Line:547, secondary/indexer/memdb_slice_impl.go -> This should happen as yet another old key. We should fix it as part of bug fix on collation as we discussed.
+
+Line:529, secondary/indexer/plasma_slice.go -> You can move these TX wrappers to the top instead of calling within getOldEntry(). Calling multiple TX wrappers is expensive.
+
+-------------------------------------
+author: Alden Ashley
+date: 2017-03-07 20:07:15.811000000
+
+Patch Set 4:
+
+(14 comments)
+
+Line:41, secondary/indexer/memdb_slice_impl.go -> Done
+
+Line:480, secondary/indexer/memdb_slice_impl.go -> Done
+
+Line:511, secondary/indexer/memdb_slice_impl.go -> Done
+
+-------------------------------------
+author: Alden Ashley
+date: 2017-03-08 03:07:16.561000000
+
+Patch Set 4:
+
+(2 comments)
+
+Line:547, secondary/indexer/memdb_slice_impl.go -> Agreed. I need to fix the explode array for skipped entry
+
+Line:529, secondary/indexer/plasma_slice.go -> Done
+
+-------------------------------------

@@ -1,0 +1,184 @@
+DESCRIPTION
+
+[sync] Improve performance
+
+Adds thin cache that contains meta data (like changed object id's and
+change type) from git. This cache is filled in background process just
+before synchronization is launched and then it is used for quick
+obtaining list of members for particular folder.
+
+During my tests this implementation reduce time needed to compare linux
+kernel source (version 2.6.38-rc2 against 2.6.36) in less then 1min
+(usually 55s), when implementation from 1.0 needs 1m 40s.
+
+Additionally some tests were updated.
+
+This change requires also jgit change
+I5a680a73e1cffa18ade3402cc86008f46c1da1f1
+
+Change-Id: I7ddb21e7ff54333dd6d7ace3209bbcf83da2b219
+Signed-off-by: Leslie Stephenson xxx@xxx.xxx
+
+COMMENTS
+
+author: Leslie Stephenson
+date: 2011-08-16 07:15:37.000000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-08-16 07:15:54.000000000
+
+Patch Set 6:
+
+Build Started https://hudson.eclipse.org/sandbox/job/egit.gerrit/1441/ 
+
+-------------------------------------
+author: Leslie Stephenson
+date: 2011-08-16 07:16:26.000000000
+
+Patch Set 6:
+
+* rebased
+* resolved conflicts
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-08-16 07:16:44.000000000
+
+Patch Set 6: Build Failed
+
+Build Failed 
+ 
+https://hudson.eclipse.org/sandbox/job/egit.gerrit/1441/ : FAILURE
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2011-08-16 23:42:29.000000000
+
+Patch Set 6: I would prefer that you didn't submit this
+
+I tried to synchronize current egit master against v0.10.1 in workspace model using this change and it returned an empty result which looks wrong. 
+
+When trying the same using http://egit.eclipse.org/r/#change,3891 the result looks reasonable.
+
+-------------------------------------
+author: Leslie Stephenson
+date: 2011-08-17 19:16:30.000000000
+
+Patch Set 6:
+
+Matthias, could you check console output after synchronizing egit?
+
+I constantly get this stack trace (even when I try to launch synchronization on current master):
+
+Caused by: java.lang.OutOfMemoryError: GC overhead limit exceeded
+	at org.eclipse.jgit.storage.file.PackFile.read(PackFile.java:611)
+	at org.eclipse.jgit.storage.file.WindowCache.load(WindowCache.java:314)
+	at org.eclipse.jgit.storage.file.WindowCache.getOrLoad(WindowCache.java:393)
+	at org.eclipse.jgit.storage.file.WindowCache.get(WindowCache.java:204)
+	at org.eclipse.jgit.storage.file.WindowCursor.pin(WindowCursor.java:334)
+	at org.eclipse.jgit.storage.file.WindowCursor.copy(WindowCursor.java:203)
+	at org.eclipse.jgit.storage.file.PackFile.readFully(PackFile.java:524)
+	at org.eclipse.jgit.storage.file.PackFile.load(PackFile.java:679)
+	at org.eclipse.jgit.storage.file.PackFile.get(PackFile.java:227)
+	at org.eclipse.jgit.storage.file.ObjectDirectory.openObject1(ObjectDirectory.java:439)
+	at org.eclipse.jgit.storage.file.FileObjectDatabase.openObjectImpl1(FileObjectDatabase.java:172)
+	at org.eclipse.jgit.storage.file.FileObjectDatabase.openObject(FileObjectDatabase.java:157)
+	at org.eclipse.jgit.storage.file.WindowCursor.open(WindowCursor.java:122)
+	at org.eclipse.jgit.revwalk.RevWalk.getCachedBytes(RevWalk.java:855)
+	at org.eclipse.jgit.revwalk.RevCommit.parseHeaders(RevCommit.java:136)
+	at org.eclipse.jgit.revwalk.MergeBaseGenerator.next(MergeBaseGenerator.java:148)
+	at org.eclipse.jgit.revwalk.StartGenerator.next(StartGenerator.java:102)
+	at org.eclipse.jgit.revwalk.RevWalk.next(RevWalk.java:420)
+	at org.eclipse.egit.ui.internal.synchronize.model.GitModelCommit.calculateAncestor(GitModelCommit.java:169)
+	at org.eclipse.egit.ui.internal.synchronize.model.GitModelCommit.<init>(GitModelCommit.java:56)
+	at org.eclipse.egit.ui.internal.synchronize.model.GitModelRepository.getListOfCommit(GitModelRepository.java:206)
+	at org.eclipse.egit.ui.internal.synchronize.model.GitModelRepository.getChildren(GitModelRepository.java:76)
+	at org.eclipse.egit.ui.internal.synchronize.model.GitModelRoot.getChildren(GitModelRoot.java:50)
+	at org.eclipse.egit.ui.internal.synchronize.mapping.GitModelWorkbenchAdapter.getChildren(GitModelWorkbenchAdapter.java:29)
+	at org.eclipse.ui.model.BaseWorkbenchContentProvider.getChildren(BaseWorkbenchContentProvider.java:64)
+	at org.eclipse.ui.model.BaseWorkbenchContentProvider.getElements(BaseWorkbenchContentProvider.java:73)
+	at org.eclipse.team.ui.mapping.SynchronizationContentProvider.getDelegateChildren(SynchronizationContentProvider.java:176)
+	at org.eclipse.team.ui.mapping.SynchronizationContentProvider.internalGetChildren(SynchronizationContentProvider.java:121)
+	at org.eclipse.team.ui.mapping.SynchronizationContentProvider.getElements(SynchronizationContentProvider.java:56)
+	at org.eclipse.ui.internal.navigator.extensions.SafeDelegateTreeContentProvider.getElements(SafeDelegateTreeContentProvider.java:101)
+	at org.eclipse.ui.internal.navigator.NavigatorContentServiceContentProvider$1.run(NavigatorContentServiceContentProvider.java:149)
+	at org.eclipse.core.runtime.SafeRunner.run(SafeRunner.java:42)
+
+
+It seams that something change in break calculating common ancestor in egit ... I'll investigate on this
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2011-08-17 22:27:51.000000000
+
+Patch Set 6:
+
+when synchronizing egit master against v0.10.1 I get empty result, no errors in error log and console
+
+when synchronizing linux kernel I immediately hit
+
+eclipse.buildId=I20110603-0909
+java.version=1.6.0_26
+java.vendor=Apple Inc.
+BootLoader constants: OS=macosx, ARCH=x86_64, WS=cocoa, NL=en_US
+Framework arguments:  -product org.eclipse.sdk.ide
+Command-line arguments:  -product org.eclipse.sdk.ide -data /Users/d029788/Documents/workspace/egit/../runtime-EGit(Indigo) -dev file:/Users/d029788/Documents/workspace/egit/.metadata/.plugins/org.eclipse.pde.core/EGit/dev.properties -os macosx -ws cocoa -arch x86_64 -consoleLog
+
+Error
+Thu Aug 18 00:25:48 CEST 2011
+Unhandled event loop exception
+
+java.lang.IllegalArgumentException: Empty path not permitted.
+	at org.eclipse.jgit.treewalk.filter.PathFilter.create(PathFilter.java:80)
+	at org.eclipse.jgit.treewalk.filter.PathFilterGroup.createFromStrings(PathFilterGroup.java:90)
+	at org.eclipse.egit.core.synchronize.dto.GitSynchronizeData.setIncludedPaths(GitSynchronizeData.java:241)
+	at org.eclipse.egit.ui.internal.synchronize.GitSynchronizeWizard.performFinish(GitSynchronizeWizard.java:74)
+	at org.eclipse.jface.wizard.WizardDialog.finishPressed(WizardDialog.java:827)
+	at org.eclipse.jface.wizard.WizardDialog.buttonPressed(WizardDialog.java:432)
+	at org.eclipse.jface.dialogs.Dialog$2.widgetSelected(Dialog.java:624)
+	at org.eclipse.swt.widgets.TypedListener.handleEvent(TypedListener.java:240)
+	at org.eclipse.swt.widgets.EventTable.sendEvent(EventTable.java:84)
+	at org.eclipse.swt.widgets.Display.sendEvent(Display.java:4125)
+	at org.eclipse.swt.widgets.Widget.sendEvent(Widget.java:1457)
+	at org.eclipse.swt.widgets.Widget.sendEvent(Widget.java:1480)
+	at org.eclipse.swt.widgets.Widget.sendEvent(Widget.java:1465)
+	at org.eclipse.swt.widgets.Widget.notifyListeners(Widget.java:1270)
+	at org.eclipse.swt.widgets.Display.runDeferredEvents(Display.java:3971)
+	at org.eclipse.swt.widgets.Display.readAndDispatch(Display.java:3610)
+	at org.eclipse.jface.window.Window.runEventLoop(Window.java:825)
+	at org.eclipse.jface.window.Window.open(Window.java:801)
+	at org.eclipse.egit.ui.internal.actions.SynchronizeWithMenu$2.widgetSelected(SynchronizeWithMenu.java:180)
+	at org.eclipse.swt.widgets.TypedListener.handleEvent(TypedListener.java:240)
+	at org.eclipse.swt.widgets.EventTable.sendEvent(EventTable.java:84)
+	at org.eclipse.swt.widgets.Display.sendEvent(Display.java:4125)
+	at org.eclipse.swt.widgets.Widget.sendEvent(Widget.java:1457)
+	at org.eclipse.swt.widgets.Widget.sendEvent(Widget.java:1480)
+	at org.eclipse.swt.widgets.Widget.sendEvent(Widget.java:1465)
+	at org.eclipse.swt.widgets.Widget.notifyListeners(Widget.java:1270)
+	at org.eclipse.swt.widgets.Display.runDeferredEvents(Display.java:3971)
+	at org.eclipse.swt.widgets.Display.readAndDispatch(Display.java:3610)
+	at org.eclipse.ui.internal.Workbench.runEventLoop(Workbench.java:2696)
+...
+
+-------------------------------------
+author: Leslie Stephenson
+date: 2011-08-17 22:34:27.000000000
+
+Patch Set 6:
+
+strange I always hit OOME :/
+
+second issue you mention is fixed by change I8d69281f6538bb1336ce16c235359879c37cf2d2
+
+-------------------------------------
+author: Leslie Stephenson
+date: 2011-08-17 22:50:14.000000000
+
+Patch Set 6:
+
+After removing all class files from egit and jgit projects OOME seams to disappear.
+
+-------------------------------------

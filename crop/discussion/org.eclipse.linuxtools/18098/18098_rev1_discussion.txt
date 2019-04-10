@@ -1,0 +1,132 @@
+DESCRIPTION
+
+TMF: Add base class for state system analysis
+
+Change-Id: Iab6424be1a469c541d3e9b199d7377c8a4e70299
+Signed-off-by: Aryana Jones xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2013-11-05 19:21:47.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/3833/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-05 19:52:54.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/3833/ : SUCCESS
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-11-06 19:08:30.000000000
+
+Patch Set 1: Code-Review-1
+
+(8 comments)
+
+Line:44, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/statesystem/StateSystemAnalysisModuleTest.java -> For symmetry's sake, it'd be better to load those (the .getTrace()) in xxx@xxx.xxx method.
+
+Line:25, lttng/org.eclipse.linuxtools.tmf.core.tests/stubs/org/eclipse/linuxtools/tmf/tests/stubs/analysis/TestStateSystemProvider.java -> Descruption
+
+Line:32, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/TmfStateSystemAnalysisModule.java -> initialize to null
+
+Line:39, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/TmfStateSystemAnalysisModule.java -> is this meant to create a new instance of a state provider every time it's called (like it does in the test module)?
+
+If so maybe it should be called createStateProvider() or getNew...() or something of the like. Just "get" implies you simply get access to an existing instance.
+
+Line:46, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/TmfStateSystemAnalysisModule.java -> The usage of a file (or files) for the state history is really dependant on the backend being used. For example an in-memory backend doesn't need a file at all.
+
+This class could be split in several sub-classes, one for each backend type, but then it's redundant with the separate methods we have in TmfStateSystemFactory. Another option could be to have an abstract method in here that would specify which backend type to use, using an enum or similar. What do you prefer?
+
+Line:58, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/TmfStateSystemAnalysisModule.java -> What if executeAnalysis() is called twice (can that even happen?), should we check if fStateSystem is null, and if it's not, ignore subsequent calls?
+
+just wondering, I'm not super familiar with the analysis framework yet ;)
+
+Line:68, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/TmfStateSystemAnalysisModule.java -> good point, see below
+
+Line:82, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/TmfStateSystemAnalysisModule.java -> meh, I don't think this will work :P
+
+There is already a kind of "cancel" method, in HistoryBuilder.close() (which is called from the signal handler for "trace closed"). That method could be exposed publicly to allow for cancelling on-demand. Using a progress monitor would also be a big and welcome improvement.
+
+It might not be trivial to do however, since HistoryBuilder is not public, and the state system does not have access to its builder afaik...
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-11-06 19:09:03.000000000
+
+Patch Set 1:
+
+Looks quite interesting! Let's start with some high-level comments
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2013-11-06 20:32:25.000000000
+
+Patch Set 1:
+
+(3 comments)
+
+Line:46, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/TmfStateSystemAnalysisModule.java -> I don't like the several sub-classes.  It would be hell for XML state providers or else it would need sub-classes for xml as well...
+
+I think it's preferable to have an abstract method to return the backend with enum, remove the getSsFileName() altogether and use instead the module's ID as filename.  What do you think?
+
+Line:58, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/TmfStateSystemAnalysisModule.java -> Don't worry, the parent takes care of this.
+This method exists just so the concrete classes don't need to worry about execution status and stuff.
+If this is called, it means "Go to work you module you!"
+
+Line:82, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/TmfStateSystemAnalysisModule.java -> You mean this call will not cancel the build?
+
+The analysis framework provides a job and progress monitor for analysis to use and pass down the line of responsibility.  I'm not familiar enough with the state system building classes to know the best way to add the progress monitor, but I did something similar for the critical path and graph analysis.  I could push it as draft as an example.
+
+I could also look at it in a later patch (to keep the "small patches" rule ;-)
+
+-------------------------------------
+author: Ayanna Reed
+date: 2013-11-06 21:42:38.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:46, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/TmfStateSystemAnalysisModule.java -> I'm agree, the backend must manage the file storage. The XML state providers don't need to choose where his file is stored.
+In our case we can assume that the ID is unique, so we can use it for the file name in the executeAnalysis function.
+
+To choose the method in TmfStateSystemFactory, it's dependant if you want that XML state provider support several type of backend, I thinks it's better to have a abstract method with a enum,
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-11-06 22:24:22.000000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:46, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/TmfStateSystemAnalysisModule.java -> enum for the backend type sounds like a good plan. Makes sense also to derive the filename from the ID. The full ID's can be long though, do we want the full ID, or maybe just the last part?
+
+Line:82, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/TmfStateSystemAnalysisModule.java -> Yeah I don't think the .dispose() here will work. Well it will probably dispose *something*, but the state provider will still be running and it will throw its goo everywhere...
+
+To cancel a state system build you have to dispose the state provider first (which will send a special event to notify the state system it's being closed, which will do the same thing with the backend and wait until it returns). This is what HistoryBuilder.close() basically does, in addition to deleting the files if needed.
+
+I can look into exposing that close() method up the stack somewhere. The easiest way might be to add a cancel() method to ITmfStateSystem(Builder) and a reference to its builder while it's being built. Will investigate.
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2013-11-07 00:49:26.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:46, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/TmfStateSystemAnalysisModule.java -> Actually, I think I'll just provide a default implementation with the full ID as filename (technically, the ID can be any length and with any characters...), but child classes can still provide their own filename, so old state systems are not left orphaned and the transition is transparent.  
+And it may be more user-friendly (the ID is technically never shown to the user, but the supplementary files are)
+
+-------------------------------------

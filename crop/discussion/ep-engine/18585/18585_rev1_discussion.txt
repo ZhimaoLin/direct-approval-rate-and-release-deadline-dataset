@@ -1,0 +1,76 @@
+DESCRIPTION
+
+MB-5927: Skip logical hashtable deletion for temp items
+
+Temp items don't have values so we don't need to logically
+delete them.
+
+Change-Id: I8db3aaa119fda7d0302074e43db6eb5b54022d21
+
+
+COMMENTS
+
+author: Abby Duran
+date: 2012-07-19 04:12:12.393000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:562, stored-value.hh -> I think the temp item has the null value in its Blob pointer, which means that isDleted() returns true for the temp item. Is this correct?
+
+-------------------------------------
+author: Kenny Maynard
+date: 2012-07-19 04:15:51.333000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:562, stored-value.hh -> Through testing this appeared to not be the case. In item.hh when you call the constructor with NULL as the value and 0 as the value size it creates a Blob with NULL as it's value and size 0. This seemed to be what was causing the issue. Junyi also did a simple verification on this change and confirmed that this fix worked. I am passing it to Ketaki for full testing before merging.
+
+-------------------------------------
+author: Abby Duran
+date: 2012-07-19 04:26:35.464000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:562, stored-value.hh -> Well, if you look at unlocked_addTempDeletedItem(), we reset the Blob value instance for the temp item. The temp item creation and deletion implementation caused unnecessary confusion now.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2012-07-19 04:41:34.390000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(1 inline comment)
+
+
+
+Line:562, stored-value.hh -> Your correct, I missed that. Let me try to look a little bit deeper.
+
+-------------------------------------
+author: Abby Duran
+date: 2012-07-19 05:01:37.511000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+Please hold this change. I will completely refactor the temp item implementation and stats tomorrow.
+
+-------------------------------------
+author: Macie Morton
+date: 2012-07-19 05:03:40.712000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:562, stored-value.hh -> If you look at unlocked_softDelete(),  when we delete with meta, we will mark the item state_deleted_key, which means isTempItem() will return true for this item, but isDeleted() will return false since we have not reset the value at this time. And when in del(), isDeleted() will return false and cause CAS bumped by 1. 
+
+Looks to me it really depending on definition of "temp item".  Current code in unlocked_softDelete() will "convert" an item to "temp item" by marking the state_deleted_key flag. The "temp item" may not have to be created by addTemp*Item() functions
+
+We need to refactor these temp item code and make a clear distinction between temp item and valid item, and count them correctly.
+
+-------------------------------------

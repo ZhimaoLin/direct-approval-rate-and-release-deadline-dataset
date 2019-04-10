@@ -1,0 +1,90 @@
+DESCRIPTION
+
+Don't use java.nio channel for file size determination
+
+Java NIO has some problems (like files closing unexpectedly because the
+thread was interrupted). To avoid those problems, don't use a NIO
+channel to determine the size of a file, but rather ask the File itself.
+
+We have to be prepared to handle wrong/outdated information in this case
+too, as the inode of the File may change between opening and determining
+file size.
+
+Change-Id: Ic7aa6c3337480879efcce4a3058b548cd0e2cef0
+
+
+COMMENTS
+
+author: Bryanna Douglas
+date: 2012-03-19 09:36:32.000000000
+
+Uploaded patch set 10.
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-03-19 09:45:42.000000000
+
+Patch Set 10:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1616/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-03-19 09:49:31.000000000
+
+Patch Set 10: Verified
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1616/ : SUCCESS
+
+-------------------------------------
+author: Juliet Cantu
+date: 2012-03-31 17:09:44.000000000
+
+Patch Set 10:
+
+Aren't we going overboard with paranoia here?
+We don't do that anywhere else.
+
+What about if the content changes while we area reading? Read twice?
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2012-04-01 22:20:49.000000000
+
+Patch Set 10:
+
+Content can't change during reading. Or at least it shouldn't. The correct way to modify the config file is to write a new copy of it to config.lock, then atomically rename config.lock to config. Anyone who edits the file in place is just asking to corrupt the file, and/or confuse a concurrent reader.
+
+But since this code is opening the file and then later stats it to find the length to estimate the read, and these are both resolving the path down to the inode separately it is possible for the file to change in length if someone renames an updated version in between the two calls.
+
+This is low level enough, and used often enough by JGit, that I want it to robustly handle the file size changing when the lock file rename protocol was followed by a concurrent writer. Otherwise servers will fall over periodically when a concurrent writer races against a reader, and the reader will eventually get caught between the two path->inode translations.
+
+Go ask Sun why the felt it wasn't necessary to be able to determine the length of an open file from a FileInputStream using the fstat() system call. Blame them for needing to make us code defensively against this stupidity.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2012-04-01 22:24:52.000000000
+
+Patch Set 10: I would prefer that you didn't submit this
+
+(1 inline comment)
+
+
+
+Line:158, org.eclipse.jgit/src/org/eclipse/jgit/util/IO.java -> This should be capped at max, so:
+
+  byte[] nb = new byte[Math.min(buf.length * 2, max)];
+
+-------------------------------------
+author: Bryanna Douglas
+date: 2012-04-02 05:29:11.000000000
+
+Patch Set 10: (1 inline comment)
+
+
+
+Line:158, org.eclipse.jgit/src/org/eclipse/jgit/util/IO.java -> Done
+
+-------------------------------------

@@ -1,0 +1,219 @@
+DESCRIPTION
+
+Blame correctly in the presence of conflicting merges
+
+Problem:
+The BlameGenerator used the RevFlag SEEN to mark commits it had already
+looked at (but not necessarily processed), to prevent processing a
+commit multiple times. If a commit is a conflicting merge that
+contains lines of the merge base, that have been deleted in its first
+parent, either these lines or the lines untouched since the merge base
+would not be blamed properly.
+
+This happens e.g. if a file is modified on a main branch in an
+earlier commit M and on a side branch in a later commit S. For this
+example, M deletes some lines relative to the common base commit B, and
+S modifies a subset of these lines, leaving some other of these lines
+untouched,
+
+Then side is merged into main, creating a conflict for these lines. The
+merge resolution shall carry over some unmodified lines from B that
+would otherwise be deleted by M. The route to blame these lines is via S
+to B. They can't be blamed via M, as they don't exist there anymore.
+
+Blaming the merged file first blames via S, because that is the later
+commit. Doing so, it also looks at B to blame the unmodified lines of B
+carried over by S into the merge result. In the course of this, B is
+submitted for later processing and marked SEEN.
+
+Later M is blamed. It notices that its parent commit B has been SEEN and
+aborts processing for M. B is blamed after that, but only for the lines
+that survived via S.
+
+As a result, only the lines contributed by S or by B via S are
+blamed. All the other lines that were unchanges by both M and S, which
+should have been blamed to B via M, are not blamed.
+
+Solution:
+Don't abort processing when encountering a SEEN commit. Rather add the
+new region list of lines to be blamed to those of the already SEEN and
+enqueued commit's region list. This way when the B commit of the
+above example is processed, it will blame both the lines of M and S,
+yielding a complete blame result.
+
+BlameGenerator.push(Candidate) now also looks at the ancestor
+relationship if candidates have the same commit time. This ensures that
+children are pop()-ed before their parents.
+
+Bug: 374382
+Change-Id: I369059597608022948009ea7708cc8190f05a8d3
+Signed-off-by: Kaden Henson xxx@xxx.xxx
+
+COMMENTS
+
+author: Kaden Henson
+date: 2014-04-13 17:35:19.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-04-13 17:35:24.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/egit/job/jgit.gerrit/4960/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-04-13 17:46:20.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/jgit.gerrit/4960/ : SUCCESS
+
+-------------------------------------
+author: Santos Moore
+date: 2014-04-13 19:37:02.000000000
+
+Patch Set 1:
+
+Thanks for fixing this! I'll let Shawn comment on the code changes, but I can confirm that it fixes the issue listed in this bug:
+https://code.google.com/p/gitiles/issues/detail?id=5
+
+I looked at the difference between C git and JGit blame for all of ReceiveCommits.java after applying this patch. There are still a few places where they differ, but almost all of them are on trivial lines (e.g. only whitespace and a curly brace), so I'm guessing those are instances where there is not just one correct answer.
+
+You can examine the output yourself with:
+$ vimdiff <(git blame 61dcc102242e00d3b0061405d5c909564ebbd819 gerrit-server/src/main/java/com/google/gerrit/server/git/ReceiveCommits.java) <(~/c/jgit/org.eclipse.jgit.pgm/target/jgit blame 61dcc102242e00d3b0061405d5c909564ebbd819 gerrit-server/src/main/java/com/google/gerrit/server/git/ReceiveCommits.java)
+
+(While doing this I also noticed some more inconsistencies between C git and JGit blame that are beyond the scope of this change but I though I'd write down:
+-C git extends the SHA-1 abbreviations to 8 characters in the full-file case, perhaps because there was actually ambiguity among the set of SHA-1s that showed up in the range?
+-Ranges like -L 25,35 appear to be inclusive of the high endpoint in JGit but exclusive in C git.)
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2014-04-17 06:56:36.000000000
+
+Patch Set 1: Code-Review-1
+
+(15 comments)
+
+Its been years since I last read this code, but I agree with the basic concept of this CL. The old code was flat out wrong to skip commits already marked SEEN. They could be reached by more than one path, and in blame model that second path is carrying lines that need to be processed.
+
+The approach here is roughly correct. If the candidate is still in the queue, merge in the regions from the 2nd (or nth) path for future processing. If it was already popped, put it back in and reprocess that part of the DAG until you find an ancestor candidate that is still sitting in the queue and can have the region(s) merged into it.
+
+I mostly had style nits, and some questions about why the time equality topo sort is necessary.
+
+Line:2, org.eclipse.jgit/src/org/eclipse/jgit/blame/Region.java -> See my note in Candidate.java.
+
+Line:111, org.eclipse.jgit/src/org/eclipse/jgit/blame/Region.java -> style nit: i think we prefer <p> on a line by itself:
+
+ * resultStart order in the result.
+ * <p>
+ * Both input region lists ...
+
+See the outer class javadoc for an example. If we do deviate from style guidelines we still try to conform to existing uses within a single source file.
+
+Line:129, org.eclipse.jgit/src/org/eclipse/jgit/blame/Region.java -> Is a deepCopy even necessary? See my comment in BlameGenerator. It looks like the two Region instances are discarded by the caller so a deep copy is unnecessary.
+
+Line:134, org.eclipse.jgit/src/org/eclipse/jgit/blame/Region.java -> This may be shorter:
+
+ a = a.deepCopy();
+ b = b.deepCopy();
+
+ if (a.resultStart > b.resultStart) {
+   Region o = a;
+   a = b;
+   b = o;
+ }
+
+We are OK with overwriting parameters entering a method, especially when the parameter isn't ever used again. Here a and b are dead once the function starts. Its less confusing to just overwrite them and reuse the names.
+
+Line:2, org.eclipse.jgit/src/org/eclipse/jgit/blame/BlameGenerator.java -> See my comment in Candidate.java.
+
+Line:558, org.eclipse.jgit/src/org/eclipse/jgit/blame/BlameGenerator.java -> typo
+
+Line:563, org.eclipse.jgit/src/org/eclipse/jgit/blame/BlameGenerator.java -> toInsert is discarded at this point, and regionList replaces itself. Is it really necessary to deepCopy these in the merge method?
+
+Line:577, org.eclipse.jgit/src/org/eclipse/jgit/blame/BlameGenerator.java -> Is this tie break necessary?
+
+I guess my rationale here to process the newly discovered commit first is it is directly reachable from the previously most recent timestamp. Its probably the most "next thing" in time that anything else in the repository, except clock skew.
+
+Clock skew happens more than just on ties in commit time. This doesn't do anything to solve clock skew except in a specific corner case where multiple commits happen within the same second and the graph was somehow ambiguous due to a merge having two paths to two children with slightly different times while one child had the same time as the ancestor. That is already a WTF graph but sounds contrived from a unit test.
+
+Real world has even more WTF graphs where a descendant is hours older than its parent. When side branches are present that parent is very likely to be processed first. I think that is the sort of case you are trying to catch and fix up here, but its so uncommon based on time equality alone that it isn't going to be right often enough.
+
+IIRC git-core and JGit both try to handle this sort of clock skew by having a "slop window" where commits within a sliding window of 10 commits are popped and buffered from the priority queue. If an ordering violation is identified (time goes the wrong way) within the slop window of 10 commits, its fixable by reinserting and repopping those 10 commits, as the caller has not yet seen them.
+
+I don't think the slop window trick is necessary for blame. The caller is getting an incremental stream from us of regions of lines that were caused by a commit. We might have to reconsider a parent twice from two descendants, but that is already necessary to correctly compute the blame from the descendants.
+
+Line:599, org.eclipse.jgit/src/org/eclipse/jgit/blame/BlameGenerator.java -> This is a pretty slow function. It has to go back to the merge base of parent and child. BlameGenerator is already slow enough. Breaking ties by checking merge base isn't going to win us any performance awards. :-)
+
+Correctness is more important than speed. But I wonder if we can do better.
+
+In the graph C->P (C has P as parent), you are relying on C.time > P.time to get the desired ordering in the queue. This is not necessarily true. Malformed segments of some real world graphs can have the time inverted.
+
+I have the suspicion we can just restate a commit a second time if we find more to blame onto it through a second path in the graph. IIRC this is exactly how the incremental topo sort and incremental blame work in git-core. A higher level caller might need to combine neighboring Region instances that were reported at different times but for the same commit.
+
+Line:681, org.eclipse.jgit/src/org/eclipse/jgit/blame/BlameGenerator.java -> Now that you simplified the loop, make it even shorter:
+
+ for (int pIdx = 0; p Idx < pCnt; pIdx++)
+   revPool.parseHeaders(n.getParent(pIdx));
+
+Line:21, /COMMIT_MSG -> I think I understand this, but an ASCII diagram would make this even easier to follow.
+
+Line:21, /COMMIT_MSG -> Ending with comma is weird.
+
+Line:28, /COMMIT_MSG -> "most recent" might be a more explicit way to state S has a newer time stamp and is processed first.
+
+Line:2, org.eclipse.jgit/src/org/eclipse/jgit/blame/Candidate.java -> Given that Google didn't contribute this change I think its wrong to change the date on our copyright notice line.
+
+Drop this and either leave it alone (its fine as-is, copyright is valid from 2011 until 70 years after I or Google dies) or insert your own line.
+
+Line:136, org.eclipse.jgit/src/org/eclipse/jgit/blame/Candidate.java -> style nit: use the early return above to avoid the need for else {} here for the two statements in the else case.
+
+-------------------------------------
+author: Kaden Henson
+date: 2014-04-17 19:51:25.000000000
+
+Patch Set 1:
+
+(15 comments)
+
+Shawn, thanks for taking the time for this very helpful review!
+
+Line:2, org.eclipse.jgit/src/org/eclipse/jgit/blame/Region.java -> Done
+
+Line:111, org.eclipse.jgit/src/org/eclipse/jgit/blame/Region.java -> Done
+
+Line:129, org.eclipse.jgit/src/org/eclipse/jgit/blame/Region.java -> Done
+
+Line:134, org.eclipse.jgit/src/org/eclipse/jgit/blame/Region.java -> Done
+
+Line:2, org.eclipse.jgit/src/org/eclipse/jgit/blame/BlameGenerator.java -> Done
+
+Line:558, org.eclipse.jgit/src/org/eclipse/jgit/blame/BlameGenerator.java -> Done
+
+Line:563, org.eclipse.jgit/src/org/eclipse/jgit/blame/BlameGenerator.java -> Done. I totally agree with you on p.regionList, but the regionList of toInsert is harder to keep track of. I added JavaDoc to push() so callers also give up on toInsert and verified that all existing callers do.
+
+Line:577, org.eclipse.jgit/src/org/eclipse/jgit/blame/BlameGenerator.java -> Done. Indeed this whole ancestor-ordering-on-tie is "contrived from a unit test".
+
+As you suggested, I now add a Candidate if the previous matching one is already processed. This way we combine Candidates in the common case and it still works for repositories where ancestor relationship and commit time sometimes don't align.
+
+Line:599, org.eclipse.jgit/src/org/eclipse/jgit/blame/BlameGenerator.java -> Done
+
+Line:681, org.eclipse.jgit/src/org/eclipse/jgit/blame/BlameGenerator.java -> Done. Moved it down to the next loop, making this shorter yet :-)
+
+Line:21, /COMMIT_MSG -> Done
+
+Line:21, /COMMIT_MSG -> Done
+
+Line:28, /COMMIT_MSG -> Done
+
+Line:2, org.eclipse.jgit/src/org/eclipse/jgit/blame/Candidate.java -> Done
+
+Line:136, org.eclipse.jgit/src/org/eclipse/jgit/blame/Candidate.java -> Done
+
+-------------------------------------

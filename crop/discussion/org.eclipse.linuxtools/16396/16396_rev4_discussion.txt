@@ -1,0 +1,158 @@
+DESCRIPTION
+
+tmf: Bug 416660: -1 long state value is not long
+
+- Do not return nullValue when creating a new int or long with a value
+of -1. This ensures that these values can be used and be differentiated
+from a null value.
+
+- Change occurences of -1 null value check to use isNull() method.
+
+Change-Id: I7c9e80963736e701a0b30f5f3009a0c7084527bb
+Signed-off-by: Luciana Barry xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Luciana Barry
+date: 2013-11-15 18:52:37.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-15 20:58:58.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/3963/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-15 21:39:58.000000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/3963/ : SUCCESS
+
+-------------------------------------
+author: Jordon Obrien
+date: 2013-11-28 16:34:00.000000000
+
+Patch Set 4:
+
+(3 comments)
+
+ETA for this patch?
+Why it is pending?
+Is there side effects I missed?
+
+Line:338, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/StateSystem.java -> This test come from the fact unbox(null) ==> -1
+Which is not a common sense.
+In most language NULL cast to int give 0.
+
+Line:136, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statevalue/TmfStateValue.java -> Btw, this test was always false.
+
+Line:112, lttng/org.eclipse.linuxtools.lttng2.kernel.core/src/org/eclipse/linuxtools/internal/lttng2/kernel/core/stateprovider/LttngKernelStateProvider.java -> This is actually not needed. unboxInt returns -1 for null.
+
+But, I don't like this assumption.
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-11-28 18:24:23.000000000
+
+Patch Set 4: Code-Review-1
+
+(5 comments)
+
+I'll rebase this patch, it will probably conflict by now.
+
+Line:338, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/StateSystem.java -> That's another good point of discussion we went through ;)
+
+One problem for example is the Control Flow View (and the matching state provider) is -1/null and 0 for different things:
+* 0 : The particular CPU is idle (PID 0 is "running" on it)
+* -1/null : no information at this point in time
+
+I wouldn't be against changing nullValue from -1 to 0, it does indeed make sense. But at least the LttngKernelProvider and the matching views will have to be updated.
+
+Line:240, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/backends/historytree/HTInterval.java -> In fact we don't need to write the "-1" for null values, the byte for the type is already set. This field could be skipped over.
+
+It's not in the scope of this patch though. I have an ongoing patch cleaning up the state system and history tree.
+
+Line:136, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statevalue/TmfStateValue.java -> Correct, comparing two Double.NaN with == always return false. I don't really understand why, but that's how it's documented...  doing Double.compare(NaN, NaN) should give true though.
+
+Line:62, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statevalue/IntegerStateValue.java -> make sure you rebase, I think this part will conflict
+
+Line:112, lttng/org.eclipse.linuxtools.lttng2.kernel.core/src/org/eclipse/linuxtools/internal/lttng2/kernel/core/stateprovider/LttngKernelStateProvider.java -> It's really up to the state provider (and then the corresponding views) to use whatever values they want. They could use explicit "-1" int values, or "-42" or whatever to indicate specific information.
+
+The guarantee is that unboxInt() will work for null values too. So it doesn't really matter what is chosen here, as long as it's consistent with how the view queries it.
+
+I agree this change here is not needed, we'll get -1 because it's a null value, not because we want the particular "-1" number.
+
+-------------------------------------
+author: Luciana Barry
+date: 2013-11-28 18:53:28.000000000
+
+Patch Set 4:
+
+(2 comments)
+
+Line:338, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/StateSystem.java -> I tried to cover all cases where nullValue is assumed to be -1. Did I miss any? My intention would be that it should be fixed in this patch so that the int value does not matter.
+
+Line:112, lttng/org.eclipse.linuxtools.lttng2.kernel.core/src/org/eclipse/linuxtools/internal/lttng2/kernel/core/stateprovider/LttngKernelStateProvider.java -> I left this change here so that it will work no matter what int value is used for null. It was necessary in the earlier version of the patch where I had changed null to return 0 / 0L / 0.0 / "".
+
+-------------------------------------
+author: Jordon Obrien
+date: 2013-11-28 18:58:20.000000000
+
+Patch Set 4:
+
+I agree on the fact that the code should not rely on the returned value of casting a null to a int. In fact, I'm still not sure this is a good idea.
+
+"null" mean what? no value?
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-11-28 19:28:03.000000000
+
+Patch Set 4:
+
+(2 comments)
+
+Line:338, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/StateSystem.java -> The ones that come to mind are increment() and stacks. But I think you got it covered. We have thorough tests for stack attributes, and tests for statistics (which use increment). If those pass we should be good. *crosses fingers*
+
+Line:112, lttng/org.eclipse.linuxtools.lttng2.kernel.core/src/org/eclipse/linuxtools/internal/lttng2/kernel/core/stateprovider/LttngKernelStateProvider.java -> Ah ok. Yeah that's what I meant, the state provider and the view should be consistent as to what they look for: if the provider writes -1, the view should expect -1.  If the provider uses .nullValue(), the view should check .isNull() That way it will work no matter what the nullValue() actually is underneath.
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-11-28 19:47:34.000000000
+
+Patch Set 4: Code-Review+1 IP-Clean+1
+
+Actually nevermind, it still rebases trivially.
+
+I couldn't manage to make it break, so it should be fine. If you guys want to take the dive, let's do it!
+
+-------------------------------------
+author: Luciana Barry
+date: 2013-11-28 21:23:57.000000000
+
+Patch Set 4: Code-Review+2
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2013-11-28 21:23:58.000000000
+
+The change could not be merged due to a path conflict.
+
+Please rebase the change locally and upload the rebased commit for review.
+
+-------------------------------------
+author: Jordon Obrien
+date: 2013-11-28 21:27:35.000000000
+
+Patch Set 4: Code-Review+1
+
+-------------------------------------

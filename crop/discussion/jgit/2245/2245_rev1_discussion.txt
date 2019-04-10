@@ -1,0 +1,100 @@
+DESCRIPTION
+
+Cache index (DirCache object) in repository
+
+With this improvement the DirCache is only created once, i.e. when
+readDirCache() is called for the first time. If called subsequently
+it's read() method is invoked that checks the timestamp of the index
+file and thus ensures consistency. This reduces the time EGit requires
+to decorate resources - EGit already caches the repository object, but
+due to the implementation of readDirCache() the DirCache was created
+multiple times. See bug 325393 for performance results.
+
+Bug: 325393
+Change-Id: I133cd170f9f91aa6e3905cdd8dee87b719159a24
+Signed-off-by: Reed Meza xxx@xxx.xxx
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2011-01-13 18:03:16.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(2 inline comments)
+
+Great idea, we just need to update the docs too.
+
+Line:926, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> We should update the Javadoc to make it clear that the returned DirCache instance is cached by Repository and is thus *not* thread-safe (because DirCache is not thread-safe).  Callers who need a unique copy of the DirCache to support concurrent access from different threads should be directed to the lower level invocation:
+
+  DirCache.read(repo.getIndexFile(), repo.getFS())
+
+to construct their own private copy of the structure.
+
+Line:936, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> Should we also use the cached DirCache when locking a DirCache for writing?
+
+-------------------------------------
+author: Juliet Cantu
+date: 2011-01-14 13:13:14.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+Are we sure callers don't except a new object to be created, thereby ensuring thread safety? With this multiple threads will get the same object and strange things will happen.
+
+I think caching this way need more work. It might be reasable to have method that returns a shareable unmutable dircache object and another that create mutable, non-shared dircache objects.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-01-14 15:45:58.000000000
+
+Patch Set 1:
+
+Interesting idea, doing a shared immutable DirCache.
+
+That might be difficult since the API exposes the DirCacheEntry, and you can edit a DirCacheEntry's fields via setter methods.  An immutable DirCache would have to expose immutable DirCacheEntry instances too.  :-(
+
+I think its just easier to break the API and declare that the "easy to get, easy to use DirCache on Repository is shared... and you are responsible for thread safety".  But changing semantics like that might make sense to actually break the API, so applications need to at least go to each call site and consider use of the shared one, or create a new one.
+
+But what do we call this new method?
+
+  DirCache readDirCache(DirCacheSharingType type);
+
+  enum DirCacheSharingType {
+   /** A shared instance is returned, and should not be modified. */
+    SHARED,
+
+    /** A new instance is allocated for the caller. */
+    PRIVATE
+  }
+
+  DirCache readDirCache() {
+    return readDirCache(DirCacheSharingType.PRIVATE);
+  }
+
+That might actually work.  Then applications that really want that shared copy can update their call sites to use the new SHARED constant.
+
+A PRIVATE DirCache can be created quickly by cloning the SHARED DirCache if the SHAREd one is up-to-date.  That would allow a PRIVATE one to still be constructed without doing a lot of disk IO and parsing, so even old applications would still get some benefit.
+
+-------------------------------------
+author: Marlie Beasley
+date: 2011-01-14 16:06:13.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+How can the shared instance be immutable? A client calls read on it and data is read from disk if memory data is outdated.
+
+I think the decoration scenario could be handled in the following way: GitLightweightDecorator cashes a DirCache instance as static member and ensures thread safety by using a private lock when using the cached DirCache instance.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2011-01-14 17:33:06.000000000
+
+Patch Set 1:
+
+Yeah, sure an immutable dircache must be deeply immutable. We can do that.
+
+Another is to copy on write, so those that are reading it can continue processing. It should also be possible to ask the dircache wether it is valid or not so potentially slow processes, like the decorator can figure out that it should abandon its work and restart. It is more complicated than that; sometimes an reader should modify the index (see my comments on patch 1 of I133cd170f9f91aa6e3905cdd8dee87b719159a24), however it may do so by suggesting to the next writer that a particular entry should be refreshed.  
+
+Go figure.
+
+-------------------------------------

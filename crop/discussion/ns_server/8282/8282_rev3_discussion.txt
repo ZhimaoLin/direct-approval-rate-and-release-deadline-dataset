@@ -1,0 +1,104 @@
+DESCRIPTION
+
+Reduce max_dbs_open to 200
+
+Requiring everything to be open all the time increases resource
+consumption (lots of memory).
+
+This helps us be more reasonable with resource utilization when we've
+got ten or twenty buckets on OS X where we can't have network FDs
+above 1024.
+
+Change-Id: Ie9af7d4ee960d4310e0e8d1c35d701e04f89ea32
+
+
+COMMENTS
+
+author: Noah Dean
+date: 2011-07-23 02:03:10.628000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brandon Owens
+date: 2011-07-23 15:51:54.895000000
+
+Patch Set 3: Fails
+
+Ok, trying it on the latest build with a stat fix and the behavior I see:
+
+•	Loading 1M items, drain rate is 0 until the load is done – no memory change on beam.smp (basically nothing happens)
+•	As soon as the load is done, disk drain rate increase to about 5K until about half of the items are drained
+•	During that time memory usage increased to ~500m 
+  PID USER      PR  NI  VIRT  RES  SHR S %CPU %MEM    TIME+  COMMAND                                                                                      
+27099 couchbas  18   0  915m 529m 4260 S 153.7  1.6  10:00.05 beam.smp                                                                                     
+27132 couchbas  15   0 1153m 869m 3120 S  0.3  2.7   1:42.36 memcached                                                                                     
+•	After that drain rate goes to 0 with burst of 1K exactly every 15 seconds
+•	Machine is 10.2.1.13
+
+-------------------------------------
+author: Brandon Owens
+date: 2011-07-23 16:03:59.849000000
+
+Patch Set 3: I would prefer that you didn't submit this
+
+We also need to remove this value from /opt/couchbase/etc/couchdb/local.d/mccouch.ini (which override this one)
+
+-------------------------------------
+author: Noah Dean
+date: 2011-07-23 18:55:07.289000000
+
+Patch Set 3:
+
+It's not clear what you are considering failure with this change.  Did it not reduce the memory usage?
+
+The mccouch.ini thing is a different bug.  It should never have been there unless you configured it through CAPI (and then it should still be in a capi_overrides.ini or something).
+
+-------------------------------------
+author: Brandon Owens
+date: 2011-07-23 19:00:27.497000000
+
+Patch Set 3:
+
+I tired both this and http://review.couchbase.org/#change,8281 together and didn't know which was responsible for this issue. I guess I can try 8281 separately and see how it affects memory.
+
+-------------------------------------
+author: Noah Dean
+date: 2011-07-23 19:32:53.495000000
+
+Patch Set 3:
+
+You need them both together right now, but they do vastly different things.  Did the memory swell up to previous values?  If so, that's a failure here.  If not, that's a success here.
+
+-------------------------------------
+author: Brandon Owens
+date: 2011-07-23 19:40:44.936000000
+
+Patch Set 3:
+
+Yes it did swell to 540m, but the write to disk stopped half way through, so I can't tell the end result.
+
+-------------------------------------
+author: Noah Dean
+date: 2011-07-23 23:07:32.106000000
+
+Patch Set 3:
+
+OK.  I'm pretty far along on my delayed_commits happy version.  I'll have it ready later tonight.  There's still just the one edge case where I fear really bad things will happen if I let it out in the wild.
+
+-------------------------------------
+author: Brandon Owens
+date: 2011-07-23 23:25:47.242000000
+
+Patch Set 3:
+
+ok,
+i don't want to merge before we verify it on an end-to-end system. can you email me beam files if that all that it takes?
+
+-------------------------------------
+author: Noah Dean
+date: 2011-09-20 17:28:08.336000000
+
+Patch Set 3: Abandoned
+
+-------------------------------------

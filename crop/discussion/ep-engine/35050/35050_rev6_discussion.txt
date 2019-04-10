@@ -1,0 +1,251 @@
+DESCRIPTION
+
+MB-10403 Improve UPR connection notification
+
+Use spinlocks instead of conn mutex to guard UPR notifications
+similar to the way TAP does. This will decrease lock contention
+since conn mutex is no longer needed here.
+
+We now need to manipulate vbconns structure for UPR too:
+add and remove connection for a stream based on vbid.
+
+Also Refactored ConnMap/TapConnMap/UprConnMap as needed.
+
+Change-Id: I86ac07d29f3575d334f3b7f27530dc6019adf293
+
+
+COMMENTS
+
+author: Miley Adams
+date: 2014-04-29 22:39:09.652000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Miley Adams
+date: 2014-04-29 22:40:17.886000000
+
+Patch Set 6: Verified+1
+
+Added missing upr-producer.cc.
+Passes 'make simple-test'
+
+-------------------------------------
+author: Abby Duran
+date: 2014-04-29 23:06:09.609000000
+
+Patch Set 6: Code-Review-1
+
+(1 comment)
+
+Line:139, src/upr-producer.cc -> Please look at my comment in your previous patch. As I mentioned, we don't need to use do-while loop here.
+
+-------------------------------------
+author: Miley Adams
+date: 2014-04-29 23:13:06.745000000
+
+Patch Set 6:
+
+(1 comment)
+
+Line:139, src/upr-producer.cc -> do-while is used extensively in couch base server (almost every single function is based on this style in couch store component). it has many benefits and is used in commonly. we can have a meeting discuss this too.
+
+let's focus on logic not styles.
+
+-------------------------------------
+author: Abby Duran
+date: 2014-04-29 23:25:07.899000000
+
+Patch Set 6: Code-Review-2
+
+(1 comment)
+
+Line:139, src/upr-producer.cc -> I'm not saying that do-while loop is bad in general, but do-while loop is not necessary in this function. I really don't understand why you think our comments are useless. I DON'T WANT TO merge this change without addressing this issue. Both logic and style are very important to me.
+
+-------------------------------------
+author: Miley Adams
+date: 2014-04-29 23:31:33.863000000
+
+Patch Set 6:
+
+(1 comment)
+
+Line:139, src/upr-producer.cc -> Why did u say I think your comments are useless?
+
+As a matter of fact, this is the only place I didn't change because I believe it's better. 
+
+Controlling the exit point of the function is very helpful when you add debugging or logging instrument if needed because you don't need to worry about adding it everywhere.
+
+-------------------------------------
+author: Abby Duran
+date: 2014-04-29 23:52:03.653000000
+
+Patch Set 6:
+
+(1 comment)
+
+Line:139, src/upr-producer.cc -> You didn't reply my comment on line 60 "This method is invoked on the producer side when it receives a stream request from the consumer for a given vbucket. We should not allocate any resources until it passes all the conditions below."
+
+Did you see / comment / address the above comment?
+
+This is one of the reasons why we don't need to use do-while loop in this function. You can simply put "return rv" for each check condition if rv is not equal to ENGINE_SUCCESS.
+
+-------------------------------------
+author: Abby Duran
+date: 2014-04-29 23:55:10.813000000
+
+Patch Set 6:
+
+(1 comment)
+
+Line:139, src/upr-producer.cc -> If you don't reply our comments, why do we need a code review?
+
+-------------------------------------
+author: Miley Adams
+date: 2014-04-30 00:05:57.128000000
+
+Patch Set 6:
+
+(1 comment)
+
+Line:139, src/upr-producer.cc -> Do you mean I don't reply in general or just this comment?
+
+For this comment, earlier I already replied and pointed out the benefit of do-while in this function with many "return" statements: it is cleaner and easier to maintain with do-while style. I commented that if we need to free or clean up before exit. In this case, we need to place "ready.remove and streams.erase" in more than one place. do-whilre reduce that to only one place.
+
+I can give you one more benefit: if I want to set a break point in the debugger in this function and want to know the content of the readyQ before the function exit. I only need to set one break point. Don't you like this?
+
+-------------------------------------
+author: Abby Duran
+date: 2014-04-30 00:39:26.836000000
+
+Patch Set 6:
+
+(1 comment)
+
+Line:139, src/upr-producer.cc -> I don't think we can reach to the agreement. I really don't understand why we need to consider the debugging breakpoint stuff when we make a clean code base. I'm still fine with putting the breaking point to a specific condition to see the content of the readyQ.
+
+Why do we need to put "ready.remove and streams.erase" in more than once place if we don't use do-while loop? I still don't understand your points and benefits that you mentioned.
+
+If you want to discuss it more, please feel free to grab me. But, I don't want to review / merge the change that doest look good to me.
+
+-------------------------------------
+author: Abby Duran
+date: 2014-04-30 01:02:51.616000000
+
+Patch Set 6:
+
+(1 comment)
+
+Line:139, src/upr-producer.cc -> I never saw that coding style where do-while loop is used to check various conditions. We never used do-while loop in that way by setting while (0).
+
+I still don't understand why using "break" is better than "return", and don't see that is cleaner approach. As you will get a different engine_status code from this function, we can put a breakpoint in the corresponding "return" clause to get the content of other variables. I think this should be okay and doesn't need to be an important factor.
+
+Even if you see it in other open-source projects, I don't think we need to use that style.
+
+-------------------------------------
+author: Abby Duran
+date: 2014-04-30 01:36:30.063000000
+
+Patch Set 6:
+
+(1 comment)
+
+Line:139, src/upr-producer.cc -> Okay, let give you more reasons why I don't like using do-while loop here. It affects a code readability badly because everyone usually expects that do-while loop is something for running repetitive logic. In this function, I would rather 1) Not allocate any resources until all the conditions are satisfied, but return the error engine code immediately if any condition is not met, and finally create a stream instance and add the connection instance at the end of this function and return "success", or 2) use "goto" statement if you don't want to put "return" clause for each error condition.
+
+I think these two options are most typical approaches, but we decided to not use "goto" in ep-engine source code before because of various reasons, but instead agreed to use the first approach that I mentioned above.
+
+-------------------------------------
+author: Miley Adams
+date: 2014-04-30 01:46:40.631000000
+
+Patch Set 6:
+
+(2 comments)
+
+Line:139, src/upr-producer.cc -> Maybe I didn't explain the breakpoint/logging point in detail: If you want to know what error code is generated by this function. one can just add one printf statement or set one break one point and find out without going through the entire function and do it before every return.
+
+I think this one of the thing I think is so helpful in debugging.
+
+Line:139, src/upr-producer.cc -> this is the couch store macro in utils.h. it's not other open source. it's our own code and it's used everywhere there.
+
+    #define error_pass(C) \
+	do { \
+            if((errcode = (C)) < 0) { \
+                report_error(errcode, __FILE__, __LINE__); \
+                goto cleanup; \
+            } \
+        } while (0)
+
+-------------------------------------
+author: Abby Duran
+date: 2014-04-30 01:51:38.510000000
+
+Patch Set 6:
+
+(2 comments)
+
+Line:139, src/upr-producer.cc -> This is not the convention that we follow. I don't care the couchstore coding style because it has lots of bad styles in addition to this.
+
+Line:139, src/upr-producer.cc -> Simply put, I don't think that will give us enough benefits at the expense of other defects that I mentioned.
+
+-------------------------------------
+author: Abby Duran
+date: 2014-04-30 01:56:56.590000000
+
+Patch Set 6:
+
+(1 comment)
+
+Line:139, src/upr-producer.cc -> Most of engineers didn't agree to this style before, and ep-engine team hasn't been involved in developing couchstore, and didn't follow that style either.
+
+-------------------------------------
+author: Abby Duran
+date: 2014-04-30 02:05:29.141000000
+
+Patch Set 6:
+
+(1 comment)
+
+Line:139, src/upr-producer.cc -> Again, putting one log printf statement IS NOT enough in this case because each error code has a different semantics and we want to log a different message.
+
+-------------------------------------
+author: Abby Duran
+date: 2014-05-01 05:23:29.605000000
+
+Patch Set 6: -Code-Review
+
+(1 comment)
+
+David,
+
+Per our discussion, I'm okay with using do-while(0), but has one minor comment in the other part. Please address it if it makes sense to you.
+
+Line:60, src/upr-producer.cc -> I think you may want to move this to the end of this function, so that we can add the connection to the conn map iff all the conditions below are passed. In this way, we can avoid removing the connection again from the map if any condition is not satisfied.
+
+-------------------------------------
+author: Miley Adams
+date: 2014-05-01 22:34:42.983000000
+
+Patch Set 6:
+
+(1 comment)
+
+Line:60, src/upr-producer.cc -> Mike pointed out that would allow a notification for this connection to be missed because it occurs before it's added to conn queue.
+
+-------------------------------------
+author: Abby Duran
+date: 2014-05-02 00:14:15.531000000
+
+Patch Set 6:
+
+(1 comment)
+
+Line:60, src/upr-producer.cc -> Okay, I see. then, let's keep the current logic. Thanks
+
+-------------------------------------
+author: Abby Duran
+date: 2014-05-02 05:31:33.258000000
+
+Patch Set 7: Patch Set 6 was rebased
+
+-------------------------------------

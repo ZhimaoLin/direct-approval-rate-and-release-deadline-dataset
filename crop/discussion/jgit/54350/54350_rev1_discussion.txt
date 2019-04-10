@@ -1,0 +1,196 @@
+DESCRIPTION
+
+Handle stale file handles on packed-refs file
+
+A stale file handle exception will be raised on NFS servers if the
+packed-refs file is replaced by another client while the current one is
+reading the old one.  On a local filesystem, the old orphaned file will
+just be read.  But files cannot be orphaned on NFS servers (since NFS
+servers do no keep track of open files), so the replacement will cause
+the old file to be garbage collected instead, and reads will fail with
+stale file handle exceptions.  Since we no longer have access to the old
+file, loop on stale file handle exceptions trying to read the
+packed-refs file again, until we either read the new file, or find that
+the file no longer exists.
+
+Change-Id: I085c472bafa6e2f32f610a33ddc8368bb4ab1814
+Signed-off-by: Zane xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Zane Norton
+date: 2015-08-21 22:01:35.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-08-21 22:01:41.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7047/
+
+-------------------------------------
+author: Marissa Cardenas
+date: 2015-08-21 22:02:45.000000000
+
+Patch Set 1: Code-Review+1
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-08-21 22:08:34.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7047/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-08-24 08:04:25.000000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:754, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> Should we really add a potentially endless loop here? After some iterations and/or some time spent on retrying I would expect this method just gives up and throws an excetion.
+
+Line:771, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> If we hit this situation than we would go through this loop as fast as possible until the stale file handle situation is corrected. I don't know how long it takes typically until this stale-file-handle situation is resolved but if you expect that this may take seconds then we should add  a sleep() before we continue. Then we wouldn't burn CPU cycles with active waiting and would allow other threads/processes to do something meaningful.
+
+-------------------------------------
+author: Zane Norton
+date: 2015-08-24 13:34:41.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:754, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> Stale file handles will happen on open files (or directories) only.  That means it will be triggered during the read of this file if the file is deleted by another client.  The looping will cause another open of the file, so the original incident which causes the original stale file handle will not cause another stale filehandle.  Thus, for a single event, a single retry would do.  The loop is here in case the file is replaced again during the reread!  This is possible when someone is pushing a bunch of deleted refs, the packed-refs file could be overwritten many times in a row.  It is unlikely that the writter of the new packed-refs files is faster than our read, but it certainly is possible if they are on a closer/faster connection to the NFS server than we are.  This loop prevents a failure in those cases.  And in those cases, we want the re-read to happen as fast as possible so that we are more likely to beat the writter and at least get a snapshot of the packed-refs file while the writter is constantly changing it.  Any delays in this loop will make it more likely that we have to retry again.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2015-08-24 15:06:34.000000000
+
+Patch Set 1: Code-Review-1
+
+(1 comment)
+
+Line:118, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> I think this shouldn't be API of RefDirectory, I'd declare it private
+
+-------------------------------------
+author: Zane Norton
+date: 2015-08-24 16:04:15.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:118, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> This change also checks for NFS stale file handles (in a way that actually does not capture them on our systems):
+
+https://git.eclipse.org/r/#/c/45649/5/org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/ObjectDirectory.java
+
+So it would be nice to have a public API somewhere for this so that we can create a common way to capture them.  Do you have a suggestion of a good place for such an API?
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2015-08-24 20:58:49.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:118, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> I think org.eclipse.jgit.util.FileUtils would be a better place
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-08-25 08:14:07.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:754, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> Ok, got it. We don't need waiting times before we start a new round.
+
+But just as a safety net: if your arguments are true then it wouldn't harm to stop the loop after 10 retries, or? I don't know NFS implementations very good but if it happens that on some platforms we have a more persistent stale-file-handle-exception then a max-retry would safe us from an endless loop. Or if exceptions arise which contain "stale .*file .*handle" but which are not of the type which you expect then a max-retry limit would be safer.
+
+-------------------------------------
+author: Zane Norton
+date: 2015-08-25 13:44:52.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:754, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> Yes, I have that fear too. Although after testing this, and investigating stale handles to better understand the principals behind them, I am fairly confident that this should be OK.  But as a safety, a retry limit sounds fine (with a warning if exceeded?).  Would the limit be something that we would make configurable via git config?  If so, any suggestions for a fully qualified parameter name?
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-08-25 14:10:47.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:754, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> I suggest "core.packedRefsRetryCount". Maybe with a default value of 5. Could you tryout what default value helps in your test cases. I would say that if we try to read the packedRefs file 100 times and it always fails with stale file handles then it's ok to throw an exception. Of course it would be nice to write a warning to our log in such a case.
+
+-------------------------------------
+author: Zane Norton
+date: 2015-08-25 14:26:57.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:754, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> Maybe I should add 'stale' to that name: "core.packedRefsStaleRetryCount"?  5 sounds reasonable.  In my testing, a single retry has always been enough (and I tried hard to break that), unless I deliberately replace the packed-refs file again during the retry.
+
+-------------------------------------
+author: Zane Norton
+date: 2015-08-25 14:59:15.000000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:118, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> Good suggestion, thanks: https://git.eclipse.org/r/#/c/54489/
+
+Line:754, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> Hmm, I have no idea how to get a config value in this class?  If this is in .git/.config, would it ever even get used by most users (gerrit users) who care?  Maybe I shoud just make it 5, and leave making it configurable as an exercise for anyone who wants it to be different?
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-08-25 15:21:03.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:754, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> I would
+- add a new key CONFIG_KEY_PACKED_REFS_STALE_RETRYCOUNT to ConfigConstants
+- add getPackedRefsStaleRetryCount() to CoreConfig. Here you can define a default value. I would suggest 1 based on your experiments.
+- to access the configured value in RefDirectory use
+
+ getRepository().getConfig().get(CoreConfig.KEY).getPackedRefsStaleRetryCount()
+
+-------------------------------------
+author: Zane Norton
+date: 2015-08-25 15:40:13.000000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:118, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> Done
+
+Line:754, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> Thanks for giving me the details of how to do the config lookup!
+
+In the meantime, I had implemented a simple non-configurable default, and I tried to update the commit message to be a lot clearer about how this situation occurs, and why one would want more than a single retry.  I suggest reading that to see if it is clearer, and if you still think it makes sense to make this configurable (I doubt anyone would actually want to).
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-08-26 21:22:21.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

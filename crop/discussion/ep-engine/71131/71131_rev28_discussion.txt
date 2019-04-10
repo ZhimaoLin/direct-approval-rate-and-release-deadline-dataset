@@ -1,0 +1,169 @@
+DESCRIPTION
+
+Provide an option to include a value while deleting an item
+
+Mobile clients need to include a value when deleting
+an item.
+
+Change-Id: I34a0b90f11137263991a2771fb82d6d9234303fd
+
+
+COMMENTS
+
+author: Bobby Buck
+date: 2016-12-21 22:50:13.674000000
+
+Uploaded patch set 28.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-12-21 22:50:22.746000000
+
+Patch Set 28:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1939/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-12-21 22:50:22.887000000
+
+Patch Set 28:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/2388/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-12-21 22:50:23.100000000
+
+Patch Set 28:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2279/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-12-21 22:50:23.244000000
+
+Patch Set 28:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1118/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-12-21 23:02:07.408000000
+
+Patch Set 28: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1939/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2279/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1118/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/2388/ : SUCCESS
+
+-------------------------------------
+author: Asher Vang
+date: 2016-12-22 08:51:05.850000000
+
+Patch Set 28:
+
+(10 comments)
+
+I had some ore time this morning and took a deeper look. Good progress! I do however have a questions to the store method() and if it'll play together with the code (on how to get the mutation info back). 
+
+I think the code would be a bit more readable if we replaced the use of bool for "deleted items", and used an enum instead (could use DocumentState or a new one).
+
+Dave will probably add more "const" comments, so you should probably just look at your diff and add const to everything that won't change.
+
+Line:211, src/ep_engine.cc -> you can drop this, and replace the
+
+    if (getDeletedValue) {
+
+with
+
+    if (document_state != DocumentState::Alive) {
+
+Line:270, src/ep_engine.cc -> Note that the caller expects to be able to call get_item_info on the item it passed down to pick up the mutation info to send back to the client.. 
+
+From what I can see that doesn't look to be possible?
+
+In the default_bucket we follow the same code path as a normal set, but the "hash items" (default_engines equivalent to stored_value) contains a "deleted" bit.
+
+Line:5961, src/ep_engine.cc -> This isn't implemented in the core yet, but I don't think this we should pass on whatever payload and datatype the caller specified. The validators in memcached will inspect that the payload is a legal xattr payload before pushing it down to ep-engine (and that the appropriate privileges are all there)
+
+Line:299, src/ep.h -> nit: Shouldn't this be cb::const_byte_buffer? When I see a char_buffer I expect it to contain textual strings, and not a binary blob..
+
+Line:221, src/couch-kvstore/couch-kvstore.cc -> this will only work for binary objects with xattrs. datatype is a bitmask so you should use
+
+    mcbp::datatype::is_xattr(it.getDataType())
+
+(btw. there is plenty of datatype "bugs" here (which happens to work today as we only use two different datatypes for the object while they're in memory, but it'll fail when we add xattr (or keep the objects compressed in memory). I filed https://issues.Piper Jefferson.com/browse/MB-22088 to track those.
+
+
+After thinking a bit more... shouldn't this be:
+
+    if (del && it.getNBytes() == 0)
+
+That would preserve the datatype flag set by the caller if we ever wanted to store other values along with the document and not limit ourself to xattrs. (I'm almost tempted to say we should just nuke this test and always preserve the datatype as requested by the caller... After all the user of couch-kvstore might want to store additional information, and it seems wrong to me to strip off that info at this level.. (given that we pass in an item, the caller can always set the datatype first (same goes for the exp-time so del could probably be nuked).
+
+Line:1510, src/couch-kvstore/couch-kvstore.cc -> const? it doesn't change..
+
+Line:2146, src/couch-kvstore/couch-kvstore.cc -> const?
+
+Line:1744, src/ep.cc -> line exceeds 80, you should wrap
+
+Line:66, src/kvstore.h -> const
+
+Line:233, src/tasks.h -> const
+
+-------------------------------------
+author: Bobby Buck
+date: 2016-12-23 02:14:34.811000000
+
+Patch Set 28:
+
+(8 comments)
+
+Line:211, src/ep_engine.cc -> Done
+
+Line:270, src/ep_engine.cc -> Done
+
+Line:5961, src/ep_engine.cc -> I don't think I fully understand the comment. deleteItem takes a value_buf thats just nullptr at the moment and doesn't use what the caller has specified.
+
+Line:299, src/ep.h -> I believe the getData() function from the Item returns a const char* and as I understand it, the xattrs are already populated in the data portion when it comes to ep-engine.
+
+Line:221, src/couch-kvstore/couch-kvstore.cc -> I think if (del && it.getNBytes() == 0) should work our purposes. If del really needs to be nuked, it can done separately or as part of MB-22088.
+
+Line:1744, src/ep.cc -> Done
+
+Line:66, src/kvstore.h -> Done
+
+Line:233, src/tasks.h -> Done
+
+-------------------------------------
+author: Bobby Buck
+date: 2016-12-23 19:42:42.162000000
+
+Patch Set 28:
+
+(1 comment)
+
+Line:221, src/couch-kvstore/couch-kvstore.cc -> Done
+
+-------------------------------------
+author: Tate Garrett
+date: 2017-01-11 14:39:48.497000000
+
+Change could not be merged due to a path conflict.
+
+Please rebase the change locally and upload the rebased commit for review.
+
+-------------------------------------
+author: Tate Garrett
+date: 2017-01-11 15:01:30.298000000
+
+Change has been successfully cherry-picked as d3586e47402c4c087afcc426da98bc102373a959 by Ashlee Kent
+
+-------------------------------------

@@ -1,0 +1,105 @@
+DESCRIPTION
+
+MB-17502: DCP performance regression fixed.
+
+Many patches were added to speed up DCP, however some of that
+performance was lost when doing some code tidying without
+re-profiling.
+
+The roundRobin/vbReady code has a bufferLog.pauseIfFull() call on the
+"hot" part of the loop, this is the main cause of the regression.
+
+With that fixed CPU profiling and system benchmarking shows that DCP
+is back to 3.1.3 levels but highlighted that:
+
+1. DcpProducer::getNextItem was hot (5% of a DcpProducer thread).
+2. DcpConsumer::processBufferedItems was hitting SpinLock hard.
+   20 to 30% (of a consumer thread) at times is consumed by
+   SpinLock code.
+
+So to address 1. the fix is actually to remove the roundRobin/vbReady
+code. It is actually no better, and in some cases a little slower than
+the orginal. This code is replaced by std:: structures *but* the
+Mutex protecting the std:: structures has a much smaller scope.
+
+Note the DcpProducerReadyQueue which is used to replace the vbReady code
+has been profiled and proven that using a std::set to power find() is
+faster than searching a std::list. This is important because the find()
+method is part of the front-end operation threads.
+
+To address 2. it was observed that the consumer code is constructing
+a passive_stream_t frequently (everytime around the for loop). After
+construction the code then tests if there is a pointer.
+The copy construction uses SpinLocks and can be avoided by
+testing the streams[vb] directly,  only then do we construct
+a copy of the passive_stream_t. This means a node with 124 vbuckets
+doesn't do 1000 copy-constructions which only result in a NULL pointer.
+
+Change-Id: I8fb0bd30f8e07d000192675de425726ad26e403a
+
+COMMENTS
+
+author: Jim WNathalie Landryer
+date: 2016-01-21 15:23:54.879000000
+
+Patch Set 4: Commit message was updated
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-01-21 15:24:04.833000000
+
+Patch Set 4: Well-Formed+1
+
+Permission granted to commit to restricted branch
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-01-21 15:24:05.666000000
+
+Patch Set 4:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/346/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-01-21 15:39:04.789000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/346/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-01-21 15:55:03.482000000
+
+Patch Set 4: Code-Review+1
+
+(3 comments)
+
+File Comment: /COMMIT_MSG -> Worth including a c/p of the ep_perfsuite numbers (or are they not available on this branch)?
+
+Line:187, src/dcp-producer.h -> Might be worth adding a brief description of this, and the reason for maintaining the two parallel structures.
+
+This might be as simple as copying / reworking the comments you have for the readyQueue / queuedValues members below.
+
+Line:189, src/dcp-producer.h -> Nit: Might be a little more idiomatic to name this function `exists`, or make it directly return the count (and hence name it count). I say this because find() on STL containers returns an iterator, not a bool.
+
+Also - you can make this method const (but will need to make the lock mutable ofc).
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-01-21 16:42:48.549000000
+
+Patch Set 4: Code-Review-1
+
+An oddity shown on GCE benchmarking to be investigated.
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-01-27 22:37:24.961000000
+
+Change has been successfully cherry-picked as ae39d7f216ae3d75e93aceda8d9b9992c5f7a1c4
+
+-------------------------------------

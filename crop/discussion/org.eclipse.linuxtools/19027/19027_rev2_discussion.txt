@@ -1,0 +1,114 @@
+DESCRIPTION
+
+tmf: Cleanup TmfStateValue to remove 1-level of indirection.
+
+This is a refactoring to diminush the memory usage of the
+StateSystem.
+
+In the current implementation, each TmfStateValue has a
+"box" for an other object (i.e. Integer, Double, String, ...).
+We propose to remove this indirection and use the raw type inside
+the corresponding type.
+
+As an example, IntegerStateValue now contains an "int" instead
+of an "Integer".
+
+Change-Id: Iaa75172be42174ebd6dc7d9bdd434631077c0146
+Signed-off-by: Jordon Obrien xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Jordon Obrien
+date: 2013-11-28 01:16:14.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-11-28 01:56:48.000000000
+
+Patch Set 2: Code-Review-1
+
+(4 comments)
+
+It's funny, not long ago it was updated to store Integer/Long as the field instead of int/long, to avoid re-boxing it every time getValue() was called.
+
+But nice refactoring, by getting rid of getValue() altogether we're not bound to returning an Object anymore. It's always good to have fresh eyes looking at old code!
+
+One small comment though, I don't think you meant to keep the new Integer() part.
+
+Line:46, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statevalue/DoubleStateValue.java -> When comparing doubles directly, we can hit the rounding problems of floating points precision (1.000 + 1.000 = 1.999999 etc.)
+
+There might be cases where users do mathematical operations on the values, then may want to compare them with each other (the state system mipmap feature comes to mind).
+
+It wouldn't be in the scope of this patch (the previous implementation did a straight .equals() too anyway) but could be worth keeping in mind.
+
+Line:109, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statevalue/TmfStateValue.java -> I agree with this (doesn't matter if creation/reading is symmetrical or not), but since it might have impacts in unforseen places in the framework, I'd prefer if this change (and the two below) were put in a separate patch.
+
+You can just remove it from this one, I'll make the other patch aftewards.
+
+Line:28, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statevalue/IntegerStateValue.java -> I assume you don't want to re-box it? ;)
+
+(btw, I learned that recently, in almost all cases it's better to do Integer.valueOf(int) rather than new Integer(int), because valueOf will cache the most often-used values, and new Integer() will create a new object every time.)
+
+Line:47, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statevalue/IntegerStateValue.java -> you could use
+  this.value == other.value
+here, and in the other classes too. Would save one function call, I guess?
+
+-------------------------------------
+author: Jordon Obrien
+date: 2013-11-28 03:26:12.000000000
+
+Patch Set 2:
+
+(6 comments)
+
+I fixed Alexandre comments.
+And find two other bug.
+Please take another look.
+
+Line:46, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statevalue/DoubleStateValue.java -> I'm not sure of the Java Semantic on Double.
+I didn't wrote java for the last 10 year.
+But, you're right, comparing double like that is always unsafe.
+
+And, I think there is a bug with "NaN" because
+NaN == NaN  ==> false.
+
+Line:109, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statevalue/TmfStateValue.java -> Ok, I'll split it.
+This effectively may have impact.
+In fact, it is more type-safe because a "NaN" can not be read as a "Int".
+
+Line:136, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statevalue/TmfStateValue.java -> This test was always false???
+
+ if (value == Double.NaN) {
+
+Line:28, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statevalue/IntegerStateValue.java -> nice catch.
+
+Cool, I was thinking a way to do a "cache" for the TmfStateValue.
+The same idea apply here. But, it will be the next commit.
+
+Line:47, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statevalue/IntegerStateValue.java -> I'm use to trust the compiler.
+But, you're right... it's a virtual call. May not be proven easily.
+
+Line:42, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statevalue/LongStateValue.java -> Integer -> Long.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-28 05:57:51.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4254/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-28 06:16:44.000000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4254/ : FAILURE
+
+-------------------------------------

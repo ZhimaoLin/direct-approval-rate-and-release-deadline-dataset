@@ -1,0 +1,121 @@
+DESCRIPTION
+
+WIP: Make RepositoryCache eviction configurable
+
+Change-Id: If9486fdc7f9b5c4b8337306a873d43ef4d1430bf
+Signed-off-by: Mitchell Griffith xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Douglas Trujillo
+date: 2016-06-02 23:27:54.000000000
+
+Uploaded patch set 9.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-06-02 23:28:01.000000000
+
+Patch Set 9:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/8464/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-06-02 23:39:39.000000000
+
+Patch Set 9: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/8464/ : SUCCESS
+
+-------------------------------------
+author: Dillon Cross
+date: 2016-06-03 14:22:56.000000000
+
+Patch Set 9:
+
+(1 comment)
+
+Line:223, org.eclipse.jgit.test/tst/org/eclipse/jgit/lib/RepositoryCacheTest.java -> This may not be a reliable test. Assuming that the eviction task will run during this time may be wrong in a high CPU usage environment.
+
+-------------------------------------
+author: Mitchell Griffith
+date: 2016-06-06 17:06:08.000000000
+
+Patch Set 9:
+
+(1 comment)
+
+Line:223, org.eclipse.jgit.test/tst/org/eclipse/jgit/lib/RepositoryCacheTest.java -> 2 options:
+-Sleep a bit longer, 100ms?
+-Rework WorkQueue so I can set(for testing only) the executor and I would use a DirectExecutor.
+
+Which one would you prefer(or maybe you have another suggestion)?
+
+-------------------------------------
+author: Dillon Cross
+date: 2016-06-07 12:17:53.000000000
+
+Patch Set 9:
+
+(1 comment)
+
+Line:223, org.eclipse.jgit.test/tst/org/eclipse/jgit/lib/RepositoryCacheTest.java -> > Sleep a bit longer, 100ms?
+
+No. This again doesn't guarantee anything... just makes the probability of the test failing a bit lower. However, the test is also getting slower.
+
+> Rework WorkQueue so I can set(for testing only) the executor and I would use a DirectExecutor
+> Which one would you prefer(or maybe you have another suggestion)?
+
+I am not sure what is a really good solution. I think that what we really want to test here is that when repository is expired it gets removed from RepositoryCache. So we could just call RepositoryCache.close(expiredRepo) and then verify that it is removed from the RepositoryCache?
+
+We may also want to test that an expired repository *eventually* gets removed from the RepositoryCache i.e. that the Repository.close() is called. So we could just wrap or mock a Repository and expect/wait a call from another thread in its close method. There should be a timeout on how long to wait. However, most of the time the call will come within the configured time and the test will not wait longer than than necessary.
+
+Another aspect we may want to test is that the RepositoryCacheConfig properly (re)configures the executor. This would likely require a rework of WorkQueue where we can set a custom executor and then setting up a mock which expects a call to scheduleWithFixedDelay with the values configured in the RepositoryCacheConfig.
+
+What we *probably don't want* to test is that the java.util.concurrent.ScheduledThreadPoolExecutor works properly i.e. that it runs tasks at the scheduled rate. This is tested in the JDK code.
+
+-------------------------------------
+author: Dillon Cross
+date: 2016-06-07 12:27:13.000000000
+
+Patch Set 9:
+
+(1 comment)
+
+Line:223, org.eclipse.jgit.test/tst/org/eclipse/jgit/lib/RepositoryCacheTest.java -> > So we could just call RepositoryCache.close(expiredRepo) and then verify that it is removed from the RepositoryCache?
+
+This doesn't make sense as the expiration check is not a part of the RepositoryCache.close method... this code is a part of the scheduled Runnable. To make this testable we could move this check into a new method RepositoryCache.closeIfExpired and then call just this method from the scheduled Runnable?
+
+-------------------------------------
+author: Mitchell Griffith
+date: 2016-06-07 14:26:44.000000000
+
+Patch Set 9:
+
+(1 comment)
+
+Line:223, org.eclipse.jgit.test/tst/org/eclipse/jgit/lib/RepositoryCacheTest.java -> In change (https://git.eclipse.org/r/#/c/74775/), I added unit test for eviction that is testing the eviction code that used to be in the runnable (I moved it into a method as suggested).
+
+In this change, I still need to test configure/reconfiguration.
+
+-------------------------------------
+author: Mitchell Griffith
+date: 2016-06-07 18:11:47.000000000
+
+Patch Set 9:
+
+(1 comment)
+
+Line:223, org.eclipse.jgit.test/tst/org/eclipse/jgit/lib/RepositoryCacheTest.java -> I know you do not like having a test that depends on time (I do not either) but without having a mocking library and dependencies injection, it's harder to keep code cohesive and easy to test.
+
+To test the aspect of configuring and reconfiguring the executor, I would first need to mock the executor and to make use of the mock, I would need either to inject it to WorkQueue or to use something like powermock to mock static call. Personally, I try to never use powermock, I think you have a design issue to fix instead of using powermock.
+
+I know there was some discussion to put this change series into 4.4.x so will adding a dependency to JGit block us to put this change in a minor release?
+
+In latest PS, I added a test that still depends on time but is more robust and do not simply wait an arbitrary amount of time. If you still prefer that I add a mocking library, I will work on it.
+
+-------------------------------------

@@ -1,0 +1,122 @@
+DESCRIPTION
+
+Add client-side Subscribe classes
+
+Adds the Subscribe classes to wrap local subscribed repositories,
+maintain subscription state, and output SubscribeCommands to
+Transport.openSubscribe.
+
+Change-Id: Ibe6bed0d4ab8837f5ba114deb8a7fd0b23aa2197
+
+
+COMMENTS
+
+author: Karlee Dorsey
+date: 2012-07-24 23:35:45.000000000
+
+Uploaded patch set 14.
+
+-------------------------------------
+author: Santos Moore
+date: 2012-07-25 00:53:19.000000000
+
+Patch Set 14: I would prefer that you didn't submit this
+
+(1 inline comment)
+
+
+
+Line:66, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribeConnection.java -> In the normal smart HTTP implementation the extra requests to do authentication/advertisement are hidden inside the normal connecton implementation. Is there a reason you can't do that here?
+
+-------------------------------------
+author: Santos Moore
+date: 2012-07-25 01:01:45.000000000
+
+Patch Set 14: No score
+
+(1 inline comment)
+
+
+
+Line:66, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribeConnection.java -> Hm, I suppose I see what's different. It's still the issue where a given user (anonymous or otherwise) might have access to some repos but not others, and you want to make sure you have access to all of them before continuing.
+
+What happens in the case where a user is authenticated and wants to subscribe to repos A and B, but only has access to A. Should the server tell the user *which* repos they have access to? In the general case, finding the largest set of repos to which the user has access seems like it would take O(2^n) requests...
+
+(Apologies if this is covered in the implementation I'm about to read.)
+
+-------------------------------------
+author: Karlee Dorsey
+date: 2012-07-25 01:04:27.000000000
+
+Patch Set 14: (1 inline comment)
+
+
+
+Line:66, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribeConnection.java -> This request requires an explicit argument (the subscriber, which contains the list of repositories). In the other cases, the repository is built into the URI so it doesn't need to be passed as an argument. I could make it an argument on Transport.openSubscribe(Subscriber)?
+
+This function will still need to exist in some form on SubscribeConnection, because it speaks the pubsub protocol. Other implementations speak the abstract "InfoRefs" protocol so they can reuse authentication and HTTP protocol specific communication. doSubscribeAdvertisement doesn't do anything special for HTTP, and should probably be called by a few other protocols as well at the beginning of a connection.
+
+-------------------------------------
+author: Karlee Dorsey
+date: 2012-07-25 01:22:10.000000000
+
+Patch Set 14: (1 inline comment)
+
+
+
+Line:66, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribeConnection.java -> It will fail on the first repository that the user doesn't have access to...all of these repositories need to be part of existing git repository configs, so the user "should" already have access. There isn't any protocol for transmitting error messages back to the client.
+
+-------------------------------------
+author: Karlee Dorsey
+date: 2012-07-25 19:19:28.000000000
+
+Patch Set 14: (1 inline comment)
+
+
+
+Line:66, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribeConnection.java -> I don't think it is possible to give detailed error messages without breaking/introducing features to smart HTTP.
+
+Smart HTTP relies on a 401 auth error to configure the connection properly, and if auth fails the URI is returned which is enough to determine the repository being accessed. For pubsub, I would need another way to pass the repository that caused the problem. I could add a body to the 401 response with a detailed error message, but this would break on upload/receive-pack errors and spew HTML to the console for the servers that don't provide the new error message. 
+
+I could put the message into the status field (HTTP/1.1 401 Unauthorized: android), but that doesn't carry over to other protocols.
+
+-------------------------------------
+author: Santos Moore
+date: 2012-07-25 19:30:53.000000000
+
+Patch Set 14: (1 inline comment)
+
+
+
+Line:66, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribeConnection.java -> We should distinguish between needs-authentication and needs-authorization. I'm using "authentication" and "authorization" as defined here:
+http://en.wikipedia.org/wiki/Authentication#Authentication_vs._authorization
+
+(Note that HTTP's 401 Unauthorized code actually means "unauthenticated" by this definition. 403 Forbidden actually means "unauthorized." But we can cut the spec authors some slack, at least they didn't misspell it like they did for "referrer" :)
+
+When an anonymous user doesn't have access, the server needs to return a 401 so libcurl/git can try again with credentials.
+
+When an authenticated user doesn't have access (i.e. is unauthorized) to one or more repositories, we have some more leeway. The general thing we do over smart HTTP (cf. GitSmartHttpTools) is return a 200 with some text in the body. This could be user-readable text, like "Sorry, you don't have access to <repository X>", that the client just echoes. Or it could be something in pkt-line format that the client is expected to parse and convert into user-readable text, like "access-denied X". The nice thing about this approach is that it's not HTTP specific; once the client gets 200 back from the server, it will interpret the body just like it would for a non-HTTP transport.
+
+Does that make sense? I admit I may not be fully understanding your proposals...
+
+-------------------------------------
+author: Karlee Dorsey
+date: 2012-07-25 19:45:16.000000000
+
+Patch Set 14: (1 inline comment)
+
+
+
+Line:66, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribeConnection.java -> Makes sense now; JGit exception names had me confused. I didn't realize ServiceNotEnabledException was user-specific and really meant 403.
+
+-------------------------------------
+author: Santos Moore
+date: 2012-07-25 19:48:46.000000000
+
+Patch Set 14: (1 inline comment)
+
+
+
+Line:66, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribeConnection.java -> Oh jeez, yeah, if you think HTTP is confusing, the mapping from JGit exception types is doubly so. This has been a frequent source of undebuggable auth problems within Google's implementation that I can tell you about sometime.
+
+-------------------------------------

@@ -1,0 +1,157 @@
+DESCRIPTION
+
+Provide NLS support in JGit.
+
+The support for NLS relies on java.util API to load a standard
+ResourceBundle and then uses java reflection API to inject localized
+strings into public String fields of the corresponding instance
+of TranslationBundle.
+
+Locale setting is supported per thread to enable concurrent threads
+to use different locales. This is useful when JGit runs in a server
+context where (error) messages might need to differ per-request to
+suit the user's preference.
+
+Change-Id: Ie0e63a0d7bb74eaad495dbe8248595d8a3a76883
+Signed-off-by: Dillon Cross xxx@xxx.xxx
+
+COMMENTS
+
+author: Dillon Cross
+date: 2010-02-25 10:37:04.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Dillon Cross
+date: 2010-02-25 10:40:15.000000000
+
+Patch Set 4: No score
+
+Fixed the typos and added a new test as suggested by Douglas Trujillo.
+
+-------------------------------------
+author: Dillon Cross
+date: 2010-02-25 14:25:09.000000000
+
+Patch Set 4: Looks good to me, but someone else must approve
+
+
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2010-02-25 22:20:34.000000000
+
+Patch Set 4: Looks good to me, but someone else must approve; No score
+
+Chris: for this change I would like to claim the IP process described in figure 2 in http://www.eclipse.org/legal/EclipseLegalProcessPoster.pdf, can you supervise this change ? Is it ok to use Gerrit for that or do we need to document this in a bug in Bugzilla ? Sasa and myself are working for the same company and SAP is a member company which signed the member committer agreement.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-04 17:12:08.000000000
+
+Patch Set 4: I would prefer that you didn't submit this; No score
+
+Nice.  I'm happy with the general approach.  Nits below.
+
+-------------------------------------
+author: Malia Sampson
+date: 2010-03-08 17:04:07.000000000
+
+Patch Set 4: Looks good to me, but someone else must approve; IP review completed
+
+IP wise, this is fine.
+
+I would address Shawn's comments and I think we are good to go on this one.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 15:26:29.000000000
+
+MISMATCHED INLINE COMMENT
+Line:1, org.eclipse.jgit/src/org/eclipse/jgit/nls/NLS.java -> Please document what happens if the bundle fails to load for the current locale.  I know you throw an Error below.  I'd prefer it to be a specific Error type that a caller could catch if they want to more gracefully abort due to an invalid translation.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 15:26:29.000000000
+
+MISMATCHED INLINE COMMENT
+Line:1, org.eclipse.jgit/src/org/eclipse/jgit/nls/NLS.java -> See my comment below about the default value; setting to null here would cause that behavior to fail.  So you'd need to set to the initial value instead.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 15:26:29.000000000
+
+MISMATCHED INLINE COMMENT
+Line:1, org.eclipse.jgit/src/org/eclipse/jgit/nls/NLS.java -> Instead of doing this, extend InheritableThreadLocal above and implement its initialValue() method to construct this NLS instance.  That way when you are in default mode we still can maintain a thread-local cache of the bundles we've examined.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 15:26:29.000000000
+
+MISMATCHED INLINE COMMENT
+Line:1, org.eclipse.jgit/src/org/eclipse/jgit/nls/NLS.java -> Translation text can't change, its loaded from the code archive we ourselves came from.  So I think we should do a global table that holds a cached singleton of all translations.  Its a finite cost and "leaking" them after they are needed shouldn't be a problem.
+
+So change this code to be:
+
+  TranslationBundle bundle = map.get(type);
+  if (bundle == null) {
+    bundle = lookupBundle(locale, type);
+    map.putIfAbsent(type, bundle);
+  }
+
+and write a global cache:
+
+  private static final Map<Locale, Map<Class, TranslationBundle>> cachedBundles
+    = new HashMap<Locale, Map<Class, TranslationBundle>>();
+
+  private static synchronized <T extends TranslationBundle>
+  T lookupBundle(Locale locale, Class<T> type) {
+    ...
+  }
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 15:26:29.000000000
+
+MISMATCHED INLINE COMMENT
+Line:1, org.eclipse.jgit/src/org/eclipse/jgit/nls/NLS.java -> These fields should be marked final.
+
+Maybe a ConcurrentHashMap would be better here, then we can avoid the synchronized during reads.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 15:26:29.000000000
+
+MISMATCHED INLINE COMMENT
+Line:1, org.eclipse.jgit/src/org/eclipse/jgit/nls/NLS.java -> Style-nit:  instance fields before constructor.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 15:26:29.000000000
+
+MISMATCHED INLINE COMMENT
+Line:1, org.eclipse.jgit/src/org/eclipse/jgit/nls/TranslationBundle.java -> Style-nit:  We prefer "public abstract"
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 15:26:29.000000000
+
+MISMATCHED INLINE COMMENT
+Line:1, org.eclipse.jgit/src/org/eclipse/jgit/nls/TranslationBundle.java -> Style-nit:  This variable isn't necessary, just use the method in the for loop below.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 15:26:29.000000000
+
+MISMATCHED INLINE COMMENT
+Line:1, org.eclipse.jgit.test/tst/org/eclipse/jgit/nls/TestNLS.java -> I hate tests that sleep.  This is also prone to race conditions if the test is run on a heavily loaded system... which our automated Brenden Conley builds are.  So please expend the extra effort to implement a proper barrier between the threads to ensure they both set their locale before they can continue.  It shouldn't that hard, use a java.util.concurrent.CyclicBarrier.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 15:26:29.000000000
+
+MISMATCHED INLINE COMMENT
+Line:1, org.eclipse.jgit.test/tst/org/eclipse/jgit/nls/TestNLS.java -> Did you mean to set a locale here in a test meant for the jvm default?
+
+-------------------------------------

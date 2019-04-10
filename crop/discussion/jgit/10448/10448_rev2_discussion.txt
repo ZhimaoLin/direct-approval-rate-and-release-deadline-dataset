@@ -1,0 +1,115 @@
+DESCRIPTION
+
+Speed up clone/fetch with large number of refs
+
+Instead of re-reading all refs after each update, execute
+the deletes first, then read all refs once and perform
+the check for conflicting ref names in memory.
+
+Change-Id: I17d0b3ccc27f868c8497607d8e57bf7082e65ba3
+
+
+COMMENTS
+
+author: Juliet Cantu
+date: 2013-02-19 20:29:08.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-02-19 20:29:14.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2959/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-02-19 20:34:34.000000000
+
+Patch Set 2: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2959/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2013-03-01 00:33:20.000000000
+
+Patch Set 2: I would prefer that you didn't submit this
+
+(5 inline comments)
+
+Cool idea. :-)
+
+Line:271, org.eclipse.jgit/src/org/eclipse/jgit/lib/BatchRefUpdate.java -> This is now O(N^2). How about instead of tossing everything into commands2 you make commands2 an empty list:
+
+  List<ReceiveCommand> commands2  = new ArrayList<ReceiveCommand>(commands.size());
+
+and only add items to it in the next case where you didn't handle the DELETE here.
+
+Line:274, org.eclipse.jgit/src/org/eclipse/jgit/lib/BatchRefUpdate.java -> IMHO we don't have to check UPDATE and UPDATE_NONFASTFORWARD for name collisions do we? The name must already exist and must have the old ObjectId as its value in order to execute the command.
+
+So we only have to check names that are CREATE.
+
+Line:287, org.eclipse.jgit/src/org/eclipse/jgit/lib/BatchRefUpdate.java -> This should only execute if there was a CREATE. If we have no CREATE then this is just a huge waste of time.
+
+Line:301, org.eclipse.jgit/src/org/eclipse/jgit/lib/BatchRefUpdate.java -> This assert is unnecessary.
+
+Line:313, org.eclipse.jgit/src/org/eclipse/jgit/lib/BatchRefUpdate.java -> Checking the prefixes is faster with a TreeSet or a sorted List. Look at how RefDirectory.isNameConflicting() walks up the path for the input ref to see if any other ref already has that name. You don't have to build up large temporary HashSets containing every possible prefix permutation.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2013-03-05 12:56:34.000000000
+
+Patch Set 2: (2 inline comments)
+
+
+
+Line:271, org.eclipse.jgit/src/org/eclipse/jgit/lib/BatchRefUpdate.java -> Command2 is a linked list to avoid the O(n^2) behaviour that we'd get from ArrayList.
+
+Line:274, org.eclipse.jgit/src/org/eclipse/jgit/lib/BatchRefUpdate.java -> Depends on whether you trust that the packed refs list is checked for duplicates.
+
+Came to think about case-insensitive file systems, but that's another issue.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2013-03-05 14:52:10.000000000
+
+Patch Set 2: (2 inline comments)
+
+
+
+Line:271, org.eclipse.jgit/src/org/eclipse/jgit/lib/BatchRefUpdate.java -> My point was don't implement this as a remove. Implement it instead as an addition of things that weren't handled in this initial iteration. If you also presize the ArrayList capacity to commands.size() the ArrayList will never grow, and we won't need to allocate the (relatively huge) LinkedList internal nodes.
+
+Line:274, org.eclipse.jgit/src/org/eclipse/jgit/lib/BatchRefUpdate.java -> I think its safe to assume an existing reference does not conflict with another existing reference.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2013-03-23 08:35:28.000000000
+
+Patch Set 2: (5 inline comments)
+
+
+
+Line:271, org.eclipse.jgit/src/org/eclipse/jgit/lib/BatchRefUpdate.java -> Done
+
+Line:274, org.eclipse.jgit/src/org/eclipse/jgit/lib/BatchRefUpdate.java -> Done
+
+Line:287, org.eclipse.jgit/src/org/eclipse/jgit/lib/BatchRefUpdate.java -> Done
+
+Line:301, org.eclipse.jgit/src/org/eclipse/jgit/lib/BatchRefUpdate.java -> Done
+
+Line:313, org.eclipse.jgit/src/org/eclipse/jgit/lib/BatchRefUpdate.java -> After the last speedup goofup, I think I prefer simple. This is for thousands of refs, not millions. The number of prefixes is less than twice the numner of refs.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2013-03-30 12:28:24.000000000
+
+Your change could not be merged due to a path conflict.
+
+Please merge (or rebase) the change locally and upload the resolution for review.
+
+-------------------------------------

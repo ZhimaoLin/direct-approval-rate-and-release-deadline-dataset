@@ -1,0 +1,93 @@
+DESCRIPTION
+
+MB-11887: Properly send the snapshot start and end seqnos
+
+Currently we always set the snapshot start and end seqno to be the
+same as the start seqno. This is incorrect if we recently were
+disconnected and need to resume from a partial snapshot.
+
+Change-Id: I7c9430e0b24ef01cc427cb03b518f4c41a55d875
+
+
+COMMENTS
+
+author: Kenny Maynard
+date: 2014-08-06 17:39:33.736000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Abby Duran
+date: 2014-08-06 19:42:23.890000000
+
+Patch Set 6:
+
+Is this ready for review?
+
+-------------------------------------
+author: Abby Duran
+date: 2014-08-06 22:54:33.912000000
+
+Patch Set 6:
+
+(8 comments)
+
+Please feel free to grab me if you have any questions on my comments.
+
+Line:1104, src/upr-stream.cc -> My understanding is that snapshot_start and snapshot_end are based on checkpoint_start, which means that we need to check if MARK_FLAG_CHK is set or not. Please correct me if I'm wrong.
+
+Line:1158, src/upr-stream.cc -> I'm not sure why we need to set the snapshot_start and snapshot_end using the same number here. Does this mean that the current snapshot is fully received?
+
+Line:2057, src/couch-kvstore/couch-kvstore.cc -> Is there any specific reason why we need to add a separate doc for this? Can we use the existing vb_state local doc? I think having a new local doc can affect the backup and restore tools. Please confirm it from Bin to make sure that they are not affected.
+
+Line:2085, src/couch-kvstore/couch-kvstore.cc -> Shouldn't we add the logs if we fail to read a local doc?
+
+Line:2502, src/couch-kvstore/couch-kvstore.cc -> Shouldn't we update them in the rollback function?
+
+Line:434, src/vbucket.h -> We need to make them atomic as they are accessed by more than one thread.
+
+Line:2734, src/ep.cc -> I think there can be a racing issue in getting these values because they can be updated by processing snapshot_end message in the passive stream.
+
+Line:2735, src/ep.cc -> please make it more readable:
+
+else {
+    if (items_flushed) {
+        vb->setCurrentSnapshot(snapshotStart, snapEnd);
+    }
+}
+
+-------------------------------------
+author: Kenny Maynard
+date: 2014-08-06 23:01:53.938000000
+
+Patch Set 6:
+
+(8 comments)
+
+Note that these will be addressed in patch-set 8.
+
+Line:1104, src/upr-stream.cc -> The snapshots do not correspond to the checkpoint start and end if the cursor is in the open checkpoint. I can discuss this in more detail with you if needed.
+
+Line:1158, src/upr-stream.cc -> Yes, this means the snapshot is fully received. Let me see if I can do something to make this clearer. I may actually be able to remove this line too.
+
+Line:2057, src/couch-kvstore/couch-kvstore.cc -> I can move it into the same one.
+
+Line:2085, src/couch-kvstore/couch-kvstore.cc -> No. The way I did this was that if the local doc doesn't exist then this is not a partial snapshot. As a result this case is expected.
+
+Line:2502, src/couch-kvstore/couch-kvstore.cc -> This is the rollback function, can you be more specific?
+
+Line:434, src/vbucket.h -> Done
+
+Line:2734, src/ep.cc -> I'll address this.
+
+Line:2735, src/ep.cc -> Done
+
+-------------------------------------
+author: Tate Garrett
+date: 2014-08-11 03:59:01.234000000
+
+The change could not be merged due to a path conflict.
+
+Please rebase the change locally and upload the rebased commit for review.
+
+-------------------------------------

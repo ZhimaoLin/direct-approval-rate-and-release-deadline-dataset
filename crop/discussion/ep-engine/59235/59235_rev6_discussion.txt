@@ -1,0 +1,147 @@
+DESCRIPTION
+
+MB-15946: Move DCP cursors to new open chkPt when the chkPt has only meta items
+
+(1): When a new checkpoint is created and only queue_op_empty and
+queue_op_checkpoint_start are added, we must move any DCP and persistence
+cursors pointing to queue_op_checkpoint_end in the previous checkpoint to this
+new checkpoint. Note we cannot move the TAP cursors in the same way when they
+are pointing to queue_op_checkpoint_end. This is because TAP replication
+protocol expects to receive queue_op_checkpoint_end.
+Hence the change also adds a flag to identify if a cursor needs
+queue_op_checkpoint_end or not.
+
+(2): Also, when items for replication are got from the checkpoint, we can move
+to the new checkpoint even if we encounter queue_op_checkpoint_end. This is
+needed because, we do not want to leave any replication cursors hanging onto
+queue_op_checkpoint_end in the closed checkpoint when there are only meta items
+in the current open checkpoint.
+
+Both the above changes will help release the memory occupied by the closed
+checkpoints.
+
+Change-Id: I5c46bfd250dc486cf1adac7e243806e600ddc8b6
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2016-02-05 03:01:08.134000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-05 03:01:12.977000000
+
+Patch Set 6:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1579/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-05 03:11:37.222000000
+
+Patch Set 6: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2354/ : FAILURE
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1579/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-05 06:27:06.037000000
+
+Patch Set 6: -Verified
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2355/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-05 06:34:14.253000000
+
+Patch Set 6: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1579/ : SUCCESS
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2355/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-02-05 10:20:50.566000000
+
+Patch Set 6: Code-Review-1
+
+(3 comments)
+
+Please also add a unit test (to checkpoint_test.cc?) which validates this optimisation.
+
+Line:134, src/checkpoint.h -> Please document this.
+
+Additionally, it might be clearer to name this something like 'shouldSendCheckpointEndMetaItem' ?
+
+Line:506, src/checkpoint.h -> Please update the description of this to describe what the bool represents. You could also consider using the new Enum instead of the bool.
+
+Line:298, src/dcp/stream.cc -> Personally I'm not a big fan of random 'false' / 'true' literals in function invocations - as a reader you have no idea what this does without opening the definition of the function.
+
+Consider changing to an explicit enum class to CheckpointCursor - e.g. 
+
+ enum class MustSendCheckpointEnd { FALSE, TRUE };
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-02-09 10:52:12.566000000
+
+Patch Set 6: Code-Review-1
+
+(6 comments)
+
+Line:1715, src/ep.cc -> auto for readable ++
+
+Line:486, src/checkpoint.h -> I've found that automatic parameters are dangerous and lead to mistakes (like the infamous XDCR seqno -1 defect in 2.5) Given that there are very few callers to registerCursor and there's now 3 automatic parameter values,  can you make these 3 params required from the caller so we don't slip bugs in.
+
+Line:506, src/checkpoint.h -> Can you typedef this now more complex std::list to ease the readibility?
+
+Line:667, src/checkpoint.h -> As above, if registerCursor drops the automatic params, drop them here too
+
+Line:394, src/checkpoint.cc -> auto cur_it = connCursors.begin(); easier to read
+
+Line:1158, src/checkpoint.cc -> change to auto it =, easier to read
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2016-02-11 02:44:57.602000000
+
+Patch Set 6:
+
+(9 comments)
+
+Line:1715, src/ep.cc -> Done
+
+Line:134, src/checkpoint.h -> Done
+
+Line:486, src/checkpoint.h -> Done
+
+Line:506, src/checkpoint.h -> Done
+
+Line:506, src/checkpoint.h -> Done
+
+Line:667, src/checkpoint.h -> Done
+
+Line:298, src/dcp/stream.cc -> Done
+
+Line:394, src/checkpoint.cc -> Done
+
+Line:1158, src/checkpoint.cc -> Done
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-02-24 23:23:47.654000000
+
+Change has been successfully cherry-picked as ef72046d58bbe9c67bf2ab760f9bd7bbeefb85e8
+
+-------------------------------------

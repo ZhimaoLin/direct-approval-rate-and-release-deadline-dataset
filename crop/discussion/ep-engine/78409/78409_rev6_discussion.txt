@@ -1,0 +1,94 @@
+DESCRIPTION
+
+MB-23377: Alter Item* to unique_ptr in GetValue
+
+This patch adds a mechanism to transfer ownership of the Item out of the
+GetValue which a number of call sites need to make use of.
+
+Change-Id: Id06ea6af6b51bdb9018bab11f56f52c0f8adc999
+
+
+COMMENTS
+
+author: Aaliyah Proctor
+date: 2017-05-23 14:23:19.290000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-05-23 14:55:40.751000000
+
+Patch Set 6: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5929/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/5216/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/458/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6770/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-05-23 17:33:46.862000000
+
+Patch Set 6: Code-Review-1
+
+(18 comments)
+
+Line:286, src/ep_bucket.cc -> Suggest addLookupResult() is changed to take a unique_ptr.
+
+(Basically any use of unique_ptr::release() should raise the spider-senses - ideally one should not need it (you should always transfer ownership between unique_ptrs, and let the destructor handle cleanup).
+
+If that seems like a large change, feel free to do in a follow-up patch.
+
+Line:278, tests/module_tests/ephemeral_vb_test.cc -> Pretty sure this can go now.
+
+Line:1649, src/couch-kvstore/couch-kvstore.cc -> SOmething's up with the indentation here...
+
+Line:2322, src/couch-kvstore/couch-kvstore.cc -> I believe this is unnecessary now - when returnVal goes out of scope at the end of the function it'll clean up it's owned resources.
+
+Line:111, src/dcp/backfill_disk.cc -> As per my previous comment about just exposing the `value` member; if you do this then the code becomes much more explicit about what is happening at the call-site - this will become:
+
+ if (!stream_->backfillReceived(std::move(val.value), ...
+
+Here the reader can see that `val.value` has been moved from, and backfillReceived has taken ownership.
+
+Line:110, src/backfill.cc -> As a follow-up, would be good for performOp() to take ownership of the item via unique_ptr - i.e.
+
+ connMap.performOp(tapConnName, tapop, std::move(gv.getOwningValue()));
+
+or similar.
+
+Line:345, src/warmup.cc -> I think you can delete this now - when fetchedItem goes out of scope its dtor will delete the GetValue and subsequently  the Item.
+
+Line:547, src/warmup.cc -> This is unnecessary now - you've already moved from `val.value` at line 483.
+
+Line:54, src/callbacks.h -> Don't believe you need the explicit constructor - the default constructor of unique_ptr is a null value.
+
+Line:64, src/callbacks.h -> Would be good to delete this one - maybe in a follow-up patch?
+
+Line:87, src/callbacks.h -> Given you allow the outside world to get and modify `value`, It would be simpler (and a more obvious interface) just expose the value as a public member variable; then let people call the normal unique_ptr methods on it.
+
+(Essentially you are not adding any value to the interface in the implementations of getValue / getOwningValue / setValue - they don't enforce any invariants, so simpler to expose the unique_ptr member directly).
+
+Line:176, src/callbacks.h -> This is at best opaque, at worst misleading at the call-site - the caller doesn't know that value is essentially null afterwards. Prefer either an rvalue-reference, or even better make the function take a unique_ptr. See http://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#es56-write-stdmove-only-when-you-need-to-explicitly-move-an-object-to-another-scope
+
+Line:1427, src/vbucket.cc -> Can we not get away without the explicit template args to make_pair here? Or even better, just use an initialiser list as before? - esp as we don't need to support MSVC2013 anymore.
+
+Line:1432, src/vbucket.cc -> I certainly don't think you should need std::move on an rvalue...
+
+Line:104, tests/module_tests/evp_store_rollback_test.cc -> This can also be removed.
+
+Line:142, tests/module_tests/evp_store_rollback_test.cc -> ditto
+
+Line:501, tests/module_tests/evp_store_rollback_test.cc -> ditto (and in rest of file).
+
+Line:447, tests/module_tests/evp_store_test.cc -> Prefer moving:
+
+ get_item = std::move(get.value);
+
+-------------------------------------

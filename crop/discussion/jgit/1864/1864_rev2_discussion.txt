@@ -1,0 +1,103 @@
+DESCRIPTION
+
+[RFC] Start implementation of a Rebase command
+
+This is a first try to implement Rebase. At the moment, this does not
+try to implement --continue and --skip, so if the first conflict is found,
+the only option is to --abort the command.
+The --abort must still be re-implemented in order to succeed in case
+of checkout conflicts.
+
+Change-Id: I24d60c0214e71e5572955f8261e10a42e9e95298
+Signed-off-by: Willow Cantrell xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Willow Cantrell
+date: 2010-11-08 16:35:18.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-11-08 23:22:57.000000000
+
+Patch Set 2: I would prefer that you didn't submit this
+
+(10 inline comments)
+
+
+
+Line:157, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> This is horrible as its O(N) insertion (we have to slide the array down each time).  Instead use either a LinkedList, or append to the array and then use Collections.reverse() to flip it around after the walk is complete.
+
+Line:164, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Why are we using rebase-apply?  Dumping to patch files and back is pretty ugly.  I think we should instead be targeting the rebase interactive style of temporary data.  We can churn through most of the work directly inside of the JVM without writing temporary state, until we hit a conflict and need to stop for resolution.  That removes most of the performance disadvantage of the rebase interactive temporary format.
+
+Actually, that format should be faster because we aren't dumping the diff of each commit out to disk, and reading it back in.
+
+If we _really_ want to test what happens when you apply this series of patches to another branch, we shouldn't be doing that through rebase.  I know Junio C Hamano argues that is a use for rebase, but in practice nobody uses it like that, they rebase once and keep the result if it was successful.  The rebase interactive script is a better way to do that.
+
+Line:310, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> This isn't necessary, new FileOutputStream(file) will create the file if it doesn't exist yet.
+
+Line:311, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> FWIW we prefer the style:
+
+  FileOutputStream fos = new FileOutputStream(file);
+  try {
+    fos.write(content.getBytes("UTF-8"));
+  } finally {
+    fos.close();
+  }
+
+Line:373, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Maybe instead you can use:
+
+  RawParseUtils.decode(IO.readFully(new File(directory, fileName));
+
+Line:400, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> We know what we read head to above on line 391 with the parseCommit call.  If HEAD isn't that when the update occurs, we're screwed, as someone else has updated HEAD behind our backs.  Add in:
+
+  refUpdate.setExpectedOldObjectId(head);
+
+Also we have a RevWalk on hand, pass that to forceUpdate() so it doesn't need to allocate its own revision pool.
+
+Line:401, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> We should be checking the OK codes, and using default for the errors.  Just in case RefUpdate starts to return a different failure code in the future, we shouldn't assume its a successful update.
+
+Line:440, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> We would never do multiple actions at once.  So make this an enum that selects the operation mode, e.g.:
+
+  enum Operation {
+    BEGIN, CONTINUE, SKIP, ABORT;
+  }
+
+and have the individual set methods assign the enum field accordingly.
+
+Line:464, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Style-nit: This overload of setUpstream should be next to the other variant of setUpstream.
+
+Line:471, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Why not use the RevWalk we allocated in our constructor?
+
+-------------------------------------
+author: Willow Cantrell
+date: 2010-11-09 17:16:28.000000000
+
+Patch Set 2: (10 inline comments)
+
+
+
+Line:157, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Done
+
+Line:164, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Ok, it took me some discussion with Christian, but we hope that we understood this correctly.
+
+Line:310, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Done
+
+Line:311, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Done
+
+Line:373, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Done
+
+Line:400, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Done
+
+Line:401, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Done
+
+Line:440, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Done
+
+Line:464, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Done
+
+Line:471, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Done
+
+-------------------------------------

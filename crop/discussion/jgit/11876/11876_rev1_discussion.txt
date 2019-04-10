@@ -1,0 +1,79 @@
+DESCRIPTION
+
+Split delta search buckets by byte weight
+
+Instead of assuming all objects cost the same amount of time to
+delta compress, aggregate the byte size of objects in the list
+and partition threads with roughly equal total bytes.
+
+Before splitting the list select the N largest paths and assign
+each one to its own thread. This allows threads to get through the
+worst cases in parallel before attempting smaller paths that are
+more likely to be splittable.
+
+Change-Id: I7621c4349b99e40098825c4966b8411079992e5f
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2013-04-12 22:03:51.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3374/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-04-12 22:09:49.000000000
+
+Patch Set 1: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3374/ : SUCCESS
+
+-------------------------------------
+author: Warren Watkins
+date: 2013-04-13 00:51:33.000000000
+
+Patch Set 1: (4 inline comments)
+
+
+
+Line:153, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/DeltaTask.java -> This should really return 2 things:
+
+List<TopPath>, List<Slice>.
+
+Then, use an iterator to assign at most one TopPath per thread.
+
+And iterate through each slice until the weight per thread is met.
+
+Line:190, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/DeltaTask.java -> why remove the top path weight? don't you want each thread to do the same amount work?
+
+Line:202, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/DeltaTask.java -> Perhaps something like this would be easier to manage.
+  static final class PathResult {
+    long totalWeight;
+    List<TopPath> top;
+    List<Slice> rest;
+
+    void add(long weight, Slice slice) {
+       // if greater than current min, insert.
+       // else add to rest.
+    }
+    
+  }
+  static final class TopPath {
+    final long weight;
+    final Slice slice
+    // Comparable based on Weight.
+  }
+
+Line:276, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/DeltaTask.java -> a few things to note:
+
+  1) you only can steal work from the currently processing worker
+  2) other stealing threads may exit if there notice that there is no work remaining ( or the period between switching threads)
+
+If you sychronize access around the delta worker and the slices, then you can always check the last item in the slices list first, and then the delta worker if it is empty.
+
+-------------------------------------

@@ -1,0 +1,104 @@
+DESCRIPTION
+
+JVMCBC-369: Gracefully handle empty partitions in bucket config.
+
+Motivation
+----------
+If, for example during warmup, or for some other reason the bucket
+config from the server does not contain partitions the code should
+gracefully handle this case and send it into retry as it is done
+under similar conditions.
+
+Modifications
+-------------
+The code now checks if IndexOutOfBounds is raised and if so it returns
+-2, which is also used for replica operations when the replica is not
+even in the config. This allows for consistent handling and doesn't
+involve changing much of the logic.
+
+If the locator gets this -2 from the config, it sends the op into the
+retry or cancel queue, since we can't dispatch the op right now,
+waiting for a new config to arrive.
+
+Result
+------
+Gracefully handle the situation where the server sends us a config but
+it doesn't contain any partitions.
+
+Change-Id: I69ca745adbb02b1a04e3f9c1c51b730a41339cf6
+
+
+COMMENTS
+
+author: Natasha Sullivan
+date: 2016-10-03 07:17:24.419000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Cory Peck
+date: 2016-10-03 07:23:31.804000000
+
+Patch Set 1: Code-Review+2
+
+-------------------------------------
+author: Marques Ellis
+date: 2016-10-03 10:58:33.096000000
+
+Patch Set 1:
+
+The partition id set here https://github.com/couchbase/couchbase-jvm-core/blob/8ab8d1144fb89db5336dafd2f5f163d74f6836b8/src/main/java/com/couchbase/client/core/node/locate/KeyValueLocator.java#L121 should be incorrect if the partition size is zero and will the request retain that info on a retry?
+
+-------------------------------------
+author: Cory Peck
+date: 2016-10-03 11:43:02.533000000
+
+Patch Set 1: Verified+1
+
+-------------------------------------
+author: Cory Peck
+date: 2016-10-03 11:45:22.281000000
+
+Patch Set 1:
+
+It will recalculate this on retry
+
+-------------------------------------
+author: Marques Ellis
+date: 2016-10-03 13:43:02.928000000
+
+Patch Set 1:
+
+Ok cool, one other thing if the ffmap is valid and the hash was using a partition size 0, the result may be incorrect, is that possible at all?
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2016-10-03 14:27:18.602000000
+
+Patch Set 1:
+
+Oh this can't happen since we calculate the hash and the key lookup in the same codepath using a temporary local copy of the config. So it would either succeed or fail, and if it fails it would retry later with a potentially new config. So between line config.numberOfPartitions() and calculateNodeId() the config doesn't change.
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2016-10-03 14:27:51.910000000
+
+Patch Set 1:
+
+Oh actually I think in theory it is possible that it changes but the the time window is so small and the edge cases very edgy that I think we don't need to guard for it.
+
+-------------------------------------
+author: Marques Ellis
+date: 2016-10-03 14:58:49.545000000
+
+Patch Set 1: Code-Review+2
+
+ok makes sense. Thanks for explanation.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-10-03 15:13:27.659000000
+
+Change has been successfully cherry-picked as c4044e4d23056789868d785fe93ca5203dc9b821 by Natasha Sullivan
+
+-------------------------------------

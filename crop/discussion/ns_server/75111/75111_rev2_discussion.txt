@@ -1,0 +1,88 @@
+DESCRIPTION
+
+Make xattr_enabled overridable by the memcached params
+
+Simple change that consult the params before falling back
+to checking whether the cluster is 5.0 or later in terms of
+configuring XATTRs in memcached. Only exercisable via
+diag/eval this gives us a way to disable XATTRs for users
+who don't like the write latency / throughput reductions in
+full-eviction DGM cases and are are not using XATTRs.
+
+You disable XATTRs as follows:
+
+curl -X POST -u Administrator:password host:port/diag/eval xxx@xxx.xxx <<EOF
+Current = ns_config:search(ns_config:get(), memcached, []),
+ns_config:set(memcached,
+              lists:keystore(xattr_enabled, 1,
+                             Current, {xattr_enabled, false})).
+EOF
+
+And reenable as follows:
+
+curl -X POST -u Administrator:password host:port/diag/eval xxx@xxx.xxx <<EOF
+Current = ns_config:search(ns_config:get(), memcached, []),
+ns_config:set(memcached, lists:keydelete(xattr_enabled, 1, Current)).
+EOF
+
+Change-Id: Icd3ffc8aa02c6a7849d08f456b1e7d3349335dee
+
+
+COMMENTS
+
+author: Kian Santos
+date: 2017-03-14 05:50:09.261000000
+
+Uploaded patch set 2: Commit message was updated.
+
+-------------------------------------
+author: Kian Santos
+date: 2017-03-14 05:51:25.419000000
+
+Patch Set 2: Verified+1
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2017-03-14 07:47:42.627000000
+
+Patch Set 2:
+
+Didn't you tell me that you'd already done this? :)
+
+-------------------------------------
+author: Kian Santos
+date: 2017-03-14 15:15:06.305000000
+
+Patch Set 2:
+
+Hah! :-) What I did was only default xattr_enabled on the cluster_compat_mode. I somehow deluded myself that I had done more than this, which only goes to show that I should think more carefully before I speak.
+
+-------------------------------------
+author: Noe Perry
+date: 2017-03-15 01:21:44.483000000
+
+Patch Set 2:
+
+One thing to note here is that if the cluster is spock, we unconditionally negotiate and enable XATTRs while setting up the DCP replication streams.
+
+-------------------------------------
+author: Kian Santos
+date: 2017-03-15 04:09:36.373000000
+
+Patch Set 2: -Verified
+
+Well, that's interesting. I don't remember seeing DCP replicator crashes when I verified the stuff. Let me poke around more.
+
+-------------------------------------
+author: Noe Perry
+date: 2017-03-15 07:09:21.719000000
+
+Patch Set 2:
+
+Based on my understanding we mostly will not see a crash.
+
+When XATTR feature is disabled via the diag/eval, the clients can't negotiate XATTRs and hence the documents sent will not have any XATTRs. As far as replication is concerned, the DCP mutations/deletions will not have the PROTOCOL_BINARY_DATATYPE_XATTR bit in the 'datatype' field set. The DCP proxy will simply pass these along and ep-engine will check that there are no XATTRs and do the right thing.
+
+The extra cost incurred will mostly be this extra check. Initially I thought that this can show up in user visible performance but this should not as the replication is asynchronous. ??
+
+-------------------------------------

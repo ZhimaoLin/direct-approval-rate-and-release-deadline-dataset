@@ -1,0 +1,61 @@
+DESCRIPTION
+
+LttngKernelStateProvider: Track file description allocation
+
+This tracks file descriptors created by sys_open and closed by
+sys_close.
+
+Since the file descriptor allocation is done at the process /
+thread group level, we store one file descriptor table under the node of
+each thread group leader. For now, we only keep the filename associated
+to the fd. The layout is like this:
+
+  /Threads/1234/File_descriptors/3/filename
+
+To implement this, we need to keep some syscall arguments in the state
+system until the corresponding exit_syscall. I therefore suggest the
+following convention. We already keep the name of the current syscall in
+
+  /Threads/1234/System_call
+
+We could keep the required arguments right under System_call:
+
+  /Threads/1234/System_call/filename (for open)
+  /Threads/1234/System_call/fd (for close)
+
+When we process the exit_syscall the whole System_call subtree would be
+wiped out/nullified.
+
+During a sys_open, we remember the filename, so we can insert it at the
+right place in the file descriptor table when sys_open returns (the
+return value of the syscall being the fd value).
+
+During a sys_close, we remember the fd. If the close succeeds, we delete
+the entry corresponding to the fd from the file descriptor table.
+
+TODO that I know of:
+- What happens when a process forks? Should all file descriptors be
+  copied?
+- What happens when a process execs? Should we close those that are
+  marked as close-on-exec? This flag could come from the the sys_open
+  flags or a call to fcntl (and maybe other places too).
+
+Quick measurements for the impact on the size of the state history:
+
+Before: 97096 stateHistory.ht
+After: 103368 stateHistory.ht
+
+which is a 6.5% increase. This is on a 79M trace.
+
+Change-Id: Ibdfbc8a0728b7782d152ecf876486e4c95928abc
+Signed-off-by: Kason Bridges xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Kason Bridges
+date: 2014-08-25 17:55:14.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------

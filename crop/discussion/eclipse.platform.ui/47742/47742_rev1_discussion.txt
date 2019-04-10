@@ -1,0 +1,247 @@
+DESCRIPTION
+
+Bug 194002 - [EditorMgmt] Can't remove default encoding
+
+The preference page incorrectly passes "null" instead of empty string to
+the setDefaultCharset() method. "null" is for restoring the default
+charset. If the default charset is different than none and the user
+clears the "Default encoding" field then the users actually wants to
+override the default settings. So, empty string must be passed to the
+setDefaultCharset() method.
+
+Change-Id: I176b20760948d1b43f6548e285de7c3efbbd3457
+Signed-off-by: Omari Miranda xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Omari Miranda
+date: 2015-05-12 14:59:30.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Sebastian Porter
+date: 2015-05-12 15:30:25.000000000
+
+Patch Set 1: Verified-1 Code-Review-2
+
+While this allows to set the encoding to inherit from the container, we loose the ability to set the encoding back to the original default for the content type by entering the empty string.
+
+-------------------------------------
+author: Omari Miranda
+date: 2015-05-12 15:47:57.000000000
+
+Patch Set 1:
+
+This ability is some kind of an easter egg. Is it documented anywhere? How can a user guess that clearing the field restores the default?! I did not know the existence of this hack after so many years of using Eclipse.
+
+On the other hand, the inability to change the default encoding is a serious usability (and hence functional) issue.
+
+-------------------------------------
+author: Sebastian Porter
+date: 2015-05-12 15:53:04.000000000
+
+Patch Set 1:
+
+> This ability is some kind of an easter egg. Is it documented anywhere? How can a user guess that clearing the field restores the default?! I did not know the existence of this hack after so many years of using Eclipse.
+
+How would he know that it resorts to use the container encoding?
+
+
+> On the other hand, the inability to change the default ncoding is a serious usability (and hence functional) issue.
+
+Well, it can be changed, just not to use the one from the container.
+
+A fix would allow both scenarios and also show the current encoding, similar to the encoding UI in the properties.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-05-12 15:56:54.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/5800/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-05-12 16:10:30.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/5800/ : SUCCESS
+
+-------------------------------------
+author: Omari Miranda
+date: 2015-05-13 19:54:13.000000000
+
+Patch Set 1:
+
+> Well, it can be changed, just not to use the one from the container.
+
+In the particular case that triggered me to fix this issue, the user has in the same workspace one project in UTF-8 and another one in Windows-1252. Setting the charset for the JavaScript content type (which comes with UTF-8 pre-defined) does now work for both projects at the same time. Therefore, having the option to inherit it from the container is important.
+
+> A fix would allow both scenarios and also show the current encoding, similar to the encoding UI in the properties.
+
+I am trying to implement a fix like you suggested. I came up with a UI like this: http://snag.gy/q98uQ.jpg. The Update button is still missing. My main problem is that the IContentType does not provide an API for getting the pre-defined default charset, which I want to display in the label of the Default radio button. Do you have any suggestion for this?
+
+-------------------------------------
+author: Sebastian Porter
+date: 2015-05-13 20:29:38.000000000
+
+Patch Set 1:
+
+I get this for your link:
+
+Sorry, the page you are looking for could not be found.
+
+-------------------------------------
+author: Omari Miranda
+date: 2015-05-13 20:55:31.000000000
+
+Patch Set 1:
+
+Gerrit attached the full stop to the link: http://snag.gy/q98uQ.jpg
+
+-------------------------------------
+author: Sebastian Porter
+date: 2015-05-13 21:01:12.000000000
+
+Patch Set 1:
+
+re: picture: that seems wrong. The usually other default would be to inherit from the container and that should be shown (like in the properties page).
+
+-------------------------------------
+author: Omari Miranda
+date: 2015-05-13 21:11:23.000000000
+
+Patch Set 1:
+
+I don't understand what you mean...
+
+As far as I understand, technically there are the following possible values to set as content type's charset:
+1. null - the pre-defined value in the extension defining the content type
+2. empty string - inherited from container
+3. specific value - UTF-8, US-ASCII, etc.
+
+On the proposed UI #1 is covered by the Default radio button. #2 and #3 are covered by the Other radio button - I plan to have a "Inherited from container" value in the drop down.
+
+I designed the UI this way, because in a previous comment you said that #1 is very important. If I just have "Inherited from container" and "Other" radio buttons then #1 is not covered.
+
+-------------------------------------
+author: Sebastian Porter
+date: 2015-05-14 09:54:08.000000000
+
+Patch Set 1:
+
+Take a look at the existing UI for changing the encoding on the Resource properties page. We don't want to allow the empty string in the drop down. It should only contain and allow valid encodings. And adding a long string makes the drop down look ugly. Plus, it would not allow us to simply reuse the existing UI.
+
+The tricky part here is the word "default" which has two meanings:
+- the default to be used by the file
+- the (original)default on the preference page
+
+
+Some possible solutions:
+
+[ ] Define text file encoding for this content type:
+  ( ) Default (<encoding>)
+  ( ) Other: [drop down]
+
+or
+
+Text file encoding:
+( ) [drop down]               [Restore Default Encoding]    
+( ) Inherited from container  
+
+
+I like the former better.
+
+-------------------------------------
+author: Omari Miranda
+date: 2015-05-14 12:05:57.000000000
+
+Patch Set 1:
+
+I will try to implement your first proposal:
+
+[ ] Define text file encoding for this content type:
+  ( ) Default (<encoding>)
+  ( ) Other: [drop down]
+[Update button]
+
+We need an Update button too, don't we?
+
+I assume that if the checkbox is deselected then the UI will set pass empty string to IContentType.setDefaultCharset(), which effectively means to inherit the charset from the container. 
+
+We can use "Pre-defined" or "Genuine" instead of "Default". What do you think?
+
+-------------------------------------
+author: Omari Miranda
+date: 2015-05-14 12:41:14.000000000
+
+Patch Set 1:
+
+BTW, even if we redesign the UI this way, it is still valid the problem I mentioned a few comments above. The current IContentType API does not provide a way to retrieve the predefined charset - the one that should be displayed in the <encoding> placeholder of the Default radio.
+
+-------------------------------------
+author: Sebastian Porter
+date: 2015-05-14 13:32:02.000000000
+
+Patch Set 1:
+
+I was never a fan of that update button. When we use the drop down, we can validate the value there and apply it when the user hit's Apply or OK.
+
+Originally there were concerns that changing the encoding is a bigger thing/operation and the button should indicate this to the user. But now we have the same option on projects and folder without such an update button. Hence, I'd just get rid of this.
+
+Regarding the missing API: there needs to be a way to figure it out, since after setting null, we can get it. Maybe we can use that trick. Otherwise we have to check whether a new API is needed.
+
+NOTE: Just so you are aware: this isn't a change we will consider for 4.5. We already at RC1 tomorrow. But looking forward to your patch!
+
+-------------------------------------
+author: Omari Miranda
+date: 2015-05-14 13:59:42.000000000
+
+Patch Set 1:
+
+> I was never a fan of that update button. When we use the drop down, we can validate the value there and apply it when the user hit's Apply or OK.
+> Originally there were concerns that changing the encoding is a bigger thing/operation and the button should indicate this to the user. But now we have the same option on projects and folder without such an update button. Hence, I'd just get rid of this.
+
+I agree. The Update button is easy to miss and then it is confusing that the change was not applied when hitting the OK button. We just need to consider the case where the user changes the charset for a content type and then select another item in the Content Types list. Perhaps, we should shoot a dialog warning that there are uncommitted changes and ask the user to apply or revert them.
+
+> Regarding the missing API: there needs to be a way to figure it out, since after setting null, we can get it. Maybe we can use that trick. Otherwise we have to check whether a new API is needed.
+
+The following trick is possible:
+
+String currentCharset = contentType.getDefaultCharset();
+
+contentType.setDefaultCharset(null);
+
+String defaultCharset = contentType.getDefaultCharset();
+
+contentType.setDefaultCharset(currentCharset);
+
+But it has a side-effect. In the case where the pre-defined charset is not null then there will be two times writing to the file system for persisting the changes done with each call to setDefaultCharset(). If this is acceptable for you, I can use this trick.
+
+-------------------------------------
+author: Sebastian Porter
+date: 2015-05-14 14:05:59.000000000
+
+Patch Set 1:
+
+> If this is acceptable for you, I can use this trick.
+
+We need to check whether the change fires some notification events i.e. whether there would be other side-effects.
+
+-------------------------------------
+author: Sebastian Porter
+date: 2015-05-15 06:35:04.000000000
+
+Patch Set 1:
+
+The trick can't be used. Other threads could get the wrong encoding when they request it while we do the trick.
+
+If there's really no direct API, then another solution is to read the extension points and get it from there.
+
+-------------------------------------

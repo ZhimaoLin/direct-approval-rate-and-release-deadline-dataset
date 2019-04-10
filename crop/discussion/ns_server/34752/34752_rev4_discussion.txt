@@ -1,0 +1,55 @@
+DESCRIPTION
+
+MB-10118 Reimplement docs REST endpoint using get_keys command.
+
+Our approach is as follows:
+
+  1. The node that handles the all docs request sends subrequests via
+     ns_memcached to all the nodes in the cluster. It passes a list of
+     vbuckets it expects destination node to have and all request
+     parameters with two exceptions: 'skip' is not sent, 'limit' is
+     set to 'original limit' + 'skip'. After receiving all the nodes'
+     responses, the coordinating node skips 'skip' smallest items and
+     returns next 'limit' number of items.
+
+     Coordinating node will retry the request fixed amount of times
+     with some delay upon receiving not_my_vbucket error from any of
+     the nodes.
+
+  2. Each node that handles all docs subrequest sends a get_keys
+     command for each of the vbuckets. Assuming that keys span
+     vbuckets more or less evenly, the limit it uses is
+     2 * ('original limit' / 'number of vbuckets' + 1). Then it gets
+     'original limit' number of keys from results. If for any of the
+     vbuckets the list of keys gets exhausted, another request is sent
+     to receive more keys. After this is done, as a separate stage the
+     values for the selected keys are retrieved (as long as
+     include_docs parameter is set to true). Care is taken to select
+     more keys if any of the items happen to be deleted by the time
+     we try to get their bodies.
+
+Change-Id: I7f3f981e90cb190b44b21a8a6949c3acf7f0989c
+
+
+COMMENTS
+
+author: Meghan Vazquez
+date: 2014-03-22 01:18:44.794000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Jasmin Rangel
+date: 2014-03-22 01:19:00.728000000
+
+Patch Set 4:
+
+New patchset patch-id matches previous patchset, but commit message has changed.
+
+-------------------------------------
+author: Philip Lara
+date: 2014-03-22 02:44:35.024000000
+
+Patch Set 4: Verified+1 Code-Review+2
+
+-------------------------------------

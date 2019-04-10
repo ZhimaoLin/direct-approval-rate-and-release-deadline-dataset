@@ -1,0 +1,115 @@
+DESCRIPTION
+
+Add a method to ObjectInserter to read back inserted objects
+
+In the DFS implementation, flushing an inserter writes a new pack to
+the storage system and is potentially very slow, but was the only way
+to ensure previously-inserted objects were available.  For some tasks,
+like performing a series of three-way merges, the total size of all
+inserted objects may be small enough to avoid flushing the in-memory
+buffered data.
+
+DfsOutputStream already provides a read method to read back from the
+not-yet-flushed data, so use this to provide an ObjectReader in the
+DFS case.
+
+In the file-backed case, objects are written out loosely on the fly,
+so the implementation can just return the existing WindowCursor.
+
+Change-Id: I454fdfb88f4d215e31b7da2b2a069853b197b3dd
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2014-08-13 05:54:27.000000000
+
+Uploaded patch set 10.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-08-13 05:54:33.000000000
+
+Patch Set 10:
+
+Build Started https://hudson.eclipse.org/egit/job/jgit.gerrit/5471/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-08-13 06:02:48.000000000
+
+Patch Set 10: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/jgit.gerrit/5471/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2014-08-13 06:03:50.000000000
+
+Patch Set 10:
+
+An extra 100 lines over Dave's last version, but I think the inserter-reader pair behaves better in DFS. The block cache can actually be used, and there are no unnecessary output stream flushes.
+
+-------------------------------------
+author: Santos Moore
+date: 2014-08-13 15:10:40.000000000
+
+Patch Set 10: Code-Review-1
+
+(5 comments)
+
+Thanks, I think this is pretty straightforward.
+
+Line:84, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/dfs/DfsInserterTest.java -> Similar test when writing more than the stream buffer threshold, otherwise I don't think StreamLoader has any test coverage.
+
+Line:243, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsInserter.java -> I understand that this is a true statement but not why this comment was added to this method.
+
+Line:628, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsInserter.java -> Or an implicit flush due to exceeding the stream file threshold, right?
+
+Line:631, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsInserter.java -> Space before finally.
+
+Line:658, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsInserter.java -> I think nested anonymous classes are a bit tough to read, mind factoring out the InputStream?
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2014-08-13 17:27:20.000000000
+
+Patch Set 10:
+
+(6 comments)
+
+Line:84, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/dfs/DfsInserterTest.java -> Done
+
+Line:243, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsInserter.java -> Removed.
+
+Line:628, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsInserter.java -> No. This code path only triggers after the inserter has closed and nulled packOut and we can no longer use packOut to read back.
+
+Its hedging against the caller doing this with a really big object:
+
+  ObjectInserter ins = ...;
+  ObjectLoader ldr = ins.newReader(ins.insert(...))
+  ins.flush();
+  ins.release();
+  ObjectStream data = ldr.openStream();
+
+Line:631, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsInserter.java -> Done
+
+Line:658, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsInserter.java -> Done
+
+Line:2, /COMMIT_MSG -> Do you care that I am blaming you for the complicated buffering logic?
+
+-------------------------------------
+author: Santos Moore
+date: 2014-08-13 17:31:24.000000000
+
+Patch Set 10:
+
+(1 comment)
+
+Line:2, /COMMIT_MSG -> I don't care that you didn't change the author :)
+
+I do care that you blame me for the buffering logic insofar as my original implementation just held on to a side map of object buffers, and you were the one who suggested reading it back from the in-progress pack buffer.
+
+-------------------------------------

@@ -1,0 +1,162 @@
+DESCRIPTION
+
+XDC Replication Manager Implementation
+
+Change-Id: Ic700bb0d44a1996093429ccc3b11805af87bca20
+
+
+COMMENTS
+
+author: Tatiana Sheppard
+date: 2011-10-08 10:49:18.212000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Tatiana Sheppard
+date: 2011-10-08 11:00:27.441000000
+
+Patch Set 2:
+
+Reimplemented the replication manager to use the async_replicate() and cancel_replication() API of couch_replicator.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2011-10-08 11:01:22.669000000
+
+Patch Set 2:
+
+seeing new per-vbucket replication states. But how we're going to replicate and 'merge' all of this across the cluster ?
+
+-------------------------------------
+author: Tatiana Sheppard
+date: 2011-10-08 11:06:00.939000000
+
+Patch Set 2:
+
+> seeing new per-vbucket replication states. But how we're going to replicate and 'merge' all of this across the cluster ?
+
+Not completely sure yet. Aliaksey A mentioned that once we have this information, we could probably write some kind of a map-reduce function in Couch that will aggregate it. Need to think more about it, though. By the way, the info docs will not be replicated since they contain node specific stats.
+
+Make sense?
+
+-------------------------------------
+author: Nathalie Landry
+date: 2011-10-08 11:08:55.721000000
+
+Patch Set 2:
+
+yeah. I misread file comments. Separate _info docs make sense.
+
+We _will_ replicate them though. We'll need to assign different id's to all of them and replication manager will need to update it's own info document. Other node's info documents are needed in order to aggregate information from them.
+
+-------------------------------------
+author: Tatiana Sheppard
+date: 2011-10-08 11:12:07.126000000
+
+Patch Set 2:
+
+Ok. Will change the naming for uniqueness.
+
+Just curious, though: Do the _info files have to be on one node for aggregation? Can't we write aggregate across multiple nodes?
+
+-------------------------------------
+author: Nathalie Landry
+date: 2011-10-08 11:27:43.717000000
+
+Patch Set 2:
+
+Filipe, I think my previous comment is valid (and applies to stock couch).
+
+When somebody changes replicator.db in config we start new changes feed loop, but we do nothing with old.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2011-10-08 11:29:10.583000000
+
+Patch Set 2:
+
+Srinivas, we can aggregate in other way.
+
+But then question arise. Do we need replicator db at all then ? What it gives us?
+
+We've already deviated from our original intent (not necessarily good thing).
+
+-------------------------------------
+author: Tatiana Sheppard
+date: 2011-10-08 11:38:00.430000000
+
+Patch Set 2:
+
+We don't really need the replicator db for _info docs since we voluntarily look them up whenever we need to rather than reacting to changes to them. Right?
+
+We could just as well be storing them in a different database. The only issue (not sure if I'm correct on this) might be when we want to join the xdc replication doc with all its _info docs for presenting an aggregated view to the users.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2011-10-08 11:41:31.207000000
+
+Patch Set 2:
+
+We can 'join' info to replicator documents in any other way. But in case we want map/reduce it needs to be in same database.
+
+But the main question is: we've deviated from original API, is that ok ? As part of original API couch itself updates replication status field in replicator db document. We don't do that currently.
+
+-------------------------------------
+author: Tatiana Sheppard
+date: 2011-10-08 11:49:24.206000000
+
+Patch Set 2:
+
+Strictly speaking, it's the couch replication manager that updates the documents with the status, not the couch replicator, which is only responsible for the actual replication.
+
+We haven't deviated from this model because the xdc replication manager (which will replace the couch replication manager) still does the state updates while only delegating the actual replication to couch.
+
+The only deviation is that we update the state in a different document. Is this what you meant?
+
+-------------------------------------
+author: Nathalie Landry
+date: 2011-10-08 11:50:18.132000000
+
+Patch Set 2:
+
+>> The only deviation is that we update the state in a different document. Is this what you meant?
+
+
+yes
+
+-------------------------------------
+author: Nathalie Landry
+date: 2011-10-08 11:50:56.425000000
+
+Patch Set 2: I would prefer that you didn't submit this
+
+I'm not sure if sequential repeated grabbing of vbucket map each time we start replicating next vbucket is very bad or just bad.
+
+-------------------------------------
+author: Tatiana Sheppard
+date: 2011-10-08 11:57:04.424000000
+
+Patch Set 2:
+
+I've thought about the problem of repeated fetching of the vbucket map. Will fix this.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2011-10-08 12:09:49.453000000
+
+Patch Set 2:
+
+Also something needs to delete node's info document when something deleted replicator document.
+
+-------------------------------------
+author: Tatiana Sheppard
+date: 2011-10-08 12:14:14.163000000
+
+Patch Set 2:
+
+When to delete the _info document isn't completely clear to me yet. Deleting it upon the replicator doc deletion doesn't make sense because the user may still want to look at old stats after canceling a replication or after it terminates normally.
+
+One option is to have a notion of a TTL i.e., we retain _info docs until a certain point after the replication has terminated (for historical reporting) and delete them afterwards.
+
+-------------------------------------

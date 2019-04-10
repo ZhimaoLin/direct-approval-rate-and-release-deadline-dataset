@@ -1,0 +1,91 @@
+DESCRIPTION
+
+Use java.io.File to check existence of loose objects in ObjectDirectory
+
+It was reported in [1] that 197e3393a51424fae45e51dce4a649ba26e5a368 led
+to a performance regression in a BFG benchmark. Analysis showed that
+this is caused by the exists() method in FS_POSIX, now overriding the
+default implementation in FS. The default implementation of FS.exists()
+uses java.io.File.exists(), while the new implementation in FS_POSIX
+uses java.nio.file.Files.exists() - by simply removing the override in
+FS_POSIX, performance was restored.
+
+Profiling showed that java.nio.file.Files.exists() is substantially
+slower than java.io.File.exists(), to the point where the exists() call
+doubles the average cost of a call to
+ObjectDirectory.insertUnpackedObject() - which the BFG uses a lot,
+because it's rewriting history. Average times measured on Ubuntu were:
+
+java.io.File.exists() - 4 microseconds
+java.nio.file.Files.exists() - 60 microseconds
+
+The loose object exists test should be using java.io.File and not FS.
+ObjectDirectory uses FS.resolve() to traverse symlinks to objects but
+then once inside objects all 256 sharded directories should be real
+directories, and the object files should be real files, not dangling
+symlinks. java.io.File.exists() is sufficient here, and faster.
+
+Change ObjectDirectory to use File.exists() once its computed the File
+handle.
+
+This does mean JGit cannot run ObjectDirectory code on an abstract
+virtual filesystem plugged into NIO2. If you really want to run JGit on
+an esoteric non-standard filesystem like "in memory" you should look at
+the DFS storage backend, which has fewer abstraction points to deal
+with. Or write your own from scratch.
+
+[1] https://dev.eclipse.org/mhonarc/lists/jgit-dev/msg02954.html
+
+Change-Id: I74684dc3957ae1ca52a7097f83a6c420aa24310f
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+
+COMMENTS
+
+author: Douglas Trujillo
+date: 2015-08-28 11:13:59.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-08-28 11:14:05.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7062/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-08-28 11:21:39.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7062/ : SUCCESS
+
+-------------------------------------
+author: Juliet Cantu
+date: 2015-08-28 11:24:45.000000000
+
+Patch Set 1: Code-Review+2
+
+-------------------------------------
+author: Lillian Burnett
+date: 2015-08-28 12:16:40.000000000
+
+Patch Set 1: Code-Review+1
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-08-28 16:25:08.000000000
+
+Patch Set 1: Code-Review+2
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-08-31 08:47:57.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

@@ -1,0 +1,86 @@
+DESCRIPTION
+
+Adds the git attributes computation on the treewalk
+
+Adds the getAttributes feature to the tree walk. The computation of
+attributes needs to be done by the TreeWalk since it needs both a
+WorkingTreeIterator and a DirCacheIterator.
+
+Bug: 342372
+CQ: 9120
+Change-Id: I5e33257fd8c9895869a128bad3fd1e720409d361
+Signed-off-by: Bernard Hawkins xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Malia Sampson
+date: 2015-01-10 15:20:56.000000000
+
+Uploaded patch set 9.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-01-10 15:21:02.000000000
+
+Patch Set 9:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/5898/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-01-10 15:28:58.000000000
+
+Patch Set 9: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/5898/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-01-16 14:52:06.000000000
+
+Patch Set 9: Code-Review-1
+
+(2 comments)
+
+Line:105, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> I don't get this: Why is the WorkingTreeIterator the one which is responsible to read data which is explicitly not in the workingtree. If the WorkingTreeIterator is the one which reads attributes you cannot support repo's where we don't have a WorkingTreeIterator - bare repos. Even in a bare repo you can say "git diff A B" and for that we need attributes to control diff output, determine text/binary, ... . JGit even allows to try merges in bare repos (that's a big gerrit use case) and there you might need merge drivers defined by attributes.
+
+For me the Repository would be a good candidate. There we have all the other accessors which read data from $GITDIR and from global/system-wide files (e.g. Repository.getConfig())
+
+Line:58, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/AttributeNodeProvider.java -> Why do we have this abstraction? Do you already have different implementors for this interface in mind?
+
+-------------------------------------
+author: Bernard Hawkins
+date: 2015-01-20 08:20:46.000000000
+
+Patch Set 9:
+
+(2 comments)
+
+Line:105, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> Yes I think your are right. This should be moved elsewhere. The repository might be a good candidate however I need to reconcile attributes from DirCacheIterator, WorkingTreeIterator (if any) and now the repository. Currently this is done in the TreeWalk in [1]. However from this location I can not always access the repository. So my question is, Do you think the TreeWalk is a bad place to compute the attributes? Or should I find somewhere else to get the info attribute node and the global attribute node?
+
+[1] org.eclipse.jgit.treewalk.TreeWalk.getAttributes(OperationType)
+
+Line:58, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/AttributeNodeProvider.java -> You are right, I can remove this. I will do it as soon as I have figure how to correct your second comment.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-01-20 10:14:04.000000000
+
+Patch Set 9:
+
+(1 comment)
+
+Line:105, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> I think putting it to treewalk is ok.
+
+As you explained the calculation of the effective gitattribues requires looking at index,workingtree and some global attribute storages (e.g. $GIT_DIR/info/attributes). TreeWalk seems to be the best place. But TreeWalk doesn't need to have a reference to a repository. Maybe it's a good idea to stick with your abstraction of an accessor to the global attribute storage and have a setter for such an accessor in TreeWalk. The constructor TreeWalk(Repository) could know that a Repository offers a getAttributeNodeProvider() method (to be implemented) and don't require the caller do additionally call setAttributeNodeProvider(). But instances created by TreeWalk(ObjectReader) would require a setAttributeNodeProvider() in order to be able to read global attributes.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-11-18 00:39:55.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

@@ -1,0 +1,106 @@
+DESCRIPTION
+
+RefDirectory.exactRef: do not ignore symrefs to unborn branch
+
+When asked to read a symref pointing to a branch-yet-to-be-born (such
+as HEAD in a newly initialized repository), DfsRepository and
+FileRepository return different results.
+
+FileRepository:
+
+	exactRef("HEAD") => null
+
+DfsRepository:
+
+	exactRef("HEAD") => SymbolicRef[HEAD -> refs/heads/master=00000000]
+
+getRef("HEAD") returns the same as DfsRepository's exactRef in both
+backends.
+
+The intended behavior is the DfsRepository one: exactRef() is supposed
+to be like getRef(), but more exact because it doesn't need to
+traverse the search path.
+
+The discrepancy is because DfsRefDatabase implements exactRef()
+directly with the intended semantics, while RefDirectory uses a
+fallback implementation built on top of getRefs().  getRefs() skips
+symrefs to an unborn branch.
+
+Let the fallback implementation use getRef instead to avoid this.
+This means that exactRef will waste some effort traversing the ref
+search path when the named ref is not found --- optimizing it to avoid
+that traversal will happen in a followup change.
+
+Change-Id: Ic138a5564a099ebf32248d86b93e2de9ab3c94ee
+Reported-by: Elise Key xxx@xxx.xxx
+Bug: 478865
+
+
+COMMENTS
+
+author: Eden Lin
+date: 2015-11-11 00:07:39.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-11-11 00:09:52.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7451/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-11-11 00:18:50.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7451/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-11-11 07:48:35.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:243, org.eclipse.jgit/src/org/eclipse/jgit/lib/RefDatabase.java -> Isn't this quite ineffective? We are implementing a method which explicitly expects a fully qualified ref name and which therefore does not have to deal with iterating SEARCH_PATH. But the implementation is done by calling the expensive method which does all this iterating over the SEARCH_PATH and to throw away the results if we see the input ref name was not the a qualified one. Maybe an internal getRef() method should learn to use a explicitly given SEARCH_PATH.
+
+-------------------------------------
+author: Eden Lin
+date: 2015-11-11 16:41:17.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:243, org.eclipse.jgit/src/org/eclipse/jgit/lib/RefDatabase.java -> This patch is about getting the semantics right. https://git.eclipse.org/r/60108 optimizes it. Should the latter be targeted at stable-2.11 too?
+
+-------------------------------------
+author: Eden Lin
+date: 2015-11-11 16:44:47.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:243, org.eclipse.jgit/src/org/eclipse/jgit/lib/RefDatabase.java -> I mean stable-4.1 --- sorry for the confusion.
+
+I could go either way, myself:
+
+On one hand exactRef is relatively new so there aren't too many callers and most callers would have been using getRef before (so this implementation of exactRef adds some correctness and at least doesn't hurt performance). That makes it tempting to get this fix in in the stable branches and let the faster implementation cook for 4.3.
+
+On the other hand this fix would introduce a small performance regression which we could avoid by also applying 60108.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-11-12 20:00:24.000000000
+
+Change has been successfully merged into the git repository by Eden Lin
+
+-------------------------------------

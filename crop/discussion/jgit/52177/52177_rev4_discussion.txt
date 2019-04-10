@@ -1,0 +1,261 @@
+DESCRIPTION
+
+Implement simple LFS content storage servlet
+
+Simple servlet supporting file content storage for "Large File Storage"
+(LFS) server as defined by the Github LFS API [1].
+
+- upload and download of large files is probably network bound hence use
+  asynchronous servlet for good scalability
+- simple object storage in file system with 2 level fan-out
+- storage interface LargeObjectRepository allows alternate storage
+  implementations
+- use LockFile to protect writing large objects against multiple
+  concurrent uploads of the same object
+- to prevent corrupt uploads the uploaded file is rejected if its hash
+  doesn't match id given in URL
+
+The meta data API defined in [2] which is used to discover the URLs of
+large objects stored by the LFS server will be implemented in another
+change.
+
+[1] https://github.com/github/git-lfs/tree/master/docs/api
+[2]
+https://github.com/github/git-lfs/blob/master/docs/api/http-v1-batch.md
+
+Bug: 472961
+Change-Id: I7378da5575159d2195138d799704880c5c82d5f3
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Douglas Trujillo
+date: 2015-07-20 22:29:02.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-07-20 22:37:22.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/6947/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-07-20 22:45:35.000000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/6947/ : SUCCESS
+
+-------------------------------------
+author: Ellis Stevens
+date: 2015-07-21 09:39:16.000000000
+
+Patch Set 4: Code-Review-1
+
+(14 comments)
+
+Line:107, org.eclipse.jgit.lfs.server/src/org/eclipse/jgit/lfs/server/ObjectDownloadListener.java -> Does the LFS spec require to send the content length, or does it allow to use chunked Transfer-Encoding in case the underlying LFS store is unable to determine the blob length?
+
+Line:119, org.eclipse.jgit.lfs.server/src/org/eclipse/jgit/lfs/server/ObjectDownloadListener.java -> redundant ()
+
+Line:150, org.eclipse.jgit.lfs.server/src/org/eclipse/jgit/lfs/server/ObjectDownloadListener.java -> a servlet is not supposed to close the response output stream; or did you mean outChannel?
+
+Line:150, org.eclipse.jgit.lfs/src/org/eclipse/jgit/lfs/lib/LargeFileObjectRepository.java -> +4? two bytes + 2 * '/'
+
+Line:174, org.eclipse.jgit.lfs/src/org/eclipse/jgit/lfs/lib/LargeFileObjectRepository.java -> something very similar is also in AnyLongObjectId
+
+Line:86, org.eclipse.jgit.lfs.server/src/org/eclipse/jgit/lfs/server/LargeObjectServlet.java -> how should a servlet container know these parameters? the usual way to inject parameters into a servlet is an init() method and context parameters in the web.xml; that would work for timeout, but not for a dynamic parameter like repository
+
+Line:107, org.eclipse.jgit.lfs.server/src/org/eclipse/jgit/lfs/server/LargeObjectServlet.java -> if obj == null 200 OK is returned as result
+
+Line:121, org.eclipse.jgit.lfs.server/src/org/eclipse/jgit/lfs/server/LargeObjectServlet.java -> sendError() produces HTML output, which makes not much sense for a native git client
+
+Line:136, org.eclipse.jgit.lfs.server/src/org/eclipse/jgit/lfs/server/LargeObjectServlet.java -> move that to the doGet method
+
+Line:158, org.eclipse.jgit.lfs.server/src/org/eclipse/jgit/lfs/server/LargeObjectServlet.java -> what should be the response if id == null?
+
+Line:15, org.eclipse.jgit.lfs/src/org/eclipse/jgit/lfs/lib/LargeObjectRepository.java -> description missing
+
+Line:22, org.eclipse.jgit.lfs/src/org/eclipse/jgit/lfs/lib/LargeObjectRepository.java -> description missing
+
+Line:27, org.eclipse.jgit.lfs/src/org/eclipse/jgit/lfs/lib/LargeObjectRepository.java -> that might be difficult to implement for object stores that are not file based; there should be a way to express that the length is unknown (return -1L ?)
+
+Line:146, org.eclipse.jgit.lfs.server/src/org/eclipse/jgit/lfs/server/ObjectUploadListener.java -> for PUT this should be 204 No Content, or does the LFS spec require 200?
+
+-------------------------------------
+author: Dillon Cross
+date: 2015-07-21 11:44:05.000000000
+
+Patch Set 4:
+
+(10 comments)
+
+Line:131, org.eclipse.jgit.lfs.server/src/org/eclipse/jgit/lfs/server/ObjectDownloadListener.java -> do we want to make absolutely sure this is called when eofReached = true? If yes, then this should be in a finally block
+
+Line:23, org.eclipse.jgit.lfs/src/org/eclipse/jgit/lfs/lib/LargeFileObjectRepository.java -> optional:
+
+I am not sure the naming pattern is optimal. This name could also be read as: large file-object repository i.e. it stores large file-objects as a specialization of the storing just objects from the parent interface.
+
+I would be more in favor of the following naming:
+
+interface LargeFileRepository
+
+class PlainFSRepository implements LargeFileRepository
+
+or
+
+class FSBasedRepository implements LargeFileRepository
+
+Line:150, org.eclipse.jgit.lfs/src/org/eclipse/jgit/lfs/lib/LargeFileObjectRepository.java -> Or +6 as each byte is represented by two hex digits and we have two slashes. 6 characters until (and including) the second slash:
+
+  c0/ff/coffee...
+
+Line:153, org.eclipse.jgit.lfs/src/org/eclipse/jgit/lfs/lib/LargeFileObjectRepository.java -> Why not remove the first two bytes (4 digits) from the name like Git does for its loose objects storage? The the example from my previous comment would look like:
+
+  c0/ff/ee...
+
+and the total length (line 150) would match exactly (as it is just two additional slashes).
+
+Line:76, org.eclipse.jgit.lfs.server/src/org/eclipse/jgit/lfs/server/LargeObjectServlet.java -> final?
+
+Line:78, org.eclipse.jgit.lfs.server/src/org/eclipse/jgit/lfs/server/LargeObjectServlet.java -> final?
+
+Line:105, org.eclipse.jgit.lfs.server/src/org/eclipse/jgit/lfs/server/LargeObjectServlet.java -> optional: Most of existing JGit code seems to use req/rsp names for the HttpServletRequest/HttpServletResponse
+
+Line:119, org.eclipse.jgit.lfs.server/src/org/eclipse/jgit/lfs/server/LargeObjectServlet.java -> 1 + LONG_OBJECT_ID_STRING_LENGTH
+
+then it is clearer that it is "/SHA-256"
+
+Line:1, org.eclipse.jgit.lfs.server.test/.settings/org.eclipse.core.resources.prefs -> what is the meaning of this date/time and why it is 2010 for a new file?
+
+the same question for a couple of other files in this change
+
+Line:15, org.eclipse.jgit.lfs/src/org/eclipse/jgit/lfs/lib/LargeObjectRepository.java -> a description is in the next line... just the formatting is strange, but probably according to JGit coding standards
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2015-07-22 13:35:19.000000000
+
+Patch Set 4:
+
+(22 comments)
+
+-rebased
+- added missing license headers
+
+Line:107, org.eclipse.jgit.lfs.server/src/org/eclipse/jgit/lfs/server/ObjectDownloadListener.java -> it doesn't explicitly mention that the length must be provided in the GET request downloading the file, though the length must be provided when querying metadata for files stored/to be stored in the LFS server
+
+Line:119, org.eclipse.jgit.lfs.server/src/org/eclipse/jgit/lfs/server/ObjectDownloadListener.java -> Done
+
+Line:131, org.eclipse.jgit.lfs.server/src/org/eclipse/jgit/lfs/server/ObjectDownloadListener.java -> now calling complete() also in onError, the container ensures onError is called if the listener throws an exception
+
+Line:150, org.eclipse.jgit.lfs.server/src/org/eclipse/jgit/lfs/server/ObjectDownloadListener.java -> Done
+
+Line:23, org.eclipse.jgit.lfs/src/org/eclipse/jgit/lfs/lib/LargeFileObjectRepository.java -> Done
+
+Line:150, org.eclipse.jgit.lfs/src/org/eclipse/jgit/lfs/lib/LargeFileObjectRepository.java -> Done
+
+Line:153, org.eclipse.jgit.lfs/src/org/eclipse/jgit/lfs/lib/LargeFileObjectRepository.java -> If we don't do this we could use the same implementation for the large file storage implementation in the local clone. 
+
+LFS from GitHub doesn't remove the first two bytes from the filename in lfs storage of a local clone. If we want to be interoperable we need to follow this in local clones.
+
+Line:174, org.eclipse.jgit.lfs/src/org/eclipse/jgit/lfs/lib/LargeFileObjectRepository.java -> yes, but for long instead of int
+
+Line:76, org.eclipse.jgit.lfs.server/src/org/eclipse/jgit/lfs/server/LargeObjectServlet.java -> Done
+
+Line:78, org.eclipse.jgit.lfs.server/src/org/eclipse/jgit/lfs/server/LargeObjectServlet.java -> Done
+
+Line:86, org.eclipse.jgit.lfs.server/src/org/eclipse/jgit/lfs/server/LargeObjectServlet.java -> Gerrit uses Guice ServletModule to inject such parameters. 
+
+I'd like to keep the implementation of the storage API separate from the servlet.
+
+What other options do we have to enable this ?
+How about a configurable factory which creates the concrete storage implementation instance?
+
+Line:105, org.eclipse.jgit.lfs.server/src/org/eclipse/jgit/lfs/server/LargeObjectServlet.java -> Done
+
+Line:107, org.eclipse.jgit.lfs.server/src/org/eclipse/jgit/lfs/server/LargeObjectServlet.java -> no, getObjectToTransfer() sets the status code to BAD REQUEST if the id in the URL isn't valid
+
+Line:119, org.eclipse.jgit.lfs.server/src/org/eclipse/jgit/lfs/server/LargeObjectServlet.java -> Done
+
+Line:121, org.eclipse.jgit.lfs.server/src/org/eclipse/jgit/lfs/server/LargeObjectServlet.java -> you are right, the spec [1] requires that error messages are returned as json response, (documentation_url and request_id are optional) e.g.
+
+ {
+   "message": "Bad credentials",
+   "documentation_url": "https://git-lfs-server.com/docs/errors",
+   "request_id": "123"
+ }
+
+moved to separate method sendError(), json response will be added later
+
+[1] https://github.com/github/git-lfs/blob/master/docs/api/http-v1-batch.md
+
+Line:136, org.eclipse.jgit.lfs.server/src/org/eclipse/jgit/lfs/server/LargeObjectServlet.java -> Done
+
+Line:158, org.eclipse.jgit.lfs.server/src/org/eclipse/jgit/lfs/server/LargeObjectServlet.java -> handled by getObjectToTransfer()
+
+Line:1, org.eclipse.jgit.lfs.server.test/.settings/org.eclipse.core.resources.prefs -> all settings files were copied from another already existing jgit bundle to ensure we use the same settings consistently. Eclipse versions Juno (4.2) or newer don't write this timestamp anymore (see https://bugs.eclipse.org/bugs/show_bug.cgi?id=342709).
+
+Will remove the timestamps from the new prefs files
+
+Line:15, org.eclipse.jgit.lfs/src/org/eclipse/jgit/lfs/lib/LargeObjectRepository.java -> the javadoc is auto-formatted using the Eclipse standard code formatter
+
+Line:22, org.eclipse.jgit.lfs/src/org/eclipse/jgit/lfs/lib/LargeObjectRepository.java -> see the next line
+
+Line:27, org.eclipse.jgit.lfs/src/org/eclipse/jgit/lfs/lib/LargeObjectRepository.java -> the meta data API [1] requires that the server returns the download URL to be used for downloading the file and also its file length. This means in order to ensure good performance the server has to store the file length in some way. If the storage is realized by storing the files in a file system the file length can be retrieved from the file system. If it's implemented e.g. by storing files in a database, the file length would also need to be stored in the database.
+
+[1] required by both the original API
+https://github.com/github/git-lfs/blob/master/docs/api/http-v1-original.md and the newer batch API https://github.com/github/git-lfs/blob/master/docs/api/http-v1-batch.md
+
+Line:146, org.eclipse.jgit.lfs.server/src/org/eclipse/jgit/lfs/server/ObjectUploadListener.java -> the only mentioning of the response code expected for PUT requests in the spec is an example in https://github.com/github/git-lfs/tree/master/docs/api which returns 200 OK on successful completion. 
+
+We should discuss this with Github and check what their reference implementation returns. Added TODO
+
+-------------------------------------
+author: Ellis Stevens
+date: 2015-07-22 16:01:55.000000000
+
+Patch Set 4:
+
+(2 comments)
+
+Line:86, org.eclipse.jgit.lfs.server/src/org/eclipse/jgit/lfs/server/LargeObjectServlet.java -> We could allow a filter to publish a request attribute with 
+
+req.setAttribute("org.eclipse.jgit.LFSService", new MyLargeObjectService())
+
+that doGet() could read out (or provide the default implementation if no other is provided):
+
+LargeObjectRepository repo =  req.getAttribute("org.eclipse.jgit.LFSService");
+if (repo == null) {
+   repo = new LsrgeFileObjectRepositor();
+}
+
+It seems that JGit injects the Repository instance that way: org.eclipse.jgit.http.server.RepositoryFilter and org.eclipse.jgit.http.server.ServletUtils#getRepository()
+
+Line:22, org.eclipse.jgit.lfs/src/org/eclipse/jgit/lfs/lib/LargeObjectRepository.java -> If there is no "first line" in a javadoc comment the overview table at the beginning of the rendered HTML page will just display nothing. It's like omitting the first line of a commit message.
+
+If you want to be lazy rather drop xxx@xxx.xxx and not the first line:
+
+/**
+ * Returns the length of the object in bytes.
+ *
+ xxx@xxx.xxx id
+ *            id of the object
+ **/
+
+Furthermore, a @throws xxx@xxx.xxx without a text is also quite useless. It can safely be removed ;-)
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-02-04 21:08:43.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

@@ -1,0 +1,150 @@
+DESCRIPTION
+
+Add pre expiry hook in order to strip off system xattrs
+
+Change-Id: I1cb821d30ed4bb9131e28ce55944118c5147dd32
+
+
+COMMENTS
+
+author: Bobby Buck
+date: 2017-01-18 06:01:15.884000000
+
+Uploaded patch set 7.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-18 06:01:25.005000000
+
+Patch Set 7:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2843/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-18 06:01:25.134000000
+
+Patch Set 7:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/3006/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-18 06:01:25.267000000
+
+Patch Set 7:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1674/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-18 06:01:25.400000000
+
+Patch Set 7:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2474/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-18 06:09:54.078000000
+
+Patch Set 7: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2843/ : FAILURE
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/2843/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/3006/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2474/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1674/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-18 06:10:23.325000000
+
+Patch Set 7: -Verified
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2844/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-18 06:17:21.085000000
+
+Patch Set 7: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/3006/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2474/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1674/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2844/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-18 06:45:27.763000000
+
+Patch Set 7: -Verified
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/3008/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-18 07:09:55.731000000
+
+Patch Set 7: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/3008/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2844/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2474/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1674/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-01-18 09:15:17.539000000
+
+Patch Set 7: Code-Review-1
+
+(8 comments)
+
+Hi Sriram,
+
+I think the general approach looks good. Few comments on implementation details, and suggestion on how to improve the pre_expiry() callback.
+
+Line:6111, src/ep_engine.cc -> Given that it must be non-null (and in fact we currently dereference it without checking for null) we can use a reference instead.
+
+Line:6111, src/ep_engine.cc -> Given that itm_info is essentially the result of this method, it would be cleaner to make it the return value.
+
+Line:409, src/vbucket.cc -> I don't think it's necessary to create a new Item here, I think instead we can just pass the itm_info to the pre_expiry callback, and it can modify the iovector as it wants to. 
+
+The reason being that not all documents with XATTRs need to have a non-null body created - only if they have system XATTRs. As such it would be preferable if memcached made the decision about if a new body is needed.
+
+One possibility would be to make pre_expiry return a bool indicating the body should be kept:
+
+* If false, then the iov_base and len are essentially ignored and we just delete (with null body) as we used to.
+* If true, we construct a new Item object using the iovec from the itm_info (as you are currently), and update that.
+
+Line:821, src/vbucket.cc -> Similar to the comment in KVBucket, would be good to put in a common method.
+
+Line:723, src/kv_bucket.cc -> Given this is identical to the code above (lines 697 - 701), it would be better to generics it - at least put it into a common helper function, or maybe even move it into unlocked_softDelete.
+
+I suggest you discuss this with Manu - he's in the process of moving much of the Item mutation code from KVBucket to the VBucket class, in which case it may make it easier to refactor this (if for example all the delete handling is already in the VBucket).
+
+Line:809, tests/ep_testsuite.cc -> It's probably better to implement this in evp_store_test.cc - I don't think this needs any multi-threaded / background tasks.
+
+Line:847, tests/ep_testsuite.cc -> Suggest you use check() / or checkeq() here - they already terminate the program when they fail.
+
+Line:850, tests/ep_testsuite.cc -> Should probably replace this with a check that the correct elements are returned in the XATR.
+
+-------------------------------------

@@ -1,0 +1,77 @@
+DESCRIPTION
+
+MB-5164 Batch read support
+
+ KVStore now has a getMulti() that can be used to retrieve multiple
+ items by their rowID. It's assumed rowID is a KV-store specific cookie
+ that can be used for efficient access to a specific item.
+
+ Removed the assumption from StoredValue that rowID never changes once
+ set. Made sense for SQLite where rowID was an index into a SQLite
+ table, but in Couchstore it's an index into a mutation log.
+
+ EventuallyPersistentStore keeps a background fetch queue per vbucket,
+ that is only accessed from the read-only dispatcher.
+
+Change-Id: I14b9fecaae938f54d0aa3a98ed5b732ed70c8712
+
+
+COMMENTS
+
+author: Dalia Matthews
+date: 2012-05-24 17:07:56.605000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Audrina Olson
+date: 2012-05-24 17:20:28.442000000
+
+Patch Set 4:
+
+Thanks for the update. FYI, this feature will be reviewed and merged once after the 2.0. master branch becoming "green" + Trond's libcbio getting merged. 
+
+In the mean time, you may want to look at Trond's libcbio. I assume there will be some further change necessary in order to merge your code on top of libcbio later on. http://review.Piper Jefferson.org/#change,15070
+
+-------------------------------------
+author: Abby Duran
+date: 2012-06-01 19:23:23.625000000
+
+Patch Set 4: Do not submit
+
+(3 inline comments)
+
+Thanks Aaron for the initial implementation. See my comments. Jin and I will take over your implementation and adapt it.
+
+Line:178, ep.cc -> I don't understand why we need to check rowid == 0 here.
+
+Line:181, ep.cc -> I rather prefer to reuse "QueuedItem" class instead of a new struct (class) fetch_request.
+
+Line:1361, ep.cc -> I don't understand what this function tries to do. I think this change doesn't seem to provide high batch read rate because it first pushes every bg fetch job into the dispatcher queue, and then the dispatcher grab a single bg fetch job and determines whether it should do batch reads or not.
+
+I would rather push a bg fetch task into the corresponding bg queue maintained per vbucket, and the dispatcher has a daemon task to visit the bg fetch queue for each vbucket and then perform the batch read.
+
+-------------------------------------
+author: Dalia Matthews
+date: 2012-06-01 19:39:01.783000000
+
+Patch Set 4: (2 inline comments)
+
+Alright. I'm cool with that. Tried to explain my reasoning a bit for the things you commented on.
+
+Line:178, ep.cc -> This is the cases in which the item can't be batched.
+Since batch reads only work on rowIDs we can't batch items we don't have an ID for (it's possible we only have the key). 
+
+It's a case of abstraction fail, as the StoredItem class has a (private) defined constant for "we don't have the ID", being 0, but has a .hasId() method to check it, however at this point we no longer have access to the instance, just the ID number itself.
+
+Line:1361, ep.cc -> As is, all items that get pushed onto the dispatcher -while- it is busy with a read batch should get batched together.
+
+I liked this design because it made interleaving batchable and non-batchable requests easy and didn't require dealing with any cross-thread synchronization at all. Unless the dispatcher itself isn't much faster than I/O I don't see why this isn't really as efficient as any other approach to this. Though I didn't have much luck directly measuring it, so something else could be faster.
+
+-------------------------------------
+author: Dalia Matthews
+date: 2012-06-14 00:27:10.888000000
+
+Patch Set 4: Abandoned
+
+-------------------------------------

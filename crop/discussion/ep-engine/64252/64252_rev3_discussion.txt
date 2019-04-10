@@ -1,0 +1,164 @@
+DESCRIPTION
+
+MB-19695: Always persist VBstate when resetting VB
+
+During tapNotify / TAP_OPAQUE_INITIAL_VBUCKET_STREAM - when we are
+setting up a replica vBucket which is populated by TAP - the vbucket
+is reset. This deletes the current database file from disk, and
+creates a new file.
+
+Both the delete and create are done asynchronously via our Task
+mechanism (on a writer thread). It has been observed that the vbucket
+file is sometimes not re-created, which can result in the following
+exception being thrown which disconnects the connection:
+
+    WARNING 47: exception occurred in runloop - closing connection:
+    CouchKVStore::getNumPersistedDeletes:Failed to open database
+    file for vBucket = 96 rev = 1 with error:no such file
+
+Interestingly this isn't a simple case of the filesystem being slow -
+cbcollect logs taken ~5minutes later still show the vbucket file not
+existing.
+
+This appears to be caused by an optimization in
+EventuallyPersistentStore::scheduleVBStatePersist - which is used to
+schedule a new VBstate to be saved (and in turn create the vb file on
+disk). The optimization is to not schedule a persist if one is
+already scheduled.
+
+However, there exists the possibility that a VBStatePersistTask
+already exists (causing us not to create one during resetVBucket(),
+*and* the existing VBStatePersistTask is scheduled before the
+delete. This results in the file being deleted, and not re-created as
+part of the reset process.
+
+The solution is to forcefully persist the VBState during resetVBucket,
+essentially disabling the optimization in this case and ensuring the
+file is created. Full unit regression test to follow in separate patch
+(it needs test infrastructure which doesn't yet exist).
+
+(Note: the vbucket datafile file /will/ be created upon the next write
+to the vbucket, but in the case of a vbucket with zero items this may
+take some time).
+
+Change-Id: I3f4e76eee35a75d64f5e981529ab47fcf2007fcb
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2016-05-20 17:37:58.322000000
+
+Patch Set 3: Published edit on patch set 2
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-05-20 17:38:04.948000000
+
+Patch Set 3:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/672/ (1/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-05-20 17:38:08.708000000
+
+Patch Set 3:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/447/ (2/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-05-20 17:38:09.151000000
+
+Patch Set 3:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/597/ (3/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-05-20 17:38:09.791000000
+
+Patch Set 3: Well-Formed+1
+
+Permission granted to commit: 
+
+http://server.jenkins.Piper Jefferson.com/job/restricted-branch-check/15192/artifact/restricted.html : SUCCESS
+
+-------------------------------------
+author: Kymani Ramirez
+date: 2016-05-20 17:45:37.191000000
+
+Patch Set 3: Code-Review+2
+
+-------------------------------------
+author: Bobby Buck
+date: 2016-05-20 18:02:39.817000000
+
+Patch Set 3: Code-Review+2
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-05-20 18:10:53.327000000
+
+Patch Set 3: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/672/ : ABORTED
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/447/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/597/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-05-20 18:15:15.919000000
+
+Patch Set 3: -Verified
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/678/ (3/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-05-20 18:36:56.155000000
+
+Patch Set 3: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/678/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/447/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/597/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-05-20 18:48:30.916000000
+
+Patch Set 3: -Verified
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/681/ (3/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-05-20 18:59:08.328000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/447/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/597/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/681/ : SUCCESS
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-05-20 19:45:10.284000000
+
+Change has been successfully cherry-picked as cb6c7141366d533874c63cb9bc0a144f9ab0347c by Ashlee Kent
+
+-------------------------------------

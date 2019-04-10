@@ -1,0 +1,115 @@
+DESCRIPTION
+
+MB-9588 Reuse Flusher Task to avoid corruption
+
+Avoid the memory corruption in flusher code where
+re-creating new Task every time a state change occurs can
+result in multiple threads mutating the Flusher queues.
+Instead re-use the same flusher task efficiently
+
+Change-Id: If9cd3b942e91907715bd1deee64301200e16f24f
+
+
+COMMENTS
+
+author: Ellie Kidd
+date: 2013-11-20 20:14:10.777000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Abby Duran
+date: 2013-11-21 01:01:55.169000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:155, src/flusher.cc -> Why is this removed? It will execute the pausing clause as well.
+
+Line:185, src/flusher.cc -> The same comment as above.
+
+-------------------------------------
+author: Ellie Kidd
+date: 2013-11-21 02:45:51.859000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:155, src/flusher.cc -> This return false statement is removed, because we do not want pause() call to cancel the job. Rather we want this function to return true which means it will get rescheduled, but have a large snooze value so the task is just put to an indefinitely sleep but not cancelled. This fall through is intentional. thanks
+
+Line:185, src/flusher.cc -> Again, if flusher is in the stopping state, what we want is to wait until flush completes, then proceed and cancel the job, and finally set the taskId to 0, so that flusher can be started again with a new task. If we return false here, then the task will be prematurely cancelled by the GIO manager and then flusher cannot be started again. thanks
+
+-------------------------------------
+author: Ellie Kidd
+date: 2013-11-21 02:46:14.440000000
+
+Patch Set 3: Patch Set 2 was rebased
+
+-------------------------------------
+author: Abby Duran
+date: 2013-11-21 03:10:18.313000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:155, src/flusher.cc -> Well, "paused to paused" transition is not valid in validTransition(..), which is invoked inside transition_state(paused)
+
+-------------------------------------
+author: Abby Duran
+date: 2013-11-21 03:11:16.755000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:155, src/flusher.cc -> Why not simply returning true here?
+
+-------------------------------------
+author: Ellie Kidd
+date: 2013-11-21 03:22:49.689000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:155, src/flusher.cc -> step function will be invoked on a paused flusher only in the following race condition…
+thread 1 has just finished doFlush() and is just about to set the snooze time
+thread 2 races and sets the state of the flusher to pausing, which sets the snooze time and also returns.
+thread 1 wakes up and sets the snooze time to a small value.
+
+Now, if we do not fall through and set the snooze time correctly, then flusher will indefinitely loop continuously!
+To prevent above race condition, we must fall through the paused state and attempt to set the state transition again.
+thanks
+
+-------------------------------------
+author: Abby Duran
+date: 2013-11-21 03:40:46.261000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:155, src/flusher.cc -> My point is that we will have unnecessary warning messages inside "transition_state(..)".
+
+Line:157, src/flusher.cc -> Then, can we put
+
+if (_state == pausing) {
+    transition_state(paused);
+}
+
+-------------------------------------
+author: Ellie Kidd
+date: 2013-11-21 05:43:58.862000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:155, src/flusher.cc -> Done
+
+Line:157, src/flusher.cc -> Done
+
+-------------------------------------

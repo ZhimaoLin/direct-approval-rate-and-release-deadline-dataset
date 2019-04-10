@@ -1,0 +1,100 @@
+DESCRIPTION
+
+added dirty-detection to WorkingTreeIterator
+
+Added possibility to compare the current entry of a WorkingTreeIterator
+to a given DirCacheEntry. This is done to detect whether an entry
+in the index is dirty or not. 'Dirty' means that the file
+in the working tree is different from what's in the index. Merge
+algorithms will make use of this to detect conflicts.
+
+Signed-off-by: Zachary Orozco xxx@xxx.xxx
+Change-Id: 	I3ff847f4bf392553dcbd6ee236c6ca32a13eedeb
+
+
+COMMENTS
+
+author: Zachary Orozco
+date: 2010-07-05 23:12:11.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2010-07-06 15:58:57.000000000
+
+Patch Set 2: I would prefer that you didn't submit this
+
+(4 inline comments)
+
+
+
+Line:2, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> maybe you want to add your copyright here ?
+
+Line:378, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> typo: s/we to/we want to/
+
+Line:396, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> is this a TODO ?
+
+Line:417, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> typo: s/prevision/precision/
+
+Why does git under windows only store seconds ? In this afternoons debugging session with Stefan I saw ms coming from NTFS.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-07-06 23:10:32.000000000
+
+Patch Set 2: I would prefer that you didn't submit this
+
+(3 inline comments)
+
+
+
+Line:387, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> Style-nit: Unnecessary blank lines here.
+
+Line:400, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> We shouldn't ever fully skip the file mode check.  Long story short, we don't want to confuse a symlink with a file if the WorkingTreeIterator subclass can actually detect symlinks (and I hope to have that in the future).
+
+The basis of the checkFilemode flag is only to ignore a difference in the executable bit of the file.  Any other type of difference must be honored as different, even if checkFilemode was false.
+
+Line:422, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> I think this logic is wrong.  Shouldn't it be:
+
+  if (forceContentCheck) {
+    if (fileLastModified == cacheLastModified)
+      return false; // Same time, don't check content.
+    else
+      return !getEntryObjectId().equals(entry.getObjectId());
+  } else {
+    // No content check forced, assume dirty if stat differs.
+    return fileLastModified != cacheLastModified;
+  }
+
+Basically, isn't the meaning of forceContentCheck that you want to "refresh the index", aka update the stat information for a path to match what is in the working directory if the file contents are the same?  Its not to fix the racily clean problem, its to fix paths where the user has touched the file but not actually made changes to its contents.
+
+Racily clean should be handled differently, but also should force a content check.  To handle racily clean, you would check for racily clean condition side of the forceContentCheck block above before testing the file modification times, and do the content check there.
+
+Right now your code is doing content checks on files that are unchanged, and are proven to be unchanged by stat information.  That hurts on a big repository.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-07-07 13:47:27.000000000
+
+Patch Set 2: (7 inline comments)
+
+
+
+Line:2, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> Done
+
+Line:378, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> Done
+
+Line:387, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> Done
+
+Line:396, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> Yes, it's a todo. I'll make that clear
+
+Line:400, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> Got it. Wrote a new version of this check now working only on raw-mode and bit operations. Only  5 lines now (and 8 lines of comment))
+
+Line:417, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> No idea. I didn't originally created this comment. This method was initally created by copying GitIndex.Entry.ismodified() where this comment was introduced.
+
+But it's seems to be that different filesystems have different precisions. Ext3 supports only a precision of seconds. See:  http://www.coderanch.com/t/384700/java/java/File-lastModified-windows-vs-linux. If we come into the situation where we compare timestamps written by different filesystems we may have to deal with it here.
+
+Line:422, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> Done
+
+-------------------------------------

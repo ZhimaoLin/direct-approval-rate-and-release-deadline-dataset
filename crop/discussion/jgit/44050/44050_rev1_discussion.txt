@@ -1,0 +1,104 @@
+DESCRIPTION
+
+Git: Don't close underlying repo if it came from from a caller
+
+Since 27ae8bc65 Git has implemented AutoCloseable, which means Eclipse
+may warn if close() is never called on a Git instance. For example,
+the following would result in a resource warning:
+
+  Repository repo = openRepository(foo);
+  Git git = new Git(repo);
+  try {
+    git.someCommand().call();
+  } finally {
+    repo.close();
+  }
+
+(The same warning would occur if repo were created in a try-with-
+resources block.)
+
+The "obvious" fix is to open git in a try-with-resources block:
+
+  try (Repository repo = openRepository(foo);
+      Git git = new Git(repo)) {
+    git.someCommand().call();
+  }
+
+Unfortunately, this construction was subtly broken: it would call both
+git.close() and repo.close(), but git.close() would call repo.close()
+again. Depending on the repository implementation, this might or might
+not be ok. If it's not ok, it might not immediately cause an error, if
+the reference count of repo was >2 at the time of closing.
+
+Of course, explicitly calling git.close() followed by repo.close() in
+two finally blocks would has had the same double-closing problem since
+forever. But the problem became worse when Git started implementing
+AutoCloseable, because now Eclipse is _actively encouraging_
+developers to change working code into broken code.
+
+To work around this, keep track in Git's constructor of whether the
+repository was passed in or opened at construction time, and only
+close the repository if it was opened by Git.
+
+Note that in the original example, there was not _actually_ a resource
+leak, since repo was closed exactly once; git did not _need_ to be
+closed in this case. But at least fixing this false-positive warning
+no longer introduces a real bug.
+
+Change-Id: Ie927a26ce3ae2bf8c3ef5cb963a60847067db95a
+
+
+COMMENTS
+
+author: Santos Moore
+date: 2015-03-17 22:35:06.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-03-17 22:35:13.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/6142/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-03-17 22:43:52.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/6142/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-03-17 23:08:19.000000000
+
+Patch Set 1: Code-Review+2
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2015-03-18 00:05:02.000000000
+
+Patch Set 1: Code-Review+2
+
+(1 comment)
+
+thanks for fixing the problem I introduced when making Git autoclosable
+
+Line:38, /COMMIT_MSG -> s/has/have/
+
+-------------------------------------
+author: Santos Moore
+date: 2015-03-18 00:06:07.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:38, /COMMIT_MSG -> Done
+
+-------------------------------------

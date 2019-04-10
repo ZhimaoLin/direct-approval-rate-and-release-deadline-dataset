@@ -1,0 +1,121 @@
+DESCRIPTION
+
+CBQE : 3067 to take care some timing issues
+
+Change-Id: I49d3d1987bf4ab62dd9ba50539a937f26c9e526f
+
+
+COMMENTS
+
+author: Nico George
+date: 2016-03-15 23:50:14.662000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-03-15 23:50:20.570000000
+
+Patch Set 1:
+
+Build Started http://factory.couchbase.com/job/testrunner-Jasmin Rangel-sherlock/6863/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-03-16 00:38:38.453000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+http://factory.couchbase.com/job/testrunner-Jasmin Rangel-sherlock/6863/ : SUCCESS
+
+-------------------------------------
+author: Angelina Mayer
+date: 2016-03-16 18:37:08.565000000
+
+Patch Set 1: Code-Review-1
+
+(1 comment)
+
+Line:2136, lib/membase/api/rest_client.py -> this retry logic is fine but what calls for a retry in the first place? Once the index is ready (there's already retry logic for index readiness in is_index_partitioned_balanced()), there's no reason rest calls must fail.
+
+This retry logic overshadows the problem of server not returning index doc count when index is actually ready.
+
+Pls point to the exact problem you are trying to solve when you send a test code fix for review. If it is stable-topology P0, test_2, this retry logic will not help.
+Even in that case, we are continuing to retry till an error is returned -
+
+[2016-03-10 12:23:33,190] - [fts_base:2296] INFO - Docs in bucket = 8584, docs in FTS index 'default_index_1': 10000
+[2016-03-10 12:23:44,222] - [fts_base:2296] INFO - Docs in bucket = 7000, docs in FTS index 'default_index_1': 4708
+[2016-03-10 12:23:54,872] - [fts_base:2296] INFO - Docs in bucket = 7000, docs in FTS index 'default_index_1': 7604
+[2016-03-10 12:24:05,226] - [rest_client:760] ERROR - socket error while connecting to http://172.23.107.234:8094/api/index/default_index_1/count error [Errno 111] Connection refused 
+[2016-03-10 12:24:08,231] - [rest_client:760] ERROR - socket error while connecting to http://172.23.107.234:8094/api/index/default_index_1/count error [Errno 111] Connection refused 
+[2016-03-10 12:24:11,237] - [rest_client:760] ERROR - socket error while connecting to http://172.23.107.234:8094/api/index/default_index_1/count error [Errno 111] Connection refused 
+[2016-03-10 12:24:14,242] - [rest_client:760] ERROR - socket error while connecting to http://172.23.107.234:8094/api/index/default_index_1/count error [Errno 111] Connection refused 
+[2016-03-10 12:24:17,763] - [rest_client:760] ERROR - socket error while connecting to http://172.23.107.234:8094/api/index/default_index_1/count error [Errno 104] Connection reset by peer 
+[2016-03-10 12:24:20,769] - [rest_client:760] ERROR - socket error while connecting to http://172.23.107.234:8094/api/index/default_index_1/count error [Errno 111] Connection refused 
+[2016-03-10 12:24:23,796] - [rest_client:757] ERROR - http://172.23.107.234:8094/api/index/default_index_1/count error 500 reason: status: 500, content: rest_index: Count, indexName: default_index_1, err: bleve: CountBlevePIndexImpl indexAlias error, indexName: default_index_1, indexUUID: , err: bleve: bleveIndexTargets, err: pindex: queries may have been disabled; no nodes are enabled/allocated to serve queries for the index partition(s)
+
+-------------------------------------
+author: Nico George
+date: 2016-03-16 20:48:30.095000000
+
+Abandoned
+
+-------------------------------------
+author: Nico George
+date: 2016-03-16 20:50:28.352000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:2136, lib/membase/api/rest_client.py -> The retry logic is to wait until index start returning count.
+
+it is to avoid any more sleep , to check indexing  count if happened .
+
+>> 'this retry logic overshadows the problem of server not returning index doc count'  == not sure if I get it right . If index returns count the code will return .  Also will avoid any key error .
+
+ 
+
+http://qa.sc.couchbase.com/view/FTS/job/cen006-p0-fts-vset00-01-stable-topology/182/consoleFull
+
+[What to Fix]
+
+The key error in any log is confusing . 
+
+[New Patch]
+
+Adding new patch . to handle that. removing the logic . 
+
+>>>> fail 1
+
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "pytests/fts/stable_topology_fts.py", line 31, in create_simple_default_index
+    self.wait_for_indexing_complete()
+  File "pytests/fts/fts_base.py", line 2296, in wait_for_indexing_complete
+    index.get_indexed_doc_count()))
+  File "pytests/fts/fts_base.py", line 651, in get_indexed_doc_count
+    return rest.get_fts_index_doc_count(self.name)
+  File "lib/membase/api/rest_client.py", line 2130, in get_fts_index_doc_count
+    return json_parsed['count']
+KeyError: 'count'
+
+-------------------------------------
+author: Angelina Mayer
+date: 2016-03-16 20:53:56.694000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:2136, lib/membase/api/rest_client.py -> There's no need for retry logic here. Again, there should be no reason to retry once the index is ready. Just fix the key error.
+
+-------------------------------------
+author: Nico George
+date: 2016-03-16 21:17:15.417000000
+
+Restored
+
+-------------------------------------

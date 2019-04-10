@@ -1,0 +1,223 @@
+DESCRIPTION
+
+Improve performance of SelectionUtils.getRepository()
+
+Instead of converting selected elements to an IPath location always
+and then using RepositoryMapping.getRepository(IPath), try to keep as
+much info as needed and as possible: if the selection contains
+IResources, keep them and use the more efficient
+RepositoryMapping.getRepository(IResource).
+
+In my tests on a test workspace with 46 open projects and the git
+toolbar and global menu enabled, this results in a speedup of the
+SelectionUtils.getRepository(IStructuredSelection) operation by a
+factor of about 10 in many cases.
+
+This could be optimized a little bit more if we could, instead of using
+IResources, collect only their containing IProjects and then use
+RepositoryMapping.getProject(), but I'm currently unsure whether that
+would actually be correct. See the review comments at
+https://git.eclipse.org/r/#/c/65510/ .
+
+Bug: 486857
+Change-Id: Ied35b304c8496c501dbf8109e1c8d5403b962efb
+Signed-off-by: Alayna Houston xxx@xxx.xxx
+
+COMMENTS
+
+author: Alayna Houston
+date: 2016-01-31 12:53:13.000000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-01-31 12:53:19.000000000
+
+Patch Set 5:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/8096/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-01-31 13:17:14.000000000
+
+Patch Set 5: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/8096/ : SUCCESS
+
+-------------------------------------
+author: Jayvion Booth
+date: 2016-01-31 15:19:09.000000000
+
+Patch Set 5:
+
+> Which leaves me still a bit puzzled because RepositoryMapping.getMapping(IPath)
+ > considers projects only. Digging around more in the early history
+ > (this time in the current repo) shows:
+ > 
+ > * commit dfbdc45 (Shawn, 2009-09-30): the very initial version of
+ > getMapping(IResource) did actually use the GitProjectData to obtain
+ > the mapping, i.e., did do this container hierarchy walk.
+ > * commit 610529c (Dariusz, 2011-11-18): then it was augmented to
+ > also handle non-workspace resources, where the first version of the
+ > current getMapping(IPath) was introduced. (Scanning all IProjects.)
+ > * commit e65101e (Robin, 2012-08-26): refactoring introducing the
+ > first version of the current getMapping(IPath). At that point
+ > getMapping(IResource) still used the original code walking the
+ > container hierarchy, and getMapping(IProject) didn't exist yet.
+ > * commit a3da195 (Andrey, 2015-03-29): more refactoring,
+ > getMapping(IProject) introduced, and getMapping(IResource) no
+ > longer calling GitDataProvier.getRepositoryMapping(resource) but
+ > getMapping(resource.getProject()).
+
+The reason for this last change was: if neither the resource nor any of the parents are linked (the check was added in 199f7e), we only need to check the project for mapping. From 199f7e the code did nothing except wasting time. 
+
+The original code expected to return a different repository for a submodule inside a project mapped to another one, but this seem to be broken (or never properly implemented) in GitProjectData and/or RepositoryMapping.
+
+I think the hierarchy walk code could be removed after 199f7e. I've tried to step one commit back after 199f7e and also tried to partly revert a3da195 but I could not see any difference in behavior of submodules, or I do not know what to look for.
+
+I think currently nobody really knows how GitProjectData/RepositoryMapping are supposed to work and what of their original functionality is still needed.
+
+Both classes probably need to be cleaned up and their functionality/responsibility redesigned. 
+
+ > Since that commit, we no longer do the container hierarchy walk.
+ > 
+ > Now I _do_ wonder:
+ > * was this container hierarchy walk ever needed?
+
+Before 199f7e (egit 2.3) - eventually, because it returned different repos for *linked* resources. Still I do not know how useful this was...
+
+The main problem of all this linked/sub repositories is that being a "part" of another project they only confuse user / UI. I think original idea was to provide most close related context to the current file.
+
+ > * if it is or was, what obscure use case no longer works since
+ > a3da195, or if that didn't break anything, not even any obscure use
+ > case, why did it not?
+
+The only candidate would be something related to submodules but I don't see what it should be what was not broken (or simply never working) before already.
+
+ > * the project scanning approach in getMapping(IPath) doesn't look
+ > right to me; I would rather use the RepositoryCache to consider all
+ > configured repositories, which would be feasible if it was made to
+ > load on demand (I do have a change for that that I could
+ > resurrect).
+
+Probably the original author just had only few projects in his workspace. 100+ projects are not often to see in open source, except one imports entire eclipse git server content.
+
+ > The approach in this change here (going right to the IProject from
+ > an IResource) is only correct if that container hierarchy walk
+ > isn't needed. So I'm currently unsure whether this change here is
+ > good indeed. Otherwise, a mixture should be used: still
+ > differentiate IResource and IPath, then use RepositoryMapping.getMapping(IResource)
+ > or getMapping(IPath). This has two advantages:
+ > 
+ > 1. It delegates the whole question of whether this container
+ > hierarchy walk is needed to the implementation of RepositoryMapping.
+ > 2. Avoid duplicating the isLinked() handling I introduced
+ > (RepositoryMApping alreadydoes that.
+ > 
+ > I'll push an amended change. Can you shed any light on the
+ > questions above?
+
+I tried.
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-01-31 15:47:37.000000000
+
+Patch Set 5:
+
+> I tried.
+
+Thanks :-)
+
+So, in the current EGit 4.2. implementation we assume (except for linked resources) that all project content is in the same repo as the project itself, and PS 4 would thus be fine, too?
+
+PS 4 is a bit more efficient (less distinct IProjects than distinct IResources in most cases), so if the duplicate isLinked() logic doesn't hurt, I'm also fine with reverting back to PS 4.
+
+ > Both classes probably need to be cleaned up and their functionality/responsibility redesigned.
+
+Looks like. Unfortunately it also looks like a Herculean task to figure out which bits still are needed (and what for exactly) and which not. I usually have neither linked resources nor submodules in my git-managed projects, so I might easily overlook something...
+
+-------------------------------------
+author: Jayvion Booth
+date: 2016-01-31 16:22:15.000000000
+
+Patch Set 5: Code-Review+1
+
+> > I tried.
+ > 
+ > Thanks :-)
+ > 
+ > So, in the current EGit 4.2. implementation we assume (except for
+ > linked resources) that all project content is in the same repo as
+ > the project itself, and PS 4 would thus be fine, too?
+
+This is *my* assumption :-). What the original assumption is/was I have no idea (if there was any at all), the code base looks more like "organic grows"...
+
+ > PS 4 is a bit more efficient (less distinct IProjects than distinct
+ > IResources in most cases), so if the duplicate isLinked() logic
+ > doesn't hurt, I'm also fine with reverting back to PS 4.
+
+I'm fine with either version.
+
+ > > Both classes probably need to be cleaned up and their
+ > functionality/responsibility redesigned.
+ > 
+ > Looks like. Unfortunately it also looks like a Herculean task to
+ > figure out which bits still are needed (and what for exactly) and
+ > which not. I usually have neither linked resources nor submodules
+ > in my git-managed projects, so I might easily overlook something...
+
+Links are OK, we using lot of them (both native/Eclipse), but I don't have any idea about how good/bad is our submodules support because we are not using them.
+
+... May be some time someone using submodules will come and do this job :-)
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-01-31 16:41:27.000000000
+
+Patch Set 5:
+
+> This is *my* assumption :-). 
+ > 
+ > [...]
+ > 
+ > ... May be some time someone using submodules will come and do this
+ > job :-)
+
+In that case let's stick with PS5. At least that doesn't add yet another place in the code where we make this assumption.
+
+We have quite a few submodule-related bugs in bugzilla; I don't want to make it even worse.
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-01-31 21:50:14.000000000
+
+Patch Set 5:
+
+Hmmm. Looks like GitProjectData originally indeed did the container hierarchy walk in order to account for submodules, which the RepositoryFinder would have added as RepositoryMappings for the submodule containers. That got disabled in commit 56cb94a due to bug 421573, and that's why the GitProjectData only ever contains one repo for the whole project. Robin even asked back then what looking in children was good for...
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-02-01 06:58:59.000000000
+
+Patch Set 5:
+
+Some experimentation shows that assuming everything under a project was in the same repo as the project itself is just plain wrong in the presence of submodules. It causes (amongst other things) bug 446344, comment 11.
+
+Moreover, the previous SelectionUtils.getRepository() implementation converting everything to IPath and then looking for the repo and in doing so scanning just the projects exacerbates the problems with submodules, because it fails to find a submodule repo if there's no project from the submodule in the workspace. (For instance, only a project from the parent repo imported.)
+
+RepositoryMapping.getRepository() for IResource must not skip the container hierarchy walk, and the mappings for containers must be in GitProjectData if we want submodules to work.
+
+So, this change here is more than just a performance improvement; it's also a prerequisite to fixing this submodule mess. (At least for IResources. Have no clear idea yet how to get this submodule stuff right for non-workspace files -- outside of any project, or in closed projects... one thing after another.)
+
+-------------------------------------
+author: Gerrit Johnathan Pham
+date: 2016-02-20 09:41:41.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

@@ -1,0 +1,130 @@
+DESCRIPTION
+
+MB-11677 Add support for array indexing
+
+- Support for indexing array elements for ForestDB and MemDB
+- Changes with N1QL array support integrated
+- No support for duplicates
+
+Change-Id: I82a066c11c147fd39139c4944d1a83ee7db64ac0
+
+
+COMMENTS
+
+author: Alden Ashley
+date: 2016-01-04 13:43:34.053000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Kinsley Fox
+date: 2016-01-05 09:12:12.964000000
+
+Patch Set 4:
+
+(26 comments)
+
+Line:37, secondary/indexer/memdb_slice_impl.go -> Dead code
+
+Line:105, secondary/indexer/memdb_slice_impl.go -> If idxDefn is added, you can remove idxDefnId
+
+Line:285, secondary/indexer/memdb_slice_impl.go -> it is better to use true case instead of false case.
+
+Line:17, secondary/indexer/array.go -> I think this function can be refactored to make it more expressive. Probably, you can define a type called SecKeyFields for secKeyObject and define a set of operations. Things like detecting whether it has an array field can be defined as its attribute function (ArrayField() (hasArray bool, field int)
+
+Line:21, secondary/indexer/array.go -> i hope, this is iterating through json list of indexed fields and figuring out the length of array, assuming that there is only single array.
+
+Line:70, secondary/indexer/array.go -> We need to check for unmarshall error
+
+Line:73, secondary/indexer/array.go -> hash map[interface{}]int is going to fail for some cases. interface{} as key is a bad practice and avoids all type safety. It probably works for you because your array elements are int or string. When it becomes a complex object, it will lead to runtime crashes.
+
+Line:74, secondary/indexer/array.go -> You may want to use fold the arguments to < 80 char line.
+Also it would be better to have named return values to make them more expressive.
+
+Line:89, secondary/indexer/array.go -> It means, array position is different in old and new keys? Hence cartesian product will be different and everything needs to be cleaned and freshly inserted?
+
+May be you should add a comment or use an abstract type like SecKeyFields as explained above.
+
+Line:109, secondary/indexer/array.go -> Why is this required?
+
+Line:110, secondary/indexer/array.go -> It is fine to create a map dynamically every time. Reusing a map may be costlier than creating map every time here. Size of the map is anyway going to be small.
+
+Line:120, secondary/indexer/array.go -> Why is this required?
+
+Line:124, secondary/indexer/array.go -> For if and else condition, same statement is executed.
+
+Line:138, secondary/indexer/array.go -> Why do we need to allocate an array of size n to represent an offset between 0 to n-1 ?
+
+Line:142, secondary/indexer/array.go -> What happens when there are duplicates in the array ? Is somebody doing deduplication before passing arrays to this function ?
+
+Line:155, secondary/indexer/array.go -> We are duplicating set-difference operation in these two functions. It is better to separate out set-difference algorithm implementation and reuse the same for both functions.
+
+Later we could make them sorted and do efficient set-diff
+
+Line:158, secondary/indexer/array.go -> We just need to do one pass for computing addset and deleteset.
+
+Line:530, secondary/indexer/flusher.go -> Isn't better to do if isArrayIndex than negative case ?
+
+usually camel case is used for naming.
+
+Line:539, secondary/indexer/flusher.go -> After memdb refactor, we do not need separate array index entry type right ?
+
+Line:15, secondary/indexer/index_entry.go -> Not required after array memdb refactor.
+
+Line:34, secondary/indexer/index_entry.go -> Entry size is still going to be the same. Not required anymore.
+
+Line:132, secondary/indexer/index_entry.go -> Is this required?
+
+Line:64, secondary/indexer/constant.go -> Are these constants applicable after memdb refactor?
+
+Line:152, secondary/common/index.go -> What is this ExprPos used for ?
+
+Line:252, secondary/common/index.go -> Remove space
+
+Line:262, secondary/common/index.go -> Remove space
+
+-------------------------------------
+author: Alden Ashley
+date: 2016-01-05 09:59:42.463000000
+
+Patch Set 4:
+
+(13 comments)
+
+Line:37, secondary/indexer/memdb_slice_impl.go -> Yes will be removed as I mentioned in patch set 5
+
+Line:105, secondary/indexer/memdb_slice_impl.go -> idxDefnId is used in many places. Otherwise, everywhere code looks like idxDefn.DefnId
+
+Line:285, secondary/indexer/memdb_slice_impl.go -> I was thinking more on the lines of : http://stackoverflow.com/questions/1306158/best-practice-on-if-else-statement-order  
+""Put the case you normally expect to process first."
+
+Line:17, secondary/indexer/array.go -> We can discuss the comments in person as I have some questions. Thanks !
+
+Line:530, secondary/indexer/flusher.go -> Isnt it faster if condition is the one that is used most often? Array indexing is special case. Not every index has array expression.
+I was thinking more on the lines of : http://stackoverflow.com/questions/1306158/best-practice-on-if-else-statement-order ""Put the case you normally expect to process first."
+
+Will fix camel casing
+
+Line:539, secondary/indexer/flusher.go -> This is not for memdb. This is common for key size check
+
+Line:15, secondary/indexer/index_entry.go -> It is required. we can discuss this part in person
+
+Line:34, secondary/indexer/index_entry.go -> Right. Ack. Will remove
+
+Line:132, secondary/indexer/index_entry.go -> Sizing is different for normal index key and array key. For normal key, the size limit is 4K . For array key it is, 4K * max_array_len.
+
+Line:64, secondary/indexer/constant.go -> These constants are not there in patch set 5
+
+Line:152, secondary/common/index.go -> Expression position used in creating cartesian product in case of composite index. Instead of computing everytime, I placed in index defn.
+
+Line:252, secondary/common/index.go -> Ack
+
+Line:262, secondary/common/index.go -> Ack
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-01-11 14:30:50.765000000
+
+Change has been successfully merged into the git repository.
+
+-------------------------------------

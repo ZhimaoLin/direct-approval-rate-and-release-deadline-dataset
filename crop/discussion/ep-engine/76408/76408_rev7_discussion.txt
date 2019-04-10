@@ -1,0 +1,119 @@
+DESCRIPTION
+
+MB-23795: Ephemeral Tombstone purging (VBucket-level)
+
+Add Ephemeral Tombstone purging for Ephemeral VBuckets. This patch
+adds two purge operations - one for the HashTable, and one for the
+sequenceList:
+
+a) The HashTable visitor (EphemeralVBucket::HTTombstonePurger) visits
+   all items in the HashTable, and identifies any deletes which are
+   old enough to be purged (age > ephemeral_metadata_purge_age). Such
+   items are marked as stale, and transferred from the HashTable to
+   the SequenceList.
+
+b) The SequenceList purger (BasicLinkedList::purgeTombstones()) then
+   iterates over the sequencelist, and hard-deletes any items marked
+   stale - both Alive and Deleted items. It is at this stage that the
+   OSVs are actually deleted.
+
+Note this isn't yet driven by any tasks - only by the unit
+tests. Subsequent patches will connect into tasks.
+
+Change-Id: I937ed23317826c84cbdd0bb0b3749a99ff446497
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2017-04-07 17:39:32.016000000
+
+Uploaded patch set 7.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-04-07 18:47:52.738000000
+
+Patch Set 7: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4377/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/5594/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5097/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/5821/ : SUCCESS
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-04-07 22:43:16.563000000
+
+Patch Set 7: Code-Review-1
+
+(5 comments)
+
+Line:284, src/ephemeral_vb.cc -> We must serialize this with vb->failovers->needsRollback() call during stream creation.
+
+This is quite tricky. Not easy to serialize the purge task and stream creation. 
+
+Actually this race condition is present in Piper Jefferson bucket as well. But almost zero chance of seeing it there because of we purge items that have been deleted for 7 days. But in Ephemeral we purge more aggressively and hence this latent race condition might be hit.
+
+One way out FOR NOW is, remove stale items (duplicate non-deletes) aggressively and purge deletes less aggressively.
+
+Will think more on what could be other approaches.
+
+Line:205, src/linked_list.cc -> Not enough. What if it does not break here, and a range read starts while we erase a stale item at line 222?
+
+I think purge should be serialized with range reads.
+
+Line:221, src/linked_list.cc -> Purge task runs multiple times and it is quite possible that we could be purged a seqno < highestPurgedSeqno. (a lower seqno could be marked stale at a later time)
+
+Line:236, src/linked_list.cc -> Purge is only for deletes.
+We should not update this when we remove non-deleted stale items.
+(this has an implication in FailoverTable::needsRollback())
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-10 07:08:45.259000000
+
+Patch Set 7:
+
+(5 comments)
+
+Line:284, src/ephemeral_vb.cc -> Could we simply make hIghestPurgedSeqno an atomic member variable in VBucket, and simply update it every time an OSV is purged from the setlist (actually just before we delete it, so we never claim an item hasn't been purged when it already has)?
+
+Line:205, src/linked_list.cc -> Good spot. I don't think we /need/ to serialize with range-read iteration, but we do need to serialise wth range-read *creation* - i.e. we are safe as long as we block creating any new range reads while iterating.
+
+Let me do some further testing on this today.
+
+Line:221, src/linked_list.cc -> Good point. I'll add a unit test for that scenario, and remove this check (it was more for paranoia).
+
+Line:236, src/linked_list.cc -> Ok - I'll look at this today and get it fixed.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-10 12:35:16.947000000
+
+Patch Set 7:
+
+(4 comments)
+
+I believe I have all put the purgeSeqno / rollback race condition fixed - see below.
+
+Line:284, src/ephemeral_vb.cc -> Thinking about this some more, atomic doesn't solve it as the DCP_open request is essentially a multi-step operation - i.e. just because you checked and the purgeSeqno wasn't too low, doesn't mean it won't be purged by the time we request a backfill.
+
+I think what we need to do is start a rangeRead in DCP_OPEN, and depending on /if/ that succeeds check for vb->failover->needsRolback(). However at the moment a rangeRead is synchronous - you call the function and it returns all the data - which isn't correct here.
+
+I think the correct way to solve this is exposing the rangeRead as a (pair of?) iterators; and then having the caller advance those iterators to fetch the data. For this I think we want a RangeReadManager or similar which you request rangeReads from, and manages where each person is up to. The purge probably wants to be integrated with this - something like calling a blockNewRangeRequests() method so it can safely delete items from the list with aren't actively involved in a range Read (it would also allow concurrent DCP backfills / range reads).
+
+Suggest we chat about this when you come online.
+
+Line:205, src/linked_list.cc -> Done
+
+Line:221, src/linked_list.cc -> Done
+
+Line:236, src/linked_list.cc -> Done
+
+-------------------------------------

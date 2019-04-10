@@ -1,0 +1,395 @@
+DESCRIPTION
+
+Implement HistogramDiff
+
+HistogramDiff is an alternative implementation of patience diff,
+performing an O(N^2) search over all matching locations and picking
+the longest common subsequence that has the lowest occurrence count.
+
+Change-Id: I1806cd708087e36d144fb824a0e5ab7cdd579d73
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-09-22 01:11:36.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-09-22 12:07:17.000000000
+
+Patch Set 2:
+
+I have some assumptions here which I would like to have proven:
+- HistogramDiff will always produce the same results as a PatienceDiff as long as the PatienceDiff always find uniqe lines.
+- A PatienceDiff algorithm which fallbacks to HistogramDiff when he finds no uniqe lines produces excactly the same result as if you would use only HistogramDiff
+- To some extend PatienceDiff is only a special case of the HistogramDiff. The reason why we don't work always only with Histogramm diff is the better performance of Patience diff.
+
+All that correct?
+
+Now we have a fallback algorithm which works with O(N^2) and there is still MyersDiff working with O(ND). I guess the reason why we don't have MyersDiff as last option (the third algorithm in the fallback chain) are the following two reasons:
+- real world tests show that it is with the expected size of sources not worth the effort. Doesn't really bring performance benefits in the real world.
+- we can't decide easily in HistogramDiff when to switch to our fallback
+
+Did I guess right?
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-09-22 15:25:52.000000000
+
+Patch Set 2:
+
+> HistogramDiff will always produce the same results as a
+ > PatienceDiff as long as the PatienceDiff always find uniqe lines.
+
+Yes.  If PatienceDiff matches on an element, it means the
+element is not only common, but is also unique in each sequence. 
+
+For HistogramDiff that same element will have an occurrance count 
+of 1 in sequence A, that is the lowest occurrance count possible,
+and thus will also be within the LCS for HistogramDiff.
+
+The only place HistogramDiff produces a different result is when  
+sequence A has no unique elements, which means its minimum occurrance
+count is at least 2.  Here PatienceDiff has to fallback to another
+algorithm, while HistogramDiff will still try to generate something.
+
+ > A PatienceDiff algorithm which fallbacks to HistogramDiff when
+ > he finds no uniqe lines produces excactly the same result as if
+ > you would use only HistogramDiff
+
+Yes.  This is true because all of the passes where PatienceDiff
+can produce a result are identical between both HistogramDiff
+and PatienceDiff.  When PatienceDiff falls back to HistogramDiff,  
+its doing so in exactly the same way that HistogramDiff would have
+recursed on itself for that same region.
+
+ > To some extend PatienceDiff is only a special case of the
+ > HistogramDiff. The reason why we don't work always only with
+ > Histogramm diff is the better performance of Patience diff.
+ 
+Correct.  The optimized version of PatienceDiff (which I'm still 
+working on) uses a smaller hash table and fewer steps for non-unique
+elements.  This should improve performance avoiding elements that
+are very common in source code (e.g. "\t}\n") and aren't very
+interesting, while still allowing us to find the common but unique
+elements quickly.
+
+But as you can see by the performance posted in change
+I3c3ec3abd24889faccd571d02c57331c907c0198 its only a small
+improvement over HistogramDiff.  It almost doesn't seem to
+be worth it, but it can be when summed up over multiple files    
+within the same operation (e.g. to show a commit's full diff
+or to merge two commits).
+ 
+ > Now we have a fallback algorithm which works with O(N^2) and there
+ > is still MyersDiff working with O(ND).
+
+I haven't analyzed the running time of either implementation yet,
+but lets give it a shot... they are nearly identical.
+ 
+Lets use AN for the length of sequence A and BN be the length of
+sequence B.  Myers' N is AN + BN.
+ 
+The first step examines AN and stores it into a hash table.
+This occurs in O(AN) time.  Each element is scanned once, and added
+to the chain.  If we assume the hash function is reasonable, we have
+nearly constant insertion performance, so the scan step is O(AN).  
+If its horrible and gives lots of collisions, this scan is O(AN^2) 
+as we consider all of the elements in the same hash bucket.
+
+Once a position has been found for a single element, the
+insertion cost is constant for both PatienceDiff and HistogramDiff.
+In PatienceDiff we set a bit flag if the element already exists in
+the table, otherwise we push it onto a list.  In HistogramDiff we 
+push the element onto the head of a list, and increment a counter.
+So the entire first step is O(AN)... or O(AN^2) if the hash sucks.
+
+
+The second step scans BN and probes the hash table for each item.
+This occurs in O(BN) time.  Each element is probed once, and again
+the hash function determines if this is O(BN) or O(BN * AN) time.
+
+For PatienceDiff we only have to consider unique elements, so the
+compare cost is constant.
+
+For HistogramDiff we have to compare to all matching locations,
+so its O(AN * BN).  However I think we have a lower average running
+time here because we won't consider an A chain that has occurrance  
+counts longer than our current LCS segment.  As that approaches the
+lowest occurrance count within A, the size of AN drops, and we get
+closer to O(BN) time on average.  This is where PatienceDiff should
+run better, it won't ever consider a location where AN > 1.
+
+Once the LCS is found, we split the input around it and recursively
+process AN/2 and BN/2 twice.  Each split is two Edits in the edit
+script, and thus the number of splits we perform is Myers' D/2.
+So we run O(D) recursive steps.
+
+So assuming the hash function doesn't create a lot of collisions, 
+we are around O((AN+BN) * D) or O(ND).  If all elements hash to
+the same value (e.g. 0), yea, we're looking more at O(N^2 * D).
+ 
+Our memory usage is O(AN + D) in either algorithm, as we build a  
+hash table of size AN to hold the elements of A, and use D memory
+to store the edits and the stack during recursion.
+
+Myers' paper states MyersDiff should be using O(ND) memory for the
+O(ND) variant we have, but he also has a variant that uses O(N)    
+space and O(N log N + D) running time.  I don't know how he gets  
+the latter variant to work.
+
+ > I guess the reason why we
+ > don't have MyersDiff as last option (the third algorithm in the
+ > fallback chain) are the following two reasons:
+ 
+HistogramDiff doesn't support a fallback.  That is the primary   
+reason.  :-)
+
+ > real world tests show that it is with the expected size of sources
+ > not worth the effort. Doesn't really bring performance benefits in
+ > the real world.
+
+I contend this is true, given the limited testing I have performed.
+
+For line oriented inputs that are human written source files, the
+current content hashes produce relatively few collisions, and there
+are often a large number of unique or low occurrance count lines
+we can anchor LCS searching around.  The hash function permits us
+to find these points with relatively low effort, and we can get a
+reasonable edit script by using those common points.
+ 
+I think Myers O(ND) algorithm has better worst case performance.
+Given the analysis above we both agree that HistogramDiff would be
+O(N^2 * D) if the hash function produced a high rate of collisions
+for the input sequence, Myers algorithm doesn't care.
+
+ > we can't decide easily in HistogramDiff when to switch to our
+ > fallback
+
+Correct, and is why it doesn't have a fallback.  By the time we
+get around to concluding we have very few low occurrance elements,  
+we've done the majority of the work we need anyway to find the LCS 
+and split.  Switching over to MyersDiff on the recursion might not 
+be an improvement at that point.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-09-22 21:35:25.000000000
+
+Patch Set 2:
+
+Hi,
+
+from the performance measurements you posted histogram
+diff maybe also a good candidate for native git. I bet that's
+on your list, right.
+
+Without further improvements on patience diff histogram diff
+seems to be a better choice. Having only one diff algorithm to
+maintain/bugfix/improve would be a benefit. But maybe these
+improvements will bring the extra performance boost to let
+patience diff survive.
+
+>  > Now we have a fallback algorithm which works with O(N^2) and there
+>  > is still MyersDiff working with O(ND).
+>
+> I haven't analyzed the running time of either implementation yet,
+> but lets give it a shot... they are nearly identical.
+
+I also have not analyzed runtime of HistogramDiff (or PatienceDiff)
+but your commit messages said HistogramDiff works in O(N^2). That's
+why I assumed you calculated it already.
+
+...
+> Our memory usage is O(AN + D) in either algorithm, as we build a
+> hash table of size AN to hold the elements of A, and use D memory
+> to store the edits and the stack during recursion.
+
+Thanks for the long explanation about runtime here. Not only that I
+understand runtime behaviour better was also a good explanation
+about how the algorithm really works (the javadocs often show only
+purpose of single methods, but this text solved also some misunderstandings
+about how all the pieces work together).
+
+
+> I think Myers O(ND) algorithm has better worst case performance.
+> Given the analysis above we both agree that HistogramDiff would be
+> O(N^2 * D) if the hash function produced a high rate of collisions
+> for the input sequence, Myers algorithm doesn't care.
+
+Yes, I do agree on O(N^2 * D)
+
+>  > we can't decide easily in HistogramDiff when to switch to our
+>  > fallback
+>
+> Correct, and is why it doesn't have a fallback.  By the time we
+
+I do see this as a minor problem. I know we are on very theoretical
+ground here and normal source code diffs will not be a problem here.
+But: what can happen will happen and the worst diff I can imagine is
+one which simply doesn't return. O(N^2) compared to O(ND) can lead
+to a basically not returning HistogramDiff while Myers works "only" for
+minutes. Maybe some heuristics about our
+histogram can trigger fallback here. Is ist really ok to do Histogram-Diff
+if all lines have same occurence count? If the best line is occuring on
+20% of the overall lines? Something like that.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-09-22 23:24:44.000000000
+
+Patch Set 2:
+
+Christian wrote:
+
+ > from the performance measurements you posted histogram
+ > diff maybe also a good candidate for native git. I bet that's
+ > on your list, right.
+
+Junio and I talked about that yesterday for a few minutes.  If I
+can magically create more time, sure, I'd love to try porting it
+over to C and see if its worthwhile there.
+
+ > Without further improvements on patience diff histogram diff
+ > seems to be a better choice. Having only one diff algorithm to
+ > maintain/bugfix/improve would be a benefit. But maybe these
+ > improvements will bring the extra performance boost to let
+ > patience diff survive.
+
+I'm starting to agree with your sentiment here.  The two are so
+close in performance that it might be better to just have the one
+HistogramDiff implementation to maintain.  I didn't expect that to
+be the case.  Its good to be proven wrong.
+
+ > >  > Now we have a fallback algorithm which works with O(N^2) and there
+ > >  > is still MyersDiff working with O(ND).
+ > > 
+ > > I haven't analyzed the running time of either implementation yet,
+ > > but lets give it a shot... they are nearly identical.
+ > 
+ > I also have not analyzed runtime of HistogramDiff (or PatienceDiff)
+ > but your commit messages said HistogramDiff works in O(N^2). That's
+ > why I assumed you calculated it already.
+
+I assumed it was O(N^2) because of that compare all locations part
+during the scan of sequence B.  But I hadn't put any real thought
+into it beyond that.
+
+ > > Our memory usage is O(AN + D) in either algorithm, as we build a
+ > > hash table of size AN to hold the elements of A, and use D memory
+ > > to store the edits and the stack during recursion.
+ > 
+ > Thanks for the long explanation about runtime here. Not only that I
+ > understand runtime behaviour better was also a good explanation
+ > about how the algorithm really works (the javadocs often show only
+ > purpose of single methods, but this text solved also some misunderstandings
+ > about how all the pieces work together).
+
+I'll have to elaborate more in the class Javadoc then... especially
+if we rip out PatienceDiff and keep HistogramDiff instead.
+
+ > I do see this as a minor problem. I know we are on very theoretical
+ > ground here and normal source code diffs will not be a problem here.
+ > But: what can happen will happen and the worst diff I can imagine is
+ > one which simply doesn't return. O(N^2) compared to O(ND) can lead
+ > to a basically not returning HistogramDiff while Myers works "only" for
+ > minutes.
+
+Well, right now our MyersDiff implementation has a bug where it
+will never complete for certain inputs.  I suspect a logic error
+in the implementation.  :-)
+
+But yes, a O(N^2 * D) worst-case running time might never produce
+results within a reasonable time bound, while an O(N * D) algorithm
+still would.
+
+One trick we do within DeltaIndex (the binary delta compression code)
+is to limit the chain length within a hash bucket to a constant
+number.  If a block occurs within the input more than 64 times,
+we punt and drop all of the subsequent locations in the stream.
+That converts the algorithm from O(N^2) to O(N * 64), and gives us
+a nice linear running time, at the expense of a potentially larger
+delta instruction sequence.
+
+It might be acceptable to do the same thing with HistogramDiff: if
+any chain is over 64 elements, cut the chain off.  Since we use only
+the LCS from the fewest occurrance count chain there is no damage
+to the result provided, that the best LCS for the current region
+is actually centered around something with less than 64 occurrances.
+
+If the fewest occurrances was actually this limit (or higher),    
+we could recognize that and switch algorithms.
+
+ > Maybe some heuristics about our
+ > histogram can trigger fallback here. Is ist really ok to do Histogram-Diff
+ > if all lines have same occurence count? If the best line is occuring on
+ > 20% of the overall lines? Something like that.
+
+Yea, what you said.  :-)
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-09-23 16:12:21.000000000
+
+Patch Set 2:
+
+Shawn wrote:
+
+ > Christian wrote:
+ > > But: what can happen will happen and the worst diff I can imagine is
+ > > one which simply doesn't return. O(N^2) compared to O(ND) can lead
+ > > to a basically not returning HistogramDiff while Myers works "only" for
+ > > minutes.
+ >
+ > One trick we do within DeltaIndex (the binary delta compression code)
+ > is to limit the chain length within a hash bucket to a constant
+ > number. If a block occurs within the input more than 64 times, we
+ > punt and drop all of the subsequent locations in the stream. That
+ > converts the algorithm from O(N^2) to O(N * 64), and gives us a
+ > nice linear running time, at the expense of a potentially larger
+ > delta instruction sequence.
+ >
+ > It might be acceptable to do the same thing with HistogramDiff: if
+ > any chain is over 64 elements, cut the chain off.
+
+I tried doing this last night.  The RawText hash() implementation
+is horrible.  IIRC its one of DJB's function for strings, and its
+producing a ton of collisions for a JGit source file.
+
+A chain length of 64 elements with the same hash code is too short;
+HistogramDiff has to give up during the first step of scanning A
+because too many elements fell into the same hash bucket.
+
+I tried replacing the element with the highest occurrence count in
+the chain, but this causes some thrashing as very common elements
+are discarded and then put right back.  The side effect is a common
+element can be mistaken as unique in A because we threw away its
+prior occurrence counter when the chain got too big.
+
+So putting a limit on the scan+insert of A into the hash table
+seems to be a challenge.  If the hash function performs poorly for
+our input, we're stuck with an O(AN^2) insertion time.
+
+ >  Since we use only
+ > the LCS from the fewest occurrance count chain there is no damage
+ > to the result provided, that the best LCS for the current region
+ > is actually centered around something with less than 64 occurrances.
+
+This turned out to be easy; during the scan of B we just have
+to initialize the LCS counter to the maximum chain length, and
+the scan would automatically avoid any elements with a higher
+occurrence count.
+
+ > > Maybe some heuristics about our
+ > > histogram can trigger fallback here. Is ist really ok to do Histogram-Diff
+ > > if all lines have same occurence count? If the best line is occuring on
+ > > 20% of the overall lines? Something like that.
+
+But we're still O(AN^2) during insertion of A into the hash table.  
+We can't avoid that horrible running time when fed a poor hash.
+
+-------------------------------------

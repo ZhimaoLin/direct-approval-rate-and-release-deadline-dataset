@@ -1,0 +1,169 @@
+DESCRIPTION
+
+[Refactor]: Remove 'Vbucket' related logic from hash table set.
+
+Hash table set function unlocked_set() had logic related to eviction
+policy, expiry etc. Vbucket is a better place for these.
+
+Hash table must be a in-memory data storage structure whose main
+functions must be set, update, delete and read.
+
+Change-Id: I2a54ca7c49eea1383520d793a29d636913733600
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2017-01-19 08:41:32.364000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-19 08:41:39.679000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1704/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-19 08:41:39.820000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2503/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-19 08:41:39.953000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2874/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-19 08:41:40.091000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/3036/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-19 08:56:21.062000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2874/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2503/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1704/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/3036/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-01-19 12:43:45.459000000
+
+Patch Set 2: Code-Review-1
+
+(16 comments)
+
+General approach looks good, but I have a number of comments on implementation details:
+
+Line:1487, src/vbucket.cc -> Again, should in invalid_arg
+
+Line:1550, src/vbucket.cc -> I think the mix of some direct returns, and some assignment of `rv` and returning that at the end is inconsistent and potentially confusing. Suggest you just make all cases use a direct return and get rid of`rv`
+
+Line:1558, src/vbucket.cc -> Given the only function which calls this is processSet above (and it does nothing other than forward to another function), I'd suggest inlining that into processSet if you don't expect any other callers in future.
+
+Line:1560, src/vbucket.cc -> Same here.
+
+Line:310, src/hash_table.h -> Given we don't unlock in this method, mark this as const then the caller knows that the lock state cannot be changed.
+
+Line:313, src/hash_table.h -> As per previous comments, I think it's unnecessary to mark this as const.
+
+Line:321, src/hash_table.h -> If this is a pure out param, then prefer to return by value (for example a std_pair<MutationStatus, StoredValue*>
+
+See http://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rf-out
+
+Line:328, src/hash_table.h -> Same as above, mark this as const if the function doesn't change it.
+
+Line:331, src/hash_table.h -> As above.
+
+Line:779, src/vbucket.h -> As before, I think these consts are best omitted.
+
+Line:822, src/vbucket.h -> This should have the `unlocked` tag if you need to pass in the lock.
+
+Line:833, src/vbucket.h -> As before, make this part of the return value.
+
+Line:839, src/vbucket.h -> Same - add `unlocked`
+
+Line:249, src/hash_table.cc -> This isn't used in the function - remove if it's now dead.
+
+Line:266, src/hash_table.cc -> I'd argue this should be invalid_argument - you've called the function with incorrect values.
+
+(logic error would be for unexpected / inconsistent internal state in the object - as you have below where the VBucket isn't active).
+
+Line:320, src/hash_table.cc -> Given this now only has one return value, it should probably just return void.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-01-19 19:34:03.639000000
+
+Patch Set 2:
+
+I apologize for some common implementation errors that I make several times. Generally I miss them when I am in the flow of refactor wherein I tend to keep the code as is (as much as possible).
+
+Will incorporate the comments
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-01-19 22:25:04.791000000
+
+Patch Set 2:
+
+(15 comments)
+
+Line:1487, src/vbucket.cc -> Done
+
+Line:1550, src/vbucket.cc -> Done
+
+Line:1558, src/vbucket.cc -> This will be a virtual function in the future. Will do this differently in an ephemeral vbucket
+
+Line:1560, src/vbucket.cc -> This will be a virtual function in the future. Will do this differently in an ephemeral vbucket
+
+Line:310, src/hash_table.h -> Done
+
+Line:313, src/hash_table.h -> Done
+
+Line:321, src/hash_table.h -> Done
+
+Line:328, src/hash_table.h -> Done
+
+Line:331, src/hash_table.h -> Done
+
+Line:779, src/vbucket.h -> Done
+
+Line:822, src/vbucket.h -> Was thinking if we should move away from having 'unlocked' tag for private functions of a class. What do you think ?
+
+Line:833, src/vbucket.h -> Done
+
+Line:249, src/hash_table.cc -> Done
+
+Line:266, src/hash_table.cc -> Ok, makes sense
+
+Line:320, src/hash_table.cc -> Done
+
+-------------------------------------
+author: Tate Garrett
+date: 2017-01-20 22:15:46.520000000
+
+Change has been successfully cherry-picked as a4a01e0067cf55e163af1953e3e39e1ecde0e607 by Adrianna Holmes
+
+-------------------------------------

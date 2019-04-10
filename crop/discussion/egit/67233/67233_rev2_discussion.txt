@@ -1,0 +1,252 @@
+DESCRIPTION
+
+WIP: Added support for nested (linked) Git repositories in project.
+
+reworked based on "https://git.eclipse.org/r/#/c/67186/"
+
+The fixes are going to support nested repositories in one project and
+the submodule fixes are "only" related to this, because they are nested
+repos too. I've not planned to fix submodules first, but we are
+investigating to use them later.
+
+For adding nested Git repos we use "links", so the sub-repos are not
+located in the "projects root git repo" directly, they are only linked
+there. Additionally we use "worktree add" and i've updated JGit to
+proposed solution (see #477475) and have small fix in EGit too
+(https://git.eclipse.org/r/67223).
+
+Problems:
+- the nested repos are detected during project import but decoration is
+not there --> after project close and open the decorations are available
+again
+- the nested repos are only sometimes available in repository view (as
+top repo) --> have to think about how to add them as nested repos like
+done for submodules
+- getMapping(IPath) still iterates over all projects and all
+repositories --> have to understand the whole IPath, IResource etc.
+differences and drawbacks
+- synchronize view does not show linked repo changes --> all this
+isLinked() stuff should be verified
+
+TODOs:
+- automatic tests (have tested it with some manually created repos and
+eclipse projects)
+  - for submodules
+  - nested and linked repos
+
+Bug: 446344
+Bug: 401556
+Bug: 411742
+Change-Id: Ie9aa6bd9df812c515e9f4967e1fb06c17e7cf636
+Signed-off-by: Genevieve Hudson xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Genevieve Hudson
+date: 2016-03-02 08:46:09.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Genevieve Hudson
+date: 2016-03-02 08:47:03.000000000
+
+Topic changed from WIP: support for nested Git repositories in project to nested
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-03-02 10:01:39.000000000
+
+Patch Set 2:
+
+(9 comments)
+
+Why did PS2 not trigger a Hudson build?
+
+I still don't quite understand the use case with Eclipse-linked git directories. Why do you want to do that?
+
+Line:399, org.eclipse.egit.core/src/org/eclipse/egit/core/project/RepositoryMapping.java -> Collections.emptyMap()
+
+Line:420, org.eclipse.egit.core/src/org/eclipse/egit/core/project/RepositoryMapping.java -> Can be inlined:
+
+  for (RepositoryMapping mmapping : getMappings(project).values())
+
+Line:472, org.eclipse.egit.core/src/org/eclipse/egit/core/project/RepositoryMapping.java -> Please use
+
+  xxx@xxx.xxx IResource
+
+to make the Java code formatter produce nicer formatting. (Also in other places.)
+
+Line:94, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/indexdiff/GitResourceDeltaVisitor.java -> This removal will need _extensive_ tests involving linked resources in general.
+
+Line:384, org.eclipse.egit.core/src/org/eclipse/egit/core/project/GitProjectData.java -> I find this rename unnecessary. This is the set of protected resources inside a project, so of course it's nested.
+
+Line:422, org.eclipse.egit.core/src/org/eclipse/egit/core/project/GitProjectData.java -> Presumably you'd want to return here a read-only view of mappings.
+
+Line:441, org.eclipse.egit.core/src/org/eclipse/egit/core/project/GitProjectData.java -> Why remove the TODO here? I don't see gitdir redirects being handled?
+
+Line:460, org.eclipse.egit.core/src/org/eclipse/egit/core/project/GitProjectData.java -> Unnecessary rename, and the comment was not updated anyway. It's not quite correct either way -- we have protected resources when we have submodules or nested repositories.
+
+Either leave as it was, or find a term that describes both. Maybe hasInnerRepositories(), "inner" meaning either submodule or nested repository?
+
+Line:54, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/decorators/DecoratableResource.java -> Missing blank line.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-03-02 10:06:08.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/8234/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-03-02 10:35:16.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/8234/ : SUCCESS
+
+-------------------------------------
+author: Genevieve Hudson
+date: 2016-03-02 10:37:16.000000000
+
+Patch Set 2:
+
+(In reply to comment #14)
+> 
+> Why did PS2 not trigger a Hudson build?
+Hm, i don't know. Before i had always a build triggered automatically.
+ 
+> I still don't quite understand the use case with Eclipse-linked git directories.
+> Why do you want to do that?
+We have a git extension that supports multi-repositories for git like it was before in ClearCase (similar to googles "repo"). It creates a "project" that is NOT a git repo with nested git repos inside:
+s7p.project
++ s7p.eclipse
++ s7p.cpu1500
++ s7p.comm
+...
+
+s7p.eclipse is a git repo that holds the eclipse project only for faking eclipse to have a Git-Provider at top level (project).
+s7p.cpu1500 is a real git repo that is linked in s7p.eclipse and must work with EGit without creating a eclipse project at top level to have EGit working.
+s7p.comm same as s7p.cpu1500, there are actually 13 repos...
+
+So the usage of the links was a workaround for our old version control in ClearCase and it worked ONLY that way. We did the same after migrating to Git, but here we had to create for each linked repo an eclipse project or organize it in working sets or the new "Project Explorer" views feature that shows them hiarchically instead of flat. All this was not accepted by the developers.
+
+Now i'm trying to support this in EGit. But if the linked resources is a generall performance or handling issue. I may just create a empty repo at toplevel "s7p.project" without links and nested repo detection must work...
+
+Do you think the isLinked() stuff will not be that easy to support?
+
+Thank You!
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-03-02 11:09:21.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+> Do you think the isLinked() stuff will not be that easy to support?
+
+I think this is opening a can of worms. The removal of the isLinked() check in GitResourceDeltaVisitor is a quite major change; may not be that easy to get all edge cases right. And, as you write yourself, all other isLinked() occurrences will need examination, and I fear we may still discover a lot of places that may just silently assume that resources are not linked. But perhaps I'm overestimating this... don't let yourself be discouraged by my reservations!
+
+How are push & pull supposed to work with such linked repositories? If you do a commit/push/pull on the s7p.eclipse project, what shall be committed/pushed to which repository?
+
+From your use case description, I still don't see why s7p.eclipse needs to link (and that's Eclipse linked resource, not symlink, right?) to s7p.cpu1500 and the rest. Off-hand, it looks to me that s7p.cpu1500 and the others could just be added as normal standard git submodules to the s7p.eclipse repo.
+
+(Yes, I know that push & pull don't work yet for submodules in folders. That might be perhaps be a reason to do as you do currently. That's coming soon, though.)
+
+BTW, I triggered a Hudson build manually.
+
+Line:28, /COMMIT_MSG -> Or perhaps have nested repositories appear as top repos. (But leave submodules as is.) That's actually something I'm considering for my other change at https://git.eclipse.org/r/#/c/67638/ .
+
+-------------------------------------
+author: Genevieve Hudson
+date: 2016-03-02 12:14:25.000000000
+
+Patch Set 2:
+
+(In reply to comment #18)
+> Patch Set 2:
+> 
+> (1 comment)
+> 
+> > Do you think the isLinked() stuff will not be that easy to support?
+> 
+> I think this is opening a can of worms. The removal of the isLinked() check in
+> GitResourceDeltaVisitor is a quite major change; may not be that easy to get all
+> edge cases right. And, as you write yourself, all other isLinked() occurrences
+> will need examination, and I fear we may still discover a lot of places that may
+> just silently assume that resources are not linked. But perhaps I'm
+> overestimating this... don't let yourself be discouraged by my reservations!
+Thanks. I've only few hours per week for this researching task ;) I will investigate the creation of a fake-repo in s7p.project with nested repos, to have filesystem structure without eclipse-links.
+
+> How are push & pull supposed to work with such linked repositories? If you do a
+> commit/push/pull on the s7p.eclipse project, what shall be committed/pushed to
+> which repository?
+The s7p.eclipse repo is only for creating "eclipse project" (.gitignore all sub dirs) and does nothing with nested/linked repos. So there is no push/pull for this repo supported or needed. The developer still needs to select the nested/linked repo and push/pull manually or use our git extension that will do this stuff automatically for all related repos. So we use git bash for such tasks and plan to create small plugin (extend EGit) to make the special clone/push/fetch/pull for multiple repos in Eclipse. 
+
+> From your use case description, I still don't see why s7p.eclipse needs to link
+> (and that's Eclipse linked resource, not symlink, right?) to s7p.cpu1500 and the
+> rest. Off-hand, it looks to me that s7p.cpu1500 and the others could just be
+> added as normal standard git submodules to the s7p.eclipse repo.
+Yes, that's Eclipse linked resource (we are at Windows without symlink etc). I've tried submodules last year and it was complicated for us, because only few repos (mostly one repo) are the main ones for changing stuff all others are "read only" -> sparse checkouts from dedicated tags (supply repos with some shared components). The main repo s7p.cpu1500 is cloned first and has a file checked in with information (tag or branch and list of subfolders) about all other needed repos (supply). This information is evaluated via our "git s7p" extension that clones (or updates) all supply repos then. After this we have an eclipse wizard for importing or creating eclipse project with this structure. Creating a s7p.project or s7.eclipse repo with submodules from dedicated tags etc. was not easy and it worked with simple links in ClearCase before - we used the same process here.
+
+> BTW, I triggered a Hudson build manually.
+Thank You!
+
+-------------------------------------
+author: Genevieve Hudson
+date: 2016-03-02 12:55:10.000000000
+
+Patch Set 2:
+
+(7 comments)
+
+Line:399, org.eclipse.egit.core/src/org/eclipse/egit/core/project/RepositoryMapping.java -> Done
+
+Line:420, org.eclipse.egit.core/src/org/eclipse/egit/core/project/RepositoryMapping.java -> Done
+
+Line:384, org.eclipse.egit.core/src/org/eclipse/egit/core/project/GitProjectData.java -> Yes, but this set does not include protected .git folder or file located in project root directly. So i thought this can be understanded in that way.
+
+OK, i thought submodules are nested, but yes "inner" is better. I will rename again.
+
+Line:422, org.eclipse.egit.core/src/org/eclipse/egit/core/project/GitProjectData.java -> Done
+
+Line:441, org.eclipse.egit.core/src/org/eclipse/egit/core/project/GitProjectData.java -> May be i don't understand this: the .git file itself is protected and the redirected gitdir will be protected anyway if it where visible in other eclipse project. I will add the comments, because not changed anythink by ma patch related to this, sorry.
+
+Line:460, org.eclipse.egit.core/src/org/eclipse/egit/core/project/GitProjectData.java -> OK, i thought submodules are nested, but yes "inner" is better.
+
+Line:54, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/decorators/DecoratableResource.java -> Done
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-03-02 13:11:38.000000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:384, org.eclipse.egit.core/src/org/eclipse/egit/core/project/GitProjectData.java -> That the protected flag is set for .git resources that have been recognized as submodules or nested repos in some folder but not for a .git directly under the project is just a minor artifact of this implementation. We might just as well start the loop in protect() at the parent of the .git and thus not "protect" those inner .git resources.
+
+This set is supposed to contain all the IFolders that contain somewhere inside a git repository. Those cannot be moved or deleted. The project itself must not be included; moving/deleting a whole project is always allowed.
+
+Actually, I think we might relax this to submodules only (in some other change, if at all) -- for truly nested repositories, moving/deleting may actually be OK.
+
+Line:441, org.eclipse.egit.core/src/org/eclipse/egit/core/project/GitProjectData.java -> "protected" is a feature of EGit guarding against moving/deleting folders that contain submodules.
+
+Marking as "team private" is an Eclipse feature that will hide the .git from the navigator view.
+
+The two are unrelated. The point of the TODO here was that this code only marks .git *directories* as "team private", but not .git *files*.
+
+-------------------------------------
+author: Gerrit Johnathan Pham
+date: 2016-03-21 19:18:36.000000000
+
+Change has been successfully merged into the git repository by Alayna Houston
+
+-------------------------------------

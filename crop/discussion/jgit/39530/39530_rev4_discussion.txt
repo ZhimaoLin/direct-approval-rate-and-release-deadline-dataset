@@ -1,0 +1,163 @@
+DESCRIPTION
+
+WIP: Port push certificates
+
+push certs have been part of git-core for a few months now. Let's try
+to support that feature.
+
+This is not complete and is lacking the actual function to validate
+the signature for now
+
+Change-Id: I249869cadb2d55aef016371b9311b8583591b9cf
+Signed-off-by: Beau Terry xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Beau Terry
+date: 2015-01-16 18:56:01.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-01-16 18:56:07.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/5914/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-01-16 18:56:32.000000000
+
+Patch Set 4: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/5914/ : FAILURE
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-01-16 19:36:53.000000000
+
+Patch Set 4:
+
+(18 comments)
+
+Line:268, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> nit: methods are never declared intermixed with fields
+
+Line:286, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> style nit: static fields are always declared at the top of a class
+
+Line:302, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> This is a lot of fields. Maybe creating a new package visible class called ParsedPushCert and put the fields inside of that. Then BaseReceivePack only needs one:
+
+  ParsedPushCert cert;
+
+field added to it. And you don't have to prefix every field with "pushedCert". It can be referenced with cert.blah
+
+Line:310, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> In Java we have java.util.concurrent.TimeUnit. You can translate as:
+
+  TimeUnit.MILLISECONDS.toSeconds(millis)
+
+or:
+
+  TimeUnit.SECONDS.toMillis(secs)
+
+Line:334, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> use != null. the config getString(a, b) form returns null if its undefined.
+
+Line:335, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> because of stateless RPC on HTTP this should be done only when the adevertisement is being created
+
+Line:336, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> getDirectory() is null on DFS. :-(
+
+Line:337, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> This is always Jan 1 1970. You want System.currentTimeMills() or something.
+
+Line:347, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> Nonce generation should be pulled into an interface and put this into a default implementation of that interface. That way we can swap this with other algorithms easily.
+
+HmacSHA1 may be OK right now for some uses, but I would like to make nonce creation easier to experiment with.
+
+Line:355, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> = null is not necessary. The compiler can prove the value is assigned, or we leave the method without use because of throws below. In fact leaving it in is more error prone because if you forget a throw the compiler thinks its valid to be null, and then below you assume its non-null.
+
+Line:366, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> return String.format(...) without the hexString variable is easier to read.
+
+Line:407, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> remove this. you want the 2 arg getString(). The 3 arg is looking for:
+
+  [receive "certnonceseed"]
+    = value
+
+Which isn't valid config.
+
+Line:1034, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> use != null
+
+Line:1036, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> generate the nonce here
+
+Line:1083, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> getDirectory() is null on dfs
+
+Line:1111, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> This is still seriously obtuse.
+
+Line:1282, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> equals? The capability splitting above should have left you with exactly "push-cert"
+
+Line:242, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceivePack.java -> nit: restore the blank lines around here
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-01-16 20:10:39.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:1283, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> We can consume the header up to "\n" and buffer that. Then drop out of this conditional and continue to read the next line, which should pick up the commands. If the cert exists we should append the command to the cert and parse it below.
+
+Then you need a conditional in here to look if line resembles the PGP signature start, and direct all future lines until the push-cert-end line into the end of the cert buffer.
+
+I think the wire protocol parser can be a lot simpler to just get the data into a buffer. And then we verify the buffer formatting outside of the wire protocol.
+
+That verifier may be useful anyway because we are probably going to store push certs somewhere inside the Git repository. And we may want to reread them and reparse their headers. So I really do think we are better off just making the wire protocol code about capturing the data into a contiguous buffer and deferring the actual verification work until after its all captured.
+
+-------------------------------------
+author: Beau Terry
+date: 2015-01-16 22:04:49.000000000
+
+Patch Set 4:
+
+(3 comments)
+
+Line:334, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> Done
+
+Line:337, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> Done
+
+Line:1282, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> So let's talk about the overall design.
+We would need 
+
+    a PushCertificateParser class handling the parsing,
+    an interface for providing the nonces (different hash functions)
+    a Factory for creating the PushCertificateParser with different NonceHashes
+    and a ParsedPushCertificate which is produced by the PushCertificateParser
+
+Or is that overengineered?
+
+-------------------------------------
+author: Beau Terry
+date: 2015-01-17 00:40:31.000000000
+
+Patch Set 4:
+
+(3 comments)
+
+Line:310, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> Done
+
+Line:347, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> Done
+
+Line:242, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceivePack.java -> Done
+
+-------------------------------------
+author: Beau Terry
+date: 2015-01-20 20:22:20.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:407, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> done, though as a reason for confusion here: the function getInt takes (section, name, defaultValue) which I assumed here as well.
+
+-------------------------------------

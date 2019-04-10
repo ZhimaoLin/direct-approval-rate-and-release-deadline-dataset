@@ -1,0 +1,107 @@
+DESCRIPTION
+
+Add support for computing a Change-Id à la Gerrit
+
+A Change-Id helps tools like Gerrit Code Review to keeps
+different versions of a patch together. The Change-Id is computed
+as a SHA-1 hash of some of the same basic information as a commit
+id on the first commit intended to solve a particular problem and then
+reused for updated solutions.
+
+Change-Id: I04334f84e76e83a4185283cb72ea0308b1cb4182
+Signed-off-by: Juliet Cantu xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Juliet Cantu
+date: 2010-05-13 22:22:22.000000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-05-14 00:40:06.000000000
+
+Patch Set 5: I would prefer that you didn't submit this; No score
+
+
+
+Line:111, org.eclipse.jgit/src/org/eclipse/jgit/util/ChangeIdUtil.java -> If you just do "return w.computeObjectSha1..." you might be able to fit the entire method call on one line and won't need to wrap the "is);" onto the next line.  If its still too long, consider "raw" or "bin" instead of "bytes" for the encoded form of the commit text.
+
+Line:117, org.eclipse.jgit/src/org/eclipse/jgit/util/ChangeIdUtil.java -> The canonical hook in Gerrit Code Review does this as a case-insensitive match for Bug|Issue.
+
+Line:120, org.eclipse.jgit/src/org/eclipse/jgit/util/ChangeIdUtil.java -> Can't you factor out the ^$ to the start and end of the pattern?
+
+The canonical hook also considers lines starting with a space to be a footer, because these are often continuation lines of the prior line.
+
+Line:133, org.eclipse.jgit/src/org/eclipse/jgit/util/ChangeIdUtil.java -> Case insensitive form is honored by Gerrit Code Review and by the commit-msg hook it comes with.  Should we use a case insensitive match here too?
+
+Line:140, org.eclipse.jgit/src/org/eclipse/jgit/util/ChangeIdUtil.java -> This should only match when firstPattern == -1.  That is, we want to find the *last* Bug: or Issue: line and insert the Change-Id immediately after it.  Here you are going to insert it after the first.  Correct output would be:
+
+  Bug: 42
+  Bug: 53
+  Bug: 59
+  Change-Id: I....
+  Signed-off-by: Shawn ...
+
+That's why I do this as two loops in the canonical hook.  We loop backwards to find the end of the footers, and then loop forwards to find the Change-Id insertion point.  Given that its only a couple of indexes, walking backwards then forwards in the data is very inexpensive.
+
+Line:153, org.eclipse.jgit/src/org/eclipse/jgit/util/ChangeIdUtil.java -> This code would be a lot easier to follow if you just initialize lastPattern = lines.lenght at the start, rather than -1.
+
+Line:165, org.eclipse.jgit/src/org/eclipse/jgit/util/ChangeIdUtil.java -> Why are you skipping empty lines in the user's message?
+
+All indexes of lines up to the chosen insertion point of the Change-Id should be copied as-is.  Since split("\n") removed the \n characters, we have to add those back in between each element.  But that's it.
+
+Line:52, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/ChangeIdUtilTest.java -> Ugh.
+
+We can relicense Gerrit Code Review's CommitMsgHookTest class from APLv2 to EDL.  Please see if you can reuse that test class by altering how it executes the hook logic, but otherwise retain its input-output examples and test to that.  Just tag it copyright Google 2009.
+
+http://android.git.kernel.org/?p=tools/gerrit.git;a=blob;f=gerrit-server/src/test/java/com/google/gerrit/server/tools/hooks/CommitMsgHookTest.java;hb=HEAD
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-05-14 18:03:10.000000000
+
+Patch Set 5: No score; No score
+
+
+
+Line:165, org.eclipse.jgit/src/org/eclipse/jgit/util/ChangeIdUtil.java -> Do match what the commit-msg I got from Gerrit hook does. 
+
+I was thinking about making this implementation diverge from the hook since it makes little sense skip the blankt lines
+
+Line:52, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/ChangeIdUtilTest.java -> I didn't even think of looking there. 
+Can't I st^H^Hborrow the tests too?
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-05-14 20:53:47.000000000
+
+MISMATCHED INLINE COMMENT
+Line:165, org.eclipse.jgit/src/org/eclipse/jgit/util/ChangeIdUtil.java -> I generated the JUnit test by committing into a test with the (shell) commit hook installed repo and found this behavior.
+
+This code skips multiple blank lines, not single ones.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-05-14 18:18:41.000000000
+
+MISMATCHED INLINE COMMENT
+Line:165, org.eclipse.jgit/src/org/eclipse/jgit/util/ChangeIdUtil.java -> I'm still not following you here.  The commit-msg hook in Gerrit doesn't skip blank lines when its putting the message back together.  We put blank lines in commit messages all of the time, like between paragraphs.  Like you do in this message.  Why would we skip them?
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-05-14 20:53:47.000000000
+
+MISMATCHED INLINE COMMENT
+Line:52, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/ChangeIdUtilTest.java -> Ah, I was thinking about the implementation. Didn't read you message accurately.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-05-14 18:18:41.000000000
+
+MISMATCHED INLINE COMMENT
+Line:52, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/ChangeIdUtilTest.java -> That's what I meant, we can relicense the test cases for the commit-msg hook.  Its just test vector data.  Google would prefer to have a consistent set of test data used to validate conformance than to worry about keeping APLv2 on this code.
+
+-------------------------------------

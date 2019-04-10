@@ -1,0 +1,193 @@
+DESCRIPTION
+
+Revert "MB-8012 Store time of deletion in expiry field"
+
+This reverts commit 560829ff53885854644095c62c226d33a0a81748.
+
+Change-Id: I4eed9993f1cc0d4da780a7926188cd7048b117ac
+
+
+COMMENTS
+
+author: Abby Duran
+date: 2013-07-24 18:11:24.804000000
+
+Patch Set 1:
+
+I realized that the original change breaks the XDCR conflict resolution and unit tests.
+
+Mike, Aaron, please confirm it from the XDCR team and make sure that it won't break any XDCR unit tests.
+
+-------------------------------------
+author: Macie Morton
+date: 2013-07-24 19:48:33.468000000
+
+Patch Set 1:
+
+Aaron, is it related to our discussion of tomb purge in email? My understanding is deleted item will be purged in one week (as Damien mentioned). Is it still correct?
+
+-------------------------------------
+author: Dalia Matthews
+date: 2013-07-24 20:09:35.959000000
+
+Patch Set 1:
+
+The purge threshold will be configurable, I think a week is reasonable as a default, but it could change.
+
+-------------------------------------
+author: Abby Duran
+date: 2013-07-24 20:36:16.178000000
+
+Patch Set 1:
+
+Junyi,
+
+You're okay with Aaron's original change? I just want to make sure that you're aware of it and it won't break the XDCR conflict resolution.
+
+I will then adapt the ep-engine unit tests that failed due to the original change.
+
+-------------------------------------
+author: Dalia Matthews
+date: 2013-07-24 20:49:52.712000000
+
+Patch Set 1:
+
+Ah. I was trying to adapt the tests myself, and couldn't figure out how to deal with the time (ep_real_time) part.
+
+-------------------------------------
+author: Macie Morton
+date: 2013-07-24 21:01:13.884000000
+
+Patch Set 1:
+
+Chiyoung, 
+
+Can you please specify which XDCR unit test failed?  What is intention in the original commit that made current time as exp time for deletions?
+
+I did not get chance to look at the Aaron's commits. Based on from what Aaron described, only deletion older than 7 days will be purged,  if this true then all current XDCR functional tests should pass without any issue.    In practice, there is still very small chance that XDCR may break, we are planning something on 3.0 to fix it.
+
+-------------------------------------
+author: Abby Duran
+date: 2013-07-24 22:23:13.504000000
+
+Patch Set 1:
+
+Junyi,
+
+These are the unit tests failed due to the change that I mentioned:
+
+Running [0192/0216]: delete with meta deleted (couchstore)...tests/ep_testsuite.cc:5228 Test failed: `Expected exptime to match' (itm_meta.exptime == last_meta.exptime)
+ DIED
+Running [0193/0216]: delete with meta nonexistent (couchstore)...tests/ep_testsuite.cc:5291 Test failed: `Expected exptime to match' (itm_meta.exptime == last_meta.exptime)
+ DIED
+Running [0201/0216]: test set_with_meta exp persisted (couchstore)...tests/ep_testsuite.cc:6539 Test failed: `Expected exptime to match' (last_meta.exptime == 1735689600)
+ DIED
+Running [0202/0216]: test del meta conflict resolution (couchstore)...tests/ep_testsuite.cc:6017 Test failed: `Expected success' (last_status == PROTOCOL_BINARY_RESPONSE_SUCCESS)
+ DIED
+Running [0203/0216]: test add meta conflict resolution (couchstore)...tests/ep_testsuite.cc:5888 Test failed: `Expected success' (last_status == PROTOCOL_BINARY_RESPONSE_SUCCESS)
+ DIED
+
+
+In the change, we put the current timestamp in the expiration field in the meta data for a deleted item before persisting that deletion into couchstore. Couchstore then uses that expiration field to figure out if a given deleted item's age is 7 days or not.
+
+So, if we do setWithMeta or deleteWithMeta for a deleted item that still exists in couchstore, we will have an unexpected error in conflict resolutions if two items have the same seq number and cas value.
+
+-------------------------------------
+author: Macie Morton
+date: 2013-07-24 22:38:50.376000000
+
+Patch Set 1: Code-Review+1
+
+Chiyoung,
+
+Thanks for explanation. The expiration time attached to deletion in Aaron's original commit is not part of key's metadata, it is solely introduced by purger and will pollute the key's original metadata and thus fail conflict resolution.
+
+I think we should revert this change.  
+
+Is there anyway we can timestamp the deletion elsewhere instead of in the metadata? 
+
+Or why not simply ask Couchstore to timestamp the deletion when it sees the deletion?  ep_engine does not need to worry about it at all. Given the days of purge time, several minutes in write queue should not matter much to me.
+
+-------------------------------------
+author: Macie Morton
+date: 2013-07-24 22:39:45.388000000
+
+Patch Set 1: Code-Review+2
+
+-------------------------------------
+author: Dalia Matthews
+date: 2013-07-24 23:02:15.530000000
+
+Patch Set 1: Code-Review-1
+
+The K/V layer of Couchstore is not aware of expiration time (or cas or flags). these, as far as Couchstore is concerned are arbitrary data in the freeform rev_meta field which is defined by ep-engine, and therefore ep-engine's responsibility to set.
+
+There is also not any other convenient place for it. Adding new fields to the file format breaks data file compatibility across versions, and extending the rev_meta field will have similar problems with the backup and restore tools that expect it to be a certain length (unless I misunderstand how python's struct.pack stuff works)
+
+-------------------------------------
+author: Macie Morton
+date: 2013-07-24 23:21:55.802000000
+
+Patch Set 1:
+
+Hi Aaron,
+
+We are clear that timestampping deletion in the exp field of metadata is incorrect and will break conflict resolution and XDCR. It is just a timestamp to tell you when del is persisted, not expiration time, thus not metadata at all (User does not care when the del is persisted).  That is why I think the original commit should be reverted. 
+
+As of where to put such information,  my feeling is this "deletion timestamp" is solely required by persistence layer (db purger), like "per vb sequence number", and should be transparent to other components like ep_engine. 
+
+For me, it is better to keep such timestamp created, maintained and used within the persistence layer. I understand this may involve changing storage format and expensive. But at least it should not pollute the key's original metadata.
+
+Chiyoung, is there any other places Aaron can put the timestamp? Maybe a rough time like date is enough instead of using machine time to miilisecond.
+
+-------------------------------------
+author: Dalia Matthews
+date: 2013-07-24 23:41:45.768000000
+
+Patch Set 1:
+
+*In practice*, it will never matter, since for the expiration time to even be considered the CAS values have to be the same, which is astronomically unlikely (a 1/18446744073709551616 chance), unless you're actually comparing the same mutation, in which case it doesn't matter which is picked.
+
+-------------------------------------
+author: Macie Morton
+date: 2013-07-25 00:02:26.690000000
+
+Patch Set 1:
+
+It is more than that.
+
+For example, if users do delWithMeta() with its own expiration time like 1 year later for some reasons, your code will simply override user-defined expiration time, for which the consequence will be very bad.
+
+-------------------------------------
+author: Dalia Matthews
+date: 2013-07-25 00:08:54.227000000
+
+Patch Set 1:
+
+I still don't see it. How is the expiration time of an item that is necessarily already deleted a problem?
+
+-------------------------------------
+author: Macie Morton
+date: 2013-07-25 00:12:48.237000000
+
+Patch Set 1:
+
+Deletion in some sense is just an update. It is possible users want some deletion persisted for long time, free of being purged, to win some conflict resolution.
+
+Users can do delWithMeta() with whatever metadata they want, is that correct? If so, we should never override users metadata with your own.
+
+-------------------------------------
+author: Abby Duran
+date: 2013-07-25 17:30:23.712000000
+
+Patch Set 1:
+
+It seems to me that we reach to the agreement at this time. I abandon this change, but we need to fix the unit test failures. It's my fault to merge the original change without verifying it through unit tests.
+
+-------------------------------------
+author: Abby Duran
+date: 2013-07-25 17:30:33.610000000
+
+Abandoned
+
+-------------------------------------

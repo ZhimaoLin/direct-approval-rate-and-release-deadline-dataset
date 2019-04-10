@@ -1,0 +1,224 @@
+DESCRIPTION
+
+SHA-1: collision detection support
+
+Update SHA1 class to include a Java port of sha1dc[1]'s ubc_check,
+which can detect the attack pattern used by the authors of
+SHAttered[2] and run SHA-1 for additional rounds, making the hash
+harder to predict.
+
+Given the shattered example files that have the same SHA-1, this
+modified implementation can identify there is risk of collision given
+only one file in the pair, and returns a different hash:
+
+  $ bin/sha1dcsum shattered-1.pdf
+  16e96b70000dd1e7c85b8368ee197754400e58ec *coll* shattered-1.pdf
+
+  $ jgit ...
+  [main] WARN org.eclipse.jgit.util.sha1.SHA1 - possible SHA-1 collision; safeHash 16e96b70000dd1e7c85b8368ee197754400e58ec
+  16e96b70000dd1e7c85b8368ee197754400e58ec shattered-1.pdf
+
+  $ bin/sha1dcsum shattered-2.pdf
+  e1761773e6a35916d99f891b77663e6405313587 *coll* shattered-2.pdf
+
+  $ jgit ...
+  [main] WARN org.eclipse.jgit.util.sha1.SHA1 - possible SHA-1 collision; safeHash e1761773e6a35916d99f891b77663e6405313587
+  e1761773e6a35916d99f891b77663e6405313587 shattered-2.pdf
+
+When JGit detects probability of a collision, SHA1 now warns on the
+logger, reporting the safe hash that was returned to JGit for use in
+object names and data structures.
+
+From the paper[3] by Marc Stevens, the probability of a false positive
+identification of a collision is about 14 * 2^(-160), sufficiently low
+enough for any detected collision to likely be a real collision.
+
+git-core[4] may adopt sha1dc before the system migrates to an entirely
+new hash function.  This commit enables JGit to remain compatible with
+that move to sha1dc, and help protect users by warning if similar
+attacks as SHAttered are identified.
+
+Performance declined about 8% (detection off), now:
+
+  MessageDigest        240.81 MiB/s
+  MessageDigest        247.91 MiB/s
+  MessageDigest        244.33 MiB/s
+  MessageDigest        244.00 MiB/s
+
+  SHA1                 219.00 MiB/s  (was ~240.825 MiB/s)
+  SHA1                 222.01 MiB/s
+  SHA1                 222.11 MiB/s
+  SHA1                 220.85 MiB/s
+
+This decline in throughput is attributed to the step loop unrolling in
+compress(), which was necessary to easily fit the UbcCheck logic into
+the hash function.  Using helper functions s1-s4 reduces the code
+explosion, providing acceptable throughput.
+
+With detection enabled (default):
+
+  SHA1 detectCollision 151.88 MiB/s
+  SHA1 detectCollision 152.55 MiB/s
+  SHA1 detectCollision 146.20 MiB/s
+  SHA1 detectCollision 151.47 MiB/s
+
+  sha1dc (native C)   ~206.28 MiB/s
+  sha1dc (native C)   ~204.47 MiB/s
+  sha1dc (native C)   ~203.74 MiB/s
+
+Average time to hash 4100 bytes (such as a commit or tree) for the
+various algorithms available to JGit also shows SHA1 is slower than
+MessageDigest, but by an acceptable margin:
+
+  MessageDigest        18 usec
+  SHA1                 20 usec
+  SHA1 detectCollision 26 usec
+
+Time to index-pack for git.git (217982 objects, 69 MiB) has increased:
+
+  MessageDigest   SHA1 w/ detectCollision
+  -------------   -----------------------
+         20.12s   27.75s
+         19.87s   28.04s
+         20.04s   27.88s
+
+    avg  20.01s   27.89s    +39%
+
+Being in Java is with these additional safety checks is clearly a
+penalty, but throughput is still acceptable given the increased
+security against object name collisions.
+
+[1] https://github.com/cr-marcstevens/sha1collisiondetection
+[2] https://shattered.it/
+[3] https://marc-stevens.nl/research/papers/C13-S.pdf
+[4] xxx@xxx.xxx
+
+Change-Id: I9fe4c6d8fc5e5a661af72cd3246c9e67b1b9fee6
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2017-02-26 06:45:28.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Helena Henry
+date: 2017-02-26 06:45:32.000000000
+
+Patch Set 1:
+
+This contribution is over 1000 lines of code and a CQ may be needed[1].
+Project committers, please confirm if a CQ is needed by replying to this comment (in Gerrit), leaving the quote intact, and Genie will automagically create a CQ.
+
+[1] https://eclipse.org/legal/EclipseLegalProcessPoster.pdf.
+-genie:cq
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-02-26 06:45:34.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/9885/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-02-26 06:55:09.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/9885/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-02-26 15:13:25.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:38, org.eclipse.jgit/src/org/eclipse/jgit/util/sha1/UbcCheck.java -> do we need to file a CQ for this ?
+
+-------------------------------------
+author: Eden Lin
+date: 2017-02-26 17:07:09.000000000
+
+Patch Set 1:
+
+The main thing I worry about is that ubc_check could be improved later, and it would be an ongoing maintenance burden to port over improvements. But:
+
+- the sha1collisiondetection library bills itself as a 'safe' replacement hash for sha1. This means that behavior changes are likely to be rare: when new attack vectors are discovered, they are counting on having a significant amount of time to update the library and roll it out to everyone before they become feasibly exploitable in the wild. This means behavior changes should not come lightly and when they come we can assume it's worth the effort to port them over.
+
+- porting over the code generation tools from https://svn.marc-stevens.nl/collisiondetection would likely be even more difficult and likely not worth it.
+
+So this looks like the right thing to do, at least for now.
+
+If someone is interested in porting Marc's codegen tools to produce java alongside C, then that could be added to the sha1collisiondetection library upstream and we could start consuming it as a traditional library.
+
+-------------------------------------
+author: Eden Lin
+date: 2017-02-26 17:07:40.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:38, org.eclipse.jgit/src/org/eclipse/jgit/util/sha1/UbcCheck.java -> Yes, I think so.
+
+-------------------------------------
+author: Eden Lin
+date: 2017-02-26 18:06:37.000000000
+
+Patch Set 1:
+
+Can this throw an exception instead of warning and falling back to safeHash? I don't think we expect this kind of collisions to appear except when someone is trying to exploit them (either for testing or as part of an attack). Rejecting the push instead of silently changing the SHA-1s seems like a better behavior.
+
+That doesn't rule out using the safeHash some day later --- I'm just saying that today, when git hasn't adopted safeHash and doesn't plan to (current plans are to use collision detection but not the safeHash fallback) it is better to be compatible.
+
+Can we check in shattered-1.pdf and shattered-2.pdf and use them in a unit test? Git's blob format mean they wouldn't form a blob hash collision.
+
+-------------------------------------
+author: Eden Lin
+date: 2017-02-26 18:07:14.000000000
+
+Patch Set 1: Code-Review-2
+
+-2 for now since this needs CQ.
+
+Thanks for writing this change. I think it heads in a good direction.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2017-02-26 19:29:51.000000000
+
+Patch Set 1:
+
+> Can this throw an exception instead of warning and falling back to
+ > safeHash?
+
+Yes, changed. safeHash support still exists but is no longer on by default. Instead we throw a new RuntimeException.
+
+> I don't think we expect this kind of collisions to appear
+ > except when someone is trying to exploit them (either for testing
+ > or as part of an attack). Rejecting the push instead of silently
+ > changing the SHA-1s seems like a better behavior.
+
+That will be a future commit, to catch the new exception and treat it more gracefully inside of transport code. 
+
+ > Can we check in shattered-1.pdf and shattered-2.pdf and use them in
+ > a unit test? Git's blob format mean they wouldn't form a blob hash
+ > collision.
+
+Added them, along with a test asserting the hash values.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2017-03-02 18:26:45.000000000
+
+Change has been successfully merged into the git repository by Eden Lin
+
+-------------------------------------

@@ -1,0 +1,110 @@
+DESCRIPTION
+
+[Ephemeral Bucket]: Add a class that stores ordered sequence of items in memory
+
+This commit adds an abstract base class 'SequenceList' that provides apis
+to store ordered sequence of items (StoredValues) in memory in our
+multi-threaded, monotonically increasing seq model.
+
+It also adds 'BasicLinkedList', a concrete class that implements SequenceList.
+'BasicLinkedList' uses a boost intrusive doubly linked list. It is essentially
+a linked list of 'StoredValues'.
+
+Currently, only appendToList() functionality is implemented. But the goal is,
+'BasicLinkedList' works in tandem with already existing 'HashTable' to achieve
+O(1) writes/updates, O(1) reads and range reads. Range read is necessary for
+an in-memory DCP backfill. Range reads provide point-in-time snapshots which
+is essential for our incremental DCP.
+
+And a module test is added as well.
+
+Change-Id: I9877c17c9e5b5be5bb55e559bbfb58f25281251d
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2017-03-07 03:54:55.853000000
+
+Uploaded patch set 11: Patch Set 10 was rebased.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-03-07 04:26:02.521000000
+
+Patch Set 11: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/3228/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/4400/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/3966/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/4624/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-03-07 12:16:14.923000000
+
+Patch Set 11: Code-Review-1
+
+(8 comments)
+
+Line:171, src/ephemeral_vb.cc -> Style: You could just put the toOrderedStoredValue() call inline, then you don't need the temporary - e.g.
+
+ try {
+     seqList->appendToList(lh, *v->toOrderedStoredValue());
+ } catch (...)
+
+IMHO it makes the code simpler / easier to follow.
+
+Line:62, src/seqlist.h -> Given this is empty (and hence the same as the compiler-generated default, might as well remove this.
+
+Line:188, CMakeLists.txt -> Nit: Should probably name `linked_list` given we translate CamelCase class names to camel_case.cc filenames.
+
+Line:160, src/stored-value.cc -> static_cast<> is preferred (we are performing a downcast).
+
+Line:41, tests/mock/mock_basic_ll.h -> You can just use std::copy:
+
+ std::copy(seqList.begin(), seqList.end(), std::back_inserter(allSeqnos));
+
+Line:60, src/linkedlist.h -> I think these comments need updating with the current plan (as disused on HipChat yesterday).
+
+Line:549, src/stored-value.h -> Please document this method.
+
+Line:21, /COMMIT_MSG -> Nit: As per other patches, should wrap at 72 chars (most editors will handle this for you): https://chris.beams.io/posts/git-commit/#wrap-72
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-03-07 22:38:53.102000000
+
+Patch Set 11:
+
+(8 comments)
+
+Line:171, src/ephemeral_vb.cc -> Done
+
+Line:62, src/seqlist.h -> Done
+
+Line:188, CMakeLists.txt -> Done
+
+Line:160, src/stored-value.cc -> Done
+
+Line:41, tests/mock/mock_basic_ll.h -> Hey i didn't find a way to copy just val.getBySeqno() using std::copy.
+
+Line:60, src/linkedlist.h -> Done
+
+Line:549, src/stored-value.h -> Done
+
+Line:21, /COMMIT_MSG -> Done
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-03-08 12:08:37.255000000
+
+MISMATCHED INLINE COMMENT
+Line:41, tests/mock/mock_basic_ll.h -> Ok, no big deal.
+
+-------------------------------------

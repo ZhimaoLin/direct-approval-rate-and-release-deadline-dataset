@@ -1,0 +1,61 @@
+DESCRIPTION
+
+MB-16871: Do not generate cluster UUID in pools API ...
+
+... if system not provisioned. The cluster UUID will get generated
+later when system is provisioned - that is when user sets up the username
+and password.
+
+Change-Id: I8f3a554232b5de8b9b5ad1742236575142d4e126
+
+
+COMMENTS
+
+author: Ella Beltran
+date: 2015-11-30 21:21:47.696000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2015-12-01 02:21:58.324000000
+
+Patch Set 1:
+
+(1 comment)
+
+See one comment inline. On a more general note, the change looks a little brittle. Since get_uuid is called from multiple places, it's hard to convince oneself that it will never get called before the node is provisioned.
+
+Ideally we'd generate the uuid eagerly when the node gets provisioned. Another approach is to make get_uuid return empty binary if node is unprovisioned and generate the actual uuid once it has been provisioned.
+
+The uuids in the URIs is a homage to mine and Alk's perfectionism. Our thinking was that the proper client would discover all the important URIs from the REST APIs themselves. The uuid would make sure that such a client doesn't send some pervasive request to a cluster that happened to have been reinitialized. See menelaus_web:check_uuid/3. So if we choose to just adapt get_uuid to return empty binary, then we might also need to make a slight change to the check_uuid to treat empty uuids the same way it treats requests without any uuids.
+
+Line:897, src/menelaus_web.erl -> We can safely remove this from here or move these pieces to /pools/default if we want to. It's not documented anywhere and even our UI doesn't use this information. It's hard to say why it's here in the first place.
+
+-------------------------------------
+author: Ella Beltran
+date: 2015-12-02 17:44:53.593000000
+
+Patch Set 1:
+
+(1 comment)
+
+Yes, I had considered other options including modifying get_uuid. But since, that requires changing other callers of get_uuid(), I wanted to first explore if a simpler change (limited to handle_pools) would be good enough. This change works. During my testing, I did not see get_uuid getting triggered thru other code paths before the system is provisioned. However, that does not mean things will not change in future.
+
+I had checked git history for why and who had added the uuids to the URIs. Found it was you so asked for you to review. :-)
+
+I will explore the option of modifying get_uuid.
+
+Line:897, src/menelaus_web.erl -> Is your comment to remove/move these pieces for both maxparallelindexers and view update daemon settings? 
+
+Max parallel indexers part was added by https://github.com/couchbase/ns_server/commit/b0779cf284dafdd4c7b5a0b849ac858405d3be93
+
+The view update daemon part was added by this change https://github.com/couchbase/ns_server/commit/24490fff6000348b5737e144993e90d4ea4d8d30
+
+-------------------------------------
+author: Roselyn Villegas Code Review
+date: 2016-01-04 22:00:10.860000000
+
+Change has been successfully cherry-picked as 6d804990b837c0631ac02b1c983bc79d62405ec7
+
+-------------------------------------

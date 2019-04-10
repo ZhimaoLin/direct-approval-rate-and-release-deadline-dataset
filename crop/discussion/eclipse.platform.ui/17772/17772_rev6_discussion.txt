@@ -1,0 +1,128 @@
+DESCRIPTION
+
+Bug 419749 – [e4 WorkLeon Ochoach] - Remove the deprecated PackageAdmin
+
+Remove of the deprecated PackageAdmin from the "org.eclipse.e4.ui.workLeon Ochoach"
+bundle. The relevant changes are:
+- fragment detection with BundleRevision
+- bundle lookup by symbolic name via BundleTracker
+- topoSort dependency resolving via BundleWiring
+
+Change-Id: Ic127de678b2fc726b7a3fd9ca97fafb109fb0bfb
+Signed-off-by: Jaydon Logan xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Jaydon Logan
+date: 2013-11-07 19:30:04.000000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-07 19:30:10.000000000
+
+Patch Set 6:
+
+Build Started https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/187/
+
+-------------------------------------
+author: Jaydon Logan
+date: 2013-11-07 19:32:55.000000000
+
+Patch Set 6:
+
+Hi,
+
+I finally adapted the code to also resolve the re-Exports as it is done in the old topoSort, but the resolving via BundleWiring is really slow (about 5 times slower than the PackageAdmin; all the time is lost in the new ModelAssembler#resolveReExports). So I think thats not the way to go, I hope that someone of you can give me a hint on how to boost the performance.
+
+BTW, the processModel() method is not very dynamic aware is this really wanted? Because I thought about an idea which uses an ExtensionTracker and a way which contributes to the model dynamically. Which means add the fragment to the model if possible. If it can't be added because the model element to which it wants to contribute doesn't exist so far (= the need for the topoSort), it will be kept outside of the model until it becomes available.
+
+Regards
+  René
+
+-------------------------------------
+author: Zaid Mosley
+date: 2013-11-07 19:35:32.000000000
+
+Patch Set 6:
+
+Maybe post that comment also in the bug? Not sure if Tom watches this Gerrit review.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-07 19:40:57.000000000
+
+Patch Set 6: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/187/ : SUCCESS
+
+-------------------------------------
+author: Natalie Woods
+date: 2013-11-07 19:50:04.000000000
+
+Patch Set 6:
+
+To answer Lars, I am watching this one.  I will likely get to review this tomorrow.
+
+-------------------------------------
+author: Natalie Woods
+date: 2013-11-08 19:53:21.000000000
+
+Patch Set 6: Code-Review+1
+
+The code changes look fine to me functionally.  But the performance issue is not good.  I think the issue is you are iterating over each symbolic name individually for the calls to resolveRequires() which does not reuse and previously discovered answers.
+
+Where the code before with package admin did a single pass over the requiring bundles in order to build up tables for requires and dependencies that got used for each relevant symbolic name later in the code.  
+
+Now if you have lots of common bundles that get required by lots of different extensions (not sure that is the right term here) then you are recalculating their re-exports over and over for the same providing bundle.
+
+-------------------------------------
+author: Jaydon Logan
+date: 2013-11-09 11:20:35.000000000
+
+Patch Set 6:
+
+Hi Tom,
+
+thanks for the review.
+
+I'm not quite sure where you see the “single pass over the requiring bundles” but at the moment I think this is not the problem, because my test scenarios don't depend on common bundles a lot. I will give it try with a cache for this to but I think that will not save a lot of time (the tests will show ;-)).
+
+BTW, yesterday I updated my target and I realized a switch of the org.eclipse.osgi bundle version from 3.9 to 3.10. I took a quick look at the PackageAdminImpl and I realized that they also switched the topoSort relevant parts from their previous implementation to a new one which uses BundleWiring. So I will retest and remeasure all my tests with the old and the new topoSort. Maybe my implementation is now as fast (or as slow) as the other one ;-) or I can use the implementation from there to boost the performance of the new topoSort.
+
+Regards
+  René
+
+-------------------------------------
+author: Natalie Woods
+date: 2013-11-11 14:14:20.000000000
+
+Patch Set 6:
+
+I was thinking of the loop at:
+
+http://git.eclipse.org/c/platform/eclipse.platform.ui.git/tree/bundles/org.eclipse.e4.ui.workLeon Ochoach/src/org/eclipse/e4/ui/internal/workbench/ModelAssembler.java?id=I20131105-0800#n359
+
+Where a single pass is done over the relevant bundles and only calls getRequiringBundles once per bundle to build up some Maps.  If there is a common bundle then I can see where this would improve performance.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2014-03-19 06:50:00.000000000
+
+Project policy requires all submissions to be a fast-forward.
+
+Please rebase the change locally and upload again for review.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2014-03-19 06:50:12.000000000
+
+Project policy requires all submissions to be a fast-forward.
+
+Please rebase the change locally and upload again for review.
+
+-------------------------------------

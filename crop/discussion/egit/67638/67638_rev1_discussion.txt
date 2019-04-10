@@ -1,0 +1,90 @@
+DESCRIPTION
+
+[WIP] Submodule support for connecting and disconnecting 
+
+RepositoryCache cleanup must make sure not to remove submodules and
+nested modules prematurely. Since those are not registered as
+"configured repositories", which would cause trouble when a repo was
+deleted from the Repositories view anyway, we must make sure to remove
+them only if no configured repository contains them.
+
+This requires that the RepositoryCache keeps track of repository
+nesting. To avoid duplicating code, the IndexDiffCache cleanup when a
+configured repository is removed is now triggered from the
+RepositoryCache.
+
+Disconnecting a project: we must clear the session properties for the
+RepositoryMappings. If the project is just disconnected, not closed, the
+session properties would otherwise remain.
+
+Connecting: first, if we re-connect a previously connected, then
+disconnected project, the refresh during re-connection will not produce
+a resource delta for all the project's contents (as that already exists
+in the Eclipse resource tree). Thus the GitDataProvider would not re-add
+RepositoryMappings for folders containing submodule or nested repository
+working directories. Therefore touch all .git files and folders before
+refreshing. And the SharingWizard had better do the refresh at all. The
+GitLightweightDecorator must listen to mapping changes to trigger
+re-decorations when new RepositoryMappings appear.
+
+Activator: make auto-sharing also work if there are several repositories
+above the project. Map the project to the closest, and enter the
+farthest as configured repository.
+
+AddCommand: map projects to the innermost repository found.
+
+Change-Id: Idd0e34f70e9bc91fa9ab9e1e580bc483bcf2cdde
+Signed-off-by: Alayna Houston xxx@xxx.xxx
+
+COMMENTS
+
+author: Alayna Houston
+date: 2016-03-01 22:45:32.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-03-01 22:45:38.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/8231/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-03-01 22:51:10.000000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/8231/ : FAILURE
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-03-01 22:58:40.000000000
+
+Patch Set 1:
+
+(5 comments)
+
+Work in progress. Needs tests; and I need to see what tests I broke by this. Is more involved than I thought it would be.
+
+Off-topic question: I notice we have some messages that are only logged via Activator.logError() as localizable externalized strings. Do we really want that? If I ever get a bug report with a Japanese log message that won't help me much...
+
+Line:13, /COMMIT_MSG -> Also suddenly having submodules appear as top-level repositories in the Repositories view would be... kind of strange.
+
+Line:22, /COMMIT_MSG -> TODO: we should also remove our "team private member" markings?
+
+Line:27, /COMMIT_MSG -> Note that current master has a refresh problem in this case (disconnect an EGit-managed project, then reconnect via Team->Share; choose Git,click Finish), too. Even without submodules. Try it with any EGit project. It'll reconnect fine, but it won't update decorations.
+
+Line:31, /COMMIT_MSG -> So *that's* what that RepositoryChangeListener is for! Badly named, though.
+
+TODO: examine all uses of RepositoryMapping.fireRepositoryChanged(). Are they really called because a RepositoryMapping has changed, or are they an attempt to notify about a change in a repository? The latter would be wrong, and most probably the call can be removed; especially since until now ther was absolutely no single use of RepositoryChangeListener.
+
+TODO: rename the class to RepositoryMappingChangedListener.
+
+Line:36, /COMMIT_MSG -> See above: probably not wise to enter submodules or nested repos as top-level "configured repositories".
+
+-------------------------------------

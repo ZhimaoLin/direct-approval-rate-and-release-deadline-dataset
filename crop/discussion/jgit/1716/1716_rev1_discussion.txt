@@ -1,0 +1,45 @@
+DESCRIPTION
+
+[RFC] Permit additional annotations on RevCommit
+
+Instead of subclassing RevCommit, permit applications to attach
+additional annotation data to instances through an look-aside
+collection that is stored as a densly packed array, indexed by a
+unique integer assigned to each commit.
+
+Change-Id: Ic9d552f3e93ae30a646be4d2170a227a75835904
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-10-09 05:28:14.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+I've now tried to:
+
+* Convert PlotWalk to use this
+* Convert the parents member of RevCommit to use this
+* Convert the buffer member of RevCommit to use this
+
+and each time I just run into an incredible amount of pain.  This might not be worth doing at all.
+
+In the PlotWalk case, we could drop the PlotCommit type, but we need PlotWalk to keep the three DenseAnnotation collections and provide accessors for the data.  Using a single DenseAnnotation with a PlotData object is far more expensive in terms of memory usage because of the extra per-commit object header, so that's a non-starter.  It turns out the cleanest implementation I can write is what we have now: PlotWalk overriding the createCommit method to provide its custom PlotCommit subclass of RevCommit.
+
+In the parents member case this would permit changing the TreeFilter or handling grafts without needing to reparse the graph.  But access became very complicated.  I wound up needing to use Alex's idea of a visitor function with an extra level of dispatching, and that was still so ugly that I gave up with 74 unresolved compile errors.  Too much code wants to assume that the parent data from the RevCommit itself is the truth.
+
+In the buffer member case it was roughly the same thing.  I was trying to remove the buffer member because we often process RevCommits with setRetainBody(false), e.g. during PackWriter we don't need the buffer to be retained.  Moving those into an optional DenseAnnotation<byte[]> would mean PackWriter's internal ObjectWalk used for enumeration could save 1 reference per enumerated commit.  But too much application code assumes getFullMessage() or getAuthorIdent() on RevCommit is the truth, and these depend on the buffer.
+
+And that's before I've even had a chance to look at performance impact.  I'm just talking about the code getting so ugly that I don't even want to share it for consideration.  :-(
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-04-06 20:09:47.000000000
+
+Patch Set 1: Abandoned
+
+This turns out to be not worth doing. :-\
+
+-------------------------------------

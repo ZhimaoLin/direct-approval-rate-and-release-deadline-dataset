@@ -1,0 +1,75 @@
+DESCRIPTION
+
+Move OSV::stale back to StoredValue
+
+As part of MB-23795 it was necessary to move the OrderedStoredValue
+{stale} flag out of the packed bitfields in StoredValue so it didn't
+share its byte with any other data not guarded by writeLock. This was
+to prevent any data races, as C++/x86_64 only exposes byte-level
+addressing and if it remained in the bitfield we'd see races when
+other elements in the bitfield (e.g. deleted) were changed.
+
+While fixing the correctness issue, this had the consequence of
+bloating the size of OrderedStoredValue by 8 bytes; as OSV was
+previously an exact multiple of 8 bytes in size, and adding one more
+byte for the bitfield forced the object size to increase by 8 bytes to
+maintain ABI alignment rules.
+
+However, we actually /do/ have a spare byte in StoredValue after the
+bitfields. If we move the stale flag back to SV, but in its own byte
+then we recover the size bloat of OSV - we are back to the original SV
+and OSV sizes before MB-23795.
+
+Change-Id: I15d299dcdd0107915c8b50c717305e2ecb9960a4
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2017-04-18 13:30:06.287000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-04-18 13:57:09.925000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4594/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/5817/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5309/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6054/ : SUCCESS
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-04-18 18:35:37.448000000
+
+Patch Set 4: Code-Review+2
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-04-18 18:36:29.808000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:145, tests/module_tests/stored_value_test.cc -> nit: Could add a note why 75 is expected
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-19 07:28:40.495000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:145, tests/module_tests/stored_value_test.cc -> Not really sure what to add - it's simply the amount of storage it takes for an item of that size. By definition I can't derive it from the object (item->getOjbectSize() or similar, as if we regressed the size (and that changed) the test would continue to pass.
+
+-------------------------------------

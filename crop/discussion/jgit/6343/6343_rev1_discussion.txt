@@ -1,0 +1,80 @@
+DESCRIPTION
+
+Fix resource leaks due to unclosed repositories
+
+Whenever a call to JGit returns a Repository the caller should make sure
+to call close() on it if he doesn't need it anymore. Since instances of
+Repository contain e.g. open FileOutputStreams (for pack
+files) forgetting to close the repository can lead to resource leaks.
+This was the reason why dozens of the JUnit tests on windows to failed
+with "Can't delete file ...." errors. In
+LocalDiskRepositoryTestCase.tearDown() we tried to delete the repo's we
+used during tests which failed because we had open FileOutputStreams.
+
+Not only the obvious cases during Clone or Init operations returned
+Repositories, but also the new SubModule API created repository
+instances. In some places we even forgot to close submodule repositories
+in our internal coding.
+
+To see the effects of this fix run the JGit JUnit tests under Windows.
+On other platforms it's harder to see because either the leaking
+resources don't lead to failing junit tests (on Unix you can delete
+files with open FileOutputStreams) or the java gc run's differently
+cleans up the resources earlier.
+
+Change-Id: I6d4f637b0d4af20ff4d501db091548696373a58a
+Signed-off-by: Zachary Orozco xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2012-06-14 01:48:01.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(2 inline comments)
+
+
+
+Line:184, org.eclipse.jgit/src/org/eclipse/jgit/api/SubmoduleUpdateCommand.java -> please pull this up onto the prior line
+
+Line:485, org.eclipse.jgit/src/org/eclipse/jgit/submodule/SubmoduleWalk.java -> This local isn't necessary, you can write:
+
+  try {
+    return subRepo.resolve(Constants.HEAD);
+  } finally {
+    subRepo.close();
+  }
+
+and have everything work correctly. Same goes for the other hunks in this file.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2012-06-15 22:20:58.000000000
+
+Patch Set 1: (4 inline comments)
+
+
+
+Line:184, org.eclipse.jgit/src/org/eclipse/jgit/api/SubmoduleUpdateCommand.java -> Done
+
+Line:13, /COMMIT_MSG -> typo: s/tests on windows to failed/tests on Windows failed/
+
+Line:26, /COMMIT_MSG -> s/run's differently cleans up/runs differently and cleans up/
+
+Line:485, org.eclipse.jgit/src/org/eclipse/jgit/submodule/SubmoduleWalk.java -> Done
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2012-06-15 22:21:21.000000000
+
+Patch Set 1: (2 inline comments)
+
+
+
+Line:13, /COMMIT_MSG -> Done
+
+Line:26, /COMMIT_MSG -> Done
+
+-------------------------------------

@@ -1,0 +1,88 @@
+DESCRIPTION
+
+Git Porcelain API: Add Command for a single file
+
+The new Add command adds files to the Git Index. 
+It  uses the DirCache to access the git index. It 
+works also in case of an existing conflict. 
+
+Fileglobs (e.g. *.c) are not yet supported. 
+
+The new Add command does add ignored files because
+there is no gitignore support in jgit yet.
+
+Bug: 318440
+Change-Id: If16fdd4443e46b27361c2a18ed8f51668af5d9ff
+Signed-off-by: Carlie Harper xxx@xxx.xxx
+
+COMMENTS
+
+author: Carlie Harper
+date: 2010-07-05 12:48:28.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Carlie Harper
+date: 2010-07-06 14:44:36.000000000
+
+Patch Set 2: (1 inline comment)
+
+There is an issue with the timestamp. The timestamp of the DirCacheEntry is wiped out with smudgeRacilyClean in the method DirCache.writeTo().
+
+Line:139, org.eclipse.jgit/src/org/eclipse/jgit/api/AddCommand.java -> This leads to the fact that during builder.commit the method DirCacheEntry.mightBeRacilyClean() always returns true and then the timestamp is wiped out. Is this really intended?
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-07-06 19:56:05.000000000
+
+Patch Set 2: I would prefer that you didn't submit this
+
+(6 inline comments)
+
+
+
+Line:124, org.eclipse.jgit/src/org/eclipse/jgit/api/AddCommand.java -> I don't think this will work well if filepatterns is empty.  Should we throw an IllegalStateException during call() if filepatterns.isEmpty() is true?
+
+Line:132, org.eclipse.jgit/src/org/eclipse/jgit/api/AddCommand.java -> I don't understand why this test is necessary.  Is it because the DirCacheBuilder is giving you 3 records for a file with a merge conflict?  Or is something else going on?  If its necessary, I would appreciate some comment to help explain this condition, because it just doesn't make sense to me.
+
+Line:133, org.eclipse.jgit/src/org/eclipse/jgit/api/AddCommand.java -> The faster way to implement this is to ask the TreeWalk if the entry exists in tree #1.  We already know in memory whether or not the file exists, we don't need to stat it again:
+
+  if (tw.getRawMode(1) != 0) {
+
+Line:139, org.eclipse.jgit/src/org/eclipse/jgit/api/AddCommand.java -> I think it was always returning true due to the nanosecond bug you found and fixed?
+
+Line:140, org.eclipse.jgit/src/org/eclipse/jgit/api/AddCommand.java -> IMHO, the length and lastModified should be captured *before* you write the object out to the object database.  That way if a change occurs to the file while we are saving it to the database, the index entry will appear dirty again, which it should be.
+
+Also, the length, lastModified and FileMode should be available off the FileTreeIterator if the file exists.  Which means you can actually kill that getRawMode(1) test I suggested above, and rely on the cached stat information that was pulled up during the TreeWalk's traversal:
+
+  FileTreeIterator f = tw.getTree(1, FileTreeIterator.class);
+  if (f != null) { // the file exists
+    entry.setLength(f.getEntryLength());
+    entry.setLastModified(f.getEntryLastModified());
+    entry.setFileMode(f.getEntryFileMode());
+    entry.setObjectId(ow.writeBlob(file));
+
+Line:321, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/AddCommandTest.java -> This was probably a mistake in the DirCacheEntry API.  We should overload setLength() to accept a long so application level code doesn't have to do this type cast.  Its likely that some day the Git index file format will support files >4 GiB and applications shouldn't have to go change their code when that occurs.
+
+-------------------------------------
+author: Carlie Harper
+date: 2010-07-08 08:44:32.000000000
+
+Patch Set 2: (6 inline comments)
+
+
+
+Line:124, org.eclipse.jgit/src/org/eclipse/jgit/api/AddCommand.java -> Done
+
+Line:132, org.eclipse.jgit/src/org/eclipse/jgit/api/AddCommand.java -> Done
+
+Line:133, org.eclipse.jgit/src/org/eclipse/jgit/api/AddCommand.java -> I solved it by using your proposal below.
+
+Line:139, org.eclipse.jgit/src/org/eclipse/jgit/api/AddCommand.java -> No, this problem still exists. I posted a question on jgit-dev.
+
+Line:140, org.eclipse.jgit/src/org/eclipse/jgit/api/AddCommand.java -> Done
+
+Line:321, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/AddCommandTest.java -> Ok, so we keep it here for now.
+
+-------------------------------------

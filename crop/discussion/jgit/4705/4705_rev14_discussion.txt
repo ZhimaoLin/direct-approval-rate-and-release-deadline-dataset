@@ -1,0 +1,115 @@
+DESCRIPTION
+
+Garbage collector for FileRepositories
+
+Implements a garbage collector for FileRepositories. Main ideas are
+copied from the garbage collector for DFS based repos
+(DfsGarbageCollector). Added functionalities are
+- pruning loose objects
+- handling of the index
+- packing refs
+- handling of reflogs (objects referenced from reflog will not be
+pruned/)
+
+TODO: we are still missing:
+- unpacking packed objects into loose objects (to support that pruning
+packed objects doesn't delete them until they are older than two weeks)
+- expiration of reflogs
+- support for configuration parameters (e.g. gc.pruneExpire)
+
+Change-Id: I14ea5cb7e0fd1b5c50b994fd77f4e05bfbb9d911
+Signed-off-by: Zachary Orozco xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Zachary Orozco
+date: 2012-02-19 23:54:31.000000000
+
+Uploaded patch set 14.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2012-02-23 03:22:29.000000000
+
+Patch Set 14: I would prefer that you didn't submit this
+
+(3 inline comments)
+
+
+
+Line:229, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Because of `git gc --auto` the number of loose objects should be "reasonable". I wonder if it may be more efficient to invert the way you do the set difference.
+
+Construct a Set<ObjectId> consisting of all loose objects by scanning the loose objects directory. If this set is empty, you have nothing to do. If it is non-empty, then we try to proceed with proving if we need the objects (or not).
+
+If the repository was just repacked, prunePacked should be fast and reduce this set considerably. Doing that first (or ensuring it was run) might be a good idea before doing this method.
+
+You can start by removing objectsToKeep, if the set is now non-empty, you are done.
+
+If the repository was just repacked, you can really cut down your existence test work considerably. If you keep the Ref objects that you used to generate the packs, perform the prune by comparing each current reference against the references you used to make the packs.
+
+If every reference is identical ObjectId (that is no reference was created or modified in the interim), you can implement the prune by looking at the PackIndexes. Any loose object not in the PackIndex that is older than the expireDate can be blindly removed. Realize that prunePacked has already taken care of removing objects that do exist in the PackIndexes. Which means all that is left in the loose object directory is garbage. So you don't really have to look at anything... you can just delete the files if they are sufficiently old enough.
+
+If the references did move between the pack creations and now, you only need to run an ObjectWalk over the difference of the old reference set and the new reference set to keep loose objects that are now suddenly referenced. And the reflog entries for any refs that changed, but again you only need to look at the tail of the reflogs.
+
+If it wasn't recently repacked, I think you can still take a similar shortcut. Run an ObjectWalk back from the current references until you find objects that are in pack files. Everything prior to that should also be in pack files. So then you just consider the point where something is in the pack as the "ref at time of pack creation" and the current refs, and run the above algorithm as though you had just repacked, only you are working from a guessed set of references.
+
+Line:234, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> You also have to consider the reflogs here, and you aren't.
+
+Line:353, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Also like this case, you should not include objects that appear in packs that have a .keep file alongside of them. And you should not delete those packs when you consider what packs to prune after the repack. I don't think you handled this .keep case at all in the GC class.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2012-03-06 23:57:45.000000000
+
+Patch Set 14: (3 inline comments)
+
+
+
+Line:229, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Took me a while to consume this comment. I agree: because we can assume that we have a very small number of loose objects we should collect them first and make sure that we don't go through expensive objectwalks if there are no loose objects left.
+
+I rewrote prune() to be more optimized in the cases you mention.
+
+A few thins I found are more complicated
+- Although all refs point to the same objects as during last repack there may be new entries in the reflogs. (E.g. somebody checkout out an old state and switched back to originial branch afterwards. The reflog entries should save some loose objects although refs have not changed
+- Index entries have to be checked always.
+
+Line:234, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done
+
+Line:353, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> I understand that I shouldn't delete pack files which have a .keep file alongside. But why shouldn't I repack objects from those pack files? Is it because those pack files exist because of currently ongoing transport operations. If the transport operation fails these pack files may be deleted, right? But why is it harmful to have the objects in other pack files. The next gc() will get rid of these objects again.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2012-03-22 14:18:57.000000000
+
+Patch Set 14: (1 inline comment)
+
+
+
+Line:353, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Pack files with a .keep file have a .keep file for two different reasons.
+
+The common reason is the pack was recently created by an ongoing transport operation and has not yet been connected to the references. The .keep file was created to protect the pack from being removed by a GC. It would be OK to copy these objects out and put them into a new pack if you happened to reach them through an ObjectWalk. In a future GC the pack would eventually be deleted after the transport operation ends and the .keep file is removed.
+
+The other reason a .keep file exists is on really big pack files. Consider you download the entire Linux kernel repository at 480M and 2.2M objects. If you put a .keep file next to the downloaded pack, your local GCs will be fast because Git won't copy this 480M over to a new pack. It will only pack the handful of new objects since the pack. Now git-core packs 480M in a matter of minutes, so it may not be useful for a human to make the .keep file in this case. But consider a repository with 64GB in it. Yes at least one exists that someone told me about. Repacking that will take too long most times. But packing it once and placing .keep files alongside each pack can make future repacks go more quickly by avoiding copying objects from a pack that has a .keep flag.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2012-04-20 09:11:55.000000000
+
+Patch Set 14: (1 inline comment)
+
+
+
+Line:353, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> now I understand it. Yes it's an important feature for huge repos. We have internally teams working on a 17GB repo (size of bare repo). They'll need this feature.
+
+Not to delete pack files which have a .keep file was already in the latest patchset. Now I'll introduce not to repack objects in packs with a .keep file.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2012-07-29 13:39:12.000000000
+
+Your change could not be merged due to a path conflict.
+
+Please merge (or rebase) the change locally and upload the resolution for review.
+
+-------------------------------------

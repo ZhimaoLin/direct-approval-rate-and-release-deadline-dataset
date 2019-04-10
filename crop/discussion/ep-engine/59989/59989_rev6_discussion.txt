@@ -1,0 +1,130 @@
+DESCRIPTION
+
+MB-18095: Refactor dcp_stream() in ep_testsuite_dcp
+
+Refactor the way arguments are passed to dcp_stream(..,..,)
+in ep_testsuite_dcp. This is to assist in adding tests in the
+future to facilitate streaming from multiple vbuckets under the
+umbrella of a single producer.
+
+Change-Id: I3c5562e5ee690cc992471fc3cbb94ccbbcb5a181
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2016-02-18 02:57:40.826000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-18 02:57:52.158000000
+
+Patch Set 6:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2557/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-18 03:17:04.782000000
+
+Patch Set 6: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2557/ : FAILURE
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1814/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-18 03:18:57.020000000
+
+Patch Set 6: -Verified
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2560/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-18 03:23:49.879000000
+
+Patch Set 6: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1814/ : SUCCESS
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2560/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-02-18 09:09:34.241000000
+
+Patch Set 6: Code-Review-1
+
+(7 comments)
+
+Line:33, tests/ep_testsuite_dcp.cc -> Style: we are trying to standardise on initialiser list marker ':' on the left - this arguably makes it easier for a human to spot there's an initialiser list and not some other function - e.g.
+
+ DcpStreamCtx()
+     : vbucket(0),
+ ...
+
+Line:57, tests/ep_testsuite_dcp.cc -> If you prefer you could just define snap start and end as a std::pair<>, or even their own inner struct - that way you wouldn't need an extra mutator to set them (given the rest of the class is public). i.e.
+
+ class DcpStreamCtx {
+ ...
+     struct SeqnoRange {
+         uint64_t start;
+         uint64_t end;
+     };
+     SeqnoRange seqno;
+     SeqnoRange snapshot_seqno;
+ };
+
+ ctx.seqno = {10, 20};
+
+What do you think?
+
+Line:69, tests/ep_testsuite_dcp.cc -> Does it make sense for these to be negative? If not, please change to unsigned variables.
+
+Line:76, tests/ep_testsuite_dcp.cc -> Nit: I'd probably have "Test" at the start of the name - TestDcpConsumer - so one immediately spots this is a test class.
+
+Line:80, tests/ep_testsuite_dcp.cc -> Is this a single DcpStreamCtx? I would have thought this cannot be null, so use a reference instead.
+
+Line:83, tests/ep_testsuite_dcp.cc -> I'm not a big fan of multiple default_arguments - especially when you have a large number of arguments to a function / constructor. 
+
+It make it hard for the reader to easily see what value is being passed into a function - given C++ doesn't have named parameters you end up spending all day counting how many arguments through the caller is, and whether you've hit a default one or not. 
+
+Additionally, as C++ only allows you to omit parameters at the end the parameter list, it sometimes forces uses to set parameters which they don't actually care about the value for because they need to specify an "outer" parameter - for example they must specify total_bytes, simulate_cursor_dropping, and flow_control_buf_size if they want to disable_ack.
+
+A few possible alternatives:
+
+1. Have a single constructor which only takes the mandatory arguments, then provide explicit mutator functions to set the optional values (or make the parameters public). You could even use the named parameter idiom, for example:
+
+ auto consumer = DcpTestConsumer(h, h1, "name", cookie, ctx)
+         .simulateCursorDropping()
+         .flowControlBufSize(2048);
+
+(This has a number of nice properties - it's explicit & self-documenting (no counting of arguments); and users can specify only the optional parameters they want).
+
+2. Have multiple constructors, one which takes the minimal set, and a second "advanced" where you have to specify everything. This the simple case simple, and the more complex case a bit more complicated, however it's not great if a user only wants to specify one or two of the many optional arguments.
+
+Line:98, tests/ep_testsuite_dcp.cc -> For the sake of minimal coupling (and in-line with the rest of the tests) I'd suggest not making the handles member variables, and instead just pass them into the run() method.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-02-18 17:19:02.919000000
+
+Patch Set 6:
+
+Hey Dave, I'm in agreement with all your feedback on this, will have it addressed today.
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-02-19 20:51:18.984000000
+
+Change has been successfully cherry-picked as 755dfd53e20aa3f92ce9b82e2b3ba8f583c2ab98
+
+-------------------------------------

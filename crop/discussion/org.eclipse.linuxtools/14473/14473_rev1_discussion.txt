@@ -1,0 +1,93 @@
+DESCRIPTION
+
+TMF: Add vertical events (links) to time graph view
+
+Add the isLink method to ITimeEvent, for events that occur between two entries
+instead of in one entry only.
+ITimeEvent extends Comparable so events in TimeGraphEntry can be sorted (links
+won't be necessarily entered chronologically with the other events)
+
+Change-Id: I5be30c4a27a10645a57ebfc13b4d1c71a55e06bd
+Signed-off-by: Aryana Jones xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2013-07-11 14:24:06.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/sandbox/job/linuxtools/2891/
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2013-07-11 14:27:32.000000000
+
+Patch Set 1:
+
+I had a use case for this while factoring for upstream the code of the critical path by Adonis Kirk (work in progress)
+
+To see it in action, check the following branch with the critical path and the view Critical Flow View:
+git://git.dorsal.polymtl.ca/~gbastien/linuxtools-tmf.git
+branch critical_path3
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-07-11 14:40:04.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/linuxtools/2891/ : SUCCESS
+
+-------------------------------------
+author: Luciana Barry
+date: 2013-07-19 22:13:37.000000000
+
+Patch Set 1: Verified+1 Code-Review-1
+
+This is pretty awesome! I was able to add arrows to follow the CPU execution in Control Flow view easily with about 15 lines of code. The resulting graph is much more informative, we will surely patch that in once this is committed.
+
+I think to solve the problem of arrows not being drawn when the time graph entry is above the top index, we need to decouple the links from the time graph entries. That way we can always see an arrow as we scroll to find its origin or destination.
+
+There should be one list of links for the whole graph. Only those that intersect the time window should be drawn.
+
+We won't need to sort the time event list, we should assume as before that it comes sorted. We can create an ILinkEvent so without breaking ITimeEvent API perhaps this doesn't have to wait for 3.0.
+
+I'd suggest to add a method like refreshArrows(ILinkEvent[]) to TimeGraphControl/Viewer/Combo. That could be called by the user (view) when as it recomputes the time events due to new time range.
+
+When there is a large data model, it should only include links that fall in the current window range. Therefore the list does not need to be sorted for early exit of a loop. Also, when drawing arrows there is no problem to draw an arrow back in time (unlike when drawing states where we don't want to draw over a previous state).
+
+That also leaves the possibility for those who have a smaller data model to provide the full set of links to the time graph, and then arrows would always be visible even when scrolling and zooming the time range.
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2013-07-31 13:31:28.000000000
+
+Patch Set 1:
+
+Thanks for the feedback.  It's good to know it wasn't too hard getting to use this.
+
+What you suggest is that TimeLinkEvents should not belong to an entry, as it does now, but be added to a new set of events containing all the links for the whole graph (or actual time range).  That would make more sense, since these events do not really belong to either source or destination entry.
+
+They would still be obtained in the getEventList method, but instead of added to the entry, they would be part of another list, I'm not sure yet how and where.  I would add a field to the TimeGraphControl's ItemData class to store those links.
+
+Is that what you had in mind?  I'll work on this patch later this week.
+
+-------------------------------------
+author: Luciana Barry
+date: 2013-07-31 20:39:57.000000000
+
+Patch Set 1:
+
+Maybe we don't need to (or want to) get the arrow list from getEventList() as this method is called once for every entry.
+
+We might have a more efficient way to collect the arrow list that can be executed only once (or once per trace), after the loop for entries.
+
+So perhaps we need a new getArrowList(trace(?), start, end, resolution, monitor) abstract method in the abstract view, called from the zoom thread. Then a new refreshArrows(ILinkEvent[]) method that propagates the resulting list to the time graph combo/viewer/control and redraws the UI.
+
+The subclass could also get getArrowList() from its implementation of buildEventList() if it does not care about zoom level.
+
+-------------------------------------

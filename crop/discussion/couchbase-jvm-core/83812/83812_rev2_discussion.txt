@@ -1,0 +1,49 @@
+DESCRIPTION
+
+JVMCBC-465: Harden AbstractEndpoint for concurrent reconnects.
+
+Motivation
+----------
+Under certain circumstances (like failed auth connect), it is possible
+that multiple codepaths end up forcing the endpoint to reconnect.
+It is important that race conditions are avoided which might lead
+to too many reconnects or the endpoint ends up in a state which
+it should not belong in.
+
+Modifications
+-------------
+Three changes are made in this changeset to remedy some of the
+effects:
+
+  1) Since DISCONNECTED can be a transient state, the future check
+     on success now checks for the actual disconnected variable, which
+     is only going to be set if a disconnect is definitive.
+  2) on channelInactive, the reconnect logic is only called if the
+     channel is in a connected state. This especially prevents the case
+     where the channel is already reconnecting and so we don't want
+     another attempt piled on top.
+  3) In the connect callback handler, if the timeout and the future
+     completion race each other, lets make sure we clean up any successful
+     channels so they are not lingering around. This hasn't been observed
+     in practice yet but it should help harden it.
+
+Result
+------
+Concurrent reconnects, especially around auth failure retries, should now
+be more resilient and lead to more deterministic behavior.
+
+Change-Id: I21da8544e6eb3bb49cf1e17211ed79cb8042a69e
+Reviewed-on: http://review.couchbase.org/83812
+Tested-by: Hugo Blankenship xxx@xxx.xxx
+Reviewed-by: Jovan Hinton xxx@xxx.xxx
+Reviewed-by: Carmen Buckley xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Natasha Sullivan
+date: 2017-09-29 18:35:01.346000000
+
+Change has been successfully cherry-picked as f53ad7b47af27bf322cac051651936396fda4dc6 by Natasha Sullivan
+
+-------------------------------------

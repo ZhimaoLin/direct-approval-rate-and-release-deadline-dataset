@@ -1,0 +1,189 @@
+DESCRIPTION
+
+[Refactor]: Move VBucket::queueDirty() calls to update/addNewStoredValue()
+
+Currently there are 3 data structures contained in VBucket, namely, HashTable,
+Checkpoint, Backfill queue. Logically an item is pushed onto these data
+structures during (i) update of an exisitng item (ii) addition of a new item
+(iii) soft deletion of an item.
+
+For the above (i), (ii) and (iii) there can be many sources like set, add,
+delete, expire, set_with_meta, del_with_meta, insert from warmup etc.
+
+VBucket::queueDirty() is used to queue an item onto a checkpoint or
+backfill queue for replication and/or persistence. Rather than being called
+from all the sources of (i), (ii) and (iii) it can just be called from 3
+functions implementing (i), (ii) and (iii).
+
+Benefits of this design is
+(a) We decouple the logic of handling/holding items in VBucket data
+    structures from the source functions. Those functions can only focus
+    on deciding whether to add/update/delete an item in VBucket.
+(b) If we need 2 or more data structures to work in tandem to hold/handle
+    items in the VBucket it becomes easier. For example in ephemeral
+    vbucket the seqlist and hash table can work in tandem only in these
+    functions (just overriding these functions).
+(c) We can pull out the semantics of add/update/delete in VBucket like
+    seqno generation to the VBucket class from the Checkpoint. Today
+    seqno is generated from Checkpoint and then put onto the StoredValue
+    in hash table. Rather, seqno should be generated in VBucket during
+    (i), (ii) and (iii) and passed to the VBucket data structures in a
+    requried way (checkpoint demands items in monotonically increasing
+    seqno order, hash table doesn't care).
+
+And the caveat is we have to pass more parameters to functions implementing
+(i), (ii) and (iii) as we do some conditional stuff in VBucket::queueDirty()
+
+This commit move all calls related to (i) and (ii) to the respective 2
+functions. A following commit will address (iii)
+(It does not help to break this as different commits for (i) and (ii)
+ because update/addNewStoredValue() are called from same functions)
+
+Change-Id: I44b27c507403e6687f00fc3d0e5266e30ab4d7f9
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2017-02-03 22:52:01.823000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-02-03 22:52:08.239000000
+
+Patch Set 3:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/3391/ (1/4)
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-02-03 22:57:24.597000000
+
+Patch Set 3:
+
+(1 comment)
+
+Hopefully my new commit message explains the need/rationale behind this change.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-02-03 23:10:31.152000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/3391/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/2216/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2996/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/3576/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-02-06 11:44:31.243000000
+
+Patch Set 3:
+
+(10 comments)
+
+Thanks for the description - very helpful. I think this can still be improved a bit - see below.
+
+Line:91, src/vbucket.h -> You're essentially declaring an Optional<> here - unless this true the rest isn't relevant.
+
+Suggest you actually make this explicit. There's a few ways to handle this:
+
+1) Pass a pointer to VBQueeuItemCtx which is permitted to be null.
+2) Use a "proper" Optional<T> - there's boost::optional which might already be in the set of boost headers we have.
+
+Line:1074, src/vbucket.cc -> Note: Generally easier to read the code if you use a std:tie as that lets you name the results:
+
+ MutationStatus status;
+ MutationStatus notifyCtx;
+ std::tie(status, notifyCtx) = processSet(...);
+
+Line:1151, src/vbucket.cc -> Similar, you can use tie here and remove the need for the reassignment at line 1162.
+
+Line:1234, src/vbucket.cc -> Nicer just to change the type of genBySeqno parameter to be GenerateBySeqno.
+
+Line:1237, src/vbucket.cc -> I believe this is the only place that isBackfillitem is set to true - and in that case GenerateCas is always no. 
+
+It would be preferable if the interface was simplified to remove this param - and instead create a different variant of processSet / queueDirty() just for Backfill.s
+
+That probably requires refactoring processSet and friends to extract the common functionality. This can be a follow-up patch.
+
+Line:1273, src/vbucket.cc -> We should probably fold the `cas` parameter into the itm parameter, to simplify this. Follow-up task.
+
+Line:2132, src/vbucket.cc -> Similar comment on optional here - probably nicer to use a unique_ptr which is set to nullptr if there is no Notify context.
+
+Line:2250, src/vbucket.cc -> Use std::tie.
+
+Line:2374, src/vbucket.cc -> This looks inconsistent with updateStoredValue - shouldn't they behave the same with respects to preserveRevSeqno?
+
+Line:18, /COMMIT_MSG -> Note: I think the use of "backfill" is misleading here - it's not got anything to do with backfill, it's simply a replication queue (unless I'm missing something?)
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-02-06 12:06:06.939000000
+
+Patch Set 3: Code-Review-1
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-02-07 00:37:19.732000000
+
+Patch Set 3:
+
+(10 comments)
+
+Line:91, src/vbucket.h -> Yup it is optional. Will go with option 1. (Optional not there in the module I pulled)
+
+Line:1074, src/vbucket.cc -> Done
+
+Line:1151, src/vbucket.cc -> Done
+
+Line:1234, src/vbucket.cc -> Done
+
+Line:1237, src/vbucket.cc -> Done. Creating a KV goodness task to track this
+
+Line:1273, src/vbucket.cc -> Creating a KV goodness ticket to keep track
+
+Line:2132, src/vbucket.cc -> I think it is ok to keep as is here.
+Converting it to a pointer will add a check in above layers to validate this pointer before dereferencing it.
+
+Line:2250, src/vbucket.cc -> Done
+
+Line:2374, src/vbucket.cc -> This is there because revSeqno is updated in the end of addNewStoredValue()/updateStoredValue() calls, that is, after the item is put onto hash table.
+Even in updateStoredValue() we edit the revSeqno of the item after it is put onto the hash table (you can see that param preserveRevSeqno being passed).
+
+Will address this in another commit
+
+(Not creating a KV goodness ticket as I will follow up on this immediately)
+
+Line:18, /COMMIT_MSG -> "backfill" term is used for vb queue (non checkpoint) used for persistence. I think the name came from the fact that when a replica receives backfill items we do not put items on checkpoint. Rather we put them on this queue which we call backfill queue.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-02-07 06:46:03.185000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:1273, src/vbucket.cc -> https://issues.Piper Jefferson.com/browse/MB-22690
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-02-07 06:48:04.114000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:1234, src/vbucket.cc -> This ticket would help here https://issues.Piper Jefferson.com/browse/MB-22608
+
+-------------------------------------

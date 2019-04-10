@@ -1,0 +1,117 @@
+DESCRIPTION
+
+Implement similarity based rename detection
+
+Content similarity based rename detection is performed only after
+a linear time detection is performed using exact content match on
+the ObjectIds.  Any names which were paired up during that exact
+match phase are excluded from the inexact similarity based rename,
+which reduces the space that must be considered.
+
+During rename detection two entries cannot be marked as a rename
+if they are different types of files.  This prevents a symlink from
+being renamed to a regular file, even if their blob content appears
+to be similar, or is identical.
+
+Efficiently comparing two files is performed by building up two
+hash indexes and hashing lines or short blocks from each file,
+counting the number of bytes that each line or block represents.
+
+Instead of using a standard java.util.HashMap, we use a custom
+open hashing scheme similiar to what we use in ObjecIdSubclassMap.
+This permits us to have a very light-weight hash, with very little
+memory overhead per cell stored.
+
+As we only need two ints per record in the map (line/block key and
+number of bytes), we collapse them into a single long inside of
+a long array, making very efficient use of available memory when
+we create the index table.  We only need object headers for the
+index structure itself, and the index table, but not per-cell.
+This offers a massive space savings over using java.util.HashMap.
+
+The score calculation is done by approximating how many bytes are
+the same between the two inputs (which for a delta would be how much
+is copied from the base into the result).  The score is derived by
+dividing the approximate number of bytes in common into the length
+of the larger of the two input files.
+
+Right now the SimilarityIndex table should average about 1/2 full,
+which means we waste about 50% of our memory on empty entries
+after we are done indexing a file and sort the table's contents.
+If memory becomes an issue we could discard the table and copy all
+records over to a new array that is properly sized.
+
+Building the index requires O(M + N log N) time, where M is the
+size of the input file in bytes, and N is the number of unique
+lines/blocks in the file.  The N log N time constraint comes
+from the sort of the index table that is necessary to perform
+linear time matching against another SimilarityIndex created for
+a different file.
+
+To actually perform the rename detection, a SxD matrix is created,
+placing the sources (aka deletions) along one dimension and the
+destinations (aka additions) along the other.  A simple O(S x D)
+loop examines every cell in this matrix.
+
+A SimilarityIndex is built along the row and reused for each
+column compare along that row, avoiding the costly index rebuild
+at the row level.  A future improvement would be to load a smaller
+square matrix into SimilarityIndexes and process everything in that
+sub-matrix before discarding the column dimension and moving down
+to the next sub-matrix block along that same grid of rows.
+
+An optional ProgressMonitor is permitted to be passed in, allowing
+applications to see the progress of the detector as it works through
+the matrix cells.  This provides some indication of current status
+for very long running renames.
+
+The default line/block hash function used by the SimilarityIndex
+may not be optimal, and may produce too many collisions.  It is
+borrowed from RawText's hash, which is used to quickly skip out of
+a longer equality test if two lines have different hash functions.
+We may need to refine this hash in the future, in order to minimize
+the number of collisions we get on common source files.
+
+Based on a handful of test commits in JGit (especially my own
+recent rename repository refactoring series), this rename detector
+produces output that is very close to C Git.  The content similarity
+scores are sometimes off by 1%, which is most probably caused by
+our SimilarityIndex type using a different hash function than C
+Git uses when it computes the delta size between any two objects
+in the rename matrix.
+
+Bug: 318504
+Change-Id: I11dff969e8a2e4cf252636d857d2113053bdd9dc
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-07-04 01:18:35.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Malia Sampson
+date: 2010-07-05 18:38:27.000000000
+
+Patch Set 2: Looks good to me, but someone else must approve; IP review completed
+
++1 from Tech PMC
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-07-16 17:25:56.000000000
+
+Patch Set 2: Looks good to me, approved; IP review completed
+
+
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-07-16 17:26:10.000000000
+
+Change has been successfully merged into the git repository.
+
+-------------------------------------

@@ -1,0 +1,106 @@
+DESCRIPTION
+
+Fix (benign) data race in EPStore::bgFetch when logging bgfetch queue size
+
+As reported by ThreadSanitizer (see below) when running ep_testsuite
+47 (get/delete with missing db file).
+
+EPStore::bgFetch() reads the size of the vBuckets' pending BG fetch
+queue without a lock / holding pendingBGFetchesLock. Given this is
+only used for a debug message it's essentially benign, however fix it
+by refactoring the code so VBucket::queueBGFetchItem() returns the
+current queue size, removing all need for the accessor.
+
+Also simplify the debug code so we don't need to create a temporary
+string when the log message is disabled.
+
+ThreadSanitizer report:
+
+WARNING: ThreadSanitizer: data race (pid=11844)
+  Read of size 8 at 0x7d680001f5c0 by main thread (mutexes: write M28852, write M17967):
+    #0 EventuallyPersistentStore::bgFetch(std::string const&, unsigned short, void const*, bool) /usr/bin/../lib/gcc/x86_64-linux-gnu/4.9/../../../../include/c++/4.9/bits/hashtable.h:500 (ep.so+0x00000007f4d6)
+    #1 EventuallyPersistentStore::getInternal(std::string const&, unsigned short, void const*, bool, bool, vbucket_state_t, bool) /home/Piper Jefferson/couchbase/ep-engine/src/ep.cc:2033 (ep.so+0x00000008ade3)
+    #2 EventuallyPersistentEngine::get(void const*, void**, void const*, int, unsigned short, bool) /home/Piper Jefferson/couchbase/ep-engine/src/ep.h:277 (ep.so+0x0000000d40e1)
+    #3 EvpGet(engine_interface*, void const*, void**, void const*, int, unsigned short) /home/Piper Jefferson/couchbase/ep-engine/src/ep_engine.cc:201 (ep.so+0x0000000abbae)
+    #4 mock_get(engine_interface*, void const*, void**, void const*, int, unsigned short) /home/Piper Jefferson/couchbase/memcached/programs/engine_testapp/engine_testapp.cc:206 (engine_testapp+0x0000004c4f32)
+    #5 test_get_delete_missing_file(engine_interface*, engine_interface_v1*) /home/Piper Jefferson/couchbase/ep-engine/tests/ep_testsuite.cc:1884 (ep_testsuite.so+0x000000017f5c)
+    #6 execute_test(test, char const*, char const*) /home/Piper Jefferson/couchbase/memcached/programs/engine_testapp/engine_testapp.cc:1090 (engine_testapp+0x0000004c40b2)
+    #7 __libc_start_main /build/buildd/eglibc-2.15/csu/libc-start.c:226 (libc.so.6+0x00000002176c)
+
+  Previous write of size 8 at 0x7d680001f5c0 by thread T4 (mutexes: write M18022):
+    #0 memset <null> (engine_testapp+0x00000045dab0)
+    #1 VBucket::getBGFetchItems(std::unordered_map<std::string, vb_bgfetch_item_ctx_t, std::hash<std::string>, std::equal_to<std::string>, std::allocator<std::pair<std::string const, vb_bgfetch_item_ctx_t> > >&) /usr/bin/../lib/gcc/x86_64-linux-gnu/4.9/../../../../include/c++/4.9/bits/hashtable.h:1944 (ep.so+0x000000137e54)
+    #2 BgFetcher::run(GlobalTask*) /home/Piper Jefferson/couchbase/ep-engine/src/bgfetcher.cc:132 (ep.so+0x00000002264a)
+    #3 BgFetcherTask::run() /home/Piper Jefferson/couchbase/ep-engine/src/tasks.cc:107 (ep.so+0x00000012abe2)
+    #4 ExecutorThread::run() /home/Piper Jefferson/couchbase/ep-engine/src/executorthread.cc:112 (ep.so+0x0000000ea34e)
+    #5 launch_executor_thread(void*) /home/Piper Jefferson/couchbase/ep-engine/src/executorthread.cc:33 (ep.so+0x0000000e9f05)
+    #6 platform_thread_wrap /home/Piper Jefferson/.ccache/tmp/cb_pthread.tmp.00b591814417.18511.i (libplatform.so.0.1.0+0x000000003d91)
+
+Change-Id: I8152e33b9689e4009d13a695d29d26d895f58ccd
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2015-10-06 13:46:38.706000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-10-06 13:46:52.717000000
+
+Patch Set 1:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1136/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-10-06 14:35:43.390000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1136/ : FAILURE
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-10-06 16:01:13.438000000
+
+Patch Set 1: -Verified
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1146/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-10-06 16:34:27.967000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1146/ : FAILURE
+
+-------------------------------------
+author: Abby Duran
+date: 2015-10-06 17:46:04.171000000
+
+Removed the following votes:
+
+* Verified-1 by Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+
+
+-------------------------------------
+author: Abby Duran
+date: 2015-10-06 17:46:06.334000000
+
+Patch Set 1: Verified+1 Code-Review+2
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-10-06 17:46:10.060000000
+
+Change has been successfully cherry-picked as 17fcdc37afb6c758142d1b9ccf6c26a43931ae63
+
+-------------------------------------

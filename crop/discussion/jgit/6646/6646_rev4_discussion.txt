@@ -1,0 +1,52 @@
+DESCRIPTION
+
+Teach ResolveMerger to create more correct DirCacheEntry's
+
+Currently, after a merge/cherry-pick/rebase, all index entries are
+smudged as the ResolveMerger never sets entry lengths and/or
+modification times. This change teaches it to re-set them at least for
+things it did not touch. The other entries are then repaired when the
+index is persisted, or entries are checked out.
+
+Change-Id: I0944f2017483d32043d0d09409b13055b5609a4b
+Signed-off-by: Zachary Orozco xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Zachary Orozco
+date: 2012-07-10 10:40:35.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2012-07-10 11:01:06.000000000
+
+Patch Set 4: I would prefer that you didn't submit this
+
+I found a bug and fixed it, but I have to do some double-checks with native git before we can accept this bug.
+
+That's the problem: During merge we update the index and populate the worktree for some paths. Problem is: it's a long running operation and we want to be able to recover from a failed operation without leaving a corrupted repo/work-tree. E.g. what happens if we have succesfully updated (overwritten) 10000 files but when writing file 10001 this fails and we want to rollback. Therefore we prepare the new index first and if the index was succesfully persisted then we start modifying the work-tree (what we should write in the work-tree can be seen from the new index). Means: we first call indexBuilder.commit() and then we call checkout(). 
+That's wrong because the checkout() provides us with information which have to go into the index. Especially we don't know lastModified and length of a file until we have written it to disk. For lastmodified that's clear. But think about how autocrlf influences length. 
+I changed it now that we first checkout all files (which updates lastModified and length of DirCacheEntries) and then we persist the index. 
+
+As I said: no sure about whether this is correct and I'll investigate further.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2012-07-11 19:27:24.000000000
+
+Patch Set 4: (4 inline comments)
+
+Seems reasonable
+
+Line:185, org.eclipse.jgit.test/tst/org/eclipse/jgit/merge/ResolveMergerTest.java -> Was there a problem?
+
+Line:207, org.eclipse.jgit.test/tst/org/eclipse/jgit/merge/ResolveMergerTest.java -> I'd probably have used @ for fixed timestamp and leave * for "any" (future extension).
+
+Line:209, org.eclipse.jgit.test/tst/org/eclipse/jgit/merge/ResolveMergerTest.java -> Use javadoc format.
+
+Line:210, org.eclipse.jgit.test/tst/org/eclipse/jgit/merge/ResolveMergerTest.java -> paths (no e)
+
+-------------------------------------

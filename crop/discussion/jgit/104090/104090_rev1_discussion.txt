@@ -1,0 +1,113 @@
+DESCRIPTION
+
+Fix some tests for running in bazel
+
+Some tests call out to external cgit. Those tests all failed for me
+locally on Mac. Turned out that the reason was that the system git
+config used by the git in the bazel run contained paths with ~/ but
+somehow $HOME was not set. As a result the external git returned
+with exit code 128.
+
+Fix this by passing along $HOME explicitly. Also improve assertions
+to make sure we do get the stderr of the external command in the
+test log.
+
+I hadn't noticed that until now because apparently the maven build
+does pass along $HOME.
+
+Change-Id: I7069676d5cc7b23a71e79a4866fe8acab5a405f4
+Signed-off-by: Alayna Houston xxx@xxx.xxx
+
+COMMENTS
+
+author: Alayna Houston
+date: 2017-08-31 13:48:34.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-08-31 13:49:58.000000000
+
+Patch Set 1:
+
+Build Started https://ci.eclipse.org/jgit/job/jgit.gerrit/11254/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-08-31 14:05:24.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://ci.eclipse.org/jgit/job/jgit.gerrit/11254/ : SUCCESS
+
+-------------------------------------
+author: Elise Key
+date: 2017-09-01 02:02:19.000000000
+
+Patch Set 1: Code-Review+2
+
+-------------------------------------
+author: Elise Key
+date: 2017-09-01 02:02:21.000000000
+
+Change has been successfully merged by Elise Key
+
+-------------------------------------
+author: Eden Lin
+date: 2017-09-01 02:12:35.000000000
+
+Patch Set 1:
+
+(3 comments)
+
+What is the symptom without this change? I.e. what is the full error message?
+
+Line:108, org.eclipse.jgit.test/tst/org/eclipse/jgit/ignore/CGitIgnoreTest.java -> Likewise.
+
+Line:128, org.eclipse.jgit.test/tst/org/eclipse/jgit/attributes/CGitAttributesTest.java -> Forgive my ignorance: is fs.userHome() a homedir set up by mvn/bazel, or is it my own HOME directory?
+
+I'm assuming the former, but the latter would have been my assumption when just looking at this code. Maybe it's worth a comment.
+
+Line:146, org.eclipse.jgit.test/tst/org/eclipse/jgit/indexdiff/IndexDiffWithSymlinkTest.java -> Likewise.
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-09-01 06:40:20.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+> What is the symptom without this change? I.e. what is the full
+ > error message?
+
+external git returns exit code 128, and the tests fail with the not very helpful message
+
+  java.lang.AssertionError: External git failed expected:<0> but was:<128>
+        at org.junit.Assert.fail(Assert.java:88)
+        ...
+
+With the changed assertion, we also get the stderr in the log, and the tests fail with
+
+  org.junit.ComparisonFailure: External git failed expected:<exit [0]
+  > but was:<exit [128
+  error: could not expand include path '~/.gitcinclude'
+  fatal: bad config line 45 in file /usr/local/git/etc/gitconfig]
+  >
+        at org.junit.Assert.assertEquals(Assert.java:115)
+        ...
+
+which is a bit more helpful and points to a problem with substituting ~/. Setting $HOME for the call to external git resolves the problem and the tests pass. (I have git 2.13.1 installed on my Mac, and line 45 is an include of ~/.gitcinclude.)
+
+In mvn this problem didn't exist since mvn doesn't do any sandboxing for tests. Nor does Eclipse when the test is run from within Eclipse.
+
+Line:128, org.eclipse.jgit.test/tst/org/eclipse/jgit/attributes/CGitAttributesTest.java -> FS.userHome() reads the Java system property user.home and returns whatever is set there. Interestingly, that property is set also when the test is run via bazel.
+
+In my bazel test runs, it was the real user home directory. Don't know if that could be changed via some bazel configuration; I don't know bazel well and only learned yesterday that is has some sandboxing capabilities. (And that it does pass along $PATH, but not $HOME.)
+
+I don't know whether $HOME being unset in bazel is intended bazel behavior or a bug in bazel. Perhaps it's even a problem in my bazel setup, though I doubt that since otherwise bazel works fine, and all other tests did pass locally.
+
+-------------------------------------

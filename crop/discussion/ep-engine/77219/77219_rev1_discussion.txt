@@ -1,0 +1,107 @@
+DESCRIPTION
+
+DCP Backfill: Do not process backfills if the backfill buffer is full
+
+In DCP we currently process the backfills even if the backfill buffer is
+full. And while we are processing a backfill we check for backfill buffer
+usage and defer the processing midway if we see it full.
+
+This can be improved upon by checking the buffer usage before processing
+the backfills and deferring the processing of backfills itself if the
+buffer is full.
+
+This relates to MB-23734, but is more general in way that it also is
+better for disk backfills.
+
+Change-Id: Ic928af4610bf222b54ac597ba7f4e886b1971c28
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2017-04-22 00:06:29.121000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-04-22 00:31:56.060000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4713/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/5935/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5415/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6185/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-24 09:21:58.517000000
+
+Patch Set 1: Code-Review-1
+
+Be careful here - logically you should be able to operate with a backfill buffer of any size and things should still work.
+
+However I think with this change if you had a buffer which was smaller than the message size then you'd never manage to send anything (as it would immediately snooze). I think that's why we need to check the size after a message has been created.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-04-24 16:48:35.619000000
+
+Patch Set 1:
+
+This would not cause that error.
+Here we are checking buffer.bytesRead vs buffer.maxBytes.
+We are not doing anything with message size.
+You cross check with:
+bool BackfillManager::bytesRead(size_t bytes) {
+   ...
+   if (buffer.bytesRead == 0 || buffer.bytesRead + bytes <= buffer.maxBytes) {
+      ...
+   }
+   ...
+}
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-04-24 16:51:32.921000000
+
+Patch Set 1:
+
+Trying to write a test case for this
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-24 16:52:01.555000000
+
+Patch Set 1:
+
+> This would not cause that error.
+ > Here we are checking buffer.bytesRead vs buffer.maxBytes.
+ > We are not doing anything with message size.
+ > You cross check with:
+ > bool BackfillManager::bytesRead(size_t bytes) {
+ > ...
+ > if (buffer.bytesRead == 0 || buffer.bytesRead + bytes <=
+ > buffer.maxBytes) {
+ > ...
+ > }
+ > ...
+ > }
+
+Ok - let me just ask a different/related question - if we set the backfill size to '1', will things still work?
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-04-24 16:56:14.078000000
+
+Patch Set 1:
+
+Yup, it will still work. Trying to write a test case to prove that.
+
+-------------------------------------

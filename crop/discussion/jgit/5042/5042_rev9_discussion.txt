@@ -1,0 +1,95 @@
+DESCRIPTION
+
+Additional unit tests for the GC
+
+Since we work independently of each other I will be providing the tests
+in a separate change.
+
+Change-Id: Id5b578f7040c6c896ab9386a6b5ed62b0f495ed5
+Signed-off-by: Dillon Cross xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Dillon Cross
+date: 2012-03-07 14:41:24.000000000
+
+Uploaded patch set 9.
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-03-07 14:41:28.000000000
+
+Patch Set 9:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1534/ 
+
+-------------------------------------
+author: Dillon Cross
+date: 2012-03-07 14:43:57.000000000
+
+Patch Set 9: (3 inline comments)
+
+Some tests fail. See the inline comments to find out which.
+
+Line:301, org.eclipse.jgit.test/tst/org/eclipse/jgit/storage/file/GCTest.java -> This test fails!
+
+Line:309, org.eclipse.jgit.test/tst/org/eclipse/jgit/storage/file/GCTest.java -> This test fails!
+
+Line:319, org.eclipse.jgit.test/tst/org/eclipse/jgit/storage/file/GCTest.java -> This test fails!
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-03-07 14:44:52.000000000
+
+Patch Set 9: Fails
+
+Build Failed 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1534/ : FAILURE
+
+-------------------------------------
+author: Zachary Orozco
+date: 2012-03-12 21:18:36.000000000
+
+Patch Set 9: (4 inline comments)
+
+
+
+Line:294, org.eclipse.jgit.test/tst/org/eclipse/jgit/storage/file/GCTest.java -> This test worked for you only by luck. When I add my fix to prune() which I describe in the comment on nonReferencedExiredObject_pruned() then this test also fails. It fails for the same reason as I described in the comment on nonReferencedObjects_onlyExpiredPruned().
+
+Line:301, org.eclipse.jgit.test/tst/org/eclipse/jgit/storage/file/GCTest.java -> The object is pruned from the filesystem, but the repository instance you ask in the end still has caches which know about object a. Since I can't tell jgit's ojbectdatabase that to remove a certain object I'll added a call to close the complete objectdatabase in end of the prune() call. This invalidates all caches and makes this test green.
+
+Line:309, org.eclipse.jgit.test/tst/org/eclipse/jgit/storage/file/GCTest.java -> That was as caching problem as in nonReferencedExiredObject_pruned(). Should be fixed in next PatchSet.
+
+Line:319, org.eclipse.jgit.test/tst/org/eclipse/jgit/storage/file/GCTest.java -> This test cannot work reliable. There are multiple problems:
+
+1) You may be able to create blobs so fast that the two calls to System.currentTimeMillis() return the same value. On my system I can create 20 new files before System.currentTimeMillis() returns a new value. In such cases you call setExpireAgeMillis with 0 ... and the object will be pruned.
+
+2) The filesystem may not store timestamps in the same granularity as System.currentTimeMillis() returns it. Example: If you look at the clock and get back 12345678 and then you create a file this file may have a lastModifed() of 12345000. On my linux system I can create 20000 files in a row which all have the same lastmodified(). 
+For your test this means: before you create a file currentTimeMillis() is 12345678. Then you create the file which gets lastModified of 12345000 and after creation you look again at the clock and see 12345679. You call expireAgeMillis(1) and of course the object will be pruned. You would have the same problem if expireAgeMillis() would expect absolute time specifications.
+
+I suggest that you wait that the filesystem timer advances after creating the first blob. RepositoryTestCase.fsTick() can help you with that: 
+
+   		File file_a = repo.getObjectDatabase().fileFor(a);
+		long start=file_a.lastModified();
+		RepositoryTestCase.fsTick(file_a);
+		RevBlob b = tr.blob("b");
+		File file_b = repo.getObjectDatabase().fileFor(b);
+		gc.setExpireAgeMillis(file_b.lastModified() - start);
+
+-------------------------------------
+author: Dillon Cross
+date: 2012-03-22 14:11:04.000000000
+
+Patch Set 9: (2 inline comments)
+
+
+
+Line:294, org.eclipse.jgit.test/tst/org/eclipse/jgit/storage/file/GCTest.java -> Done
+
+Line:319, org.eclipse.jgit.test/tst/org/eclipse/jgit/storage/file/GCTest.java -> Done.
+
+Actually, the RepositoryTestCase.fsTick method also accepts NULL as the parameter and will simply wait until it is sure that a next lastModified on a touched file will be younger than the time when this method was invoked. This makes the test a bit simpler as access to the blob-files is not necessary.
+
+-------------------------------------

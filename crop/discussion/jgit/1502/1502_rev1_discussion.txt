@@ -1,0 +1,89 @@
+DESCRIPTION
+
+Refactor diff sequence API
+
+Instead of making the sequence itself responsible for the equivalence
+function, use an external function that is supplied by the caller.
+This cleans up the code because we now say cmp.equals(a, ai, b, bi)
+instead of a.equals(ai, b, bi).
+
+This refactoring also removes the odd concept of creating different
+types of sequences to have different behaviors for whitespace
+ignoring.  Instead DiffComparator now supports singleton functions
+that apply a particular equivalence algorithm to a type of sequence.
+
+Change-Id: I559f494d81cdc6f06bfb4208f60780c0ae251df9
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Zachary Orozco
+date: 2010-09-02 13:41:36.000000000
+
+Patch Set 1: (3 inline comments)
+
+some basic comments before doing a full review
+
+Line:183, org.eclipse.jgit.test/tst/org/eclipse/jgit/diff/MyersDiffPerformanceTest.java -> Somehow odd to ask the comparator and not the object itself about the size.
+
+Line:57, org.eclipse.jgit/src/org/eclipse/jgit/diff/DiffComparator.java -> Any reason for not using an interface?
+
+Line:58, org.eclipse.jgit/src/org/eclipse/jgit/diff/DiffComparator.java -> Isn't this class doing more then a comparator? This class tells us about sizes and hashes - things which have nothing to do with comparision. I don't expect them in a comparator.
+
+I agree that we need a Comparator concept (also because of the auto-CRLF stuff). But shouldn't we leave aspects which belong to one Diff-able object in a seperate class/interface? Something which was previously called Sequence.
+
+Something like
+
+abstract class DiffComparator<S extends Sequence> {
+  public abstract boolean equals(S a, int ai, S b, int bi);
+}
+
+abstract class Sequence {
+  public abstract int size();
+  public abstract int hash(int ptr);
+}
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-09-02 19:15:26.000000000
+
+Patch Set 1: (2 inline comments)
+
+
+
+Line:57, org.eclipse.jgit/src/org/eclipse/jgit/diff/DiffComparator.java -> Interfaces are slower to perform virtual dispatch than classes, because their virtual function tables are more complicated to layout.  Yes some of the JVMs have gotten better about it, but they still have to pay some penalties that don't exist with an abstract base class.
+
+My other rationale is I want to add some default behavior to this class later.  Like in the patience diff patch I add reduceCommonStartEnd().  It has a default implementation based upon equals() but will later be replaced for the RawTextComparator with something that is more tightly tied to the representation.
+
+Making the comparator an abstract class means we can later shift other logic into this class to support diff algorithms, and once we do that comparator implementors have a choice of using our naive equals() based approaches, or doing something even faster with their own sequence models, if they can support it.
+
+Line:58, org.eclipse.jgit/src/org/eclipse/jgit/diff/DiffComparator.java -> I'll agree with you that size() seems misplaced.  It probably is.  I can bring back Sequence and put size on it.
+
+But hash() is part of the equivalence function.  The hash computed by ignore trailing whitespace is different than the hash computed by the default ignore-nothing.  If two items in the sequence are equal by the equals() function, their hashes must also be equal.  Putting hash() on the model starts to make it much harder to ensure this remains true.
+
+I also didn't want to enforce the requirement that the hash be pre-computed by the sequence model.  Instead I wanted to allow the equivalence function to handle the hash.  If it caches the hashes in the model (like RawText does), great.  But I think in the case of patience diff I might be able to only get the hash once for each line.  That means the implementor might be able to avoid keeping the hashes, and perhaps more importantly, avoid computing them for the long common header/footers that often exist on files.
+
+So I don't think we should move hash.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-09-02 21:59:02.000000000
+
+Patch Set 1: (2 inline comments)
+
+
+
+Line:57, org.eclipse.jgit/src/org/eclipse/jgit/diff/DiffComparator.java -> Ok, I got your two arguments of performance and default implementations. Having interfaces for Sequence and DiffComparator would allow us to have single classes which implement both (like standard java where equals and hash are in every (model) class). This would help writing smaller tests - but in real code we would really want seperate implementations for Sequence and DiffComparator. So, runtime-performance argument beats smaller-tests - I am fine with the abstract class.
+
+Line:58, org.eclipse.jgit/src/org/eclipse/jgit/diff/DiffComparator.java -> I agree, hash and equivalence are tied so strongly together that they have to be implemented in the same class. Maybe it's just the class name which disturbed me: a comparator which offers functionalities working on a single object (not comparing two objects). But since hashes may be needed for efficient equivalence calculation I am convinced.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2010-09-07 02:36:05.000000000
+
+Your change requires a recursive merge to resolve.
+
+Please merge (or rebase) the change locally and upload the resolution for review.
+
+-------------------------------------

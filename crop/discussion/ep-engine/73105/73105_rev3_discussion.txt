@@ -1,0 +1,115 @@
+DESCRIPTION
+
+[Refactor]: Move VBucket::queueDirty() calls to softDeleteStoredValue()
+
+Follow up of the commit 0cd6262
+(http://review.Piper Jefferson.org/#/c/73098/).
+
+Currently there are 3 data structures contained in VBucket, namely, HashTable,
+Checkpoint, Backfill queue. Logically an item is pushed onto these data
+structures during (i) update of an exisitng item (ii) addition of a new item
+(iii) soft deletion of an item.
+
+For the above (i), (ii) and (iii) there can be many sources like set, add,
+delete, expire, set_with_meta, del_with_meta, insert from warmup etc.
+
+VBucket::queueDirty() is used to queue an item onto a checkpoint or
+backfill queue for replication and/or persistence. Rather than being called
+from all the sources of (i), (ii) and (iii) it can just be called from 3
+functions implementing (i), (ii) and (iii).
+
+Benefits of this design is
+(a) We decouple the logic of handling/holding items in VBucket data
+    structures from the source functions. Those functions can only focus
+    on deciding whether to add/update/delete an item in VBucket.
+(b) If we need 2 or more data structures to work in tandem to hold/handle
+    items in the VBucket it becomes easier. For example in ephemeral
+    vbucket the seqlist and hash table can work in tandem only in these
+    functions (just overriding these functions).
+(c) We can pull out the semantics of add/update/delete in VBucket like
+    seqno generation to the VBucket class from the Checkpoint. Today
+    seqno is generated from Checkpoint and then put onto the StoredValue
+    in hash table. Rather, seqno should be generated in VBucket during
+    (i), (ii) and (iii) and passed to the VBucket data structures in a
+    requried way (checkpoint demands items in monotonically increasing
+    seqno order, hash table doesn't care).
+
+And the caveat is we have to pass more parameters to functions implementing
+(i), (ii) and (iii) as we do some conditional stuff in VBucket::queueDirty()
+
+This commit move all queueDirty() calls related to (iii) to
+softDeleteStoredValue().
+
+Change-Id: I70bbb1c7bf14015b75f44f454029e4712e0a3ecc
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2017-02-04 01:07:14.628000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-02-04 01:07:21.264000000
+
+Patch Set 3:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/3396/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-02-04 01:18:03.922000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/3396/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/2221/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/3001/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/3581/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-02-06 11:50:11.239000000
+
+Patch Set 3: Code-Review-1
+
+(5 comments)
+
+Line:1116, src/vbucket.h -> Given this is logically related to the `cas` field, suggest you put it next to that parameter.
+
+Line:2317, src/vbucket.cc -> This is exactly what i was trying to get at in the previous comments! Much, much better to handle this statically - i.e. make it impossible to pass a set of options which are not valid.
+
+In other words, don't make this function take the queueItmCtx, only pass the parameters which are applicable to it, and then construct your own QueueItemCtx to pass into processSoftDelete.
+
+Line:2474, src/vbucket.cc -> Delete this.
+
+Line:2479, src/vbucket.cc -> Delete this.
+
+Line:45, /COMMIT_MSG -> Bunch of this looks repeated from the previous patch - suggest you remove the repetition (as it makes it harder to tell what is applicable to this patch) - just leave in the reference to being the second part of 0cd6262.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-02-07 01:34:14.031000000
+
+Patch Set 3:
+
+(5 comments)
+
+Line:1116, src/vbucket.h -> No they do not seem to be related.
+
+Line:2317, src/vbucket.cc -> Done
+
+Line:2474, src/vbucket.cc -> Done
+
+Line:2479, src/vbucket.cc -> Done
+
+Line:45, /COMMIT_MSG -> ok
+
+-------------------------------------

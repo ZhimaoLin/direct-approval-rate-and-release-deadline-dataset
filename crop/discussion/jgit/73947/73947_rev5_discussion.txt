@@ -1,0 +1,130 @@
+DESCRIPTION
+
+WIP: time based eviction strategy for repository cache
+
+When Repository.close() decrements the useCount to 0 currently the cache
+immediatly evicts the repository from WindowCache and RepositoryCache.
+This leads to I/O overhead on busy repositories because
+packfiles/references are inserted and deleted from the cache frequently.
+
+This commit defers the eviction of a repo from the caches until last use
+of the repository is older than time to live. The eviction is handled by
+a terminator thread which runs periodically.
+
+TODO: allow configuration of time to live and check interval.
+TODO: tests,...
+
+Change-Id: I4a0214ad8b4a193985dda6a0ade63b70bdb948d7
+Also-by: Douglas Trujillo xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Zachary Orozco
+date: 2016-05-31 16:11:02.000000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-05-31 16:12:39.000000000
+
+Patch Set 5:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/8424/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-05-31 16:22:28.000000000
+
+Patch Set 5: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/8424/ : FAILURE
+
+-------------------------------------
+author: Dillon Cross
+date: 2016-05-31 16:58:29.000000000
+
+Patch Set 5: Code-Review-1
+
+(2 comments)
+
+Line:192, org.eclipse.jgit/src/org/eclipse/jgit/lib/RepositoryCache.java -> static?
+
+Line:196, org.eclipse.jgit/src/org/eclipse/jgit/lib/RepositoryCache.java -> When this condition is true, the current thread will call repo.doClose() at the line 198.
+
+However, if another thread calls RepositoryCache.open(...) for the same repo name before this thread reaches the line 198, it will get the same repo instance which we will doClose at the line 198.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-05-31 22:10:56.000000000
+
+Patch Set 5: -Verified
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/8430/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-05-31 22:20:33.000000000
+
+Patch Set 5: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/8430/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2016-05-31 23:38:15.000000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:196, org.eclipse.jgit/src/org/eclipse/jgit/lib/RepositoryCache.java -> this race condition also exists and already existed earlier in Repository.close()
+
+-------------------------------------
+author: Mitchell Griffith
+date: 2016-06-01 19:03:07.000000000
+
+Patch Set 5:
+
+Can someone rebase this change on top of [1]?. [1] is adding a missing annotation for one test case in RepositoryCacheTest which is now failing because of this change and need to be adjusted for new behaviour.
+
+
+
+[1]https://git.eclipse.org/r/#/c/74301/
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2016-06-01 19:41:25.000000000
+
+Patch Set 6: Patch Set 5 was rebased
+
+-------------------------------------
+author: Mitchell Griffith
+date: 2016-06-02 13:08:21.000000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:196, org.eclipse.jgit/src/org/eclipse/jgit/lib/RepositoryCache.java -> This race condition also exists in Repository.close() but it's handled better.
+
+In Repository.close(), the repo is unregistered form the cache first and then Repository.close method is called. There is still a possibility that another thread get the repo that is getting unregistered and closed but since it uses Repository.close instead of Repository.doClose, the useCnt will be check and repo will not be closed until the second thread close it.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2016-06-02 16:15:00.000000000
+
+Patch Set 5:
+
+(2 comments)
+
+Line:192, org.eclipse.jgit/src/org/eclipse/jgit/lib/RepositoryCache.java -> the method was removed
+
+Line:196, org.eclipse.jgit/src/org/eclipse/jgit/lib/RepositoryCache.java -> Now we are using the same lock as in openRepository(). The race condition should be fixed now.
+
+-------------------------------------

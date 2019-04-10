@@ -1,0 +1,66 @@
+DESCRIPTION
+
+Adds the git attributes computation on the treewalk
+
+Adds the getAttributes feature to the tree walk. The computation of
+attributes needs to be done by the TreeWalk since it needs both a
+WorkingTreeIterator and a DirCacheIterator.
+
+Bug: 342372
+CQ: 9120
+Change-Id: I5e33257fd8c9895869a128bad3fd1e720409d361
+Signed-off-by: Bernard Hawkins xxx@xxx.xxx
+Signed-off-by: Zachary Orozco xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Zachary Orozco
+date: 2015-10-30 14:01:18.000000000
+
+Uploaded patch set 17: Patch Set 16 was rebased.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-10-30 14:42:04.000000000
+
+Patch Set 17:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7351/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-10-30 14:50:09.000000000
+
+Patch Set 17: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7351/ : SUCCESS
+
+-------------------------------------
+author: Nicolas Patterson
+date: 2015-11-02 10:41:53.000000000
+
+Patch Set 17:
+
+(1 comment)
+
+Line:155, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> regarding bug 342372 please allow me some short comments:
+1) I think it could be a try to have all config file related operations attached to the repo in a lazy manner. That way a single tree iteration collects all hierarchy info at once.
+During the call of a GitCommand (subclasses of it) it is discussable if a change of the git repo config should or should not immediately be read from disk. That said, every command makes this new config facility refresh and then freeze.
+2) In order to get checkout files added to the config tree (that is freezed to wild changes) a simple form of the "java7-style-file-WatchService" could be implemented using the (very clever) FS.java abstraction in jgit. If all file operations within jgit would use the repo FS member (and not FileUtils directly) then there could be a IFileChanged listener on FS. The repo config tree could listen on this and update its config tree as needed.
+This is basically influenced by DirCheckout.checkoutEntry.
+3)I am currently testing a variant of this in an improvement to my patch 59345. First tests show a sgnificant performance gain due to the fact that File.exists and File.lastModified is not called anymore for every Repository.getConfig, isIgnored and getAttributes operation. 
+That way the 'git status' command of one of our repo with 30000+ files was reduced from 4.4seconds to 2.5seconds including full eol-handling.
+I will try to come up with a patch proposal asap. May be a basis for further discussions on this.
+
+4) In order to have every git command calling a refresh on the config before call() it is a typical pattern to make the GitCommand.call method final. That way GitCommand.call could first check if it is callable at all (existing logic) and then refresh the config snapshot. After These steps it calls a new abstract protected method callImpl() that is implemented by all subclasses.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-11-18 00:39:55.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

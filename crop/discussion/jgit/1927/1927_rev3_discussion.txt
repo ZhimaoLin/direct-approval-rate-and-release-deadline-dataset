@@ -1,0 +1,94 @@
+DESCRIPTION
+
+Reuse cached SHA-1 when computing from WorkingTreeIterator
+
+Change-Id: I2b2170c29017993d8cb7a1d3c8cd94fb16c7dd02
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-12-08 22:18:48.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Reed Meza
+date: 2010-12-15 11:36:31.000000000
+
+Patch Set 3: (2 inline comments)
+
+Would it make sense to invoke setDirCacheIterator() from within TreeFilter.ANY_DIFF in case it detects that both WorkingTreeIterator and DirCacheIterator are used?
+
+Line:220, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> Maybe the iterator could also be added to the state object once it has been retrieved from the TreeWalk.
+
+Line:645, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> I think this is a place where reusing the cached ID is not expected (what getEntryObjectId does). Maybe a flag is required to force reading from the filesystem.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-12-20 00:00:12.000000000
+
+Patch Set 3: Looks good to me, but someone else must approve; IP review completed
+
+(1 inline comment)
+
+Amazing performance boost in the Commit Dialog and does not seem to break anything. dtrace on Mac looks good too.
+
+Line:645, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> why?
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-12-20 16:34:56.000000000
+
+Patch Set 3: Do not submit
+
+(2 inline comments)
+
+Regarding Philipp's question about ANY_DIFF filter... its too difficult within ANY_DIFF filter to find which tree of the N trees is the WorkingTreeIterator and which is the DirCacheIterator... and if they are even related.  They might not be.  Its a valid use case for TreeWalk to compare two working directories to each other by just adding two WorkingTreeIterators to the same TreeWalk.  An application might give us 4 iterators (2 WorkingTreeIterators, 2 DirCacheIterators) and expect us to find the differences, even if they aren't related to each other in any way.
+
+The only sane solution is to have the application configure things for us when they use TreeWalk.  Either by using IndexDiffFilter, and/or by using this new setDirCacheIterator API to let us know which other iterator of the same TreeWalk is associated with the FileTreeIterator.
+
+Line:220, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> Adding the iterator to the state object isn't worthwhile.  The state object is shared across all levels of the directory structure, while the iterator changes with each enter/exit of a subdirectory.  Thus holding onto the per-directory iterator within the shared state isn't useful.
+
+Besides, state.walk.getTree(state.dirCacheTree) isn't actually that expensive.  Aside from the field references above (which should JIT out pretty easily since they are package visible fields) the getTree() method is just an array access, two field accesses, and a reference compare.  Its not that expensive.
+
+Line:645, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> I think Philipp is right.  We have a problem here.  This method is called from isModified() when a content compare is needed because the file entry is stat dirty.  But its recursing back into isModified() via getEntryObjectId().
+
+A quick scan of the code suggests we may infinite loop here until we blow the stack due to too many levels of recursion.  Even if we address the issue of avoiding the infinite recursion, once we are here we kind of know we need to scan the working tree file and should avoid the DirCacheEntry.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-12-26 15:58:20.000000000
+
+Patch Set 3:
+
+This relates to https://bugs.eclipse.org/331273
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-12-31 15:36:31.000000000
+
+Patch Set 3: (1 inline comment)
+
+
+
+Line:645, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> One source of the problem is that WorkingTreeIterator.isModified() is 
+doing much. Why should we ever want a content comparison in the idBuffer() method? If we detect by metadata comparison that we cannot reuse the index-entry id we want to simply compute the content-id() on the file-content (and don't compare it with the content of the index entry).
+I suggest that we introduce a new comparison method on WorkingTreeIterator which compares only the metadata of the entry and a index entry. That method will be reused in the isModified() method and will be called from idBuffer(). 
+
+All this will remove the infinite recursion problem. I'll post such a proposal and rebase this change on it.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2011-02-03 23:05:31.000000000
+
+Change cannot be merged due to unsatisfiable dependencies.
+
+The following dependency errors were found:
+
+* Depends on patch set 2 of I4de7501d, however the current patch set is 4.
+
+Please rebase the change and upload a replacement commit.
+
+-------------------------------------

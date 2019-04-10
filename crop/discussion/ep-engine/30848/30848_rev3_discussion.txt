@@ -1,0 +1,95 @@
+DESCRIPTION
+
+MB-9484: Allow upr to schedule backfills and send mutations/deleted
+
+Change-Id: I1c8edf8f809626a56ff648c83799253c81a5410a
+
+
+COMMENTS
+
+author: Kenny Maynard
+date: 2013-12-09 23:26:53.272000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2013-12-09 23:29:43.434000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:153, src/upr-response.h -> This is something that we need to deal with better. Since we have to pass an item back to the memcached front end we end up freeing this at a later time. So if we do the free here then this causes a crash. If we don't free this then we raise the potential fro a memory leak. I would like to change the way the front end handles this if possible and therefore would like to address this in another commit. Any memory leak that may be present would only exist in the upr code and therefore would not affect others working on the master branch.
+
+-------------------------------------
+author: Abby Duran
+date: 2013-12-10 02:04:47.099000000
+
+Patch Set 3: Code-Review-1
+
+(6 comments)
+
+Line:1621, src/tapconnection.h -> RCPtr<VBucket> &vb
+
+Line:1845, src/tapconnection.cc -> *rollback_seqno = 0;
+
+Line:1854, src/tapconnection.cc -> What is meant by start_seqno == end_seqno? Does it mean that  we don't need to send any items to the destination? If so, we don't need to schedule the backfill.
+
+Line:1928, src/tapconnection.cc -> If skip is true, we should then pop the front item. Otherwise, this will loop forever.
+
+Line:1946, src/tapconnection.cc -> If byseqno > the end seq_no, shouldn't we skip that item and return true to the caller?
+
+Line:1979, src/tapconnection.cc -> let's allow the stale read by not grabbing the lock.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2013-12-10 02:59:50.497000000
+
+Patch Set 3:
+
+(6 comments)
+
+Line:1621, src/tapconnection.h -> Done
+
+Line:1845, src/tapconnection.cc -> Done
+
+Line:1854, src/tapconnection.cc -> I move this above the backfill and it's meant to just end the stream immediately if there are no items to send.
+
+Line:1928, src/tapconnection.cc -> Done
+
+Line:1946, src/tapconnection.cc -> Yes we should
+
+Line:1979, src/tapconnection.cc -> Done
+
+-------------------------------------
+author: Abby Duran
+date: 2013-12-10 03:27:47.739000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:153, src/upr-response.h -> Well, as long as we make sure that the UPR modules invokes the release(...) API implemented by ep-engine, it should be okay. Currently, the memcached invokes release(...) for all operations that ask the ep-engine to create and pass Item instance to them, after sending the item to the destination.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2013-12-10 03:33:45.847000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:153, src/upr-response.h -> The release api is currently called in memcached.
+
+-------------------------------------
+author: Abby Duran
+date: 2013-12-10 03:47:45.891000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:153, src/upr-response.h -> Yes, that's true. I know that's not a good way of managing an object cycle, but it has been working in that way including the TAP. We can enhance it later, but as long as we don't see the memory leak in the current approach, it should be okay at this time.
+
+-------------------------------------

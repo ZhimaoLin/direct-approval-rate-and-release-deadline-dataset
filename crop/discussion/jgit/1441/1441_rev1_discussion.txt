@@ -1,0 +1,62 @@
+DESCRIPTION
+
+Buffer very large delta streams to reduce explosion of CPU work
+
+Large delta streams are unpacked incrementally, but because a delta
+can seek to a random position in the base to perform a copy we may
+need to inflate the base repeatedly just to complete one delta.
+So work around it by copying the base to a temporary file, and then
+we can read from that temporary file using random seeks instead.
+Its far more efficient because we now only need to inflate the
+base once.
+
+This is still really ugly because we have to dump to a temporary
+file, but at least the code can successfully process a large
+file without throwing OutOfMemoryError.  If speed is an
+issue, the user will need to increase the JVM heap and ensure
+core.streamFileThreshold is set to a higher value, so we don't use
+this code path as often.
+
+Unfortunately we lose the "optimization" of skipping over portions
+of a delta base that we don't actually need in the final result.
+This is going to cause us to inflate and write to disk useless
+regions that were deleted and do not appear in the final result.
+We could later improve on our code by trying to flatten delta
+instruction streams before we touch the bottom base object, and
+then only store the portions of the base we really need for the
+final result and that appear out-of-order.  Since that is some
+pretty complex code I'm punting on it for now and just doing this
+simple whole-object buffering.
+
+Because the process umask might be permitting other users to read
+files we create, we put the temporary buffers into $GIT_DIR/objects.
+We can reasonably assume that if a reader can read our temporary
+buffer file in that directory, they can also read the base pack
+file we are pulling it from and therefore its not a security breach
+to expose the inflated content in a file.  This requires a reader
+to have write access to the repository, but only if the file is
+really big.  I'd rather err on the side of caution here and refuse
+to read a very big file into /tmp than to possibly expose a secured
+content because the Java 5 JVM won't let us create a protected
+temporary file that only the current user can access.
+
+Change-Id: I66fb80b08cbcaf0f65f2db0462c546a495a160dd
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-08-29 00:31:24.000000000
+
+Patch Set 1: Looks good to me, approved; IP review completed
+
+
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-08-29 00:31:25.000000000
+
+Change has been successfully merged into the git repository.
+
+-------------------------------------

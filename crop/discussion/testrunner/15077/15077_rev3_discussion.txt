@@ -1,0 +1,174 @@
+DESCRIPTION
+
+Added three checkpoint test cases
+
+This commit adds test cases that test to see if a checkpoint is
+properly created after inserting a certain number of items, to
+see if a new checkpoint is created after a checkpoint timeout,
+and to make sure that checkpoint deduplication is properly working.
+
+This commit also includes a new stats helper file and the
+configuration file for running checkpoint tests.
+
+Change-Id: I4122356e668b0a22ad236c98b36b297b41bccc6f
+
+
+COMMENTS
+
+author: Kenny Maynard
+date: 2012-04-21 00:14:50.449000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Ayden Rivas
+date: 2012-04-21 00:58:36.598000000
+
+Patch Set 3: (1 inline comment)
+
+
+
+Line:145, pytests/checkpoint.py -> Here is some code I have used to handle multinode/vbucketaware connections.
+
+def set_aware(awareness, rest, key, exp, flags, val):
+    timeout = 60 + time.time()
+    passed = False
+    while time.time() < timeout and not passed:
+        try:
+            awareness.memcached(key).set(key, exp, flags, value)
+            passed = True
+        except mc_bin_client.MemcachedError as e:
+            if e.status == 7:
+                awareness.reset_vbucket(rest, key)
+            else:
+                raise e
+        except exceptions.EOFError:
+            awareness.reset(rest)
+        except socket.error:
+            awareness.reset(rest)
+    if not passed:
+        raise Exception("failed set after 60 seconds")
+
+
+
+rest = RestConnection(config.master)
+awareness = VBucketAwareMemcached(rest, config.bucket)
+set_aware(awareness, rest, "key", 0, 0, "value")
+
+-------------------------------------
+author: Zackery Barr
+date: 2012-04-21 02:32:07.643000000
+
+Patch Set 3:
+
+looked at statstool and conf file and looks good but i want to take a closer look at the test case implementation and see if there is anything else we can parametrize in addition to replica count
+
+-------------------------------------
+author: Reid Stokes
+date: 2012-04-21 09:05:29.541000000
+
+Patch Set 3: (2 inline comments)
+
+
+
+Line:28, pytests/checkpoint.py -> I would prefer using
+self.input  = TestInputSingleton.input 
+
+and then using self.input everywhere.. small change
+
+Line:46, pytests/checkpoint.py -> teardown should also have stop.rebalance...
+
+-------------------------------------
+author: Reid Stokes
+date: 2012-04-21 09:07:18.646000000
+
+Patch Set 3: (1 inline comment)
+
+
+
+Line:132, pytests/checkpoint.py -> can we param this variable as well... 
+tap_throttle_queue_cap... would be easy to play around with different values of it.
+
+-------------------------------------
+author: Zackery Barr
+date: 2012-04-23 17:08:07.032000000
+
+Patch Set 3: (4 inline comments)
+
+
+
+Line:54, pytests/checkpoint.py -> let's not hardcode the port number for the bucket.
+
+I will have to sync up with you and Karan to make sure bucket-size is also not hardcoded here and is calculated differently if the test is run against  cluster_run or rpm package
+
+Line:56, pytests/checkpoint.py -> set_checkpoint_size and _timout should loop through all nodes in the cluster.
+
+Line:66, pytests/checkpoint.py -> instead of 60 seconds we can have a timeout based on num_of_items ( num_of_items * 0.001 )
+
+Line:110, pytests/checkpoint.py -> is it possible to parametrize num_of_items ?
+
+-------------------------------------
+author: Kenny Maynard
+date: 2012-04-23 18:09:29.000000000
+
+Patch Set 3: (8 inline comments)
+
+
+
+-------------------------------------
+author: Kenny Maynard
+date: 2012-04-23 18:09:28.906000000
+
+MISMATCHED INLINE COMMENT
+Line:28, pytests/checkpoint.py -> Done
+
+-------------------------------------
+author: Kenny Maynard
+date: 2012-04-23 18:09:28.906000000
+
+MISMATCHED INLINE COMMENT
+Line:46, pytests/checkpoint.py -> Done
+
+-------------------------------------
+author: Kenny Maynard
+date: 2012-04-23 18:09:28.906000000
+
+MISMATCHED INLINE COMMENT
+Line:54, pytests/checkpoint.py -> The bucket quota is always 2/3 the size of the available memory. As for the port number I guess I could see where moxi starts and increment from there.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2012-04-23 18:09:28.906000000
+
+MISMATCHED INLINE COMMENT
+Line:56, pytests/checkpoint.py -> Done
+
+-------------------------------------
+author: Kenny Maynard
+date: 2012-04-23 18:09:28.906000000
+
+MISMATCHED INLINE COMMENT
+Line:66, pytests/checkpoint.py -> Done
+
+-------------------------------------
+author: Kenny Maynard
+date: 2012-04-23 18:09:28.906000000
+
+MISMATCHED INLINE COMMENT
+Line:110, pytests/checkpoint.py -> Why do you want to and would it really be that valuable? If I did, then I would have to parameterize 3 of the values.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2012-04-23 18:09:28.906000000
+
+MISMATCHED INLINE COMMENT
+Line:132, pytests/checkpoint.py -> I am curious under which use case you would play around with this value in checkpoint tests.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2012-04-23 18:09:28.906000000
+
+MISMATCHED INLINE COMMENT
+Line:145, pytests/checkpoint.py -> I actually don't want to use a vbucket aware client here. The reason is that I want to have direct access to each vbucket. Imagine if we ran this test with 2 vbuckets. With a non-vbucket aware client I can send items to both vbuckets and know exactly how many I sent.
+
+-------------------------------------

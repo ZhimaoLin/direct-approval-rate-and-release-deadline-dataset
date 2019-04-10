@@ -1,0 +1,101 @@
+DESCRIPTION
+
+CBQE-4159 : Add Plasma Slice api tests
+
+There are 2 kinds of tests here:
+1) Randomized testing for Go using go-fuzz
+   Files corresponding to that are smat_generate_test.go, main.go , crash_test.go and README-smat.md
+   smat_generate_test.go - It is used to generate initial fuzz corpus
+   main.go - It is used to build go-fuzz test program with instrumentation
+   crash_test.go - It is used to reproduce the crash with additional logging of the state machine turned on.
+   README-smat.md - README file which lists the steps for fuzzing
+2) Plasma Slice API testing as defined in the Test Case Outline defined @ https://docs.google.com/document/d/1OlRiSniSgU7DwCOphlHk8Xgv-rUkaMNNs_BzdhXSwvc/edit
+   plasma_parallel_test.go - It currently contains the first P0 test which is Concurrency testing of API’s.
+   Testcase steps for Concurrency testing of API’s
+   a) Create a plasma slice
+   b) Generate random data
+   c) start multiple inserts/deletes parallely
+   d) print statistics for logging purposes
+   e) create multiple snapshots
+   f) Do inserts/delete with scans in parallel
+   g) Do a rollback - both rollback slice to a given snapshot and to the initial state
+   h) Close all the snapshots, close and destroy the slices
+   TODO's:
+   a) Accommodate DGM scenario
+   b) Delete older snapshots after some scans and maintain only 2 snapshots at any point in time
+   c) Add Range queries - Generate the range randomly
+   d) Get a md5 hash of the key and value string in random data generator
+   e) Insert data of different sizes from 20 - 200 bytes
+   f) Add support to accept write/delete ratio and doing inserts/deletes accordingly
+   g) Random deletes within a particular range
+
+Change-Id: Ic0849e57d3856d3fc56da860ca684da0eb2a5897
+
+
+COMMENTS
+
+author: Emely Wilson
+date: 2017-05-17 07:22:11.031000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Kinsley Fox
+date: 2017-05-22 06:54:59.159000000
+
+Patch Set 2:
+
+(6 comments)
+
+Line:164, secondary/indexer/plasma_parallel_test.go -> You need to set a vbucketid for mutationMeta.
+Also, if an insert/delete on same docid is performed, we have to ensure that they are performed with mutation meta with same vbucketid.
+
+Internally the slice writer implements per vbucket queue. Mutations for same docid should always go through same queue by-vbid. Otherwise, out-of-order insert/delete issues can happen.
+
+Line:175, secondary/indexer/plasma_parallel_test.go -> We cannot randomly assign mutation meta. You can allocate one mutation meta object per thread and set vbucketid just before insert()/delete() operation. vbucketid can be calculated by doing CRC32(docid) % 1024.
+
+Line:182, secondary/indexer/plasma_parallel_test.go -> By default rand object is seeded with 1. You could seed it once in the init() method. It is a global object and seeding is required only once during program init.
+
+Line:187, secondary/indexer/plasma_parallel_test.go -> If we pick a random number and try to delete, since the range being really wide, it may not hit already inserted numbers. The majority of delete requests could be going to invalid documents. It will be good to verify.
+
+Other good option is to randomly sample and store inserted documents list. And delete subset of those items.
+
+Line:263, secondary/indexer/plasma_parallel_test.go -> Seed only once
+
+Line:340, secondary/indexer/plasma_parallel_test.go -> We may want to do scanAll verification after every rollback operations
+
+-------------------------------------
+author: Kinsley Fox
+date: 2017-05-22 06:55:58.224000000
+
+Patch Set 2:
+
+I think it would be good to move these tests to a separate subdirectory.
+
+-------------------------------------
+author: Justice Schneider
+date: 2017-05-22 06:56:45.966000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:1, secondary/indexer/main.go -> main.go should not be placed in this directory. if the intent of this is to build a test utility, it should go under cmd/smat (or some other name); it does not need to be present in cmakelist.txt however afaik.
+
+-------------------------------------
+author: Emely Wilson
+date: 2017-05-29 09:23:31.506000000
+
+Patch Set 2:
+
+See the new review request: http://review.couchbase.org/#/c/78708/
+
+-------------------------------------
+author: Emely Wilson
+date: 2017-09-22 16:27:21.718000000
+
+Abandoned
+
+See http://review.couchbase.org/#/c/78708/
+
+-------------------------------------

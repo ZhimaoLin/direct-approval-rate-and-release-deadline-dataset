@@ -1,0 +1,97 @@
+DESCRIPTION
+
+Fast timestamp transform
+
+The fast timestamp transform uses standard integer arithmetic to compute the
+the transform, instead of BigDecimal, yet producing monotonic timestamp within
+3ns of the original function.
+
+Test that the fast transform yields about the same results as the original
+function, either forward or backward, and also verify that the cache is
+effectively used.
+
+The benchmark results are:
+
+Transform   | time (ms)
+-----------------------
+original    |     17800
+fast        |       311
+
+This benchmark suggests that the fast transform is about 57 times faster than
+the original transform.
+
+This patch adds a dependency on com.google.common.hash to use hash function
+from guava instead of reinventing the wheel.
+
+Change-Id: Ifdf8e23b3e042bf1f2b0454e64a4ab4c47d408d4
+Signed-off-by: Adonis Kirk xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Adonis Kirk
+date: 2014-08-31 05:11:21.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-08-31 05:11:27.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/8640/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-08-31 05:47:11.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/8640/ : SUCCESS
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2014-09-02 13:59:41.000000000
+
+Patch Set 1: Code-Review-1
+
+(11 comments)
+
+Looks like a great improvement to the original very not performant linear transform. Some comments though. I'll push a new patch with additional unit tests that *I think* may fail.
+
+Also, do you have any idea or the exact condition for which this transform can be used instead of the original? For example, would it work for very large slopes (for instance a transform that transforms seconds to ns)
+
+Line:7, /COMMIT_MSG -> Title should mention which part of linuxtools this change is for and it usually begins with a verb. For example, 
+
+TMF: Introduce a fast linear timestamp transform
+
+Line:125, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/synchronization/TimestampTransformFactory.java -> I wouldn't add this method as API. Using the fast linear transform shouldn't be an option. Once we know and document when and how it should be used (eg. slope withing 1000% of 1), it should silently replace the original linear transform in the create Linear methods above.
+
+In the meantime, unit tests in tmf.core.tests can use the constructor directly since they are friends.
+
+Line:51, lttng/org.eclipse.linuxtools.tmf.core.tests/perf/org/eclipse/linuxtools/tmf/core/tests/perf/synchronization/TimestampTransformBenchmark.java -> See comment in TimestampTransformFactory file. The fast transform should silently replace the original linear transform.
+
+Line:30, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/synchronization/TmfTimestampTransformLinearFast.java -> I'd prefer if it did not extend the TmfTimestampTransformLinear. You override all the most important methods anyway and you depend upon the parent implementation for the rest, parent that hasn't been meant for inheritance (and you have to add the getAlpha()/getBeta() in the parent, methods that I will never like, whether they end up making it in master or not ;-)
+
+There is no added value that I see to inheritance here. You may as well add the BigDecimal alpha and beta as fields.
+
+Line:32, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/synchronization/TmfTimestampTransformLinearFast.java -> Oh yeah, this is serializable... Many fields here should be declared as transient, like all the ones below. You don't need/want them serialized.
+
+Line:40, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/synchronization/TmfTimestampTransformLinearFast.java -> What does this represent. Add a comment on the meaning of this value.
+
+Line:48, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/synchronization/TmfTimestampTransformLinearFast.java -> Why do you take a linear transform as parameter? The original transform is disposable you don't use it at all except to get its alpha and beta. I think you'd rather make constructors with the same parameters as the original linear transform.
+
+Line:66, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/synchronization/TmfTimestampTransformLinearFast.java -> What is the "safe range"? why? and what more or less does "1 << tsBitWidth" represent? How did you define the safe range?
+
+Line:68, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/synchronization/TmfTimestampTransformLinearFast.java -> start = ts ...
+
+I know it's just a +/-3ns difference from original, but this sounds like it might yield different values for a same timestamp depending on what ts you ask for first. I'll add 2 unit tests to this that will either proove the intuition here (and fail) or proove the correctness of your algorithm (and pass).
+
+Line:97, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/synchronization/TmfTimestampTransformLinearFast.java -> Scale miss and scale hits sound more like debug fields. It's an internal class so we can keep them for now, while the transform is under development. But once it is ready to go in production, I think they should be removed. Or maybe sent to a stub transform inheriting from this in the unit tests.
+
+Line:133, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/synchronization/TmfTimestampTransformLinearFast.java -> extra blank line
+
+-------------------------------------

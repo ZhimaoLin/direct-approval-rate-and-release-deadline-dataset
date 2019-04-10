@@ -1,0 +1,117 @@
+DESCRIPTION
+
+MB-16915: Use refcounted pointers on producer/consumer
+
+Prevents a race/crash occuring when the DcpProducer is destroyed
+and there are backfill tasks running/pending.
+
+The test case reveals the probem when run under valgrind as
+a series of invalid reads of freed memory. E.g.
+
+==40673== Thread 17:
+==40673== Invalid read of size 8
+==40673==    at 0x71A3CEE: DCPBackfill::run() (dcp-stream.cc:175)
+==40673==    by 0x717215C: ExecutorThread::run() (executorthread.cc:110)
+==40673==    by 0x7172868: launch_executor_thread (executorthread.cc:34)
+==40673==    by 0x503EC67: platform_thread_wrap (cb_pthreads.c:24)
+==40673==    by 0x524A181: start_thread (pthread_create.c:312)
+==40673==    by 0x555A47C: clone (clone.S:111)
+==40673==  Address 0x64c2380 is 48 bytes inside a block of size 384 free'd
+==40673==    at 0x4C2C2BC: operator delete(void*) (in /usr/lib/valgrind/vgpreload_memcheck-amd64-linux.so)
+==40673==    by 0x718C4ED: DcpConnMap::manageConnections() (atomic.h:430)
+==40673==    by 0x71906A5: ConnManager::run() (connmap.cc:151)
+==40673==    by 0x717215C: ExecutorThread::run() (executorthread.cc:110)
+==40673==    by 0x7172868: launch_executor_thread (executorthread.cc:34)
+==40673==    by 0x503EC67: platform_thread_wrap (cb_pthreads.c:24)
+==40673==    by 0x524A181: start_thread (pthread_create.c:312)
+==40673==    by 0x555A47C: clone (clone.S:111)
+
+Change-Id: I32a7dfd10daa4565b9cbb4c8142ed8f71c13ca31
+
+
+COMMENTS
+
+author: Jim WNathalie Landryer
+date: 2015-11-30 21:30:56.940000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-11-30 21:31:02.733000000
+
+Patch Set 4:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/251/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-11-30 21:45:55.065000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/251/ : SUCCESS
+
+-------------------------------------
+author: Abby Duran
+date: 2015-11-30 23:21:26.565000000
+
+Patch Set 4: Code-Review-1
+
+(3 comments)
+
+Line:32, src/dcp-stream.h -> Please see my comment in connmap.h
+
+Line:35, src/dcp-stream.h -> Please see my comment in connmap.h
+
+Line:44, src/connmap.h -> I'm not sure if we need RCPtr for connection instances. I think SingleThreadedRCPtr would be enough as long as a SingleThreadedRCPtr variable itself is not accessed by more than one thread at any moment. The actual connection instance pointed by SingleThreadedRCPtr will be freed when its atomic reference counter becomes zero. 
+
+On the other hand, RCPtr variable itself is thread-safe and can be accessed by more than one threads concurrently.
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2015-12-01 09:05:11.569000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:44, src/connmap.h -> Safety wins here, we should really just kill off the SingleThreadRCPtr as mistake will happen and we're not seeing SingleThreadRCPtr vs RCPtr as a performance issue.
+
+1) What about if the future changes and other threads are created and now race with the pointer access but we forget to go back and revaluate our use of smart pointers, we're just setting ourselves up for hard problems. 
+
+2) If we just used std::shared_ptr/std::unique_ptr (ok I don't believe all platforms on 3.x can) you never need to be questioning concurrent access, you use the smart pointer and it works, you add threads, it works.
+
+-------------------------------------
+author: Abby Duran
+date: 2015-12-01 17:59:58.861000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:44, src/connmap.h -> Well, I disagree with your comments above. SingleThreadRCPtr consumes less memory than RCPtr and is good enough for this particular case. I don't think we need to overprotect the pointer variables if not required.
+
+std::shared_ptr is also not thread-safe:
+
+http://en.cppreference.com/w/cpp/memory/shared_ptr/atomic
+
+However, I agree that we should depreciate SingleThreadRCPtr and use std::shared_ptr instead for the future releases as we already try to use C+11for the master branch.
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-12-01 19:16:01.510000000
+
+The change could not be merged due to a path conflict.
+
+Please rebase the change locally and upload the rebased commit for review.
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-12-02 00:08:22.763000000
+
+Change has been successfully cherry-picked as 7110b3eb1df48ac446791ea222292858f4019c16
+
+-------------------------------------

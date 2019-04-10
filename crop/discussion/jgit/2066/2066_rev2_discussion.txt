@@ -1,0 +1,74 @@
+DESCRIPTION
+
+Add a performance optimized variant of the ANY_DIFF filter
+
+If a treewalk walks also over index and the workingtree then
+the IndexWorkingTreeDiff filter can be used which works much
+faster then the semantically equivalent ANY_DIFF filter. This
+is because this filter can better avoid computing SHA-1 ids
+over the content of working-tree files which is very costly.
+
+This fix will significantly improve the performance of e.g.
+EGits commit dialog.
+
+Change-Id: I2a51816f4ed9df2900c6307a54cd09f50004266f
+Signed-off-by: Zachary Orozco xxx@xxx.xxx
+Signed-off-by: Reed Meza xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Zachary Orozco
+date: 2010-12-08 15:17:52.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Reed Meza
+date: 2010-12-08 15:23:03.000000000
+
+Patch Set 2: I would prefer that you didn't submit this
+
+(1 inline comment)
+
+Rebased change on Shawn's cleanups. Added unit tests for IndexWorkingTreeDiff filter. One of the tests is failing for reasons we don't understand.
+
+Line:93, org.eclipse.jgit.test/tst/org/eclipse/jgit/treewalk/filter/IndexWorkingTreeDiffTest.java -> TreeWalk returns "folder" two times, whereas "folder/file" is not returned. Is this a bug?
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-12-08 19:48:43.000000000
+
+Patch Set 2: I would prefer that you didn't submit this
+
+(4 inline comments)
+
+I'm going to upload a replacement patch set in a few minutes that addresses my comments.
+
+Line:93, org.eclipse.jgit.test/tst/org/eclipse/jgit/treewalk/filter/IndexWorkingTreeDiffTest.java -> No, this is not a bug.  Its a quirk in the way Git works, and thus in how TreeWalk works.
+
+Above you converted "folder" from a directory into a file.  These names aren't considered equal by TreeWalk (but they are equal by NameConflictTreeWalk rules).  So you should get "folder" twice in a non-recursive TreeWalk... once as a file, and again as a directory.  Then you get the folder/file path within that (now gone) directory.
+
+If you made the TreeWalk recursive (like the test above) you wouldn't get the folder-as-directory result, and you would only see it appear once.
+
+If you made the TreeWalk be a NameConflictTreeWalk instead, then you would get folder only once.
+
+Line:552, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> We shouldn't need this flag.
+
+Line:97, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/filter/IndexWorkingTreeDiff.java -> We need to special case when dirCacheIndex or workingTreeIndex are pointing at a tree.  We always need to recurse into the subtree because the WorkingTreeIterator cannot provide an ObjectId to bypass the subtree on equality alone, and the filter is invoked before the recursive flag of the TreeWalk is considered.
+
+Line:130, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/filter/IndexWorkingTreeDiff.java -> I think we want forceContentCheck to be true here.  This is primarily used only by IndexDiff.  IndexDiff is used only by tools that are trying to create a commit for the user.
+
+If the user modifies a file, and then reverts its content back to what was already committed (or staged) but doesn't revert the last modified time of the file, we shouldn't show the file as modified in IndexDiff just because the timestamp is wrong.  So we should force a content check to ensure this isn't the case.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-12-09 15:44:02.000000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:93, org.eclipse.jgit.test/tst/org/eclipse/jgit/treewalk/filter/IndexWorkingTreeDiffTest.java -> Philipp, I now see why we don't see folder/file here. One thing is as Shawn explained that we'll get folder twice. But another bug is that we have to explicitly call "if (treewalk.isSubtree())  treewalk.enterSubtree()" to dive into subtrees. I'll propose a change for that.
+
+-------------------------------------

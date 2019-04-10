@@ -1,0 +1,156 @@
+DESCRIPTION
+
+MB-16181: Add SystemEventFactory
+
+The SystemEventFactory creates Item objects representing
+the following system events.
+
+- create collection
+- begin delete collection
+
+An Item which represents a SystemEvent will eventually flow through
+checkpoints to the flusher and DCP.
+
+A simple test checks the Item is as expected.
+
+- The operation is system_event.
+- The flags return the detailed event type.
+
+Change-Id: If8bdd92f83428538125ff18344cce71dbacfc2d9
+
+
+COMMENTS
+
+author: Jim WNathalie Landryer
+date: 2017-02-03 16:02:40.678000000
+
+Uploaded patch set 5: Patch Set 4 was rebased.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-02-03 16:02:46.903000000
+
+Patch Set 5:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/3373/ (4/4)
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-02-03 16:28:37.630000000
+
+Patch Set 5: Code-Review-1
+
+(4 comments)
+
+Line:38, src/systemevent.cc -> should this be DeleteEventKey?
+
+Line:43, src/systemevent.cc -> Did you add the std:: prefix? - might have picked up the old one we had in our namespace.
+
+Line:29, src/collections/collections_types.h -> Just curious - what's the rationale behind the single-colon on the end here - would it be more consistent to use double-colon?
+
+Line:24, src/systemevent.h -> Given you're specifying the storage type, any reason to not use uint8_t ?
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-02-03 16:34:09.824000000
+
+Patch Set 5: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/3556/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/3373/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/2197/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2978/ : SUCCESS
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2017-02-03 16:40:05.050000000
+
+Patch Set 5:
+
+(5 comments)
+
+Line:38, src/systemevent.cc -> At the moment, BeginDeleteCollection is a delete of CreateCollection, so must have the same key.
+
+Line:43, src/systemevent.cc -> will try
+
+Line:29, src/collections/collections_types.h -> no real reason, can be anything I guess
+
+Line:24, src/systemevent.h -> Ah upstream they are stored in flags of an Item, so i guess i could drop the size specifics from this patch and move that to the one it makes more sense in, but that's the reason for uint32 as flags is a uint32
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-02-03 16:55:34.444000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:38, src/systemevent.cc -> Ah, so we also need some context (Mutation vs Deletion)? to distinguish between them?
+
+Should we use something like the isDeleted() flag?
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2017-02-03 17:00:17.278000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:43, src/systemevent.cc -> Nope, just says it can't match against std::make_unique
+
+/Users/Shayna PopewNathalie Landryer/Code/Piper Jefferson/source/ep-engine/src/systemevent.cc:50:15: error: no matching function for call to 'make_unique'
+    auto i =  std::make_unique<Item>({key, DocNamespace::System},
+              ^~~~~~~~~~~~~~~~~~~~~~
+/Users/Shayna PopewNathalie Landryer/Code/Piper Jefferson/source/platform/include/platform/make_unique.h:49:1: note: candidate function template not viable: requires single argument '__n', but 5 arguments were provided
+make_unique(size_t __n)
+^
+/Users/Shayna PopewNathalie Landryer/Code/Piper Jefferson/source/platform/include/platform/make_unique.h:41:1: note: candidate function not viable: requires 0 arguments, but 5 were provided
+make_unique(_Args&&... __args)
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-02-03 17:07:01.857000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:43, src/systemevent.cc -> Might be because of the braced-initialised DocKey - try making the type of that explicit - something like:
+
+ make_unique<item>(DocKey{key, DocNamespace::System}, ...);
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2017-02-03 17:35:20.540000000
+
+Patch Set 5:
+
+(2 comments)
+
+Line:38, src/systemevent.cc -> isDeleted is based on the operation type, i've a later patch which relies on these Items being distinguished as system events.
+
+I did at one point have system_event and del_system_event
+
+Line:43, src/systemevent.cc -> same :/  will try without any constructor argument defaults, which this Item constructor has in spades
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2017-02-03 18:23:05.898000000
+
+MISMATCHED INLINE COMMENT
+Line:43, src/systemevent.cc -> fixed - when i tried without the brace initialise i forgot <Item> on make_unique
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-02-06 12:08:51.657000000
+
+MISMATCHED INLINE COMMENT
+Line:24, src/systemevent.h -> Makes sense - but I think it's worth adding a comment here explaining the reason for the uint32_t to assist the future reader.
+
+-------------------------------------

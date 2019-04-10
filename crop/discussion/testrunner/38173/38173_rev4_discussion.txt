@@ -1,0 +1,144 @@
+DESCRIPTION
+
+CBQE-0: updated _wait_flusher_empty and _verify_item_count to have master node as argument. Received below error caused no verification on cluster:
+
+[2014-06-12 00:12:38,705] - [xdcrbasetests:570] WARNING - No bucket(s) found on the server ip:10.1.3.97 port:8091 ssh_username:root
+
+Change-Id: I637279081527ef963f16b52d8e700f6826de1aec
+
+
+COMMENTS
+
+author: Fisher Vargas
+date: 2014-06-12 07:45:01.767000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2014-06-12 07:45:06.532000000
+
+Patch Set 4:
+
+Build Started http://factory.couchbase.com/job/testrunner-Jasmin Rangel-master/1715/
+
+-------------------------------------
+author: Fisher Vargas
+date: 2014-06-12 07:47:46.159000000
+
+Patch Set 4:
+
+https://friendpaste.com/5FeE56zLdWZ612y3rSn60x
+
+Line 376, 400.
+
+-------------------------------------
+author: Fisher Vargas
+date: 2014-06-12 09:22:38.407000000
+
+Patch Set 4: Verified+1
+
+-------------------------------------
+author: Esperanza Cherry
+date: 2014-06-12 09:48:25.710000000
+
+Patch Set 4: Code-Review-1
+
+(1 comment)
+
+Line:1266, pytests/xdcr/xdcrbasetests.py -> I got the problem but I do not agree with the changes.
+for example with this case.
+
+you pass 2 params in the method: self.src_master, self.src_nodes. 
+okay, you found buckets on self.src_master but then you wait any condition on all self.src_nodes and with all buckets. so, if 
+self.src_nodes[0] doesn't contain any buckets then test failed on self.cluster.async_wait_...... 
+
+I think it does not solve anything. I think we need to look for the reason that we are passing in a specific test
+
+-------------------------------------
+author: Fisher Vargas
+date: 2014-06-12 09:54:21.737000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:1266, pytests/xdcr/xdcrbasetests.py -> Please check the function _get_cluster_buckets(). 
+
+It is not changed to pass any specific test though. :). 
+
+Previous code was written on the assumption that first node on the list will always a master node (Though Python don't claim the sequence to remain same after any operation in the list) and passed in the function _get_cluster_buckets() to get the buckets on the cluster. But _get_cluster_buckets() function only works on the master node id, and return nothing.
+
+_get_cluster_buckets() don't read the buckets from the cluster, it is the local function to the test to keep track of buckets.
+
+-------------------------------------
+author: Esperanza Cherry
+date: 2014-06-12 10:13:39.419000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:1266, pytests/xdcr/xdcrbasetests.py -> Okay, I see
+
+order not to complicate the parameters in the methods, does it make sense to pass only master  and get all others servers through get_servers_in_cluster?
+
+-------------------------------------
+author: Fisher Vargas
+date: 2014-06-12 10:18:21.235000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:1266, pytests/xdcr/xdcrbasetests.py -> I think, previously (before me) it was decided to minimize the REST calls to fasten up the things, thats why test is maintaining src_nodes and dest_nodes separately in the tests.
+
+There was idea to create function eg..
+
+__get_cluster_nodes(self, master):
+    if master == self.src_master:
+           return self.src_nodes
+    elif master == self.dest_master:
+           return self.dest_nodes
+    else:
+          raise
+
+But due to visibility of data members (all public), it is difficult to keep track of changes.
+
+-------------------------------------
+author: Esperanza Cherry
+date: 2014-06-12 11:57:35.322000000
+
+Patch Set 4: -Code-Review
+
+(1 comment)
+
+Line:1266, pytests/xdcr/xdcrbasetests.py -> but in get_servers_in_cluster we request only ones RestConnection. I think "minimize the REST calls" wrong approach, because on a real cluster can be a bunch of connections. we have to think about the extra timeouts or extra calls/connections.( for example https://github.com/couchbase/testrunner/commit/803deb272219f6f33e4e988fee4f2b6a3be2bc07#diff-ae437b6f493bd46ba55ee71a41f9292aR954 , for bucket in self.buckets:
+ +            for server in servers:
+ +                 rest = RestConnection(server)
+
+it could be 
+
+for server in servers:
+ +                 rest = RestConnection(server)
+                    for bucket in self.buckets:
+
+-------------------------------------
+author: Fisher Vargas
+date: 2014-06-12 15:23:59.772000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:1266, pytests/xdcr/xdcrbasetests.py -> There needs to guidelines to be fix before doing such major changes. Can you please request to create such guidelines, there are many such codes like this everywhere.
+
+This change the fix of an issue not a design change.
+
+-------------------------------------
+author: Fisher Vargas
+date: 2014-06-13 07:34:45.771000000
+
+Patch Set 5: Patch Set 4 was rebased
+
+-------------------------------------

@@ -1,0 +1,116 @@
+DESCRIPTION
+
+Fix typo in pytests/viewquerytests.py
+
+decending => descending
+
+Change-Id: I0dc5b33812b6c3e2a528b72137670ff545cdeb21
+
+
+COMMENTS
+
+author: Titus Ho
+date: 2012-02-16 19:22:11.606000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Titus Ho
+date: 2012-02-16 19:23:57.031000000
+
+Patch Set 2: Verified
+
+Thanks for catching this Filipe...I've cherry-picked your change and patched with the necessary fix for descending to work as expected for the int dataset.
+
+-------------------------------------
+author: Porter Oconnor
+date: 2012-02-16 20:50:58.782000000
+
+Patch Set 2: Verified
+
+Looks good to me, however the test:
+
+viewquerytests.ViewQueryTests.test_simple_dataset_startkey_endkey_docid_queries
+
+still fails for me:
+
+2012-02-16 20:36:26,314 - root - INFO - index query url: http://127.0.0.1:9000/couchBase/default/_design/dev_test_view-857334f/_view/dev_test_view-857334f?debug=true&start_key=5000&connection_timeout=60000&startkey_docid="857334f-5100"&full_set=true
+2012-02-16 20:36:26,473 - root - INFO - view returned in 0.159285068512 seconds
+2012-02-16 20:36:26,473 - root - INFO - was able to get view results after trying 1 times
+2012-02-16 20:36:26,480 - root - INFO - key_set has 5000 elements
+2012-02-16 20:36:26,480 - root - INFO - retrieved 5000 keys expected: 4900
+2012-02-16 20:36:26,480 - root - INFO - trying again in 15 seconds
+
+Querying the entire view:
+
+http://friendpaste.com/7d14ghi7fY78P84EmOTOQH
+
+Querying with the parameters below:
+
+http://friendpaste.com/5EK0d0zqoilMQsfD6C2rUz
+
+The query returns 5000, which seems correct to me (contronted against _all_docs?include_docs=true as well). The test expects 4900, I don't know why.
+What was the reasoning?
+
+Btw, startkey_docid is not worth for this dataset, since each key is only emitted by 1 document (should have 2 or more different documents emitting the same key, this is where startkey_docid makes a difference).
+
+-------------------------------------
+author: Titus Ho
+date: 2012-02-16 20:57:07.880000000
+
+Patch Set 2:
+
+>The query returns 5000, which seems correct to me (contronted against >_all_docs?include_docs=true as well). The test expects 4900, I don't know >why. What was the reasoning?
+
+In this test I've set start_key to 5000, and with 10,000 docs I'm expecting 5000 docs back.  But I've also set startkey_docid to 5100, which is why I'm expecting 4900 because all keys are unique and I know beforehand how the id's are numbered that this will be 100 docs after the 5000 doc id.
+
+It will get more interesting for employee dataset, but I assumed this was how startkey_docid would work with or without dupe keys being emitted.  Clarification appreciated, thanks!
+
+-------------------------------------
+author: Porter Oconnor
+date: 2012-02-16 21:15:53.094000000
+
+Patch Set 2:
+
+Tommie, startkey_docid doesn't work like you think it does. It only has effect when you have multiple rows with the same key.
+
+Lets's say your full view is:
+
+{"id":"doc0","key":123,"value":null},
+{"id":"doc1","key":1000,"value":null},
+{"id":"doc2","key":1000,"value":null},
+{"id":"doc3","key":3333,"value":null}
+
+If you query with startkey=1000 you'll get:
+
+{"id":"doc1","key":1000,"value":null},
+{"id":"doc2","key":1000,"value":null},
+{"id":"doc3","key":3333,"value":null}
+
+If you query with startkey=1000 and startkey_docid="doc2" you'll get:
+
+{"id":"doc2","key":1000,"value":null},
+{"id":"doc3","key":3333,"value":null}
+
+Notice this example as well:
+http://friendpaste.com/1rk8l294v2mBUYxNw0aIWX
+
+Particularly look at last query result. You skip all rows with key 2, you don't jump to the first row emitted by doc_000005.
+
+Does it make more sense now? :)
+
+-------------------------------------
+author: Titus Ho
+date: 2012-02-16 21:30:09.622000000
+
+Patch Set 2: Looks good to me, approved
+
+Got it
+
+-------------------------------------
+author: Titus Ho
+date: 2012-02-16 21:30:18.880000000
+
+Change has been successfully cherry-picked as 71ec0bbbbdf91917bc3561c090ea9d1857da31f5.
+
+-------------------------------------

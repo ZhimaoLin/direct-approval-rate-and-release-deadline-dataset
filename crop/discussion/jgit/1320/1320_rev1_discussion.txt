@@ -1,0 +1,167 @@
+DESCRIPTION
+
+Implemented shallow clones
+
+This implements the server side of shallow clones only (i.e. git-upload-pack),
+not the client side.
+
+
+COMMENTS
+
+author: Malia Sampson
+date: 2010-08-17 16:45:46.000000000
+
+Patch Set 1:
+
+This will most likely need a CQ once ready Shawn. Let me know when it's in a good state and I can take care of the CQ process.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-08-19 02:16:03.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(25 inline comments)
+
+Great start.  Tons of comments inline.
+
+Line:182, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> Style-nit: We don't initialize to 0/null/false because the JVM does that implicitly for you.
+
+Line:361, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> Style-nit: We don't use unnecessary curly braces.
+
+Line:371, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> Style-nit: Line is too long, we prefer lines to be <80 characters given a tab stop setting of 4.
+
+Also for performance reasons please try to use the same ObjectReader that the walk member is using.  There may be caching involved that would improve the shallow computation here.  Yes, sorry, that does mean you need that other constructor in your DepthWalk.RevWalk class.
+
+Line:375, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> Style-nit: Avoid the local variable here so we can have a shorter loop:
+
+  for (RevCommit want : wantCommits)
+    depthWalk.markStart(depthWalk.parseCommit(want));
+
+Line:387, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> This will never be true, because you are doing reference equality on two temporarily allocated strings.
+
+Instead you need to say c.equals(o).  But that only works on current master.  So rebase this patch to pick up that fix.  But that point you can simplify the loop:
+
+  if (!remoteShallowCommits.contains(o))
+    packOut.writeString("shallow " + o.name());
+
+Line:437, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> Style-nit: I don't really see a good reason to throw a blank line here.  If anywhere it would make more sense to put it after the new advertiseCapability(OPTION_SHALLOW) above given how big that capability set is.
+
+Line:665, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> Style-nit: Space between if and (.  Also like above, we don't use curly braces on simple conditionals like this one.
+
+Line:666, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> IIRC the shallow protocol still does common ancestor negotiation because its useful to limit what we send.  So we should still pass commonBase through to the PackWriter.
+
+In particular the client is very likely to have our current refs, and the objects reachable from those.  If they haven't changed at the boundary, we don't want to resend those blobs.  The only way to avoid that is to pass through commonBase, as those should be part of the commonBase due to the standard have exchange above.
+
+Line:55, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DepthGenerator.java -> This class shouldn't be public.
+
+Line:58, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DepthGenerator.java -> Don't bother with this as a field.  pending.outputType() is fast enough for your own outputType method.
+
+Line:72, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DepthGenerator.java -> This constructor shouldn't be public.
+
+Also, style-nit: Line too long/wrapped incorrectly.
+
+Also, this can only be used with a DepthWalk, which has getters for depth and compareMode.  Instead of taking a RevWalk here take a DepthWalk and get the depth and compareMode from it.  You can then downcast the DepthWalk to a RevWalk since a DepthWalk should always be a RevWalk given how your only caller inside of PendingGenerator invokes you.  :-)
+
+Line:82, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DepthGenerator.java -> You can simplify a lot of your setup:
+
+  pending = new FIFORevQueue(s);
+  pending.outputType = 0;
+
+Would replace the shareFreeList() as well as this loop to suck out the current generator.  But we should fix our outputType because it might have been tagged as SORT_COMMIT_TIME_DESC.
+
+Line:99, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DepthGenerator.java -> I would probably implement this the other way around.  Since pending is "this" (well, the backing store) we should do:
+
+  pending.shareFreeList(q);
+
+to mirror the intent of the caller of invoking this.shareFreeList(q).
+
+Its a subtle issue about how we are discarding a potentially large free list from the bottom of the stack by pushing down an empty free list from the top of the stack.  Weird, I know.  But at least mirror the caller's intent.
+
+Line:106, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DepthGenerator.java -> I would just downcast right away:
+
+  final DepthWalk.Commit c = (DepthWalk.Commit)pending.next();
+
+Line:110, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DepthGenerator.java -> This actually parses right away.  If the object is already parsed, you are parsing it all over again.  Yuck.  You should guard this:
+
+  if ((c.flags & PARSED) == 0)
+    c.parseHeaders(walk);
+
+Line:126, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DepthGenerator.java -> Normally we use the SEEN flag to prevent commits from entering pending twice.  You don't do that here.  As far as I can tell, using the depth provides the same effect, but it took me a long time to think about.
+
+Since this deviates from our more typical pattern of relying on a flag to track "have we processed this already", please provide a short proof of why we don't need a flag here to prevent duplicates and stuff it in a comment so future readers don't have to expend as many brain cells I just did over whether or not this works.  (Its easier to verify a proof than it is to derive one on the fly...)
+
+Line:134, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DepthGenerator.java -> Style-nit: Parens aren't necessary here.
+
+Line:144, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DepthGenerator.java -> Style-nit: We don't bother with else continue at the end of a loop.  Just let it occur normally.
+
+Line:974, org.eclipse.jgit/src/org/eclipse/jgit/storage/pack/PackWriter.java -> Really long line, this should be line wrapped, which probably implies you should use {} here due to the statement being longer than one line.
+
+Line:86, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DepthWalk.java -> For insane reasons we often allow package level visibility to these sorts of fields and edit them directly, rather than using getters/setters.  It removes the need for the JIT to try to inline the getter/setter logic, which means we perform better even when the JIT can't inline the getter cross-classes.
+
+Line:100, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DepthWalk.java -> If you do keep the getter, I'm not sure we should endorse the setter as part of our public API yet.  I'd rather keep it package level.  Why would a client need to edit the depth of a commit?
+
+Line:131, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DepthWalk.java -> Style-nit: We always put /** on a line by itself, starting the documentation on the next line.
+
+Line:138, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DepthWalk.java -> Style-nit: We indent wrapped lines another level.
+
+Line:148, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DepthWalk.java -> I think this comment is overkill.  Its sort of implied that we would use our own Commit type.
+
+Line:209, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DepthWalk.java -> Like above I think this comment isn't useful enough to stay.
+
+-------------------------------------
+author: Tobias Gibbs
+date: 2010-08-19 14:40:14.000000000
+
+Patch Set 1: (3 inline comments)
+
+Style comments are all simple enough--I'll submit a new version that has all of that taken care of.
+
+A couple other comments inline.
+
+Line:387, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> Gaah, guess who's been using C++ too much lately... :(
+
+Line:666, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> Yeah, but it's kind of tricky.  Imagine that you already have a shallow clone with a depth of 1, and you want to do a new fetch with depth=2.  You want to avoid the commits that you already have, but then unshallow the old boundary commits and start sending stuff below those again.  I wasn't quite clear on the best way to handle that, so I basically just copped out and sent the whole tree.  
+
+This can probably be solved somehow by adding all of the parents of the client's shallow commits back into the generator as interesting so that they'll be picked up again, but right now the DepthGenerator doesn't do anything with uninteresting commits.  I'm not sure I completely understand the logic that would need to be used for those, especially in conjunction with the depth tagging stuff--can you provide any insight?
+
+Line:126, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DepthGenerator.java -> Alternatively, I can just use the SEEN flag like everything else.  I was pretty sure the depth flagging covers it correctly, but I had to think about it for a long time as well, and I'm still not positive I'm right, so all in all that's probably a sign that it should just be done a simpler way.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-08-19 19:24:52.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:666, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> I think its easier than you think.
+
+When using DepthWalk.ObjectWalk we need some additional state.  The client has already told us its old shallow boundary, and we know the new shallow boundary.  What you want to do is  color every object in the have (aka commonBase / uninterestingObjects) list up to but not including the old shallow boundary with the flag UNINTERESTING.
+
+To do this, we can add a new flag, UNSHALLOW, at the old shallow boundary.  In DepthGenerator as you loop through the parents of a commit do something like this:
+
+  if (c.has(UNSHALLOW))
+    p.add(UNSHALLOW);
+
+  if (c.has(UNINTERESTING)) {
+    if (p.has(UNSHALLOW))
+      c.add(BOUNDARY);
+    else
+      p.add(UNINTERESTING);
+  }
+
+This block replaces the standard walker.carryFlagsImpl logic with something more specific.  We only carry UNINTERESTING up until the edge, and then we cut over to carrying UNSHALLOW instead.
+
+Now we shouldn't output every UNINTERESTING commit, not all of them are relevant.  Instead the produce logic (after deciding depth as that's cheap) is something like:
+
+  if (produce)
+    produce = c.has(UNINTERESTING) ? c.has(BOUNDARY) : false;
+
+Basically what I am doing here is coloring everything up to the boundary as UNINTERESTING, and we don't normally produce that.  But when we find a commit that was UNINTERESTING and has a parent that is UNSHALLOW, that commit is on the boundary edge.  The client has it, the server has it, but the client doesn't have its parents.  This is an excellent point to return the UNINTERESTING commit to PackWriter so it can use these trees and blobs as delta bases for the returned pack.
+
+Above in the carrying logic it may seem odd that we add BOUNDARY to "c" when we are looking at "p", but its the right thing to do.  We can only tag a given commit as BOUNDARY once we discover its parent is at the edge.
+
+To do all of this you need 2 extra flags in your DepthWalk.ObjectWalk.  You can allocate these using newFlag("BOUNDARY"), newFlag("UNSHALLOW").  Unfortunately you also need the unshallow set from UploadPack to be pushed down through here, and the whole thing is getting very specialized to the shallow clone case.  But I think that's OK, this stuff is really only useful for the shallow clone logic.
+
+-------------------------------------

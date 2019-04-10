@@ -1,0 +1,143 @@
+DESCRIPTION
+
+{WIP} Ephemeral: Do DCP backfill from ordered in-memory data structure (list)
+
+This commits implements a class that does backfill from in-memory
+ordered data strucuture (list) and informs the DCP stream of the
+backfill progress.
+
+It calls one synchronous vbucket api to read items in the sequential
+order from the in-memory ordered data strucuture and calls the DCP
+stream for disk snapshot, backfill items and backfill completion.
+
+Change-Id: Ia199602f96e62d44bd3f92fec7f8c9ad26a4dc83
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2017-03-15 01:20:29.890000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-03-15 01:28:06.597000000
+
+Patch Set 2:
+
+Functionally seems correct. Need to verify by adding test cases. Thinking of adding just Vbucket and dcp stream module tests for this commit.
+In the later commits add the DCP functional test for the ephemeral buckets.
+
+Any early comments are welcome on the commit.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-03-15 01:39:52.739000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/3565/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/4751/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/4312/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/4979/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-03-15 10:03:23.143000000
+
+Patch Set 2: Code-Review-1
+
+(12 comments)
+
+General approach looks good - few suggestions
+
+Line:86, src/dcp/backfill.h -> Note: If you do need this, use a reference as it must be non-null.
+
+Also - I'd say it's better to keep this in the derived classes (even if happens that the current implementations both need it), as that creates a cleaner base class which potential future subclasses may not need the engine ptr.
+
+Line:110, src/seqlist.h -> Given my previous comment that we shouldn't call pop_front on each one, and instead delete en-masse, I'm not sure this is necessary now.
+
+I think the ideal approach for processing the items is to hold them in owning pointers inside a container (vector or deque), and then pass them into backfillReceived() as unique_ptr<>. 
+
+This means that backfillReceived() takes ownership of them (handing deleting when necessary), and the container has the pointer moved-from it, replacing the element with a null entry (i.e. the container size doesn't change) - which is very cheap.
+
+Line:38, src/dcp/backfill_memory.cc -> I think it would be preferable/simpler if this object was passed a RCPtr to VBucket, assuming we will always Backfill from the same VBuckst instance.
+
+In other words the lifetime of a DCPBackfill should always be less than a VBucket.
+
+One potential issue which may make this hard is that /if/ a VBucket is deleted then we want to stop/cancel the backfill - and if Backfill held a RCPtr to the underlying VBucket it would continue to operate on that VBucket; unless we did something like check the state of it.
+
+Anyway, have a think and see if this is something we can simplify.
+
+Line:47, src/dcp/backfill_memory.cc -> I would have thought so!
+
+Line:50, src/dcp/backfill_memory.cc -> Use the style as specified in the logging document (https://docs.google.com/document/d/1idd2SwLpjVaIC075Qdz00XNEoKyNRkONzipyD_naogQ/edit#) for vBuckets IDs:
+
+ vb:%d
+
+Line:51, src/dcp/backfill_memory.cc -> I'd suggest the same here for consistency - something like:
+
+ "start seqno:%" PRIi64 ", end seqno:%" PRIi64"
+
+Line:60, src/dcp/backfill_memory.cc -> If we are dynamic casting to ActiveStream (and the stream must always be active), we should just make the the of `stream` be Active.
+
+Line:71, src/dcp/backfill_memory.cc -> Perf: It's better to just iterate across items, adding each to activeStream and then clear the whole thing at the end than having to call pop_front() on every element:
+
+ for (auto& item : items) {
+     activeStream->backfillReceived(item.get(), BACKFILL_FROM_MEMORY);
+ }
+ items.clear(); // Or you should just leave it to go out 
+                // of scope at the end of the method.
+
+Line:489, src/ep_vb.cc -> Probably preferable to not make this a virtual method on VBucket, and instead it only exists on EphemeralVBucket. Make DCPMemoryBackfill take a ptr to an EphemeralVBucket (see earlier comments), and then it'll be statically type-safe.
+
+Line:31, src/dcp/backfill_memory.h -> API
+
+Line:31, src/dcp/backfill_memory.h -> Style: vBucket is preferred :)
+
+Line:32, src/dcp/backfill_memory.h -> structure
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-03-16 01:59:18.504000000
+
+Patch Set 2:
+
+(12 comments)
+
+Line:86, src/dcp/backfill.h -> Keeping it in subclass.
+Converted to ref in a separate previous commit
+
+Line:110, src/seqlist.h -> Ok, using std::unique_ptr instead of SingleThreadedRCPtr for Item*
+
+Line:38, src/dcp/backfill_memory.cc -> It is not easy to get "lifetime of a DCPBackfill should always be less than a VBucket" clearly from what we have. DCPBackfills are in a DCPBackfill Manager and DCPBackfillManager is in a DCPProducer. So they are kind of oblivious to VBucket state changes unless they lock VBucket state or request for it. 
+
+Ideally DCPBackfill and DCPStream should have been in Vbucket and driven (with the APIs provided) from DCPBackfillManager and DCPProducer.
+
+Anyways will pass RCPtr of EphemeralVBucket to DCPBackfill obj and then make a call to check the state
+
+Line:47, src/dcp/backfill_memory.cc -> Not in this commit.. Even today if the disk backfill does not complete we do not close the stream. Will create a ticket for this and do it later
+
+Line:50, src/dcp/backfill_memory.cc -> Done
+
+Line:51, src/dcp/backfill_memory.cc -> Done
+
+Line:60, src/dcp/backfill_memory.cc -> Done in a separate commit preceding this
+
+Line:71, src/dcp/backfill_memory.cc -> Done
+
+Line:489, src/ep_vb.cc -> Done
+
+Line:31, src/dcp/backfill_memory.h -> Done
+
+Line:31, src/dcp/backfill_memory.h -> Done
+
+Line:32, src/dcp/backfill_memory.h -> Done
+
+-------------------------------------

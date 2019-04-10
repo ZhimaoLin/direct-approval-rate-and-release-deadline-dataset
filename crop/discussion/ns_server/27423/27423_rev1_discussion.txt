@@ -1,0 +1,128 @@
+DESCRIPTION
+
+MB-8603: Refactor out capi_indexer
+
+The capi_view and the upcoming capi_spatial share a lot of code,
+hence the refactoring into a module that shares the common
+functionality makes sense.
+
+Change-Id: I1946527d1207b0a9cb27dd5136e9b07fcd8caf87
+
+
+COMMENTS
+
+author: Ayla Reynolds
+date: 2013-07-15 13:46:16.220000000
+
+Patch Set 1:
+
+I have to admit I only verified the last commit of the whole chain. I've run the py-viewmerge.conf, py-view-pre-merge.conf and py-spatialquery.conf tests on a single and 4 nodes.
+
+I think that's enough for verification. If it would have broken something, I would expect it to break badly in an obvious way.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2013-07-16 16:19:17.964000000
+
+Patch Set 1:
+
+cannot approve yet without seeing final code
+
+-------------------------------------
+author: Ayla Reynolds
+date: 2013-07-16 16:31:56.936000000
+
+Patch Set 1:
+
+That's what the new capi_spatial will look like (I hope comments can hold so much text:
+
+-module(capi_spatial_new).
+
+-include("couch_db.hrl").
+-include_lib("couch_index_merger/include/couch_index_merger.hrl").
+
+%% Public API
+-export([handle_view_req/3]).
+
+%% For capi_indexer
+-export([query_index/2, merge_handler/0, set_active_partition/3]).
+
+
+-spec query_index(#index_merge{}, #httpd{}) -> ok.
+query_index(MergeParams, Req) ->
+        couch_index_merger:query_index(spatial_merger, MergeParams, Req).
+
+
+-spec merge_handler() -> binary().
+merge_handler() ->
+    <<"/_spatial_merge">>.
+
+
+-spec set_active_partition(binary(), binary(), non_neg_integer()) -> ok.
+set_active_partition(DDocId, BucketName, VBucket) ->
+    try
+        couch_set_view_dev:set_active_partition(
+            spatial_view, BucketName, DDocId, VBucket)
+    catch
+        throw:{error, view_undefined} ->
+            couch_set_view_dev:define_group(
+                spatial_view, BucketName, DDocId, VBucket)
+    end.
+
+
+handle_view_req(Req, Db, DDoc) when Db#db.filepath =/= undefined ->
+    couch_httpd_view:handle_view_req(Req, Db, DDoc);
+
+handle_view_req(#httpd{method='GET',
+                       path_parts=[_, _, DName, _, ViewName]}=Req,
+                Db, _DDoc) ->
+    capi_indexer:do_handle_view_req(?MODULE, Req, Db#db.name, DName, ViewName);
+
+handle_view_req(#httpd{method='POST',
+                       path_parts=[_, _, DName, _, ViewName]}=Req,
+                Db, _DDoc) ->
+    couch_httpd:validate_ctype(Req, "application/json"),
+    capi_indexer:do_handle_view_req(?MODULE, Req, Db#db.name, DName, ViewName);
+
+handle_view_req(Req, _Db, _DDoc) ->
+    couch_httpd:send_method_not_allowed(Req, "GET,POST,HEAD").
+
+-------------------------------------
+author: Ayla Reynolds
+date: 2013-07-23 21:44:47.138000000
+
+Patch Set 1:
+
+It's been a week since the last review. Any new comments would be welcome :)
+
+-------------------------------------
+author: Nathalie Landry
+date: 2013-07-25 03:25:09.834000000
+
+Patch Set 1:
+
+IMHO callback modules are too similar.
+
+Are you sure we cannot do better? Can we instead not do this oo-style thing at all ?
+
+-------------------------------------
+author: Ayla Reynolds
+date: 2013-07-25 06:29:43.429000000
+
+Patch Set 1:
+
+Those two callback modules are very small. They just have an entry point (handle_view_req/3) and 3 function calls for their specific things. 
+
+Do you prefer to have those 3 calls as case statements? I prefer separating concerns and make it clear what the difference between indexers are.
+
+Pointers on how you like to look like are appreciated.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2013-07-26 07:52:04.377000000
+
+Patch Set 1:
+
+perhaps case. Perhaps something else. But the difference between this two modules is so small and we dont anticipate new indexes so there must be something much simpler and more comprehensible. IMHO
+
+-------------------------------------

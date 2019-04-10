@@ -1,0 +1,139 @@
+DESCRIPTION
+
+DCP traffic added to ep-perfsuite stats tests
+
+A key stat used during rebalance is dcp-vbtakeover.  The execution path
+for this stat differs depending on whether a DCP producer exists.
+
+Therefore in addition to measuring the performance of the stat when sets
+are executing on a separate thread.  A second thread performing DCP work
+is created, ensuring that all the main code paths for the stat are measured.
+
+The new tests highlighted the following data race:
+
+07:01:46 WARNING: ThreadSanitizer: data race (pid=32553)
+07:01:46   Write of size 8 at 0x7d14000010a8 by thread T11 (mutexes: write M12564):
+07:01:46     #0 operator delete(void*) <null> (engine_testapp+0x000000464cbb)
+07:01:46     #1 <null> <null> (libstdc++.so.6+0x0000000c1ac7)
+07:01:46     #2 ExecutorThread::run() /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/executorthread.cc:127 (ep.so+0x0000000f7ff5)
+07:01:46     #3 launch_executor_thread(void*) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/executorthread.cc:32 (ep.so+0x0000000f78a5)
+07:01:46     #4 CouchbaseThread::run() /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/platform/src/cb_pthreads.cc:58 (libplatform_so.so.0.1.0+0x000000007b91)
+07:01:46     #5 platform_thread_wrap(void*) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/platform/src/cb_pthreads.cc:71 (libplatform_so.so.0.1.0+0x000000005e92)
+07:01:46
+07:01:46   Previous read of size 8 at 0x7d14000010a8 by main thread (mutexes: write M41586, write M47051):
+07:01:46     #0 strlen <null> (engine_testapp+0x0000004652af)
+07:01:46     #1 showJobLog(char const*, char const*, std::vector<TaskLogEntry, std::allocator<TaskLogEntry> > const&, void const*, void (*)(char const*, unsigned short, char const*, unsigned int, void const*)) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/statwriter.h:39 (ep.so+0x0000000f346b)
+07:01:46     #2 ExecutorPool::doWorkerStat(EventuallyPersistentEngine*, void const*, void (*)(char const*, unsigned short, char const*, unsigned int, void const*)) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/executorpool.cc:801 (ep.so+0x0000000f2ce2)
+07:01:46     #3 EventuallyPersistentEngine::getStats(void const*, char const*, int, void (*)(char const*, unsigned short, char const*, unsigned int, void const*)) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/ep_engine.cc:4383 (ep.so+0x0000000c30bf)
+
+To address this data race a missing LockHolder is added to ExecutorPool::doWorkerStat
+
+Change-Id: I891acc2cea7986963edba21c60a6546006ae0b39
+
+
+COMMENTS
+
+author: Kymani Ramirez
+date: 2016-11-22 10:20:49.012000000
+
+Uploaded patch set 11.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-22 10:20:55.984000000
+
+Patch Set 11:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1501/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-22 10:20:56.128000000
+
+Patch Set 11:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/661/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-22 10:20:56.342000000
+
+Patch Set 11:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1877/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-22 10:20:56.550000000
+
+Patch Set 11:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1785/ (4/4)
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-11-22 11:05:46.112000000
+
+Patch Set 11: Code-Review-1
+
+(5 comments)
+
+Mostly concerned about the variable amount of work the benchmarks are now doing - and also the bugfix should be in a different patch if we need it for watson.
+
+Line:13, /COMMIT_MSG -> Sentence seems to stop abruptly
+
+Line:33, /COMMIT_MSG -> Please fix this in a separate patch - as I assume we need to backport the fix to watson?
+
+Line:86, tests/ep_perfsuite.cc -> Do you really need explicit values for this? Also - the default underlying type for enum classes is already `int` - it's redundant to specify it.
+
+Line:90, tests/ep_perfsuite.cc -> You can use std::underlying_type<BackgroundWork> to get the type of an enum class.
+
+Line:891, tests/ep_perfsuite.cc -> I'm a bit concerned that this will mean theres's a variable amount of work done between benchmark runs (i.e. the number of DCP messages consumed will vary) - which will make comparisons hard when you change things (as the amount of work may increase).
+
+Can we not just have DCP run for a fixed number of mutations - i.e. up to the sentinel document / or to a fixed high seqno?
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-22 11:08:14.653000000
+
+Patch Set 11: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1877/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/661/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1501/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1785/ : SUCCESS
+
+-------------------------------------
+author: Kymani Ramirez
+date: 2016-11-22 17:56:29.538000000
+
+Patch Set 11:
+
+(5 comments)
+
+Line:13, /COMMIT_MSG -> fixed
+
+Line:33, /COMMIT_MSG -> Done
+
+Line:86, tests/ep_perfsuite.cc -> As discussed as it is being used for bitwize operations - will keep explicit values.  But have also added a comment.
+
+Removed the redundant int specifier.
+
+Line:90, tests/ep_perfsuite.cc -> Done
+
+Line:891, tests/ep_perfsuite.cc -> As discussed the approach is to have a defined number of stat calls and ensure that sets and DCP traffic are always running why stats are being collected.
+
+Will change from running_benchmark atomic to inserting a sentinel document.
+
+-------------------------------------
+author: Tate Garrett
+date: 2017-01-04 15:11:34.187000000
+
+Change has been successfully cherry-picked as bbaba7ad14c37ae2df0ca335b6e5b30cafcbaad0 by Ashlee Kent
+
+-------------------------------------

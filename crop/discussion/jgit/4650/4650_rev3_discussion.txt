@@ -1,0 +1,131 @@
+DESCRIPTION
+
+maxObjectSizeLimit for receive-pack.
+
+ReceivePack (and PackParser) can be configured with the
+maxObjectSizeLimit in order to prevent users from pushing too large
+objects to Git. The limit check is applied to all object types
+although it is most likely that a BLOB will exceed the limit.  In all
+cases the size of the object header is excluded from the object size
+which is checked against the limit as this is the size of which a BLOB
+object would take in the working tree when checked out as a file.
+
+Delta objects (both offset and ref delta) are also checked against the
+limit.
+
+When an object exceeds the maxObjectSizeLimit the receive-pack will
+fail immediately. Therefore, we can only report the SHA1 of this (too
+large) object back to the user. In order to help the user locate the
+path to this object in his local repository we provide a Git command
+for that in the error message.
+
+Change-Id: I177ef24553faacda444ed5895e40ac8925ca0d1e
+Signed-off-by: Dillon Cross xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Dillon Cross
+date: 2011-11-18 16:51:18.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-11-18 16:51:35.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1040/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-11-18 16:54:44.000000000
+
+Patch Set 3: Build Successful
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1040/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-11-18 19:33:37.000000000
+
+Patch Set 3: I would prefer that you didn't submit this
+
+(7 inline comments)
+
+I would prefer these checks to be done earlier rather than later, since this feature is mostly a server protection mechanism, e.g. to prevent users from feeding a server with a 1G memory heap objects that are 1.5G in size.
+
+Line:13, /COMMIT_MSG -> I would argue it is wrong to include the object header as part of the size of the object. Its never included in the size of an object when we talk about the size of an object in Git. So what you have done is correct.
+
+Line:604, org.eclipse.jgit/src/org/eclipse/jgit/transport/PackParser.java -> Take this 2nd argument and pull it into a new temporary byte[]. It is the inflated delta instruction sequence.
+
+Use BinaryDelta to get the size of the result. Test it against the max object limit, if the result is going to be too big, abort before you allocate the result or you apply the delta command sequence.
+
+After you get visit.data created by apply(), null out that temporary byte[] so its garbage and can be reclaimed.
+
+Line:899, org.eclipse.jgit/src/org/eclipse/jgit/transport/PackParser.java -> I would add a check here and in OBJ_REF_DELTA. If the delta instruction size "sz" is larger than maxObjectSizeLimit, I would abort. That is a massive instruction stream that you do not want the server to attempt to process. Unfortunately you cannot get a SHA-1 at this point in time, because the delta cannot be inflated. But this max object size limit is about protecting the server repository from large garbage sent by a user, so we should abort earlier rather than later on an input.
+
+Line:934, org.eclipse.jgit/src/org/eclipse/jgit/transport/PackParser.java -> Put a max object size check at the start of this method, before we update objectDigest, using the sz parameter. This will allow you to catch any object that is in the pack file in "whole" representation before we commit to allocating the buffer for it, or even computing its SHA-1.
+
+The downside is you cannot tell the user what the SHA-1 is of the huge object. I would argue we shouldn't try, its expensive to inflate and compute the SHA-1 of something that is really big and will be rejected by the server. But if you still really want to do that, you should instead do it with the type == BLOB case below.
+
+Line:943, org.eclipse.jgit/src/org/eclipse/jgit/transport/PackParser.java -> If you still really want to tell the user what the SHA-1 is on a big object, do:
+
+  if (type == OBJ_BLOB || (0 < maxObjectSizeLimit && maxObjectSizeLimit < sz)) {
+
+Line:955, org.eclipse.jgit/src/org/eclipse/jgit/transport/PackParser.java -> Add after here:
+
+  if (0 < maxObjectSizeLimit && maxObjectSizeLimit < sz)
+    throw new ...object tempObjectId is huge
+
+Line:980, org.eclipse.jgit/src/org/eclipse/jgit/transport/PackParser.java -> This is far too late to be performing the check. You have already committed JVM heap memory to hold the entire object in memory. It really decreases the value of this max size feature.
+
+-------------------------------------
+author: Dillon Cross
+date: 2011-11-18 22:26:48.000000000
+
+Patch Set 3: (6 inline comments)
+
+
+
+Line:604, org.eclipse.jgit/src/org/eclipse/jgit/transport/PackParser.java -> Done
+
+Line:899, org.eclipse.jgit/src/org/eclipse/jgit/transport/PackParser.java -> done before the inflateAndSkip.
+If I understood you right we should even try to avoid inflating a delta block whose inflated size exceeds the maxObjectSizeLimit.
+
+Since we are also adding the same check in OBJ_REF_DELTA and also at the beginning of the "whole" method I wonder if it is not even better to just check the "sz" before the switch statement:
+
+ checkIfTooLarge(sz);
+ switch (typeCode) {
+ ...
+
+Does it make sense?
+
+Line:934, org.eclipse.jgit/src/org/eclipse/jgit/transport/PackParser.java -> Done
+
+Line:943, org.eclipse.jgit/src/org/eclipse/jgit/transport/PackParser.java -> I gave up reporting the SHA1 back to the user. It is too expensive.
+
+Line:955, org.eclipse.jgit/src/org/eclipse/jgit/transport/PackParser.java -> Gave up reporting SHA1
+
+Line:980, org.eclipse.jgit/src/org/eclipse/jgit/transport/PackParser.java -> Done
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2011-11-21 19:08:47.000000000
+
+Your change could not be merged due to a path conflict.
+
+Please merge (or rebase) the change locally and upload the resolution for review.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2011-11-22 16:38:12.000000000
+
+Your change could not be merged due to a path conflict.
+
+Please merge (or rebase) the change locally and upload the resolution for review.
+
+-------------------------------------

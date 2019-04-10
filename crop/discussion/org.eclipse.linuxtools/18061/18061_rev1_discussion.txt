@@ -1,0 +1,68 @@
+DESCRIPTION
+
+tmf: Fix concurrency issue of TmfEventThread (bug 421016)
+
+Change-Id: I4f8daf1fad5f24576e9b9db14a92edae2be8db70
+Signed-off-by: Ricky Reeves <Meredith xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2013-11-05 01:41:15.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/3827/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-05 02:14:35.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/3827/ : SUCCESS
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-11-05 20:51:52.000000000
+
+Patch Set 1: Code-Review-1
+
+(4 comments)
+
+Line:64, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/component/TmfEventThread.java -> could be final? not very important...
+
+Line:144, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/component/TmfEventThread.java -> Accesses to volatile primitives are guaranteed to be atomic (as long as you don't depend on the current value itself). So the synchronized block is redundant here.
+
+Good reference on the volatile keyword: https://www.ibm.com/developerworks/java/library/j-jtp06197/
+
+Line:190, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/component/TmfEventThread.java -> here also the synchronized is not needed.
+
+And in fact I think it could lead to a deadlock, if one thread comes in here and stays on the .wait, it keeps the lock. Then another thread calling resume() would get stuck on the synchronized {}
+
+Line:231, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/component/TmfEventThread.java -> synchronized block is not needed
+
+-------------------------------------
+author: Ricky Reeves
+date: 2013-11-06 13:12:51.000000000
+
+Patch Set 1:
+
+(4 comments)
+
+Line:64, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/component/TmfEventThread.java -> Done
+
+Line:144, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/component/TmfEventThread.java -> The main reason using volatile in our example is to make sure that no thread  uses cached values when reading (e.g. in a register). Without volatile it could be possible that fIsPaused was changed to false on one thread but in another thread (in this method or in the while loop below) a cached value is used. This actually could lead to that the while loop isn't exited at all.
+
+You're right about synchronized, for simple read a write of primitive types like boolean we don't need use the sync object. I'll remove it a the relevant places.
+
+Line:190, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/component/TmfEventThread.java -> Synchronized is needed for wait and notify. There won't be a deadlock because wait will release the lock. 
+
+However, I will move the while(fIsPaused) outside the loop because of the volatile flag.
+
+Line:231, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/component/TmfEventThread.java -> Done
+
+-------------------------------------

@@ -1,0 +1,64 @@
+DESCRIPTION
+
+MB-11943: replace map with vector for cachedVBStates
+
+std::map can incur thread-unsafe rb balance operations which
+may invalidate concurrent iterators causing asserts or crashes
+Pre-allocated vectors are thread-safe as long as the size is not
+altered
+Change-Id: I777b0cc7d9c421cc11425db75506fdf90044a93c
+
+
+COMMENTS
+
+author: Ellie Kidd
+date: 2014-08-14 04:28:09.463000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Ellie Kidd
+date: 2014-08-14 04:37:24.694000000
+
+Patch Set 3: Verified+1
+
+make simple-test and unit tests pass
+
+-------------------------------------
+author: Ellie Kidd
+date: 2014-08-14 04:37:37.124000000
+
+Patch Set 3:
+
+Change is now ready for review. thanks
+
+-------------------------------------
+author: Abby Duran
+date: 2014-08-14 05:12:02.781000000
+
+Patch Set 3: Code-Review-1
+
+(1 comment)
+
+hmm, I think this change is too invasive. We should investigate if more than one thread (flusher, compactor, vb state snapshot, rollback, etc) updates the cachedVBState instance at the same time. If not, then using std::map should still work.
+
+Using vector will still cause other memory issues (e.g., memory leak) if more than one thread updates the cachedVBState instance.
+
+Line:2403, src/couch-kvstore/couch-kvstore.cc -> This will cause the memory leak.
+
+-------------------------------------
+author: Ellie Kidd
+date: 2014-08-14 05:47:48.533000000
+
+Patch Set 3:
+
+(1 comment)
+
+Since we have vbucket-level locking there should not be multiple threads (flusher or compactor or deleteVBucket or snapshot or rollback) touching the same cachedVBStates entry.
+With std::map, editing different entries are probably safe (that is why we did not see a crash). However even if the entries being edited are different, looks like due to a rb tree rebalance operation, one thread that can invalidate another thread's iterator causing assert as seen in MB-11943.
+
+Unlike std::map in std::vector editing different entries should be thread safe according to the STL documentation.
+
+Line:2403, src/couch-kvstore/couch-kvstore.cc -> thanks Chiyoung - fixed this.
+
+-------------------------------------

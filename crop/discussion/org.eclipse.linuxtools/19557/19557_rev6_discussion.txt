@@ -1,0 +1,172 @@
+DESCRIPTION
+
+tmf: Avoid HistoryTree to expose its internal HT_IO node.
+
+The HT_IO node is an abstraction of the file accesses for
+a tree node. It should not be exposed to others classes.
+The history tree must act as a proxy for requests to HT_IO.
+This will ease modifications and maintenance of HT_IO.
+
+HT_IO node should not keep a back reference to the HistoryTree.
+This is a bad design. HT_IO node needs to know about HTConfig
+to perform its tasks.
+
+The HT_IO class contains method to read from disk.
+The concept of a LastBranch is related to the HistoryTree.
+
+Thus, readFromMemory is the same than calling
+
+  HistoryTree.readNode(...)
+
+and readFromDisk is the same than calling
+
+  HT_IO.readNode(...)
+
+Each layer is reponsible of its own caching mechanism.
+
+Change-Id: Ia835a03efa321cdefd170de002833e044d144ee0
+Signed-off-by: Jordon Obrien xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Jordon Obrien
+date: 2013-12-10 16:39:14.000000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Jordon Obrien
+date: 2013-12-10 16:42:31.000000000
+
+Patch Set 6:
+
+PTAL.
+
+And I'm open to a discussion on why this should be remove.
+In fact, I believe HistoryTree should _not_ exposed the notion of "lastBranch". This is a violation of an abstract data-structure API and complexify the evolution on the HistoryTree.
+
+These kind of methods should be exposed only when "really, but really" expensive otherwise. It's better to find a solution under the hood than postponed to the data-structure user the tree walking management.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-12-10 17:49:02.000000000
+
+Patch Set 6:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4550/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-12-10 18:26:24.000000000
+
+Patch Set 6: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4550/ : SUCCESS
+
+-------------------------------------
+author: Jordon Obrien
+date: 2013-12-10 18:48:15.000000000
+
+Patch Set 6:
+
+My though is that we should build a benchmark suite for some "critical" part of TMF. Like the history tree.
+
+I would like to know the overhead of looking in the memory.
+If it is significant, now a method readWithoutCaching/readFromdDisk could be added to the History Tree.
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-12-10 19:15:52.000000000
+
+Patch Set 6:
+
+> HistoryTree should _not_ exposed the notion of "lastBranch"
+
+I agree it should not be exposed "upwards", because that is implementation-specific. However, the HT_IO is also something specific to the HistoryTree. At first this class was introduced solely to reduce the amount of LOCs in HistoryTree. So I don't think it's *that* bad if HT_IO knows how the HistoryTree works a bit.
+
+Or we could also scrap it and put all the functionality in HistoryTree, if that makes it cleaner.
+
+About the readNodeFromMemory/readNodeFromDisk, the issue is not just the overhead, it's actual functionality that might break if we don't have a "readNodeFromMemory": if a history tree is queries while it's being built, the nodes in the latest branch are not written to disk yet. But in the tree they technically exist. So if HT_IO tries to read them like a "normal" node, funny things will happen.
+
+-------------------------------------
+author: Jordon Obrien
+date: 2013-12-11 17:14:39.000000000
+
+Patch Set 6:
+
+I prefer keeping it isolated.
+Some idea for node compression etc... could be put in this layer (read/write to disk layer).
+
+I need to understand your arguments on the HistoryTree.
+We should meet in face of a white board.
+
+-------------------------------------
+author: Jordon Obrien
+date: 2013-12-12 05:26:29.000000000
+
+Patch Set 6:
+
+After speaking offline with Alex, the commit message was misleading him.
+
+Previously readFromMemory only performs lookup into lastBranch. Thus, saying readNode is equivalent to readNodeFromMemory is not completely true.
+
+The proposed patch:
+
+HistoryTree.readNode(...)
+  performs a "readFromMemory" (but inlined)
+  performs a "readFromDisk    (postponed to HT_IO, cached).
+
+Thus, there is no semantic changes. 
+The refactoring restricts the API to readNode. 
+
+A possible drawback is the potential speed overhead. I guess a tiny overhead worth the API simplification. And the cache introduced into HT_IO will take care of the speed issue.
+
+Benchmark to come.
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-12-12 16:15:33.000000000
+
+Patch Set 6: Verified+1 Code-Review+1 IP-Clean+1
+
+Ok, indeed after clarification, this should not change the behavior, this is just a refactor, making the HT_IO "API" a bit cleaner and better separated.
+
+I'd be fine with merging this as-is. If we ever find the "skip looking in memory" optimization was really useful, we could always add it back, at the HistoryTree level.
+
+-------------------------------------
+author: Jordon Obrien
+date: 2013-12-12 16:21:10.000000000
+
+Patch Set 6:
+
+Up to you, it's your call (your are the owner and maintainer).
+
+But, we should keep in mind there is missing benchmark and metrics on this part (which is a central one in TMF).
+Somebody should gather karma points by fixing this lack.
+
+-------------------------------------
+author: Ayanna Reed
+date: 2013-12-12 16:23:39.000000000
+
+Patch Set 6: Code-Review+1
+
+lgtm
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-12-12 18:09:08.000000000
+
+Patch Set 6: Code-Review+2
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2013-12-12 18:09:09.000000000
+
+The change could not be merged due to a path conflict.
+
+Please rebase the change locally and upload the rebased commit for review.
+
+-------------------------------------

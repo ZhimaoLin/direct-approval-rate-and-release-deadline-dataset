@@ -1,0 +1,189 @@
+DESCRIPTION
+
+Fixed RevWalk.isMergedInto() returning wrong results
+
+Under certain circumstances isMergedInto() returned
+false even though base is reachable from the tip.
+This will hinder pushes and receives by falsely
+detecting "non fast forward" merges.
+
+      o---o---o---o---o
+      /                 \
+     /   o---o---A---o---M
+    /   /
+---2---1-
+
+if M (tip) was compared to 1 (base), the method
+isMergedInto() could still return false, since
+two mergeBases will be detected and the return
+statement will only look at one of them:
+
+  return next() == base;
+
+In most cases this would pass, but if "A" is
+a commit with an old timestamp, the Generator
+would walk down to "2" before completing the
+walk pass "A" and first finding the other
+merge base "1". In this case, the first call to
+next() returns 2, which compared to base evaluates
+as false.
+
+This is fixed by iterating merge bases and
+returning true if base is found among them.
+
+Change-Id: If2ee1f4270f5ea4bee73ecb0e9c933f8234818da
+Signed-off-by: Shyanne Larsen xxx@xxx.xxx
+Signed-off-by: Larry Mcclain xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Shyanne Larsen
+date: 2014-03-24 17:48:59.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-03-24 18:07:04.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/jgit.gerrit/4883/ : SUCCESS
+
+-------------------------------------
+author: Danika Greer
+date: 2014-03-24 18:40:49.000000000
+
+Patch Set 1:
+
+Fix looks good to me, but could you also add a test case that reproduces the problem?
+
+-------------------------------------
+author: Juliet Cantu
+date: 2014-03-24 23:45:55.000000000
+
+Patch Set 1: Code-Review-1
+
+Yes, tests are missing. Otherwise looks ok.
+
+-------------------------------------
+author: Braiden Dyer
+date: 2014-03-25 07:09:50.000000000
+
+Patch Set 1:
+
+use https://git.mozilla.org/releases/gecko.git as an example 
+to describe the issue's background .
+
+on master branch there are: 
+
+
+ df1693a    O 
+            |
+ bac7e8c    O
+            |\
+ 9518462    O \
+               \
+ 563ac44        O
+                |\
+ 83ea4e2        O \
+                |
+ 4240714        O
+                |\
+ 77f31d         o \
+
+
+ $ git push   xxx@xxx.xxx  77f31d4d:refs/heads/test   
+ Counting objects: 3637700, done.
+ Delta compression using up to 8 threads.
+ Compressing objects: 100% (726958/726958), done.
+ Writing objects: 100% (3637700/3637700), 1.37 GiB | 22.70   MiB/s, done.
+ Total 3637700 (delta 2872864), reused 3635130 (delta 2871258)
+ remote: Resolving deltas: 100% (2872864/2872864)
+ remote: Processing changes: refs: 1, done    
+ To xxx@xxx.xxx
+ * [new branch]      77f31d4d -> test
+ 
+ $ git push   xxx@xxx.xxx   df1693a1:refs/heads/test 
+ Counting objects: 3997, done.
+ Delta compression using up to 8 threads.
+ Compressing objects: 100% (973/973), done.
+ Writing objects: 100% (2994/2994), 1.10 MiB, done.
+ Total 2994 (delta 2517), reused 2451 (delta 2012)
+ remote: Resolving deltas: 100% (2517/2517)
+ remote: Processing changes: done    
+ To xxx@xxx.xxx
+ ! [remote rejected] df1693a1 -> test (non-fast forward)
+ error: failed to push some refs to  xxx@xxx.xxx
+
+-------------------------------------
+author: Braiden Dyer
+date: 2014-03-25 07:17:47.000000000
+
+Patch Set 1:
+
+missing one commit, sorry! 
+ it in fact is 
+
+ df1693a    O 
+            |
+ bac7e8c    O
+            |  
+ 969b5f0    O
+            |\
+ 9518462    O \
+               \
+ 563ac44        O
+                |\ 
+ 83ea4e2        O \
+                |
+ 4240714        O
+                |\
+ 77f31d         O \
+
+-------------------------------------
+author: Danika Greer
+date: 2014-03-25 12:18:04.000000000
+
+Patch Set 1:
+
+@Bruce: I meant a JUnit test, e.g. some additional methods in RevWalkMergeBaseTest that are red before this change and are green with this change.
+
+-------------------------------------
+author: Shyanne Larsen
+date: 2014-03-25 17:06:39.000000000
+
+Patch Set 1:
+
+Thanks for the comments. I'll try to push a new PS with tests when I'm back at the office (Monday).
+
+-------------------------------------
+author: Shyanne Larsen
+date: 2014-04-07 14:09:19.000000000
+
+Patch Set 1:
+
+I could not seem to to find the time to fix the Test Case (had huge issues with setting up the dev environment), but Larry Mcclain has been kind to create a testcase here:
+
+https://git.eclipse.org/r/#/c/24549/
+
+Since he is not a committer he cannot push another PS on my behalf.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2014-04-09 20:14:27.000000000
+
+Patch Set 1: Code-Review+2
+
+Separate test is ok
+
+-------------------------------------
+author: Juliet Cantu
+date: 2014-04-09 20:14:30.000000000
+
+Change has been successfully merged into the git repository.
+
+-------------------------------------

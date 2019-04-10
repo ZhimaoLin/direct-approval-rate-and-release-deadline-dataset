@@ -1,0 +1,74 @@
+DESCRIPTION
+
+Propagate IOException where possible when getting all refs.
+
+Currently, Repository getAllRef() silently ignores an IOException and
+instead returns an empty map. Repository is a public API and as such
+cannot be changed until the next major revision change. Where possible,
+update the internal jgit APIs to use the RefDatabase directly, since
+it propagates the error.
+
+Change-Id: I4e4537d8bd0fa772f388262684c5c4ca1929dc4c
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2013-10-07 18:07:00.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/egit/job/jgit.gerrit/4069/
+
+-------------------------------------
+author: Eden Lin
+date: 2013-10-07 18:18:39.000000000
+
+Patch Set 1: Code-Review-1
+
+(2 comments)
+
+I think this is a good change. Just a couple of nits.
+
+(not about this change) Until it can throw IOException, I wonder if it would make sense to make getAllRefs() throw a RuntimeException --- I'd think usually it is better to abort a program than to let it run with a wrong assumption about the content of the ref database.
+
+Line:257, org.eclipse.jgit/src/org/eclipse/jgit/transport/BundleFetchConnection.java -> Could this try be made to wrap just the initialization of localRefs? E.g.
+
+Map<String, ref> localRefs;
+try {
+  localRefs = ...
+} catch (IOException readError) {
+  // If we cannot read the refs, skip them.
+  localRefs = new HashMap<String, Ref>();
+}
+for (final Ref r : localRefs.values()) {
+  ...
+}
+
+BTW, is MissingBundlePrerequisiteException actually better than IOException for this case? Do you know why this was made to catch IOException in the first place?
+
+Line:9, /COMMIT_MSG -> Repository.getAllRefs() (missing '.' and 's')
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-10-07 18:18:44.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/jgit.gerrit/4069/ : SUCCESS
+
+-------------------------------------
+author: Warren Watkins
+date: 2013-10-07 18:33:21.000000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:257, org.eclipse.jgit/src/org/eclipse/jgit/transport/BundleFetchConnection.java -> The internal loops was to handle dangling refs. Perhaps the outer one could propagate a generic TransportException.
+
+Line:9, /COMMIT_MSG -> Done
+
+-------------------------------------

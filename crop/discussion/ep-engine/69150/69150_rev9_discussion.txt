@@ -1,0 +1,149 @@
+DESCRIPTION
+
+MB-20852 [17/N]: Serialize VB state changes
+
+Background/Problem:
+
+MB-20852 exposed an issue with how VBucket state was persisted to disk
+- specifically that state can be persisted to disk out of order, and
+intermediate state changes could be dropped (not persisted at all).
+
+These problems are caused by the asynchronous tasks which are
+responsible for persisting state to disk -
+VBStatePersistTask{Low,High}. There are essentially two interrelated
+issues:
+
+1. We allow multiple tasks which persist VBState to exist concurrently
+   (VBStatePersistTask{Low,High}, Flusher,
+   VBSnapshotTask{Low,High}. Furthermore, multiple instances of the
+   same task (e.g. VBStatePersistTask) can also exist concurrenlty.
+
+2. We do not maintain a queue of states to persist, instead we just
+   mark that a given vbid's state is pending.
+
+(1) Can occur when a VBPersistTask has started to run on a BG writer
+    thread (and has cleared the schedule_vbstate_persist flag), but
+    then another scheduleVBStatePersist() call is made. As the
+    schedule_vbstate_persist flag is clear, this second task is
+    allowed to be created. There is then no guarantee which task will
+    complete first (they could be scheduled to different OS writer
+    threads, the first thread could be descheduled and the second one
+    then runs and completes first).
+
+    We could attempt to solve this by changing when
+    schedule_vbstate_persist is cleared (say move it later in the
+    persistVBState() function), but then the inverse problem is
+    exposed - we may fail to schedule a second (different) state to be
+    persisted if the current task is just finishing up (and will exit
+    without persisting the now-outstanding work).
+
+(2) Presents a subtle problem relating to when the state of a VBucket
+    is materialized. As we only record the vbid to persist (and not
+    the state), by the time the VBucketPersistTask runs the actual
+    state we /wanted/ to write may have moved forward. Even worse, the
+    state could have "gone backwards" (as shown in the MB) if the
+    state of the VBucket is read before the vbucket is deleted,
+    meaning the task has a 'stale' view of the VBucket object (due to
+    us using ref-counted pointers for VBucket objects).
+
+    Additionally, not persisting all intermediate states makes
+    debugging harder. We don't actually change VBucket state /that/
+    often, and so having all the intermediate states a VBucket went
+    through on disk is extremely valuable in debugging.
+
+Solution:
+
+Instead of having multiple different tasks which can persist state
+(and attempting to manage when they are created / when they run / what
+state they persist), we instead use a single task (the Flusher task)
+to persist state for a given vBucket. Note the Flusher *already*
+persists vbucket state if necessary during commit (see
+EventuallyPersistentStore::flushVBucket), so this path just adopts the
+Flusher as the canonical Task to perform vbstate persistence.
+
+To ensure that state is persisted even when there are no outstanding
+'normal' items in the vbucket's checkpoint queue, we use the new
+queue_op::set_vbucket_state meta-item to signify that a persist is
+pending (and to essentially make the pending items queue non-empty so
+the flusher will run).
+
+After this patch all the other Tasks which used to persist vbucket
+state are redundent - a subsequent patch will remove them.
+
+Change-Id: Ic44360a1dd14fb882ebfa6f28f4ccfe6127d17a8
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2016-10-31 09:59:19.902000000
+
+Uploaded patch set 9.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-31 09:59:26.450000000
+
+Patch Set 9:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-watson/287/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-31 09:59:26.600000000
+
+Patch Set 9:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/1657/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-31 09:59:26.733000000
+
+Patch Set 9:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/1465/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-31 09:59:26.864000000
+
+Patch Set 9:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/1267/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-31 10:13:55.204000000
+
+Patch Set 9: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/1267/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/1657/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/1465/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-watson/287/ : SUCCESS
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-10-31 14:26:57.071000000
+
+Patch Set 9: Code-Review+2
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-10-31 17:58:28.769000000
+
+Patch Set 10: Patch Set 9 was rebased
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-11-01 08:06:23.544000000
+
+Change has been successfully cherry-picked as 66882e8dcd1c0952dc63f6608c04d6b29c39c86c by Ashlee Kent
+
+-------------------------------------

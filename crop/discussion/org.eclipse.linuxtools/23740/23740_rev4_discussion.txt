@@ -1,0 +1,208 @@
+DESCRIPTION
+
+[RFC]ctf: Make events immutable
+
+This patch does some major changes to the ctf parser
+
+The event definitions are now immutable and can no longer be modified.
+The declarations will read the bitbuffer and then create event
+definitions. The event definitions are going to have fields. Innitial
+tests show a 4x slowdown, but it's better for memory usage.
+
+Change-Id: I52b8c0de9776fa7cd2b333628c2bb6d3dd2c86ac
+Signed-off-by: Ivy Mitchell xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Ivy Mitchell
+date: 2014-03-26 13:50:09.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-03-26 13:50:15.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/6098/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-03-26 17:23:09.000000000
+
+Patch Set 4: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/6098/ : ABORTED
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-03-26 20:25:35.000000000
+
+Patch Set 4: Code-Review-1
+
+(39 comments)
+
+Line:39, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/IEventDeclaration.java -> "a timestamp" is not very descriptive. "The timestamp for which this definition is defined" I presume?
+
+Line:47, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/Definition.java -> Field should be final, with a protected getter if needed. (could replace the abstract method below?)
+
+Line:44, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/StructDeclaration.java -> Ok this part blew my mind. You keep the same elements in *5* different containers??
+
+The map should be enough. The parameters in StructDefinition's constructor could be reworked to help this (Collection<...>)
+
+Line:127, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/StructDeclaration.java -> Yeah this part is kind of annoying... I was able to reword it to generate the "myFields" array in StructDefinition's constructor. However this broke the constructor call in EventDefinition. Perhaps we'd need to keep two constructors?
+
+Line:145, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/StructDeclaration.java -> So everytime you add an element, you allocate *4* new arrays. Having just one map would be clearer, and maybe faster too.
+
+Line:43, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/IntegerDeclaration.java -> static final
+
+variable names should be ALL_CAPS
+
+This is a nice addition though, it improves readability AND it caches the often-used values
+
+Line:25, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/IDefinitionScope.java -> I think the word is tuple?
+
+Line:30, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/IDefinitionScope.java -> If this is gonna be used solely for let's say definition fields, it should be called DefinitionField (or DeclarationType?) or similar. This isn't a library to provide Java generic containers.
+
+Line:37, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/StructDefinition.java -> same here, you have the same elements in 3 data structures. The LinkedHashMap maintains the ordering, the other two are redundant.
+
+Line:102, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/StructDefinition.java -> Do you have any figures of how the O(n) lookup is faster than a hashmap lookup? Even if it is indeed faster for very few entries, it won't scale as well. I'd argue we should use the more scalable solution.
+
+Line:58, lttng/org.eclipse.linuxtools.ctf.core.tests/src/org/eclipse/linuxtools/ctf/core/tests/event/CTFEventFieldTest.java -> space before and after { and }
+
+Line:79, lttng/org.eclipse.linuxtools.ctf.core.tests/src/org/eclipse/linuxtools/ctf/core/tests/event/CTFEventFieldTest.java -> spaces before/after { and }, and after commas
+
+Line:93, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/SequenceDeclaration.java -> 'ret' isn't used for anything, you should do
+
+  return new SequenceDefinition(...)
+
+Line:76, lttng/org.eclipse.linuxtools.ctf.core.tests/src/org/eclipse/linuxtools/ctf/core/tests/types/ArrayDeclarationTest.java -> spaces after commas and around brackets
+
+Line:65, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/StreamInputPacketReader.java -> maybe name those fCurrentPacketHeaderDef / fCurrentSreamHeaderDef, to indicate why they're mutable.
+
+Line:32, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/SequenceDefinition.java -> why keep the length separately? You can always do fDefinitions.length?
+
+Line:54, lttng/org.eclipse.linuxtools.ctf.core.tests/src/org/eclipse/linuxtools/ctf/core/tests/types/EnumDefinitionTest.java -> space after comma (before 'new'). both lines
+
+Line:66, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/ArrayDefinition.java -> Instead of doing a copy, you could expose just a Collection or Iterable view.
+
+Line:43, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/VariantDeclaration.java -> this file doesn't receive the immutable treatment, is that on purpose?
+
+Line:70, lttng/org.eclipse.linuxtools.ctf.core.tests/src/org/eclipse/linuxtools/ctf/core/tests/types/VariantDefinitionTest.java -> if those are really meant to be kept around, first way was better
+
+Line:1, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/Declaration.java -> Copyright header
+
+Line:13, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/Declaration.java -> Javadoc
+
+Line:23, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/Declaration.java -> mixing Collection and array APIs together is already bad, but in the same variable, that's even badder! Why not a List<Map<...>> ?
+
+Line:25, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/Declaration.java -> Collections.EMPTY_MAP ;)
+
+Line:103, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/Declaration.java -> re-using a class-wide StringBuilder object is asking for multi-thread trouble.
+
+In this case here, you know in advance the number of strings you're concatenating (it's not within a for etc.), so why not use
+
+  .put(fieldName,  parentPath + '.' + fileName)
+
+directly?
+
+Line:114, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/Declaration.java -> constructor should be defined before the other methods.
+
+space before {
+
+Line:115, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/Declaration.java -> spacing
+
+Line:27, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/FloatDeclaration.java -> class could be final, for consistency
+
+Line:138, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/FloatDeclaration.java -> If it doesn't explain anything, might as well remove it
+
+Line:53, lttng/org.eclipse.linuxtools.ctf.core.tests/src/org/eclipse/linuxtools/ctf/core/tests/types/SequenceDeclarationTest.java -> in most places you put the [] next to the type, not the name (byte[] array). Both work, but it should be consistent
+
+Line:84, lttng/org.eclipse.linuxtools.ctf.core.tests/src/org/eclipse/linuxtools/ctf/core/tests/types/SequenceDeclarationTest.java -> spacing
+
+Line:85, lttng/org.eclipse.linuxtools.ctf.core.tests/src/org/eclipse/linuxtools/ctf/core/tests/types/SequenceDeclarationTest.java -> remove space before )
+
+Line:27, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/SimpleDatatypeDefinition.java -> Definition's
+
+Line:110, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/VariantDefinition.java -> spacing
+
+Line:62, lttng/org.eclipse.linuxtools.ctf.core.tests/src/org/eclipse/linuxtools/ctf/core/tests/types/SequenceDefinitionTest.java -> looks like a weird case of ctrl+shift+f. You can put "{ lengthName }," on the first line
+
+Line:54, lttng/org.eclipse.linuxtools.ctf.core.tests/src/org/eclipse/linuxtools/ctf/core/tests/types/IntegerDefinitionTest.java -> space
+
+Line:97, lttng/org.eclipse.linuxtools.ctf.core.tests/src/org/eclipse/linuxtools/ctf/core/tests/types/IntegerDefinitionTest.java -> space
+
+Line:101, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/StringDeclaration.java -> This is a case where using StringBuilder makes sense
+
+Line:185, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/EventDefinition.java -> Doing toArray() does an extra allocation, this is not very desirable especially if the only reason is "because the API said so".
+
+Wouldn't it be possible to use Collection<String> and Collection<Definition> for the parameters?
+
+Also, doing new String[0] ensures an *extra* allocation has to be done, because the elements cannot fit into an array of 0. It's always preferable to do list.toArray(new String[list.size()]). (.toArray() should do this automatically, seriously...)
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2014-03-27 02:25:36.000000000
+
+Patch Set 4:
+
+(7 comments)
+
+thanks
+
+Line:145, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/StructDeclaration.java -> declarations are only made once. But yeah, this could be cleaned up
+
+Line:43, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/IntegerDeclaration.java -> I'm hoping this encourages using these standard variable types. :)
+
+Line:37, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/StructDefinition.java -> the flat arrays are a lot faster to make. the  map is only populated if need be.
+
+Line:102, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/StructDefinition.java -> I agree, we need something better than either other option.
+
+Line:93, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/SequenceDeclaration.java -> yeah, I kept it there for debug purposes.
+
+Line:32, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/SequenceDefinition.java -> better question, can this be an arraydefinition?
+
+Line:43, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/VariantDeclaration.java -> this is a declaration, not a definition
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-03-31 22:58:42.000000000
+
+Patch Set 4:
+
+(3 comments)
+
+Line:37, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/StructDefinition.java -> That's because you don't "make" the arrays, you assign them directly from the constructor. Which is potentially risky, because the original caller can then modify the elements in the array.
+
+I might be misunderstanding the access pattern of this class, but I don't see how lazy-initing a container makes more sense than, e.g., only creating this object when it's needed.
+
+Line:93, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/SequenceDeclaration.java -> Btw CDT's debugger can show return values in the variables view now. JDT should keep up!
+
+Line:43, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/VariantDeclaration.java -> The other declarations have mostly final fields/final class modifier. j/w
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2014-04-16 01:00:01.000000000
+
+Patch Set 4:
+
+(5 comments)
+
+Line:47, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/Definition.java -> ok, then the methods will cast getDeclaration
+
+Line:44, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/StructDeclaration.java -> Reworked with a linked hash map. 
+
+we need the arrays for performance purposes
+
+Line:23, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/Declaration.java -> Changing it but I want to see the performance diff
+
+Line:103, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/Declaration.java -> this was a major performance optimisation, I will re-check.
+
+Line:185, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/EventDefinition.java -> 1-list.size()] done
+2- the merged events needs more discussion I am keeping it in mind,
+
+-------------------------------------

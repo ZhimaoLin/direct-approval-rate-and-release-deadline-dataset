@@ -1,0 +1,113 @@
+DESCRIPTION
+
+Tmf: Prototype of Ust memory usage chart
+
+* An analysis builds a state system for the memory used per thread in a UST
+  trace with libc events enabled
+* It draws a graph of the memory used per thread
+
+It is a rework of Matthew's draft patch here
+https://git.eclipse.org/r/#/c/15935/2
+
+Change-Id: I18566e0eb6cd87103571f17ce88006b6edc53fd5
+Signed-off-by: Ivy Mitchell xxx@xxx.xxx
+Signed-off-by: Aryana Jones xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Annalise Jimenez
+date: 2014-01-10 19:06:37.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-01-10 19:06:42.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4979/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-01-10 20:00:08.000000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4979/ : SUCCESS
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-01-10 20:57:09.000000000
+
+Patch Set 4: Code-Review-1
+
+(20 comments)
+
+Some comments. As Étienne said, this should be split in two patches, (state provider + analysis) and then the view.
+
+Line:14, /COMMIT_MSG -> Being a draft, that patch is not visible to everyone, so there is little gain in mentioning it in the commit message (you can say "based on Matthew's initial implementation").
+
+Line:12, lttng/org.eclipse.linuxtools.lttng2.ust.core/META-INF/MANIFEST.MF -> The package should be named after the functionality, like "callstack", or in this case "memory" or "memoryusage".
+
+I'm not sure why callstack has .trace. in it, just "ust.core.memoryusage" would be fine.
+
+Line:45, lttng/org.eclipse.linuxtools.lttng2.ust.ui/src/org/eclipse/linuxtools/lttng2/ust/ui/analysis/memory/UstMemoryAnalysisModule.java xxx@xxx.xxx should not be needed anymore (annotations are inherited)
+
+Line:11, lttng/org.eclipse.linuxtools.lttng2.ust.core/src/org/eclipse/linuxtools/internal/lttng2/ust/core/UstStrings.java -> empty line after the copyright header
+
+Line:21, lttng/org.eclipse.linuxtools.lttng2.ust.core/src/org/eclipse/linuxtools/internal/lttng2/ust/core/UstStrings.java -> Could say "event names" instead of "stuff"
+
+Line:22, lttng/org.eclipse.linuxtools.lttng2.ust.core/src/org/eclipse/linuxtools/internal/lttng2/ust/core/UstStrings.java -> no need for "public" here, it's an interface, it's automatically public
+
+Line:12, lttng/org.eclipse.linuxtools.lttng2.ust.core/src/org/eclipse/linuxtools/internal/lttng2/ust/core/stateprovider/MemoryUsageStateProvider.java -> empty line
+
+Line:86, lttng/org.eclipse.linuxtools.lttng2.ust.core/src/org/eclipse/linuxtools/internal/lttng2/ust/core/stateprovider/MemoryUsageStateProvider.java -> Rejoice! With Java 7 you do not need to do this anymore, you can do the swtich on the strings directly:
+
+ switch (name) {
+ case UstString.MALLOC:
+   etc.
+
+Line:96, lttng/org.eclipse.linuxtools.lttng2.ust.core/src/org/eclipse/linuxtools/internal/lttng2/ust/core/stateprovider/MemoryUsageStateProvider.java -> This is needed for partial histories. Just need to do:
+  return new MemoryUsageStateProvider(getTrace());
+
+Line:105, lttng/org.eclipse.linuxtools.lttng2.ust.core/src/org/eclipse/linuxtools/internal/lttng2/ust/core/stateprovider/MemoryUsageStateProvider.java -> You should use static final defines instead of re-typing the strings every time (like in UstMemoryString for example). It's less typo-prone.
+
+Line:189, lttng/org.eclipse.linuxtools.lttng2.ust.core/src/org/eclipse/linuxtools/internal/lttng2/ust/core/stateprovider/MemoryUsageStateProvider.java -> you box/unbox 'ptr' repeatedly (enabling the unboxing warnings makes it obvious).
+
+Since you are storing Long objects in a Map AND reading them from a CtfEventField (which returns a Long), it'd probably be better to keep them as Long, so have the parameters and return values of the private methods stay Long.
+
+Line:211, lttng/org.eclipse.linuxtools.lttng2.ust.core/src/org/eclipse/linuxtools/internal/lttng2/ust/core/stateprovider/MemoryUsageStateProvider.java -> I think I understand the idea here (if there is no vtid/procname contexts at all in the trace, show everything under a "total" attribute.) That makes sense.
+
+However, what if *some* events have the context enabled, and some others do not? (funky, but could happen).
+
+Would it be better/simpler to just call this "Others"?
+
+Line:220, lttng/org.eclipse.linuxtools.lttng2.ust.core/src/org/eclipse/linuxtools/internal/lttng2/ust/core/stateprovider/MemoryUsageStateProvider.java -> Exceptions should be handled. I think here it *should* always work, because we get the values from the state system itself.
+
+With more Java 7 goodness:
+
+  } catch (AttributeNotFoundException | TimeRangeException | StateValueTypeException e) {
+    throw new IllegalStateException(e);
+  }
+
+Line:20, lttng/org.eclipse.linuxtools.lttng2.ust.core/src/org/eclipse/linuxtools/internal/lttng2/ust/core/stateprovider/UstMemoryStrings.java -> use an interface if it only contains "macros". That also means you can remove "public" everywhere.
+
+Line:80, lttng/org.eclipse.linuxtools.lttng2.ust.ui/src/org/eclipse/linuxtools/internal/lttng2/ust/ui/views/memusage/MemoryUsageViewer.java -> Using ss.getSubAttributes(-1, false) would be faster here (it won't try to match every single attribute it finds).
+
+Line:131, lttng/org.eclipse.linuxtools.lttng2.ust.ui/src/org/eclipse/linuxtools/internal/lttng2/ust/ui/views/memusage/MemoryUsageViewer.java -> Exceptions should be handled better
+
+Line:21, lttng/org.eclipse.linuxtools.lttng2.ust.ui/META-INF/MANIFEST.MF -> org.eclipse.linuxtools.* dependencies should go in Require-Bundle (since we ship them, we can depend on the the exact plugin).
+
+Import-Package: org.swtchart is fine. (This means we can get the org.swtchart from anywhere, not just from the workspace).
+
+Line:11, lttng/org.eclipse.linuxtools.lttng2.ust.ui/src/org/eclipse/linuxtools/internal/lttng2/ust/ui/views/memusage/MemoryUsageView.java -> empty line
+
+Line:25, lttng/org.eclipse.linuxtools.lttng2.ust.ui/src/org/eclipse/linuxtools/internal/lttng2/ust/ui/views/memusage/MemoryUsageView.java -> final too
+
+Line:102, lttng/org.eclipse.linuxtools.lttng2.ust.core/src/org/eclipse/linuxtools/lttng2/ust/core/trace/LttngUstTrace.java -> noise
+
+-------------------------------------

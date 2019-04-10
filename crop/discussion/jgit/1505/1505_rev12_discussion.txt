@@ -1,0 +1,101 @@
+DESCRIPTION
+
+Add HistogramDiff to DiffPerformance tests
+
+To optimize HistogramDiff some load tests may be useful.  Reuse most
+of what was written for MyersDiff.
+
+Change-Id: Ide9f7ad95345a144dbf8ef8bbb40a7d73a3539a2
+Signed-off-by: Zachary Orozco xxx@xxx.xxx
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Gerrit Code Review
+date: 2010-09-08 12:56:13.000000000
+
+Change cannot be merged due to unsatisfiable dependencies.
+
+The following dependency errors were found:
+
+* Depends on patch set 7 of Ic7a76df2, however the current patch set is 7.
+* Depends on patch set 1 of I45444677, however the current patch set is 1.
+* Depends on patch set 1 of Id35ef478, however the current patch set is 1.
+* Depends on patch set 5 of I559f494d, however the current patch set is 6.
+
+Please rebase the change and upload a replacement commit.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-09-25 02:12:53.000000000
+
+Uploaded patch set 12.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-09-25 02:16:43.000000000
+
+Patch Set 12: I would prefer that you didn't submit this
+
+(1 inline comment)
+
+
+
+Line:181, org.eclipse.jgit.test/tst/org/eclipse/jgit/diff/DiffPerformanceTest.java -> This test is failing:
+
+junit.framework.AssertionFailedError: minimun and maximum of performance-index t/(N*D) differed too much. Measured factor of 20.26732580423589 (maxFactor=15). Perfdata=<[testHistogram 10000 bytes took 2879800 ns. N=20000, D=18, time/(N*D):8E0, time/(N*D^2):4.44E-1, testHistogram 20000 bytes took 8130200 ns. N=40000, D=36, time/(N*D):5.65E0, time/(N*D^2):1.57E-1, testHistogram 40000 bytes took 18798500 ns. N=80000, D=70, time/(N*D):3.36E0, time/(N*D^2):4.8E-2, testHistogram 80000 bytes took 48076800 ns. N=160000, D=143, time/(N*D):2.1E0, time/(N*D^2):1.47E-2, testHistogram 160000 bytes took 96502500 ns. N=320000, D=287, time/(N*D):1.05E0, time/(N*D^2):3.66E-3, testHistogram 320000 bytes took 257217700 ns. N=640000, D=574, time/(N*D):7E-1, time/(N*D^2):1.22E-3, testHistogram 640000 bytes took 780854428 ns. N=1280000, D=1148, time/(N*D):5.31E-1, time/(N*D^2):4.63E-4, testHistogram 1280000 bytes took 2317911000 ns. N=2560000, D=2294, time/(N*D):3.95E-1, time/(N*D^2):1.72E-4]>
+
+and I don't know why. Christian, do you have any ideas?
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-09-25 21:57:29.000000000
+
+Patch Set 12: (1 inline comment)
+
+
+
+Line:181, org.eclipse.jgit.test/tst/org/eclipse/jgit/diff/DiffPerformanceTest.java -> Yes I have: the measured runtime behaviour of HistogramDiff doesn't match our expectations. The error message looks frightening - but in fact it tells very explicitly what went wrong.
+
+Here is what is happing: In testHistogram() you told the testFramework to feed example-texts of different sizes (beginning with 10.000 up to 1.280.000) to HistogramDiff. For each run we measure how much CPUTime is used to calculate the diff. With that we calculate different "performance indexes". The index "perf1" is perf1=cpuTime/(N*D) and perf2=cpuTime/(N*D*D). We are not interested in the actual values of this indexes - but a algorithm which is expected to have a runtime behaviour of O(N*D) the index perf1 should be quite constant. And for O(N*D) algorithms perf2 should be constant."quite constant" means: max(perfX)/min(perfX) must be less a given constant.
+
+You said in testHistogram() that HistogramDiff should behave like a O(N*D) algorithm (because you check for perf1()) and that max/min should not be more than 15 (maxfactor). But perf1() decreases!!!! with longer texts. Means: the algorithms behaves with our test data better then a O(N*D) algorithm. Hhmmm, good result, but can it be true? I am sure we depend on N - but is the number of differences really influencing our performance so much?
+
+What we can do is to increasing the accepted factor (maxfactor) to more than 20 ... or calculate a different performance index (e.g. t/(n*log(d))) and see whether we have like that kind of algorithm.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-10-09 06:08:13.000000000
+
+Patch Set 12: (1 inline comment)
+
+
+
+Line:181, org.eclipse.jgit.test/tst/org/eclipse/jgit/diff/DiffPerformanceTest.java -> Thanks for that explanation.
+
+The algorithm is absolutely O(N*D)... worst case, which is what big-O notation means.  :-)  In the worst case the input consists of N unique elements, and the difference between A and B is B inserts a new element between each element of A.  This means we'll have an edit list of D = N/2, and HistogramDiff splits and recurses D times, with each recursion looking at N-2 elements from the higher level.
+
+This doesn't happen often fortunately.  Even in our contrived DiffTestDataGenerator we don't see this sort of input.  In the contrived test data we have a number of unique elements that can be hashed and located efficiently (since they are just primitive char).  Because there is no fallback, we only match on the common low-occurrence elements, which are quickly found in the hashtable.  Because there are so few of these, D is practically constant, and our run time during this test probably behaves more like O(N) time.
+
+The more that I think about it, the more that I'm uncertain we should even have this test.  We don't really change MyersDiff that often.  Testing for algorithm correctness is sufficient.  If we are really meddling with the algorithm, we should be running it against real data sets like linux-2.6.git to see if there is a performance difference on real-world inputs, not contrived cases.  Our DiffAlgorithm implementations are designed to run well on human written source code.  They are designed to run no worse than O(N * D) on all inputs.  The latter I'm willing to prove theoretically rather than rely on a benchmark.  The former can only be well established by periodically running the tests over some real-world corpuses that people actually care about.
+
+So I think I'll try to write a new test program similar to TextHashFunctions, but to exercise our DiffAlgorithms instead of line-level hash routines.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-10-10 21:43:05.000000000
+
+Patch Set 12: Abandoned
+
+I'd prefer to test performance by the debug-diff-algorithms program, as it lets us work against real-world data that people actually use and care about.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-10-11 11:46:32.000000000
+
+Patch Set 12:
+
+Yes, I agree fully that we should get rid of the performance tests on artifical data. Also MyersDiffPerformance test is now a candidate to be removed (or at least to be configured out of standard junit tests). Always takes a lot of time during the unit tests whichout bringing much new data.
+
+-------------------------------------

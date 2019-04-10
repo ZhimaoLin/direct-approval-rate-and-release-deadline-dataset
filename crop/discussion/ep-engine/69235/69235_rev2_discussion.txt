@@ -1,0 +1,171 @@
+DESCRIPTION
+
+MB-20759: Fix false-positive race on DcpConnMap::numActiveSnoozingBackfills
+
+The existing code was safe, however ThreadSanitizer doesn't know about
+our own Spinlocks. Given this shouldn't be a hot path, switch to
+normal std:mutex.
+
+ThreadSanitizer report:
+
+WARNING: ThreadSanitizer: data race (pid=23569)
+  Read of size 2 at 0x7d840000eca2 by thread T8 (mutexes: write M294, read M27095, write M66205, write M102676, write M95235):
+    #0 DcpConnMap::canAddBackfillToActiveQ() ep-engine/src/connmap.cc:1308 (ep.so+0x000000045ac5)
+    #1 BackfillManager::schedule() ep-engine/src/dcp/backfill-manager.cc:142 (ep.so+0x00000005b0eb)
+    #2 DcpProducer::scheduleBackfillManager() ep-engine/src/dcp/producer.cc:702 (ep.so+0x000000078fe3)
+    #3 ActiveStream::scheduleBackfill_UNLOCKED(bool) ep-engine/src/dcp/stream.cc:1016 (ep.so+0x00000008f280)
+    #4 ActiveStream::transitionState(stream_state_t) ep-engine/src/dcp/stream.cc:1145 (ep.so+0x000000090589)
+    #5 ActiveStream::setActive() ep-engine/src/dcp/stream.h:204 (ep.so+0x00000009958e)
+    #6 DcpProducer::streamRequest() ep-engine/src/dcp/producer.cc:327 (ep.so+0x00000007f85d)
+    #7 EvpDcpStreamReq ep-engine/src/ep_engine.cc:1573 (ep.so+0x0000000cea78)
+    #8 dcp_stream_req_executor memcached/daemon/mcbp_executors.cc:2272 (memcached+0x00000045925c)
+    #9 process_bin_packet memcached/daemon/mcbp_executors.cc:4650 (memcached+0x00000046481d)
+    #10 mcbp_complete_nread(McbpConnection*) memcached/daemon/mcbp_executors.cc:4759 (memcached+0x00000046481d)
+    #11 conn_nread(McbpConnection*) memcached/daemon/statemachine_mcbp.cc:314 (memcached+0x000000472678)
+    #12 McbpStateMachine::execute(McbpConnection&) memcached/daemon/statemachine_mcbp.h:43 (memcached+0x000000447054)
+    #13 McbpConnection::runStateMachinery() memcached/daemon/connection_mcbp.cc:1003 (memcached+0x000000447054)
+    #14 McbpConnection::runEventLoop(short) memcached/daemon/connection_mcbp.cc:1274 (memcached+0x0000004470dd)
+    #15 run_event_loop memcached/daemon/connections.cc:147 (memcached+0x00000044b9e9)
+    #16 event_handler(int, short, void*) memcached/daemon/memcached.cc:851 (memcached+0x00000041466c)
+    #17 event_persist_closure src/libevent/event.c:1319 (libevent_core-2.0.so.5+0x00000000b6b7)
+    #18 event_process_active_single_queue src/libevent/event.c:1363 (libevent_core-2.0.so.5+0x00000000b6b7)
+    #19 event_process_active src/libevent/event.c:1438 (libevent_core-2.0.so.5+0x00000000b6b7)
+    #20 event_base_loop src/libevent/event.c:1639 (libevent_core-2.0.so.5+0x00000000b6b7)
+    #21 CouchbaseThread::run() platform/src/cb_pthreads.cc:54 (libplatform.so.0.1.0+0x0000000057a5)
+    #22 platform_thread_wrap platform/src/cb_pthreads.cc:66 (libplatform.so.0.1.0+0x0000000057a5)
+
+  Previous write of size 2 at 0x7d840000eca2 by thread T55:
+    #0 DcpConnMap::decrNumActiveSnoozingBackfills() ep-engine/src/connmap.cc:1319 (ep.so+0x000000045b7b)
+    #1 BackfillManager::backfill() ep-engine/src/dcp/backfill-manager.cc:273 (ep.so+0x00000005a783)
+    #2 BackfillManagerTask::run() ep-engine/src/dcp/backfill-manager.cc:62 (ep.so+0x00000005ac1c)
+    #3 ExecutorThread::run() ep-engine/src/executorthread.cc:115 (ep.so+0x000000108d96)
+    #4 launch_executor_thread ep-engine/src/executorthread.cc:33 (ep.so+0x000000109675)
+    #5 CouchbaseThread::run() platform/src/cb_pthreads.cc:54 (libplatform.so.0.1.0+0x0000000057a5)
+    #6 platform_thread_wrap platform/src/cb_pthreads.cc:66 (libplatform.so.0.1.0+0x0000000057a5)
+
+Change-Id: I88df57b268c1e615b7c5d2b7caf5f038a53692ba
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2016-10-27 12:25:16.058000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-27 12:25:26.220000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/1639/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-27 12:25:26.366000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/1256/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-27 12:26:49.747000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/1452/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-27 12:30:43.938000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-watson/275/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-27 12:38:30.667000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/1256/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/1639/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/1452/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-watson/275/ : SUCCESS
+
+-------------------------------------
+author: Keira Washington
+date: 2016-10-27 13:40:27.450000000
+
+Patch Set 2:
+
+Bit bizarre that Threadsanitizer isn't understanding the spin locks as it's happy enough with the ones in phosphor - have you tried running it with `force_seq_cst_atomics=1`?
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-10-27 13:51:13.110000000
+
+Patch Set 2:
+
+> Bit bizarre that Threadsanitizer isn't understanding the spin locks
+ > as it's happy enough with the ones in phosphor - have you tried
+ > running it with `force_seq_cst_atomics=1`?
+
+No, I hadn't tried that option. I've only seen this show up the once though, so not sure if I'll be able to trigger it again to test if that makes any difference. Let me leave it running in a loop for a bit...
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-10-27 14:29:23.526000000
+
+Patch Set 2:
+
+> > Bit bizarre that Threadsanitizer isn't understanding the spin
+ > locks
+ > > as it's happy enough with the ones in phosphor - have you tried
+ > > running it with `force_seq_cst_atomics=1`?
+ > 
+ > No, I hadn't tried that option. I've only seen this show up the
+ > once though, so not sure if I'll be able to trigger it again to
+ > test if that makes any difference. Let me leave it running in a
+ > loop for a bit...
+
+So even in a simple unit test (see below), TSan doesn't trigger anything - so it's definitely "seeing" the spin lock as a lock (if I remove the SpinLockHolder then as expected I see errors):
+
+    auto thread_func = [&lock, &counter]() {
+        for (size_t ii = 0; ii < numIterations; ii++) {
+            SpinLockHolder lh(&lock);
+            counter++;
+        }
+    };
+
+As such, I'm even less sure now why TSan flagged this issue - I haven't been able to reproduce the original failure (DcpConnMap::canAddBackfillToActiveQ. My best guess is the original issue was seen with an older version of TSan which didn't correctly detect the lock, or maybe a compiler / libc bug.
+
+Either way, I feel happier just using std::mutex here ;)
+
+-------------------------------------
+author: Asher Vang
+date: 2016-10-27 20:58:28.821000000
+
+Patch Set 2: Code-Review+2
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-11-01 12:56:53.565000000
+
+Patch Set 3: Patch Set 2 was rebased
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-11-01 14:36:29.055000000
+
+Change has been successfully cherry-picked as c236e6af6b8bdf37a332a90e419efad4f988a0fc by Ashlee Kent
+
+-------------------------------------

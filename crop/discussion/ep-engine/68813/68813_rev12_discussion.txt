@@ -1,0 +1,199 @@
+DESCRIPTION
+
+MB-21379: Ensure vals data structure is thread safe in ep_testsuite
+
+When developing additional stats test for ep-engine_perfsuite, the
+following data race was uncovered.
+
+The patch ensures that access to vals, requested_stat_name and
+actual_stat_value are protected with a mutex.  It has been
+confirmed that with this patch the ThreadSanitizer issue no longer
+occurs.
+
+30: WARNING: ThreadSanitizer: data race (pid=42065)
+30:   Read of size 8 at 0x7d1800060a38 by thread T18 (mutexes: write M1704):
+30:     #0 std::_Rb_tree<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::_Select1st<std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > >, std::less<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::allocator<std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > >::_S_right(std::_Rb_tree_node_base*) <null> (engine_testapp+0x00000049c503)
+30:     #1 std::_Rb_tree<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::_Select1st<std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > >, std::less<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::allocator<std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > >::_M_lower_bound(std::_Rb_tree_node<std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > >*, std::_Rb_tree_node<std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > >*, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) <null> (engine_testapp+0x0000004a30db)
+30:     #2 std::_Rb_tree<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::_Select1st<std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > >, std::less<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::allocator<std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > >::lower_bound(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) <null> (engine_testapp+0x00000049c5f6)
+30:     #3 std::map<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::less<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::allocator<std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > >::lower_bound(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) <null> (engine_testapp+0x000000499047)
+30:     #4 std::map<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::less<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::allocator<std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > >::operator[](std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) <null> (engine_testapp+0x00000048e3ba)
+30:     #5 add_stats /home/Kymani Ramirez/master/ep-engine/tests/ep_test_apis.cc:236 (ep_perfsuite.so+0x00000008f5b9)
+30:     #6 STATWRITER_NAMESPACE::add_casted_stat(char const*, char const*, void (*)(char const*, unsigned short, char const*, unsigned int, void const*), void const*) /home/Kymani Ramirez/master/ep-engine/src/statwriter.h:39 (ep.so+0x0000000e5673)
+30:     #7 StatCheckpointVisitor::addCheckpointStat(void const*, void (*)(char const*, unsigned short, char const*, unsigned int, void const*), EventuallyPersistentStore*, RCPtr<VBucket>&) <null> (ep.so+0x0000001c120c)
+30:     #8 StatCheckpointVisitor::visitBucket(RCPtr<VBucket>&) <null> (ep.so+0x0000001c10e5)
+30:     #9 EventuallyPersistentStore::visit(VBucketVisitor&) /home/Kymani Ramirez/master/ep-engine/src/ep.cc:3796 (ep.so+0x000000174559)
+30:     #10 StatCheckpointTask::run() <null> (ep.so+0x0000001c155b)
+30:     #11 ExecutorThread::run() /home/Kymani Ramirez/master/ep-engine/src/executorthread.cc:113 (ep.so+0x0000001ea96d)
+30:     #12 launch_executor_thread /home/Kymani Ramirez/master/ep-engine/src/executorthread.cc:31 (ep.so+0x0000001ea0d0)
+30:     #13 CouchbaseThread::run() /home/Kymani Ramirez/master/platform/src/cb_pthreads.cc:58 (libplatform_so.so.0.1.0+0x00000000c9c7)
+30:     #14 platform_thread_wrap /home/Kymani Ramirez/master/platform/src/cb_pthreads.cc:71 (libplatform_so.so.0.1.0+0x00000000affe)
+30:     #15 <null> <null> (libtsan.so.0+0x0000000230d9)
+30:
+30:   Previous write of size 8 at 0x7d1800060a38 by main thread (mutexes: write M1575):
+30:     #0 operator new(unsigned long) <null> (libtsan.so.0+0x000000025a33)
+30:     #1 __gnu_cxx::new_allocator<std::_Rb_tree_node<std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > >::allocate(unsigned long, void const*) <null> (engine_testapp+0x0000004a6ca7)
+30:     #2 std::allocator_traits<std::allocator<std::_Rb_tree_node<std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > > >::allocate(std::allocator<std::_Rb_tree_node<std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > >&, unsigned long) <null> (engine_testapp+0x0000004a5168)
+30:     #3 std::_Rb_tree<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::_Select1st<std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > >, std::less<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::allocator<std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > >::_M_get_node() <null> (engine_testapp+0x0000004a316f)
+30:     #4 std::_Rb_tree_node<std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > >* std::_Rb_tree<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::_Select1st<std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > >, std::less<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::allocator<std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > >::_M_create_node<std::piecewise_construct_t const&, std::tuple<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&>, std::tuple<> >(std::piecewise_construct_t const&, std::tuple<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&>&&, std::tuple<>&&) <null> (engine_testapp+0x00000049c6b4)
+30:     #5 std::_Rb_tree_iterator<std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > std::_Rb_tree<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::_Select1st<std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > >, std::less<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::allocator<std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > >::_M_emplace_hint_unique<std::piecewise_construct_t const&, std::tuple<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&>, std::tuple<> >(std::_Rb_tree_const_iterator<std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > >, std::piecewise_construct_t const&, std::tuple<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&>&&, std::tuple<>&&) <null> (engine_testapp+0x00000049928e)
+30:     #6 std::map<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::less<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::allocator<std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > >::operator[](std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) <null> (engine_testapp+0x00000048e488)
+30:     #7 add_stats /home/Kymani Ramirez/master/ep-engine/tests/ep_test_apis.cc:236 (ep_perfsuite.so+0x00000008f5b9)
+30:     #8 STATWRITER_NAMESPACE::add_casted_stat(char const*, char const*, void (*)(char const*, unsigned short, char const*, unsigned int, void const*), void const*) /home/Kymani Ramirez/master/ep-engine/src/statwriter.h:39 (ep.so+0x0000000e5673)
+30:     #9 void STATWRITER_NAMESPACE::add_casted_stat<unsigned long>(char const*, unsigned long const&, void (*)(char const*, unsigned short, char const*, unsigned int, void const*), void const*) /home/Kymani Ramirez/master/ep-engine/src/statwriter.h:48 (ep.so+0x0000000e96ae)
+30:     #10 EventuallyPersistentEngine::addSeqnoVbStats(void const*, void (*)(char const*, unsigned short, char const*, unsigned int, void const*), RCPtr<VBucket> const&) /home/Kymani Ramirez/master/ep-engine/src/ep_engine.cc:4445 (ep.so+0x0000001ad56d)
+30:     #11 EventuallyPersistentEngine::doSeqnoStats(void const*, void (*)(char const*, unsigned short, char const*, unsigned int, void const*), char const*, int) /home/Kymani Ramirez/master/ep-engine/src/ep_engine.cc:4490 (ep.so+0x0000001ad95f)
+30:     #12 EventuallyPersistentEngine::getStats(void const*, char const*, int, void (*)(char const*, unsigned short, char const*, unsigned int, void const*)) /home/Kymani Ramirez/master/ep-engine/src/ep_engine.cc:4595 (ep.so+0x0000001ae4de)
+30:     #13 EvpGetStats /home/Kymani Ramirez/master/ep-engine/src/ep_engine.cc:232 (ep.so+0x00000019851e)
+30:     #14 ENGINE_ERROR_CODE std::_Bind<ENGINE_ERROR_CODE (*(engine_interface*, void const*, char const*, int, void (*)(char const*, unsigned short, char const*, unsigned int, void const*)))(engine_interface*, void const*, char const*, int, void (*)(char const*, unsigned short, char const*, unsigned int, void const*))>::__call<ENGINE_ERROR_CODE, , 0ul, 1ul, 2ul, 3ul, 4ul>(std::tuple<>&&, std::_Index_tuple<0ul, 1ul, 2ul, 3ul, 4ul>) <null> (engine_testapp+0x00000049f211)
+30:     #15 ENGINE_ERROR_CODE std::_Bind<ENGINE_ERROR_CODE (*(engine_interface*, void const*, char const*, int, void (*)(char const*, unsigned short, char const*, unsigned int, void const*)))(engine_interface*, void const*, char const*, int, void (*)(char const*, unsigned short, char const*, unsigned int, void const*))>::operator()<, ENGINE_ERROR_CODE>() <null> (engine_testapp+0x00000049aa02)
+30:     #16 std::_Function_handler<ENGINE_ERROR_CODE (), std::_Bind<ENGINE_ERROR_CODE (*(engine_interface*, void const*, char const*, int, void (*)(char const*, unsigned short, char const*, unsigned int, void const*)))(engine_interface*, void const*, char const*, int, void (*)(char const*, unsigned short, char const*, unsigned int, void const*))> >::_M_invoke(std::_Any_data const&) <null> (engine_testapp+0x00000049145b)
+30:     #17 std::function<ENGINE_ERROR_CODE ()>::operator()() const <null> (engine_testapp+0x000000484e28)
+30:     #18 call_engine_and_handle_EWOULDBLOCK /home/Kymani Ramirez/master/memcached/programs/engine_testapp/engine_testapp.cc:127 (engine_testapp+0x00000047cf00)
+30:     #19 mock_get_stats /home/Kymani Ramirez/master/memcached/programs/engine_testapp/engine_testapp.cc:220 (engine_testapp+0x00000047d896)
+30:     #20 perf_stat_latency_core /home/Kymani Ramirez/master/ep-engine/tests/ep_perfsuite.cc:1238 (ep_perfsuite.so+0x000000063d3d)
+30:     #21 perf_stat_latency /home/Kymani Ramirez/master/ep-engine/tests/ep_perfsuite.cc:1306 (ep_perfsuite.so+0x00000006427a)
+30:     #22 perf_slow_stat_latency_100vb /home/Kymani Ramirez/master/ep-engine/tests/ep_perfsuite.cc:1365 (ep_perfsuite.so+0x00000006498c)
+30:     #23 execute_test /home/Kymani Ramirez/master/memcached/programs/engine_testapp/engine_testapp.cc:962 (engine_testapp+0x000000481776)
+30:     #24 main /home/Kymani Ramirez/master/memcached/programs/engine_testapp/engine_testapp.cc:1359 (engine_testapp+0x000000482ab1)
+
+The patch renames the vals_mutex to be get_stats_mutex which protects
+against parallel calls to get_stats.  In addition a new vals_mutex is
+created which protects at a fine level of granuality the vals map and
+the strings requested_stat_name and actual_stat_value from parallel
+accesses.
+
+Change-Id: I7bdc847c0913244409fa044e312d53b484dc2dab
+
+
+COMMENTS
+
+author: Kymani Ramirez
+date: 2016-10-19 14:57:42.831000000
+
+Uploaded patch set 12: Commit message was updated.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-19 14:57:53.051000000
+
+Patch Set 12:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/411/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-19 14:57:53.210000000
+
+Patch Set 12:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1617/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-19 14:57:53.347000000
+
+Patch Set 12:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1289/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-19 14:57:53.493000000
+
+Patch Set 12:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1515/ (4/4)
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-10-19 15:10:52.059000000
+
+Patch Set 12: Code-Review-1
+
+(10 comments)
+
+Line:49, tests/ep_test_apis.cc -> To aid in understanding, can I suggest a slight structural change to this, and expand the description a bit more - there's actually 2 things which need locking (I think):
+
+1) "get_stat and get_histo_stat can only be called once at a time as we use two global variables (requested_stat_name & actual_stat_value) to hold the context of the search. Therefore the two functions need to acquire a lock and keep for the whole function duration."
+
+For this I suggest we put the elements in a simple struct, to highlight what the locking scope is:
+
+ struct {
+     std::mutex mutex;
+     std::string requested_stat_name;
+     std::string actual_stat_value;
+ }  get_stat_context;
+    
+2) "`vals` map - this is used when asking for all stats (or when other callbacks such as StatCheckpointTask try to add stats)." Ideally we'd also create a struct for this, but the `vars` symbol is extern'd and a bunch of other people write to it; so it's probably simpler to leave as-is (with a separate `vals_mutex` parallel variable).
+
+Line:238, tests/ep_test_apis.cc -> I think the comment is a little redundant for every use, as long as we explain things well in the comment where it's declared.
+
+Line:250, tests/ep_test_apis.cc -> We can remove this, as any call of `add_individual_stat` should be done with `get_stat.mutex`
+
+Line:262, tests/ep_test_apis.cc -> Ditto
+
+Line:1060, tests/ep_test_apis.cc -> I don't believe we need this (as this will call the "low-level" get stats API and hence will just end up calling the add_stat method which updates `vals` map.
+
+Line:1170, tests/ep_test_apis.cc -> Similar here, remove the lock here (as get_stat.mutex should be used to guard these two fields), but ensure that get_stats.mutex is held for the complete duration of this function call.
+
+Line:1183, tests/ep_test_apis.cc -> Again here, don't need vals_mutex for actual_stat_value.
+
+Line:1253, tests/ep_test_apis.cc -> Remove this from here, and instead move to line 1277.
+
+Line:1279, tests/ep_test_apis.cc -> Remove this, use get_stat.mutex instead.
+
+Line:1299, tests/ep_test_apis.cc -> Remove this, the global get (all) stats should be guarded by vals_mutex.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-19 15:13:43.443000000
+
+Patch Set 12: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1515/ : FAILURE
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/1515/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/411/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1289/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1617/ : SUCCESS
+
+-------------------------------------
+author: Kymani Ramirez
+date: 2016-10-19 16:48:29.307000000
+
+Patch Set 12:
+
+(10 comments)
+
+Line:49, tests/ep_test_apis.cc -> Done
+
+Line:238, tests/ep_test_apis.cc -> Done
+
+Line:250, tests/ep_test_apis.cc -> Done
+
+Line:262, tests/ep_test_apis.cc -> Done
+
+Line:1060, tests/ep_test_apis.cc -> Done
+
+Line:1170, tests/ep_test_apis.cc -> Done
+
+Line:1183, tests/ep_test_apis.cc -> Done
+
+Line:1253, tests/ep_test_apis.cc -> Done
+
+Line:1279, tests/ep_test_apis.cc -> Done
+
+Line:1299, tests/ep_test_apis.cc -> Done
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-10-20 15:19:18.319000000
+
+Change has been successfully cherry-picked as d775e169d9eec9807ba3ed2afd8e2b4a51c5f122 by Ashlee Kent
+
+-------------------------------------

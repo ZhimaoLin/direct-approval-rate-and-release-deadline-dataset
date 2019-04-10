@@ -1,0 +1,40 @@
+DESCRIPTION
+
+Reorder the persistence tasks to increase mccouch parallelization
+
+The items from the persistence queue are sorted in the ascending
+order of vbucket ids and keys. This change reorders the
+persistence queue as follows:
+
+1) Divide the list of sorted items for each vbucket into multiple
+chunks such that each chunk size is equal to the batch size of
+each persistence worker in mccouch (1000 by default).
+2) Iterate each vbucket and push its current chunk into the
+outgoing queue. Remove the current chunk from each vbucket.
+3) Repeat step 2 until all the chunks are visited.
+
+For example, suppose that the persistence queue currently has
+(vb0,k1)...(v0,k2000)(v1,k2001)...(v1,k4000)(v2,k4001)...
+(v2,k6000).
+
+After reordering, the persistence queue will have
+(vb0,k1)...(vb0,k1000)(vb1,k2001)...(vb1,k3000)(vb2,k4001)...
+(vb2,k5000)(vb0,k1001)...(vb0,k2000)(vb1,k3001)...(vb1,k4000)
+(vb2,k5001)...(vb2,k6000).
+
+This reordering can result in having mccouch workers write
+items into different vbucket database files.
+
+Change-Id: I07036ad45b5cc80f4a09415a009c9e6f60807901
+
+
+COMMENTS
+
+author: Abby Duran
+date: 2011-10-26 06:07:57.846000000
+
+Patch Set 1:
+
+From my tests, the reordering overhead is not that significant, but I'm sure we can optimize it further to reduce the overhead.
+
+-------------------------------------

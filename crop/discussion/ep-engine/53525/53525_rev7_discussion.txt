@@ -1,0 +1,125 @@
+DESCRIPTION
+
+MB-15662: Compression at producer, uncompression at consumer
+
+If enable_value_compression was set by a consumer, the
+corresponding producer will compress all uncompressed
+documents before transmission. On the consumer side,
+all documents whose datatype is compressed, are
+decompressed before processing.
+
++ Unittest testing compression
+
+Change-Id: Iee9bace832c35be776ec1a7421ad3edb3381b1d9
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2015-07-31 01:28:52.998000000
+
+Uploaded patch set 7.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-07-31 01:29:06.812000000
+
+Patch Set 7:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/660/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-07-31 02:09:56.447000000
+
+Patch Set 7: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/660/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-07-31 08:36:38.393000000
+
+Patch Set 7: Code-Review-1
+
+(15 comments)
+
+Much better - thanks. I still think there's some fundamental adjustments we should make to this approach - namely not actually decompressing until we need the data decompressed; as currently the decompress overhead will be significant. 
+
+However I think this is now along the right track, and the optimisation can be added later. So I'm dropping to -1 (for the various smaller code issues described below).
+
+Line:188, tests/mock/mock_dcp.cc -> Just use a std::vector / std::string - much simplifies managing the memory. See my related change in ep_test_apis.cc: http://review.Piper Jefferson.org/52783
+
+Line:4520, tests/ep_testsuite.cc -> Prefer checkeq() instead of check() - on error it can print the values of each of the compared values; making debugging easier.
+
+Here you'll only see that the result wasn't ENGINE_SUCCESS, not what it actually was.
+
+Line:4527, tests/ep_testsuite.cc -> I believe you have a memory leak here - you need to call destroy_cookie() on it once it's finished with.
+
+Line:4533, tests/ep_testsuite.cc -> Same here - checkeq() preferred.
+
+Line:4536, tests/ep_testsuite.cc -> Note: more robust to to strlen("connection_buffer_size") instead of hardcoding 22
+
+Line:4537, tests/ep_testsuite.cc -> Same here - checkeq() preferred.
+
+Line:4541, tests/ep_testsuite.cc -> Same here - checkeq() preferred.
+
+Line:4548, tests/ep_testsuite.cc -> Same here - checkeq() preferred.
+
+Line:4582, tests/ep_testsuite.cc -> Any reason not to use std::vector<char> here? Simplifies memory management / ensuring data is freed.
+
+Line:4591, tests/ep_testsuite.cc -> Magic number (8) - can you use a symbolic constant instead?
+
+Line:4599, tests/ep_testsuite.cc -> Given this is a unit test probably nicer to add a message here (maybe a check(false, "unexpected DCP message") or similar.
+
+Line:4604, tests/ep_testsuite.cc -> Again, use check() here and print a message.
+
+Line:427, src/item.h -> As a possible future optimization we could be a bit smarter here - for example only bother compressing if the compressed version is some fraction of the original (e.g. less than 95%), and/or has a minimum byte saving.
+
+I would argue there isn't much point paying the compression/decompression overhead if a 1000B uncompressed document only compresses down to 980B.
+
+Line:434, src/item.h -> This is probably ok for now; but I believe this may be somewhat inefficient - there's an extra unnecessary memory alloc and memcpy:
+
+1). We create a new, empty buffer for the expanded data (in doSnappyCompress), and compress into it.
+2) in Item::setData() we create a new empty buffer of the same size and them memcpy the input argument into it.
+
+We probably want to look into creating a version of doSnappyCompress which takes a Blob object to write into - this can then directly be given to the Item object to own without needing to copy the data.
+
+Line:289, src/dcp/consumer.cc -> I think this needs more thought - what if the producer sent a compressed{binary,json} mutation *because* the original datatype was COMPRESSED? In other words you're prematurely decompressing the document.
+
+Along the lines of the earlier discussions, I think the DCP consumer itself should do nothing with compressed datatypes. Instead we should look at the ultimate destination of the data. 
+
+If this is destined for the ep-engine hashtable or disk (which I assume is what this file handles) then we can simply pass the payload (including the matching datatype) downstream and let it be stored on disk (saves us re-compressing in couchstore) or put into the hashtable. 
+
+In the hashtable case the existing code will "work" in so far as non-datatype supporting clients will get the data decompressed on-demand. However this is inefficient if the same (compressed) document is repeatedly fetched by non-datatype clients; as we will be repeatedly decompressing the same document over and over again.
+
+Therefore we probably want to add code which, upon first request from a non-datatype supporting client, decompressed it once, replacing the existing compressed Item with the decompressed version (so we only have to decompress once).
+
+
+In summary I think you can basically remove this whole hunk - everything should work (but inefficiently). Then create a second patch which does the decompress once optimisation I mentioned above.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-08-06 02:12:12.816000000
+
+Patch Set 7:
+
+(4 comments)
+
+Line:188, tests/mock/mock_dcp.cc -> Done
+
+Line:427, src/item.h -> Makes sense, once we agree upon a compression ratio requisite, i'll adapt the code here at that time.
+
+Line:434, src/item.h -> I could add this as an enhancement in a later change.
+
+Line:289, src/dcp/consumer.cc -> Sounds good to me.
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-08-10 17:04:50.921000000
+
+Change has been successfully cherry-picked as 52d106bf52c2e8469cdedc8d54bcc160e9e2ed21
+
+-------------------------------------

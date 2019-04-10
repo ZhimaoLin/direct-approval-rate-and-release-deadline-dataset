@@ -1,0 +1,126 @@
+DESCRIPTION
+
+Reduce content hash function collisions
+
+The hash code returned by RawTextComparator (or that is used
+by the SimilarityIndex) play an important role in the speed of
+any algorithm that is based upon them.  The lower the number of
+collisions produced by the hash function, the shorter the hash
+chains within hash tables will be, and the less likely we are to
+fall into O(N^2) runtime behaviors for algorithms like PatienceDiff.
+
+Our prior hash function was absolutely horrid, so replace it with
+the proper definition of the DJB hash that was originally published
+by Professor Daniel J. Bernstein.
+
+To support this assertion, below is a table listing the maximum
+number of collisions that result when hashing the unique lines in
+each source code file of 3 randomly chosen projects:
+
+  test_jgit: 931 files; 122 avg. unique lines/file
+   Algorithm    | Collisions
+   -------------+-----------
+   prior_hash            418
+   djb                     5
+   sha1                    6
+   string_hash31          11
+
+  test_linux26: 30198 files; 258 avg. unique lines/file
+   Algorithm    | Collisions
+   -------------+-----------
+   prior_hash           8675
+   djb                    32
+   sha1                    8
+   string_hash31          32
+
+  test_frameworks_base: 8381 files; 184 avg. unique lines/file
+   Algorithm    | Collisions
+   -------------+-----------
+   prior_hash           4615
+   djb                    10
+   sha1                    6
+   string_hash31          13
+
+We can clearly see that prior_hash performed very poorly, resulting
+in 8,675 collisions (elements in the same hash bucket) for at least
+one file in the Linux kernel repository.  This leads to some very
+bad O(N) style insertion and lookup performance, even though the
+hash table was sized to be the next power-of-2 larger than the
+total number of unique lines in the file.
+
+The djb hash we are replacing prior_hash with performs closer to
+SHA-1 in terms of having very few collisions.  This indicates it
+provides a reasonably distributed output for this type of input,
+despite being a much simpler algorithm (and therefore will be much
+faster to execute).
+
+The string_hash31 function is provided just to compare results with,
+it is the algorithm commonly used by java.lang.String hashCode().
+
+However, life isn't quite this simple.
+
+djb produces a 32 bit hash code, but our hash tables are always
+smaller than 2^32 buckets.  Mashing the 32 bit code into an array
+index used to be done by simply taking the lower bits of the hash
+code by a bitwise and operator.  This unfortuntely still produces
+many collisions, e.g. 32 on the linux-2.6 repository files.
+
+From [1] we can apply a final "cleanup" step to the hash code to
+mix the bits together a little better, and give priority to the
+higher order bits as they include data from more bytes of input:
+
+  test_jgit: 931 files; 122 avg. unique lines/file
+   Algorithm    | Collisions
+   -------------+-----------
+   prior_hash            418
+   djb                     5
+   djb + cleanup           6
+
+  test_linux26: 30198 files; 258 avg. unique lines/file
+   Algorithm    | Collisions
+   -------------+-----------
+   prior_hash           8675
+   djb                    32
+   djb + cleanup           7
+
+  test_frameworks_base: 8381 files; 184 avg. unique lines/file
+   Algorithm    | Collisions
+   -------------+-----------
+   prior_hash           4615
+   djb                    10
+   djb + cleanup           7
+
+This is a massive improvement, as the number of collisions for
+common inputs drops to acceptable levels, and we haven't really
+made the hash functions any more complex than they were before.
+
+[1] http://lkml.org/lkml/2009/10/27/404
+
+Change-Id: Ia753b695de9526a157ddba265824240bd05dead1
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Zachary Orozco
+date: 2010-09-24 13:02:02.000000000
+
+Patch Set 1: Looks good to me, but someone else must approve
+
+
+
+-------------------------------------
+author: Malia Sampson
+date: 2010-09-24 16:34:56.000000000
+
+Patch Set 1: Looks good to me, approved; IP review completed
+
+Looks good.
+
+-------------------------------------
+author: Malia Sampson
+date: 2010-09-24 16:34:57.000000000
+
+Change has been successfully merged into the git repository.
+
+-------------------------------------

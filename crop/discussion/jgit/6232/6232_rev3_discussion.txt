@@ -1,0 +1,104 @@
+DESCRIPTION
+
+Make DirCacheCheckout update timestamps in the index.
+
+This updates the timestamp of files that are not touched during
+checkout. Otherwise the timestamp will always be zero, causing the
+IndexDiffFilter to always calculate the checksum of file contents.
+
+Change-Id: I18047f5725f22811bb4194ca1d3a3cac56074183
+
+
+COMMENTS
+
+author: Bryanna Douglas
+date: 2012-06-04 11:19:23.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-06-04 17:50:54.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1937/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-06-04 17:50:54.000000000
+
+Patch Set 3: Verified
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1937/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2012-06-05 14:38:44.000000000
+
+Patch Set 3: I would prefer that you didn't submit this
+
+I like the idea to cleanup certain timestamps during checkout, but we can't do this so blindly. It's wrong to always update the index entry with the timestamp of the associated work-tree file. Sometimes we keep index entries although we know that the filesystem has already been modified. Simply copying the filesystem timestamp would be wrong. Think about this:
+
+ git init
+ touch f.txt        // lastmodified(f.txt) = m
+ git add f.txt      // timestamp(indexEntry(f.txt)) = m
+ git commit -m initial
+ git checkout -b side
+ touch g.txt
+ git add g.txt
+ git commit -m modified1
+ sleep 2            // to avoid smudged entries
+ echo x > f.txt     // lastmodified(f.txt) = m + 1
+ git checkout master
+
+In the last checkout we want to keep the index entry for f.txt with the timestamp of 'm' although we know that the
+filesystem has already 'm + 1'
+
+Another issue is that this may be quite expensive (not sure about it). Imagine you have the linux kernel repo with 38000 files. You switch from branch master to develop. Since you have not touched the files we want to keep all 38000 files. And youre change forces us to ask the filesystem 38000 times for a timestamp. Without your change we can completely ignore the filesystem and the index for all those files where the HEAD version and the BRANCH version are equal (BRANCH version is the active version on the branch you want to checkout). I love this feature of git to be able to switch branches without having to check the dirtyness of the index and the working tree for 99% of the files.
+
+But: maybe you could check for smudged entries and update only them. If for smudged entries (timestamp=0) the filesystem content is the same as the index content then we could use copy over the filesystem lastmodified date and unsmudge the entry.
+
+-------------------------------------
+author: Bryanna Douglas
+date: 2012-06-05 15:12:36.000000000
+
+Patch Set 3:
+
+thanks for the review. i'm clearly no expert in this area (not yet ;)), and i knew this approach is (probably) not perfect. if you have ideas on how to do better, please feel free to instruct me (instruct me like a 4 year old, pls ;)) or even take over the change.
+
+i can only say about the performance: we have a repo with ~33000 files, and this was the reason i tried to improve the situation: re-indexing took ~5-10 minutes (!), and with this change is down to a few seconds, which is way better. AFAICT, the reading of the filestamp is rather unexpensive (at least compared to not reading it, and re-hashing file contents all the time ;)).
+
+if the keep() method is the wrong place, or if more care needs to be taken when to call it with zero (old behaviour) or the current file's timestamp (new behaviour) - i can't tell, but you may tell me, and i'll do my best :)
+
+currently i just can say that all unit tests go ok, and that i'm quite satisfied with how /fast/ this makes working with JGit/EGit; it really is approximately 50 times faster in most situations, and i had to wait _a lot_ before.
+
+-------------------------------------
+author: Bryanna Douglas
+date: 2012-06-05 15:15:31.000000000
+
+Patch Set 3:
+
+ah, i missed your last sentence: update updating only when timestamp = 0. the initial problem was that _all_ timestamps, except for file that where staged or modified in the last commit on the tip of the current branch (cool, eh?) where zero. thats why i was re-setting them. but after actually running this code once, timestamps where kept correct i think. maybe it would be better to check and only do when it is zero.
+
+-------------------------------------
+author: Bryanna Douglas
+date: 2012-06-05 18:00:02.000000000
+
+Patch Set 3:
+
+long story short - i think a unit test to check the modification times in the index would be a good idea, to proof the different states.
+
+could you help me figure out the different things that should work? your first example is a good one for the first test case :)
+
+-------------------------------------
+author: Bryanna Douglas
+date: 2012-06-06 05:54:44.000000000
+
+Patch Set 3:
+
+i now did a little testing (i will add the test to this change later). for me it seems that my change does not change the behavior in any case. even the case you mentioned in your comment behaves the same (it's broken ;)), regardless of whether i have my code in or not. i will look into fixing it to behave correctly - we'll see
+
+-------------------------------------

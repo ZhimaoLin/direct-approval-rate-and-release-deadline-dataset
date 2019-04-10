@@ -1,0 +1,230 @@
+DESCRIPTION
+
+Support for symlinks in compare editor
+
+This change makes compare editor works same way the git diff works for
+symlinks: it shows not the diff between the file contents, but diff for
+the symlink target paths.
+
+The compare editor gives a convenient way (given both bug 484498 and bug
+484491 patches are merged) to modify symlink target in the IDE, without
+using command line tooling.
+
+Bug: 484494
+Change-Id: I58d2a5d969886fc00e5aee8f7b83ac57cf6cfa7f
+Signed-off-by: Jayvion Booth xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Jayvion Booth
+date: 2015-12-18 14:27:15.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-12-18 14:27:21.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/7971/
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-12-18 14:37:06.000000000
+
+Patch Set 3:
+
+> Seems to work on MacOS for valid links. Apparently also for broken
+ > links.
+ > 
+ > However, I'm extremely wary of having these links editable in the
+ > compare editor. I get very strange things and follow-up errors if I
+ > edit a link in the compare editor and make it invalid in doing so.
+
+See below, we had multiple ussues in j|egit.
+
+ > And I didn't even try to do really bad things, like setting the
+ > link content to multiple lines of text.
+
+I've updated the patch to use only the first line of the text, works like a charm :-)
+ 
+ > In particular:
+ > [...]
+ > 2. Link is shown in staging view as deleted. 
+
+Bug 484498, I've rebased this patch on top of the patch for bug 484498.
+
+ > Other case:
+ > [...]
+ > 4. In Eclipse, do a Reset hard on the parent commit (with the valid
+ > link). Fails with
+ > java.io.IOException: Could not delete file /Users/thomas/Git/testproject_b/link.txt
+
+Bug 484491, patch is already merged to jgit.
+
+ > I realize that these errors have nothing to do with this change
+ > here. Maybe they're even due to my being on a Mac and having a
+ > somewhat oldish git version 1.7.7.5 (Apple Git-26) there.
+
+No, that was all our bugs :-)
+
+ > Nevertheless I would advise against making link contents editable.
+ > I don't think that's a good idea. Showing the link content is, but
+ > not editing it. Let's make the compare editor read-only for links
+ > in workspace or index.
+
+I've grocked about it. I do not think this is bad: same way we could disallow users renaming or deleting regular files or directories or both, because sometimes they don't really mean it.
+
+Thanks to git model in general, and with the fixes of the bugs above, this is pretty safe to "play" with links now.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-12-18 14:54:54.000000000
+
+Patch Set 3: Code-Review-1
+
+Build Unstable 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/7971/ : UNSTABLE
+
+-------------------------------------
+author: Alayna Houston
+date: 2015-12-19 14:53:29.000000000
+
+Patch Set 3: Code-Review-1
+
+Sorry, still no cigar.
+
+The first problem is now not any better:
+
+0. Start off with a valid link in the workspace, pointing to another file in the workspace. (Link created with ln -s in shell, committed in shell, then pulled in EGit.)
+1. Select "Context menu->Compare with index" and edit the workspace link's contents (append a zero to make it invalid -- assuming there is no such file). Save.
+2. cgit correctly reports the link as modified. But it doesn't appear at all in the git staging view!
+
+-------------------------------------
+author: Alayna Houston
+date: 2015-12-20 10:56:57.000000000
+
+Patch Set 3:
+
+There is also a small encoding problem on MacOS X 10.7.5 with Java 1.8.0_60-b27. I have a file named "äéü.txt" in my test repository, and a link to that created via "ln -s äéü.txt link.txt". That link has a disk size of 10 bytes: 2 UTF-8 bytes each for the Umlauts, plus 4 for ".txt". When I open that link in the compare editor, change it to some other valid target, and then change it back (by taking over the contents from the "index" side), I would expect to have no modifications anymore. But saving creates a link with 13 bytes (a, COMBINING_DIARESIS, e, COMBINING_ACUTE_ACCENT, u, COMBINING_DIARESIS, .txt), which is of course shown as a modification. We probably can't do much about that -- Files.readSymbolicLink returns the 10-byte encoding, but when we write the link again in FileUtils.createSymLink(), "Path nioTarget = new File(target).toPath();" returns the 13-byte encoding. Both encodings work, though.
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-12-20 13:17:23.000000000
+
+Patch Set 3:
+
+> Sorry, still no cigar.
+ > 
+ > The first problem is now not any better:
+ > 
+ > 0. Start off with a valid link in the workspace, pointing to
+ > another file in the workspace. (Link created with ln -s in shell,
+ > committed in shell, then pulled in EGit.)
+ > 1. Select "Context menu->Compare with index" and edit the workspace
+ > link's contents (append a zero to make it invalid -- assuming there
+ > is no such file). Save.
+ > 2. cgit correctly reports the link as modified. But it doesn't
+ > appear at all in the git staging view!
+
+I can't reproduce. Which Eclipse version you you using? Staging view shows me all changes as expected.
+
+-------------------------------------
+author: Alayna Houston
+date: 2015-12-20 20:08:23.000000000
+
+Patch Set 3:
+
+> I can't reproduce. Which Eclipse version you you using? Staging
+ > view shows me all changes as expected.
+
+Eclipse Mars for development. Runtime Eclipse with jgit at da5ac45 and this patch set 3 checked out in egit, using egit-4.5-staging as target platform. MacOS 10.7.5 & java 1.8.0_60-b27. For me, it is reproducible. Might be MacOS-specific. I'll try to track it down.
+
+-------------------------------------
+author: Alayna Houston
+date: 2015-12-20 21:30:36.000000000
+
+Patch Set 3:
+
+> I'll try to track it down.
+
+It's related to the encoding problem on Macs mentioned earlier. I get
+
+  java.io.EOFException: Short read of block.
+	at org.eclipse.jgit.util.IO.readFully(IO.java:249)
+	at org.eclipse.jgit.treewalk.WorkingTreeIterator.readContentAsNormalizedString(WorkingTreeIterator.java:1047)
+	at org.eclipse.jgit.treewalk.WorkingTreeIterator.contentCheck(WorkingTreeIterator.java:985)
+	at org.eclipse.jgit.treewalk.WorkingTreeIterator.isModified(WorkingTreeIterator.java:909)
+	at org.eclipse.jgit.treewalk.filter.IndexDiffFilter.include(IndexDiffFilter.java:227)
+	at org.eclipse.jgit.treewalk.filter.AndTreeFilter$List.include(AndTreeFilter.java:163)
+	at org.eclipse.jgit.treewalk.TreeWalk.next(TreeWalk.java:654)
+	at org.eclipse.jgit.lib.IndexDiff.diff(IndexDiff.java:437)
+	at org.eclipse.egit.core.internal.indexdiff.IndexDiffCacheEntry.calcIndexDiffDataIncremental(IndexDiffCacheEntry.java:529)
+	at org.eclipse.egit.core.internal.indexdiff.IndexDiffCacheEntry.access$11(IndexDiffCacheEntry.java:509)
+	at org.eclipse.egit.core.internal.indexdiff.IndexDiffCacheEntry$5.updateIndexDiff(IndexDiffCacheEntry.java:455)
+	at org.eclipse.egit.core.internal.indexdiff.IndexDiffUpdateJob.run(IndexDiffUpdateJob.java:75)
+
+triggered via LocalNonWorkspaceTypedElement.refreshRepositoryState(). The point is: I tried the above with my link to "äéü.txt". Changed it to point to "äéü.txt0". As a result, 14 bytes are written (decomposed form), not 11. WorkingTreeIterator then tries read those 14 bytes, but gets only 11 from FileTreeIterator.openInputStream because that normalizes back to NFC. And actually we already get back a fully composed string from Files.readSymbolicLink()... looking through the source code of sun.nio.fs.MacOSXFileSystemProvider, sun.nio.fs.UnixFileSystemProvider, sun.nio.fs.UnixPath, and sun.nio.fs.MacOSXFileSystem, it looks as if on a Mac, createSymbolicLink() always writes NFD, but readSymbolicLink always returns NFC. Yuck.
+
+Not sure what's the best way to deal with this, especially since doing "ln -s äéü.txt link.txt" on the command line produces a link with on-disk size of 10 bytes, so it evidently is in NFC, not NFD.
+
+-------------------------------------
+author: Alayna Houston
+date: 2015-12-21 18:55:10.000000000
+
+Patch Set 3:
+
+> > I'll try to track it down.
+ > 
+ > It's related to the encoding problem on Macs mentioned earlier. I
+ > get
+ > 
+ > java.io.EOFException: Short read of block.
+
+As you noticed, change I264c597 is a fix for this. However, even without any special characters there's still another problem: if a link is made invalid and then valid again, it doesn't re-appear in the package explorer. Needs a manual refresh. I think this is due to our using a LocalNonWorkspaceTypedElement for a workspace resource. So LocalNonWorkspaceTypedElement would need to also refresh that resource.
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-12-21 18:59:24.000000000
+
+Patch Set 3:
+
+> > > I'll try to track it down.
+ > >
+ > > It's related to the encoding problem on Macs mentioned earlier. I
+ > > get
+ > >
+ > > java.io.EOFException: Short read of block.
+ > 
+ > As you noticed, change I264c597 is a fix for this. However, even
+ > without any special characters there's still another problem: if a
+ > link is made invalid and then valid again, it doesn't re-appear in
+ > the package explorer. Needs a manual refresh. I think this is due
+ > to our using a LocalNonWorkspaceTypedElement for a workspace
+ > resource.
+
+It is because IResource can't model broken links at all, there is a bug for it. 
+
+ > So LocalNonWorkspaceTypedElement would need to also
+ > refresh that resource.
+
+Yes, we can add this.
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-12-21 19:01:47.000000000
+
+Patch Set 3:
+
+See https://bugs.eclipse.org/bugs/show_bug.cgi?id=290318
+
+-------------------------------------
+author: Gerrit Johnathan Pham
+date: 2015-12-24 00:41:50.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

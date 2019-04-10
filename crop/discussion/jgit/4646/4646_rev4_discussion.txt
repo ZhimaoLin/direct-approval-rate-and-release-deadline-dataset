@@ -1,0 +1,78 @@
+DESCRIPTION
+
+Do not write edge objects to the pack stream
+
+Consider two objects A->B where A uses B as a delta base, and these
+are in the same source pack file ordered as "A B".
+
+If cached packs is enabled and B is also in the cached pack that
+will be appended onto the end of the thin pack, and both A, B are
+supposed to be in the thin pack, PackWriter must consider the fact
+that A's base B is an edge object that claims to be part of the
+new pack, but is actually "external" and cannot be written first.
+
+If the object reuse system considered B candidates fist this bug
+does not arise, as B will be marked as edge due to it existing in
+the cached pack. When the A candidates are later examined, A sees a
+valid delta base is available as an edge, and will not later try to
+"write base first" during the writing phase.
+
+However, when the reuse system considers A candidates first they
+see that B will be in the outgoing pack, as it is still part of
+the thin pack, and arrange for A to be written first. Later when A
+switches from being in-pack to being an edge object (as it is part
+of the cached pack) the pointer in B does not get its type changed
+from ObjectToPack to ObjectId, so B thinks A is non-edge.
+
+We work around this case by also checking that the delta base B
+is non-edge before writing the object to the pack. Later when A
+writes its object header, delta base B's ObjectToPack will have
+an offset == 0, which makes isWritten() = false, and the OBJ_REF
+delta format will be used for A's header. This will be resolved by
+the client to the copy of B that appears in the later cached pack.
+
+Change-Id: Ifab6bfdf3c0aa93649468f49bcf91d67f90362ca
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2011-11-18 23:43:16.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-11-18 23:43:19.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1049/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-11-18 23:46:29.000000000
+
+Patch Set 4: Build Successful
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1049/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-11-18 23:54:35.000000000
+
+Patch Set 4: Looks good to me, approved; IP review completed
+
+
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2011-11-18 23:55:10.000000000
+
+Your change could not be merged due to a path conflict.
+
+Please merge (or rebase) the change locally and upload the resolution for review.
+
+-------------------------------------

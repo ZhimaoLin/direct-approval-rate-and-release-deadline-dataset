@@ -1,0 +1,125 @@
+DESCRIPTION
+
+[RFC] Provide native lstat() via JNI
+
+This does not yet work, looking for comments how to fix
+loading NativeFSAccess from org.eclipse.jgit when starting
+FSAccessTest as JUnit plugin test.
+
+For now only implemented on MacOSX until the concept is clear.
+Also integration of native make into build is not yet done.
+Build jgitnative using CDT and copy resulting jnilib to
+bundle org.eclipse.jgit.macosx_x86_64 manually.
+
+Change-Id: Iffb12334b5440d49b6d2623ceb91f4d873f217a0
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Douglas Trujillo
+date: 2010-10-28 22:33:11.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(2 inline comments)
+
+Something is wrong with hooking the native fragment onto org.eclipse.jgit, if I put all the code into one project it works but I am lost separating the platform dependent code into a fragment.
+
+Line:53, org.eclipse.jgit.macosx_x86_64/src/org/eclipse/jgit/util/fs/os/NativeFSAccess.java -> will be removed
+
+Line:84, jgitnative/lstat.c -> these printf calls will be removed
+
+-------------------------------------
+author: Rocco Fowler
+date: 2010-10-29 05:11:28.000000000
+
+Patch Set 1:
+
+Did you try it with the library in the fragment root? I read that some guys had issues when  the library was located within a folder. But that doesn't really make sense to me.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2010-10-29 08:14:00.000000000
+
+Patch Set 1:
+
+I tried with the shared library in the bundle root as well but this didn't fix the problem.
+
+One strange thing I observed : I found that the manifest entry for
+the native code
+
+Bundle-NativeCode: /native/macosx/x86_64/libjgitnative.jnilib;
+	 osname=macosx;
+	 processor=x86_64;
+
+has to end with a semicolon, but the OSGi spec says this should not be necessary. When removing the semicolon I get an error message that the bundle Bundle-NativeCode_0.0.0 cannot be resolved. Maybe this points at a bug. With the manifest as posted here org.eclipse.jgit can't load the JNI class in the native fragment so I am seeing ClassNotFoundException.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-10-29 22:58:23.000000000
+
+Patch Set 1: (4 inline comments)
+
+
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2010-10-30 00:04:13.000000000
+
+Patch Set 1: (4 inline comments)
+
+
+
+Line:90, org.eclipse.jgit.macosx_x86_64/src/org/eclipse/jgit/util/fs/os/NativeFSAccess.java -> good idea, I will do that
+
+Line:74, jgitnative/lstat.c -> yup, I'll add an #ifdef
+
+macosx, x86_64 fills that with 0 
+
+Not sure which platforms we want to support here. 
+I would say at least:
+- macosx, x86_64
+- linux, x86 and x86_64
+- windows, x86 and x86_64
+
+Any other ? The challenge will be to setup the central
+build for all the platforms.
+
+Line:106, jgitnative/lstat.c -> yeah, will throw specific exceptions here
+
+Line:65, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/FSAccess.java -> ok, that's better, I also didn't like reflection, I was too tired looking at the manifests to spot a better solution ;-)
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-10-29 22:58:22.000000000
+
+MISMATCHED INLINE COMMENT
+Line:90, org.eclipse.jgit.macosx_x86_64/src/org/eclipse/jgit/util/fs/os/NativeFSAccess.java -> Should we use java.io.File here and have the wrapper unpack to String with getAbsolutePath()?
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-10-29 22:58:22.000000000
+
+MISMATCHED INLINE COMMENT
+Line:74, jgitnative/lstat.c -> We might need a #ifdef around these lines, not every platform has nsec available.  When its not supported, we need to fill with 0.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-10-29 22:58:22.000000000
+
+MISMATCHED INLINE COMMENT
+Line:106, jgitnative/lstat.c -> Probably fine, but ENOENT or ENOTDIR are likely failures, failures we may wish to make more obvious to the Java code.
+
+So we should make those more easily detectable than relying on checking the translated platform error string.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-10-29 22:58:22.000000000
+
+MISMATCHED INLINE COMMENT
+Line:65, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/FSAccess.java -> FWIW, this stuff should go in the static initializer of the class.
+
+We should also use an interface to bridge the two together, that is the NativeFSAccess should extend the abstract FSAccess class and implement the abstract virtual methods that are defined.  That way at runtime we are only dispatching through the abstract method rather than through reflection.
+
+-------------------------------------

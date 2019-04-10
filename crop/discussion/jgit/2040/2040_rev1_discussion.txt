@@ -1,0 +1,125 @@
+DESCRIPTION
+
+IndexPack object-loading now uses streaming - it doesn't create a full object byte-array unless required
+
+Here 'required' means that the object is of a type that can be structurally-checked (a Commit, Tag, or Tree - tiny objects) - but blobs can *not* be structually verified, and so we don't allocate large byte-arrays for those blobs.
+
+Note that this commit takes a liberty, and also removes a different kind of check. Blob objects are no longer checked using byte-for-byte comparision with already-known blobs. We should probably add the option to check an object if it's smaller than a given size.
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-12-05 23:16:02.000000000
+
+Patch Set 1: Do not submit
+
+(1 inline comment)
+
+Thus far I've only reviewed enough to block this because of the removal of an important safety feature.  I'll review more critically and give better comments on the rest of the code.
+
+Line:842, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> We have to continue to do the existing object check, even for blobs.  This is a safety measure to prevent a SHA-1 collision from corrupting the local repository.
+
+Normally when an object is added to a repository we compute the SHA-1 for it, then check to see if the object exists.  If it does, we don't create the new object, we instead rely upon the existing content.  This prevents an object that has the same SHA-1 but different content from entering the repository, so that it at least continues to return older content as expected.
+
+However, here we are keeping the pack file as-is in the repository.  That means we may wind up with another copy of an already existing object.  In order to ensure we will continue to return the same content, we need to compare byte-for-byte.
+
+Its slow, yes.  But its a safety feature that should never trip (in theory), and is one that we have to keep.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-12-06 00:10:03.000000000
+
+Patch Set 1: (16 inline comments)
+
+
+
+Line:8, org.eclipse.jgit/src/org/eclipse/jgit/util/io/NullOutputStream.java -> This could be a singleton, so the constructor should be private.
+
+Style-nit: Spaces around =.
+
+Line:11, org.eclipse.jgit/src/org/eclipse/jgit/util/io/NullOutputStream.java -> Style-nit: We put the closing curly brace on its own line:
+
+ xxx@xxx.xxx
+  public void write(int i) throws IOException {
+    // no-op
+  }
+
+Line:681, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> Style-nit: Please don't make unrelated changes if you can avoid it.  There isn't a good reason to switch Math.min() to min() while also trying to fix the code to not materialize all data in a byte[].
+
+If this change is worthwhile (and it may be for readability reasons), please make it a separate commit.
+
+Line:729, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> Like Math.min, please don't make unrelated changes.
+
+Line:48, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> Style-nit: Please don't re-order imports.
+
+Line:59, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> Style-nit: We never import *.
+
+Line:71, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> Style-nit: Static imports go before class imports.
+
+Line:479, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> The resolveDeltas part of IndexPack is the most memory consuming part, and you didn't address it to use streaming techniques.  So thus far your change is only a partial fix to the problem.  :-)
+
+FWIW, this is the harder part to fix.  The base object is needed during the entire chain processing.
+
+Line:957, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> This comment is no longer relevant since the argument it applied to (the boolean keep) was removed.
+
+Line:963, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> This comment is no longer relevant, since the argument it applied to (the boolean keep) was removed.
+
+Line:964, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> This creates a copy of the data, which means we are copying the data twice.  Since this code is part of the inner loop of IndexPack I would like to avoid that copying by properly allocating the output buffer and writing into it directly.
+
+That might mean a variant of ByteArrayOutputStream has to be written and put into jgit.util.io.
+
+Line:968, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> Style-nit: We use tabs for indentation, not spaces.
+
+Line:976, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> There is no need to compute the number of bytes to inflate, the 3rd argument here is the maximum number of bytes that outBuffer can receive.  So you can simplify your code to be:
+
+  int r = inf.inflate(outBuffer, 0, outBuffer.length);
+
+Line:977, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> Style-nit: We put spaces between arguments.
+
+Line:989, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> This is an unnecessary conversion of tabs to spaces.
+
+Line:1009, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> This is an unnecessary conversion of tabs to spaces.
+
+-------------------------------------
+author: Kendrick Carrillo
+date: 2010-12-06 00:58:51.000000000
+
+Patch Set 1: (2 inline comments)
+
+
+
+Line:479, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> Yup, it's definitely only a partial fix :-)  I know I'm only fixing what's easy - not what's Hard.
+
+However there's at least one problem-case where what's /easy/ is also what is *beneficial* , and that's in the case of the Unwise-Big-Blob-Committer:
+
+The Unwise-Big-Blob-Committer unwisely commits a 500MB file into their repo - perhaps they regret it later, but they just delete it in a later commit, and move on - they're unlikely to clean their repository using rebasing or whatever. If the 500MB file compresses well the pack-file won't even make a dint in the network bandwidth when cloning.
+
+The 500MB file is never part of a delta because it's a random dumb file - no-one ever committed a file even remotely like it. But it's still in the pack file, it still verified by JGit's IndexPack.whole() method when the pack file is loaded, and still causes an OutOfMemoryException.
+
+
+Fixing the Hard thing here- resolveDeltas - fixes the problem for people who actually *deliberately* use large files in their repos. Fixing the 'easy' thing - object checking - fixes the problem for people who once *accidentally* checked a dumb big file into their project. I think the first scenario is pretty rare. The second is more common. At the very least, it would be nice to help people who have been a victim of the UBBC :)
+
+Line:842, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> I need to introduce a streaming byte-for-byte comparison, I guess.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-12-07 16:38:11.000000000
+
+Patch Set 1: (3 inline comments)
+
+
+
+Line:479, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> OK, I agree that your partial fix is stll at least of some value to us.  So lets fix this whole object case for the non-delta compressed big blobs, and then later work on the delta chain problem.
+
+Line:842, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> Yes, we need a streaming byte-for-byte compare.  That is easier if you change the inflate routine to provide an InputStream to the caller, instead of accepting an OutputStream that it copies onto.
+
+Line:967, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> I think things will be easier if inflate is defined as:
+
+  private InputStream inflate(final Source src, final long inflatedSize)
+
+Where it returns an InputStream that the caller can read to get the inflated data from.  For performance reasons we should try to use a single InputStream object, just like we use a single Inflater, and just reset it along with the Inflater when the method is invoked.
+
+This way above in inflateAndReturn we can use IO.readFully() to read from the InputStream directly into the byte[] we have allocated and will return to the caller.  This reduces the number of allocations and copies involved.
+
+-------------------------------------

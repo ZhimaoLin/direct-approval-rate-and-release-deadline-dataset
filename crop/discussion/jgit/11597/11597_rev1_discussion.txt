@@ -1,0 +1,95 @@
+DESCRIPTION
+
+Fix PathFilterGroup not to throw StopWalkException too early
+
+Due to the Git internal sort order a directory is sorted as if it ended
+with a '/', this means that the path filter didn't set the last possible
+matching entry to the correct value. In the reported issue we had the
+following filters.
+
+	org.eclipse.jgit.console
+	org.eclipse.jgit
+
+As an optimization we throw a StopWalkException when the walked tree
+passes the last possible filter, which was this:
+	org.eclipse.jgit.console
+
+Due to the git sorting order, the tree was processed in this order:
+	org.eclipse.jgit.console
+	org.eclipse.jgit.test
+	org.eclipse.jgit
+
+At org.eclipse.jgit.test we threw the StopWalkException preventing the
+walk from completing successfully.
+
+A correct last possible match should be:
+	org.eclipse.jgit/
+
+For simplicit we define it as:
+	org/eclipse/jgit/
+
+This filter would be the maximum if we also had e.g. org and org.eclipse
+in the filter, but that would require more work so we simply replace all
+characters lower than '/' by a slash.
+
+We believe the possible extra walking does not not warrant the extra
+analysis.
+
+Bug: 362430
+Change-Id: I4869019ea57ca07d4dff6bfa8e81725f56596d9f
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2013-04-02 07:01:51.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3270/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-04-02 07:08:28.000000000
+
+Patch Set 1: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3270/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2013-04-03 08:29:28.000000000
+
+Patch Set 1: (3 inline comments)
+
+
+
+Line:213, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/filter/PathFilterGroup.java -> style: blanks around the '&' would be nice.
+
+Line:214, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/filter/PathFilterGroup.java -> Here we are replacing every character lesser than '/' with an '/'. We are ignoring all differences for path's for characters below '/'. But there are some characters below '\' which may be there in path's (e.g. +,-,',(,) ).  What is if this filter is initialized with pathes "abc/" "abc(" "abc". Will it work?
+
+Line:217, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/filter/PathFilterGroup.java -> if the old max already ended with a '/' we would end up with a new max which ends with '//', right? Maybe that's ok but I am not sure. Is it?
+
+-------------------------------------
+author: Juliet Cantu
+date: 2013-04-03 15:20:51.000000000
+
+Patch Set 1: (2 inline comments)
+
+
+
+Line:214, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/filter/PathFilterGroup.java -> We are not changing the filters, just saying this no filters will match anything beyond the "max" path.
+
+Line:217, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/filter/PathFilterGroup.java -> I don't think that's a problem.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2013-04-03 17:10:36.000000000
+
+Patch Set 1:
+
+ok, I understood your two two comments. We are now left with only on minor style comment
+
+-------------------------------------

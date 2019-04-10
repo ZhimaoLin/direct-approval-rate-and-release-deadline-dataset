@@ -1,0 +1,100 @@
+DESCRIPTION
+
+MB-7965: Support for synchronous bucket flush operation
+
+- Schedule a flushAll task and return EWOULDBLOCK.
+- Notify memcached upon completion of the flushAll task.
+- If a flushAll task is in progress, and another
+flushAll request comes in, return TMPFAIL.
+
+Change-Id: Ibd59ce3bf51d0deca2e30bfe02ea8a0fe8106386
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2014-12-06 03:46:05.942000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Abby Duran
+date: 2014-12-07 20:22:11.789000000
+
+Patch Set 6: Code-Review-2
+
+(8 comments)
+
+Please don't scatter the logic across modules. The code should always have high cohesion and low coupling as much as possible.
+
+Line:2126, src/ep_engine.cc -> I rather define "bool scheduleFlushAllTask(const void *cookie)" in EPStore as follows:
+
+bool scheduleFlushAllTask(const void *cookie) {
+    if (diskFlushAll.compare_swap_strong(...)) {
+        flushAllTask->cookie = cookie;
+        ExTask flushTask = new FlushAllTask(...);
+        ExecutorPool::get()->schedule(flushTask, NONIO_TASK_IDX);
+        return true;
+    }
+    return false;
+}
+
+and then call the above function here like
+
+if (epstore->scheduleFlushAllTask(cookie)) {
+    storeEngineSpecific(cookie, this);
+    return ENGINE_EWOULDBLOCK;
+} else {
+    LOG(...);
+    return ENGINE_TMPFAIL;
+}
+
+Line:685, src/ep.h -> Move the function body to ep.cc.
+
+Line:920, src/ep.h -> Please move this variable to struct FlushAllTask below.
+
+Line:921, src/ep.h -> struct FlushAllTask {
+
+Line:925, src/ep.h -> flushAllTask
+
+Line:2649, src/ep.cc -> I don't understand why we need to call this function.
+
+Line:2824, src/ep.cc -> I don't understand why we need to have "flusherComplete" and "taskComplete" flags. This function should be only invoked by the flusher.
+
+Line:2831, src/ep.cc -> Please set this flag to false at the end of if clause.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2014-12-07 23:48:48.325000000
+
+Patch Set 6:
+
+(8 comments)
+
+Line:2126, src/ep_engine.cc -> Done
+
+Line:685, src/ep.h -> Done
+
+Line:920, src/ep.h -> Done
+
+Line:921, src/ep.h -> Done
+
+Line:925, src/ep.h -> Done
+
+Line:2649, src/ep.cc -> See reason below.
+
+Line:2824, src/ep.cc -> Since we are using the diskFlushAll to check if a flushAll has been scheduled, it could so happen that the flushVBucket() routine runs before the scheduled task actually runs. As we tNathalie Landryed before, we will need to wait for all steps to complete before we set diskFlushAll to false. This is the reason why I believe we need to call this function in the reset() as well.
+
+Line:2831, src/ep.cc -> Done
+
+-------------------------------------
+author: Abby Duran
+date: 2014-12-08 00:31:10.579000000
+
+Patch Set 6:
+
+(1 comment)
+
+Line:2824, src/ep.cc -> As we already clean up all the checkpoint queues in reset function, I don't think we need to have those flags anymore.
+
+-------------------------------------

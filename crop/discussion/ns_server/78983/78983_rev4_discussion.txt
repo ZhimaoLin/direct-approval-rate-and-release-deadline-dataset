@@ -1,0 +1,61 @@
+DESCRIPTION
+
+MB-22790: Disable caching of ns_server dynamic pages.
+
+Adds framework for easy inclusion other other groups
+of http response headers.
+Tries to ensure that all HTTP responses will get
+headers.
+
+Change-Id: Ifc66d29648ad04cd8359031b70a4f09dc00e4fef
+
+
+COMMENTS
+
+author: Grayson Hendricks
+date: 2017-06-06 18:41:45.320000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Philip Lara
+date: 2017-06-06 21:59:35.393000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:104, src/menelaus_util.erl -> I think you can use lists:foldl instead of this recursive fun
+
+-------------------------------------
+author: Kian Santos
+date: 2017-06-06 23:23:52.269000000
+
+Patch Set 4:
+
+I think Artem's comment is a good one. 
+
+I also prefer accumulating the "cache control defined" state rather than wNathalie Landrying over the Acc list with is_defined. This allows a single pass over the headers with no walk over accumulated header list. You can then break out full function clauses like you had before and it looks like below. 
+
+But I think you should try foldl() and see how it comes out.
+
+response_headers([], {Headers, true = _CacheControlAcc}) ->
+    {[{"Server", "Couchbase Server"} | Headers], false};
+response_headers([], {_, false} = Acc) ->
+    response_headers([{allow_cache, false}], Acc);
+response_headers([{allow_cache, _} | Tail], {_, true} = Acc) ->
+    response_headers(Tail, Acc);
+response_headers([{allow_cache, true} | Tail], {Headers, false}) ->
+    response_headers(Tail,
+        {[{"Cache-Control", "max-age=30000000"} | Headers], true});
+response_headers([{allow_cache, false} | Tail], {Headers, false}) ->
+    response_headers(Tail,
+        {[{"Cache-Control", "no-cache,no-store,must-revalidate"},
+          {"Expires", "Thu, 01 Jan 1970 00:00:00 GMT"},
+          {"Pragma", "no-cache"} | Headers], true});
+response_headers([{"Cache-Control", Value} | Tail], {Headers, _}) ->
+    response_headers(Tail, {[{"Cache-Control", Value} | Headers], true});
+response_headers([{Header, Value} | Tail], {Headers, CacheControl}) when is_list(Header) ->
+    response_headers(Tail, {[{Header, Value} | Headers], CacheControl}).
+
+-------------------------------------

@@ -1,0 +1,71 @@
+DESCRIPTION
+
+[performance] Speed up delta packing
+
+When packing is able to reuse lots of deltas from existing packs, those
+objects are marked as "doNotAttemptDelta" and do not contribute to
+DeltaTask's computeTopPaths() "totalWeight" calculation.
+
+In the extreme case when all packs are reusable, "totalWeight" will be
+zero. DeltaTask.partitionTasks() uses "totalWeight" to determine a
+"weightPerThread" size it uses to set up DeltaTasks. When "totalWeight"
+is small, partitionTasks() ends up creating a DeltaTask for every
+unique path.
+
+For a large repository, the small "weightPerThread" can result in the
+creation of >100k tasks (for the MSM 3.10 Linux repository, the count
+was ~150k). This makes the "task stealing" mechanism in DeltaTask very
+inefficient, because every attempt to steal work does a linear walk
+through all tasks, searching for the one with the most work remaining,
+which is O(N^2) comparisons. For the MSM 3.10 repository when all
+deltas were reusable, PackWriter.parallelDeltaSearch() took
+(1615+1633+1458)/3 = 1568 seconds.
+
+Since there is no value in setting up a DeltaTask for a range of objects
+that are all marked "doNotAttemptDelta", this patch expands the criteria
+in partitionTasks() delay queueing up a new task until an object is seen
+for which delta compression should be attempted.
+
+With this patch applied, PackWriter.parallelDeltaSearch() on the
+MSM 3.10 repository when all deltas are reused went from taking
+1568 seconds to 62ms (>25k speedup).
+
+This patch also fixes a totalWeight initialization error in
+DeltaTask.computeTopPaths().
+
+Change-Id: I2ae37efa83bca42b0e716266ae6aa9d182e76d9c
+Signed-off-by: Ariel Sawyer xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Ariel Sawyer
+date: 2015-11-03 19:35:20.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-11-03 19:35:27.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7371/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-11-03 19:43:15.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7371/ : SUCCESS
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-11-04 17:55:22.000000000
+
+Change has been successfully merged into the git repository by Yoselin Hanna
+
+-------------------------------------

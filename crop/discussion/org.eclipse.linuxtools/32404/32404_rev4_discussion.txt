@@ -1,0 +1,100 @@
+DESCRIPTION
+
+TMF: added support for process filter in the TimeGraphFilterDialog.
+
+On top of the filter dialog a text field enables filtering over the
+tree of process names.
+
+A node of the tree is shown if:
+- the node matches with the search pattern
+- one of the children of the node matches with the search pattern
+- one of the parents of the node matches with the search pattern
+
+The buttons check-all and check-subtree check only the visible items.
+The button uncheck-subtree unchecks all the children (the hidden
+children too, since it makes no sense a checked child with an unchecked
+parent).
+The button uncheck-all unchecks everything, except the hidden roots
+(and corresponding subtrees).
+
+Change-Id: I517f3333bb7b6da9fd14eaaac90e7b914671479e
+Signed-off-by: Eduardo Navarro xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Eduardo Navarro
+date: 2014-09-05 16:48:47.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Eduardo Navarro
+date: 2014-09-05 17:00:10.000000000
+
+Patch Set 4:
+
+Patch Set 4 contains only some missing comment.
+
+By the way I noticed a unwanted behavior after pressing OK in the filter dialog: in the time graph viewer, an apparently random process is selected.
+
+Actually, I have seen that in the TimeGraphCombo (line 686) the selection is set to the first element of the array returned by the filter dialog getResult() method.
+The documentation of this method does not specify the order in which the elements are returned, so setting the selection to the first element of this array is maybe a bug.
+
+This was not visible before, since apparently the CheckboxTreeViewer implements its getCheckedElements() method putting the root of the tree as the first element of the returned array. This is not the case for my implementation of the corresponding method.
+
+What do you think about this?
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-09-05 17:45:00.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/8776/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-09-05 19:04:15.000000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/8776/ : SUCCESS
+
+-------------------------------------
+author: Luciana Barry
+date: 2014-09-05 20:37:27.000000000
+
+Patch Set 4: Code-Review-1 Verified-1
+
+(11 comments)
+
+With regards to the selected entry after applying a filter, you could get the top element using getVisibleExpandedElements()[0]. However, I tested setting the selection to null (to make sure the selection is not left to a hidden element), and it is much better because now you can filter out some elements and the view/scrollbar does not move back to the top after you apply the filter.
+
+Line:46, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/dialogs/FilteredCheckboxTree.java -> Is there a good reason for this? It seems like the code would be simplified if we just kept a Set of checked elements and removed from the set elements when they become unchecked.
+
+Line:49, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/dialogs/FilteredCheckboxTree.java -> I don't see anything specific that would prevent us from making it public and re-usable elsewhere?
+
+Line:93, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/dialogs/FilteredCheckboxTree.java -> treeViewer is already set in base class from the return value of this method.
+
+Line:111, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/dialogs/FilteredCheckboxTree.java -> Is this necessary? Do we ever disable the control?
+
+Line:126, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/dialogs/FilteredCheckboxTree.java -> If it's possible for an element to be checked in the viewer but not in the map, then other code is wrong, e.g. getCheckedElements(). If it's not possible, then you can just return false here.
+
+Line:131, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/dialogs/FilteredCheckboxTree.java -> Actual bug! This check prevents having a checked element in the map if it was not previously put there by the ICheckStateListener. For example if a parent is checked programatically when one of its child gets checked. Then the map becomes out of synch with the check state, you can see the element checked state change if you apply any filter.
+
+Line:132, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/dialogs/FilteredCheckboxTree.java -> I'm guessing you want to avoid setting checked to true if the element is not visible? For that case could you use the return value of setChecked() returned by the viewer?
+
+Line:210, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/dialogs/FilteredCheckboxTree.java -> Would it be better to use getPatternFilter().isElementVisible()?
+
+...and... the answer is no, because there could be other external filters on the viewer, since TimeGraphFilterDialog has an addFilter() method ;(
+
+Line:319, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/dialogs/TimeGraphFilterDialog.java -> Unfortunately you can't remove the old method as it would be an API break.
+
+Line:338, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/dialogs/TimeGraphFilterDialog.java -> I know it's old code, but I can't see why we couldn't just add updateOKStatus() to the implementation of CheckStateListener?
+
+Line:362, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/dialogs/TimeGraphFilterDialog.java -> API break.
+
+-------------------------------------

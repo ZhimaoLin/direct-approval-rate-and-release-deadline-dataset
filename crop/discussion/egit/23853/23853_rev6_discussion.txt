@@ -1,0 +1,66 @@
+DESCRIPTION
+
+Demo:Delete of symlink in staging view deletes link target instead of
+link
+
+Bug: 431084
+Change-Id: I05a7fe20a5e99784ea5de0f34638ce52f552fc4c
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2014-09-09 10:14:34.000000000
+
+Patch Set 6:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/6325/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-09-09 10:18:17.000000000
+
+Patch Set 6: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/6325/ : FAILURE
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2014-10-27 21:44:22.000000000
+
+Patch Set 6: Code-Review-1
+
+(1 comment)
+
+DeletePathsOperation is unable to delete the symlink itself but deletes the symlink's target instead. I tried a similar case manually using staging view (current master) and this works properly. So it looks like this test is going a different path.
+
+Line:105, org.eclipse.egit.core.test/src/org/eclipse/egit/core/test/op/DeletePathsOperationTest.java -> this doesn't delete the symlink source but the file it's referring to, here the stack when calling deletePaths:
+
+ File.getCanonicalPath() line: 618 [local variables unavailable]	
+ FileUtil.canonicalPath(IPath) line: 69	
+ FileUtil.canonicalURI(URI) line: 88	
+ FileSystemResourceManager.allPathsForLocation(URI) line: 59	
+ FileSystemResourceManager.allResourcesFor(URI, boolean, int) line: 216	
+ WorkspaceRoot.findFilesForLocationURI(URI, int) line: 113	
+ WorkspaceRoot.findFilesForLocationURI(URI) line: 104	
+ ResourceUtil.getFileForLocationURI(IWorkspaceRoot, URI) line: 222	
+ ResourceUtil.getResourceForLocation(IPath) line: 69	
+ RuleUtil.getRuleForContainers(Collection<IPath>) line: 108	
+ DeletePathsOperation.calculateSchedulingRule() line: 121	
+ DeletePathsOperation.<init>(Collection<IPath>) line: 55	
+ DeletePathsOperationTest.deletePaths(Collection<IPath>) line: 122	
+ DeletePathsOperationTest.testDeleteSymlink() line: 105	
+ ...
+
+ ResourceUtil.getFileForLocationURI(IWorkspaceRoot, URI) 
+uses 
+ IWorkspaceRoot.findFilesForLocationURI(uri) 
+and this in the end (see stack trace) relies on
+ java.io.File.getCanonicalPath()
+which returns the symlink's target and not the symlink itself.
+
+Hence this test fails.
+
+-------------------------------------

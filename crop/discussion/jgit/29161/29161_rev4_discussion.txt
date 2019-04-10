@@ -1,0 +1,123 @@
+DESCRIPTION
+
+Try to fix intermittent test failure related to file timestamps
+
+It seems the system clock sometimes lags behind the file system clock.
+
+Bug: 436917
+Change-Id: I68ef3c2878f28b12daebf2ef6a9fa0a5d6e0964d
+
+COMMENTS
+
+author: Juliet Cantu
+date: 2014-06-30 07:27:41.000000000
+
+Patch Set 4: Commit message was updated
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-06-30 08:04:24.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/egit/job/jgit.gerrit/5310/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-06-30 08:15:10.000000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/jgit.gerrit/5310/ : SUCCESS
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-06-30 08:43:23.000000000
+
+Patch Set 4: -Verified
+
+Build Started https://hudson.eclipse.org/egit/job/jgit.gerrit/5312/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-06-30 08:54:19.000000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/jgit.gerrit/5312/ : SUCCESS
+
+-------------------------------------
+author: Danika Greer
+date: 2014-06-30 10:40:34.000000000
+
+Patch Set 4: Code-Review+1
+
+-------------------------------------
+author: Zachary Orozco
+date: 2014-06-30 12:00:03.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:389, org.eclipse.jgit.junit/src/org/eclipse/jgit/junit/RepositoryTestCase.java -> I think there is a misunderstanding here. Maybe the first implementation I did led to a wrong understanding.
+
+Look at the javadoc: this method should wait long enough until the filesystem clock has advanced so much that it is behind the lastmodified time of a given file (lastFile). Why at all do we have to look at the System clock for that? No need to compare Filesystem and System clock and deal with problems if they don't match.
+
+To sketch the algorithm:
+
+  while(f.lastmodified <= lastFile.lastmodified) {
+    sleep();
+    f.touch();
+  }
+
+Now comes my fault: I implement f.touch() by f.setLastModified(System.currentTimeMillis()). I didn't intended to set the lastModified to anything specific, I just wanted to touch the file.
+
+Instead of creating new temp-files in each run through this loop I would just implement the "touch". Looked it up from http://stackoverflow.com/a/17840038 how touch could be implemented by just opening a FileOutPutStream. The full method would look like:
+
+	public static long fsTick(File lastFile) throws InterruptedException,
+			IOException {
+		long sleepTime = 64;
+		FS fs = FS.DETECTED;
+		if (lastFile != null && !fs.exists(lastFile))
+			throw new FileNotFoundException(lastFile.getPath());
+		File tmp = File.createTempFile("FileTreeIteratorWithTimeControl", null);
+		try {
+			long startTime = (lastFile == null) ? fs.lastModified(tmp) : fs
+					.lastModified(lastFile);
+			long actTime = fs.lastModified(tmp);
+			while (actTime <= startTime) {
+				Thread.sleep(sleepTime);
+				sleepTime *= 2;
+				FileOutputStream fos = new FileOutputStream(tmp);
+				fos.close();
+				actTime = fs.lastModified(tmp);
+			}
+			return actTime;
+			
+		} finally {
+			FileUtils.delete(tmp);
+		}
+	}
+
+-------------------------------------
+author: Juliet Cantu
+date: 2014-06-30 14:12:39.000000000
+
+Patch Set 4: Code-Review+1
+
+I believe.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2014-06-30 14:14:32.000000000
+
+Patch Set 4:
+
+ah, can you ammend?
+
+-------------------------------------

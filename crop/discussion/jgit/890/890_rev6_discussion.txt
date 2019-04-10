@@ -1,0 +1,93 @@
+DESCRIPTION
+
+Make lib.Repository abstract and lib.FileRepository its implementation
+
+To support other storage models other than just the local filesystem,
+we split the Repository class into a nearly abstract interface and
+then create a concrete subclass called FileRepository with the file
+based IO implementation.
+
+We are using an abstract class for Repository rather than the much
+more generic interface, as implementers will want to inherit a large
+array of utility functions, such as resolve(String).  Having these in
+a base class makes it easy to inherit them.
+
+This isn't the final home for lib.FileRepository.  Future changes
+will rename it into storage.file.FileRepository, but to do that we
+need to also move a number of other related class, which we aren't
+quite ready to do.
+
+Change-Id: I1bd54ea0500337799a8e792874c272eb14d555f7
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-06-27 01:52:37.000000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Blake Oneal
+date: 2010-07-01 11:21:04.000000000
+
+Patch Set 6: Looks good to me, but someone else must approve
+
+(1 inline comment)
+
+
+
+Line:88, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> Does this get refactored out at a later stage? Seems odd that an abstract repository would have a file system
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-07-01 18:35:32.000000000
+
+Patch Set 6: (1 inline comment)
+
+
+
+Line:88, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> No.  I tried to get rid of the concept of a directory on a repository, and it proved nearly impossible to do.
+
+Instead I had to define getDirectory() as being able to return null.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-07-01 23:17:49.000000000
+
+Patch Set 6: Looks good to me, approved; IP review completed
+
+(1 inline comment)
+
+
+
+Line:88, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> The general form ought to be a string whose content interpreted by the implementation. Not sure that helps though.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-07-02 00:04:53.000000000
+
+Patch Set 6: (1 inline comment)
+
+
+
+Line:88, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> We can try to remove getDirectory() again, but basically the working tree related code explodes.
+
+What matters is, getDirectory() is used to tell you where the meta stuff is, like "index", "config", "MERGE_HEAD", "MERGE_MSG", "FETCH_HEAD".  For most repositories with a working tree, I think you would expect these files to be in .git/, and thus you expect there to be a meta directory to hold them.
+
+Right now I only care about getting a bare repository to run without a local filesystem.  Which means that meta directory being null is OK, we would never check the meta directory.
+
+But to really do a workspace-in-the-cloud idea, you need to also split all of the meta stuff away from local file IO.  That's going to be a bigger task than just splitting the object/ref storage, based on what I was looking at as I did this series.
+
+I'm open to pushing the refactoring further, but I would prefer to get the basic storage stuff done first.  We still need to get IndexPack done for example, it still requires local filesystem storage.  And the dumb transport fetch client also still mostly assumes local filesystem for the destination.
+
+If we at least get the basic storage stuff done, we can start to do something slick like a bound-thin-client in EGit.  The working directory is the local filesystem, but the repository branches and objects are remote on a smart, git-aware object server, with recently accessed objects being local.  Then you can do some really slick thin-checkouts from eclipse.org for example, without needing to suck down everything, but still behave like you have it all.  (I'm envisioning something a bit smarter than just shallow clone.)
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-07-27 16:11:55.000000000
+
+Change has been successfully pushed.
+
+-------------------------------------

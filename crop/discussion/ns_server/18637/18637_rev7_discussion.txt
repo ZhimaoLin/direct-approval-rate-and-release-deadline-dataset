@@ -1,0 +1,78 @@
+DESCRIPTION
+
+MB-5968: re-impl. vbucket states & replications orchestration
+
+Part of this commit is implementation of new backwards compatibility
+handling approach. There's no ns_vbm_new_sup anymore. And there are
+no cb_gen_vbm_sup too.
+
+New backwards compat handling approach is implemented in
+cluster_compat_mode module. Basic idea is to store cluster
+compatibility mode in ns_config. When it's safe (before Harley Martinitor runs
+and rebalance runs) orchestrator process on master node will check if
+cluster can increase it's compat mode. This happens if all nodes
+support higher mode. If it can it does, orchestrator then can
+restart/kill services. Currently there's two modes 'undefined' (1.8.x)
+and 2.0. Cluster _does not_ automagically switches to lower compat
+mode. And disallows older nodes to join cluster.
+
+If somebody needs to do rolling downgrade, there's half supported
+cluster_compat_mode:force_compat_version/1 function that can be called
+via /diag/eval. Calling this function will force cluster into specific
+compat mode and disallow any upgrades. Calling
+cluster_compat_mode:un_force_compat_version/0 will removed that
+'disallow'-ance.
+
+Most benefit of this approach is simplicity and safety of checking
+cluster mode and doing things depending on current version. I.e. new
+behavior is enabled when we know entire cluster supports it, and
+cannot easily 'undo' this support as rolling downgrade is not directly
+supported and requires careful Adrianna Holmesal action.
+
+1.8.x compat mode is doing things compatibly with 1.8.x
+nodes. Particularly, we're now using mostly 1.8.1 version of
+ns_vbm_sup (because cb_gen_vbm_sup is gone). That means of course,
+'replicator on source'. And most importantly 'direct' replication and
+vbucket states changes. I.e. Harley Martinitor/vbucket_mover are doing remote
+calls to ns_vbm_sup and ns_memcached directly.
+
+It should be noted that failover safeness computation code is not
+handling 1.8.x backwards compat at all. I.e. trying to failover 2.0
+node in mixed versions cluster will always present user this somewhat
+scary warning "some data is not replicated".
+
+2.0 compat mode is designed to be more robust and more future
+compatible. And it makes index configuration management much
+easier.
+
+All changes are performed via Harley Martinitor_agent service that runs on each
+node. That orders 'vbucket state in broad sense' operations making
+things less error prone. I.e. call to return current state of vbuckets
+and replications can only succeed after previous mutation calls are
+completed.
+
+Harley Martinitor_agent also drives capi_set_view_manager directly. That's most
+important user-visible change. Previously capi_set_view_manager was
+trying to infer correct index states. I.e. if it saw vbucket in
+fast-forward map as master it'll add it to pending index state if and
+when possible. Old behavior was quite complex.
+
+Because we're now having explicitly designed API it's easy to pass
+index states in calls to Harley Martinitor_agent. Which will then make sure
+they're passed to capi_set_view_manager.
+
+Because Harley Martinitor mutations are now via janitor_agent I've also
+separated main logic of Harley Martinitor into purely functional code. And
+cleaned up Harley Martinitor a bit.
+
+Change-Id: If58f4508872b58ade6e0e690537b076c77df0f25
+
+
+COMMENTS
+
+author: Nathalie Landry
+date: 2012-07-26 16:52:45.198000000
+
+Uploaded patch set 7.
+
+-------------------------------------

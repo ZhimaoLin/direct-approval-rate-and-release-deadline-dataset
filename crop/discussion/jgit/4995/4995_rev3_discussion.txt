@@ -1,0 +1,116 @@
+DESCRIPTION
+
+Add "--squash" option to MergeCommand
+
+Return an EnumSet<MergeStatus> from
+MergeResult#getMergeStatus(). In case of a squashed
+merge the set is going to consist of
+MergeResult.SQUASHED and the actual merge result
+(MERGED or FAST_FORWARD).
+
+Bug: 351806
+Change-Id: I5e47810376419264ecf4247b5a333af5c8945080
+
+
+COMMENTS
+
+author: Clay Cameron
+date: 2012-03-21 09:14:04.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-03-21 09:14:07.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1632/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-03-21 09:18:00.000000000
+
+Patch Set 3: Verified
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1632/ : SUCCESS
+
+-------------------------------------
+author: Clay Cameron
+date: 2012-03-22 08:11:22.000000000
+
+Patch Set 3:
+
+Returning a Set from MergeResult#getMergeStatus() breaks the API. This not only made the patch twice as long (with all those changes in tests) but it's going to require few lines in EGit to be updated. Of course, this is only true, if the proposed change makes any sense to you.
+
+-------------------------------------
+author: Clay Cameron
+date: 2012-03-22 08:16:16.000000000
+
+Patch Set 3: (4 inline comments)
+
+
+
+Line:188, org.eclipse.jgit/src/org/eclipse/jgit/api/MergeResult.java -> It's a change from I97cebfe5d7db6247fe899075d917b82955906f85. Not actually required here, can be removed.
+
+Line:192, org.eclipse.jgit/src/org/eclipse/jgit/api/MergeResult.java -> It's a change from I97cebfe5d7db6247fe899075d917b82955906f85. Not actually required here, can be removed.
+
+Line:221, org.eclipse.jgit/src/org/eclipse/jgit/api/MergeResult.java -> It's a change from I97cebfe5d7db6247fe899075d917b82955906f85. Not actually required here, can be removed.
+
+Line:283, org.eclipse.jgit/src/org/eclipse/jgit/api/MergeResult.java -> On second thought, maybe I should stick to simple Set here.
+
+-------------------------------------
+author: Clay Cameron
+date: 2012-04-02 09:44:17.000000000
+
+Patch Set 3:
+
+Christian any comment on the latest patch set, it would really help me out.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2012-04-24 10:36:47.000000000
+
+Patch Set 3:
+
+Sorry for the late answer. Now it's not clear to me why we would need a EnumSet here. MergeResult should either be MERGED, FAST_FORWARD or SQUASHED. We should never make a distinction between SQUASHED|MERGED and SQUASHED|FAST_FORWARD because SQUASHED_FAST_FORWARD should never occur. Whenever I call "git merge --squash" in native git in a fast-forward situation native git will tell me "(nothing to squash)Already up-to-date". In a fast-forward situation there is no difference in the result if you specify --squash or not, it's a NOP and git will do nothing.
+No need for a new status or even switching from returning a status to a set of states.
+
+-------------------------------------
+author: Clay Cameron
+date: 2012-04-25 10:28:51.000000000
+
+Patch Set 3:
+
+> Whenever I call "git merge --squash" in native git in a fast-forward situation native git will tell me "(nothing to squash)Already up-to-date". In a fast-forward situation there is no difference in the result if you specify --squash or not, it's a NOP and git will do nothing.
+
+I beg to differ. After executing the following set of commands:
+
+mkdir merge-ff-squash-test;
+cd merge-ff-squash-test;
+git init;
+echo "master" > master;
+git add master;
+git commit -a -m "master";
+git checkout -b branch;
+echo "branch" > branch;
+git add branch;
+git commit -a -m "branch";
+git checkout master;
+git merge --squash branch;
+
+I get:
+
+$ git merge --squash branch
+Updating adfeb0a..e233dcf
+Fast-forward
+Squash commit -- not updating HEAD
+ branch |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+ create mode 100644 branch
+
+I even have a test for a similar scenario, see o.e.jgit.api.MergeCommandTest.testSquashFastForward()
+
+-------------------------------------

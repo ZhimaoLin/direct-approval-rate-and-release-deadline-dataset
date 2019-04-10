@@ -1,0 +1,105 @@
+DESCRIPTION
+
+Allow non-static WindowCaches (scoped to repo ObjectDirectory)
+
+Each repository can now optionally have it's own WindowCache, with
+independent config separate from the default WindowCache - permitting
+concurrent usage of JGit repos with, for instance, different
+streamFileThresholds (useful for testing). Some discussion on the JGit
+mailing list:
+
+http://dev.eclipse.org/mhonarc/lists/jgit-dev/msg02532.html
+
+Although this commit changes and moves quite a few fields and methods to
+achieve it's goal, all breaking changes are within the
+org.eclipse.jgit.internal.storage.file package - and 'internal' means
+it's API may be modified between releases if necessary, see:
+
+http://dev.eclipse.org/mhonarc/lists/jgit-dev/msg02145.html
+
+Summary of changes:
+
+* WindowCache now offers primarily instance-based methods, and the
+  'default' cache is no longer a static field but instead referenced by a
+  static AtomicReference, which can have it's value updated as necessary
+  (ie EGit can change what the ref points at to change the cache and all
+  impacted repos will change to match at the same time).
+* ObjectDirectory now holds an atomic-reference to it's current WindowCache
+  instance.
+* FileRepositoryBuilder now allows the caller to specify WindowCacheConfig,
+  which can be used to create an independent WindowCache for the generated
+  FileRepository. If not specified, the default WindowCache ref is used.
+* FileRepository now specifically takes a FileRepositoryBuilder (rather
+  than just a BaseRepositoryBuilder) in it's constructor, because it needs
+  to pass the specific WindowCache field along to it's ObjectDirectory.
+* PackFile has a new 'getWindow()' method, which assumes responsibility
+  (previously held by the now-removed static WindowCache.get() method)
+  for handling cache-changes during window loading.
+
+NB: This change only affects WindowCache, DeltaBaseCache remains
+statically-configured.
+
+Change-Id: Ibf2ef604bac08885b2b3bd85f0dc31995132b682
+Signed-off-by: Kendrick Carrillo <Jacob xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Kendrick Carrillo
+date: 2014-05-27 07:34:45.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-05-27 07:51:25.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/egit/job/jgit.gerrit/5178/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-05-27 08:09:33.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/jgit.gerrit/5178/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2014-05-27 16:10:45.000000000
+
+Patch Set 1: Code-Review-1
+
+(3 comments)
+
+This is mostly fine. I am a bit worried about the API changes implied, as we have to force the next release to 4.x if we do this since its not backwards compatible with the current 3.x stream.
+
+Line:80, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/WindowCursor.java -> iirc we import static before we import classes. So this should be at the top of the import list.
+
+Line:80, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/FileRepositoryBuilder.java -> Public methods need Javadoc xxx@xxx.xxx tags.
+
+Line:155, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackFile.java -> when this does what?
+
+-------------------------------------
+author: Kendrick Carrillo
+date: 2014-05-29 09:14:30.000000000
+
+Patch Set 1:
+
+(3 comments)
+
+The second patch set removes the requirement for I99d7bf0a ('decommissioning RepositoryBuilder' - now 'Deprecating RepositoryBuilder'), and instead changes FileRepository to have both a new constructor (accepting FileRepositoryBuilder), and a legacy one (accepting RepositoryBuilder).
+
+I think this removes all non-internal breaking API changes, so should no longer require a version bump to '4.0'.
+
+Line:80, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/WindowCursor.java -> Done
+
+Line:80, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/FileRepositoryBuilder.java -> Done
+
+Line:155, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackFile.java -> ...fixed as "the cache to be purged when this PackFile is closed"
+
+-------------------------------------

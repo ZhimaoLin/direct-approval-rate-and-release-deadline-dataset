@@ -1,0 +1,189 @@
+DESCRIPTION
+
+MB-8552: Support for datatype field
+
+- As part of extended flexible metadata
+
+In memory::
+ __________________________________________________
+| key |  MetaData  (cas,exp,flags)  |   VALUE BLOB |
+|_____|_____________________________|______________|
+
+VALUE BLOB:
+ __________________________________________________
+| FLEX_META_CODE (1B) | DATATYPE (1B) | VALUE BLOB |
+|_____________________|_______________|____________|
+
+FLEX_META_CODE = 0x01, indicating one field in the extended
+metadata section
+
+In couchstore::
+
+METADATA BUFFER:
+ _______________________________________________________________________
+| cas (8B) | exp (4B) | flags (4B) | FLEX_META_CODE (1B) | datatype(1B) |
+|__________|__________|____________|_____________________|______________|
+
+Change-Id: Ifb3bc59892130f2fddf02f2188773ba3a67f2ce1
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2014-01-07 00:19:55.114000000
+
+Uploaded patch set 8.
+
+-------------------------------------
+author: Ellie Kidd
+date: 2014-01-07 02:17:12.779000000
+
+Patch Set 8: Verified+1 Code-Review+1
+
+-------------------------------------
+author: Abby Duran
+date: 2014-01-07 09:13:56.440000000
+
+Patch Set 8:
+
+I will get this reviewed by tomorrow.
+
+-------------------------------------
+author: Abby Duran
+date: 2014-01-09 08:42:19.804000000
+
+Patch Set 8: Code-Review-1
+
+(28 comments)
+
+Abhinav,
+
+Please look at my comments. My concern is that the implementation is too specific to datafield, which makes it difficult to be extended for other flexible metadata fields that can be added in the future. We should make it more generic.
+
+Line:1136, src/ep_engine.cc -> This line is too long. Please wrap it.
+
+Line:254, src/couch-kvstore/couch-kvstore.cc -> Please remove "+ 0".
+
+Line:258, src/couch-kvstore/couch-kvstore.cc -> Pleas make this generic by copying the extended metadata from Blob instance to meta memory.
+
+Line:627, src/couch-kvstore/couch-kvstore.cc -> Please avoid the hard-coded "8". We should be able to retrieve the expiration time by looking at the extended metadata length.
+
+Line:1336, src/couch-kvstore/couch-kvstore.cc -> Please define "static const uint32_t DEFAULT_META_LEN" for 16 and use it in the corresponding statements.
+
+Line:1346, src/couch-kvstore/couch-kvstore.cc -> We should make this more generic by retrieving the entire metadata and passing it to Item constructor below.
+
+Line:1354, src/couch-kvstore/couch-kvstore.cc -> Please see the above comment.
+
+Line:1431, src/couch-kvstore/couch-kvstore.cc -> Same comment as above.
+
+Line:136, src/couch-kvstore/couch-kvstore.h -> We should get the length of the extended metadata from Blob instance instead of hard-coding it here.
+
+Line:29, src/item.cc -> Please use "extMetaLen" from Blob instance instead of FLEX_DATA_OFFSET
+
+Line:34, src/item.cc -> Same as above.
+
+Line:48, src/item.cc -> Same as above.
+
+Line:53, src/item.cc -> Same as above.
+
+Line:151, src/item.h -> Please add "const uint8_t extMetaLen" here. It should be okay to add one more byte to this class to support the flexible extended metadata.
+
+Line:63, src/item.h -> Please make this constructor generic by passing two new parameters "uint8_t *ext_meta, uint8_t ext_len" instead of uint8_t datatype.
+
+Line:93, src/item.h -> Please pass "uint8_t *ext_meta, uint8_t ext_len" instead of uint8_t datatype.
+
+Line:105, src/item.h -> Please pass "uint8_t ext_len" instead of datatype.
+
+Line:133, src/item.h -> Use "ext_len" field that is a newly added field in Blob class.
+
+Line:148, src/item.h -> Please use "FLEX_DATA_OFFSET" instead of "1"
+
+Line:162, src/item.h -> Use "ext_len" field.
+
+Line:178, src/item.h -> same as above.
+
+Line:192, src/item.h -> Pleas pass "uint8_t *ext_meta, uint8_t ext_len" instead of datatype
+
+Line:193, src/item.h -> Use "ext_len" field.
+
+Line:208, src/item.h -> Same comment as above.
+
+Line:268, src/item.h -> I rather change "datatype" to "uint8 *ext_meta, uint8_t ext_len".
+
+Line:271, src/item.h -> Why do we need to have dataType field in Item class? Is it already available in Blob instance that can be accessed from Item instance?
+
+Line:381, src/item.h -> Please get the datatype from Blob instance.
+
+Line:522, src/item.h -> Please remove this variable. We don't need it.
+
+-------------------------------------
+author: Asher Vang
+date: 2014-01-09 08:51:53.207000000
+
+Patch Set 8:
+
+(3 comments)
+
+Line:246, src/couch-kvstore/couch-kvstore.cc -> You could also check the datatype if it specifies json...
+
+Line:277, src/couch-kvstore/couch-kvstore.cc -> This part of couchstore seems non-intuitive.. The check here is the complete opposite of what I would have written ;-) I would have expected to or in the flag _IF_ the body was compressed...
+
+Line:1346, src/couch-kvstore/couch-kvstore.cc -> Can't this be picked up from content_meta in DocInfo ? (COUCH_DOC_IS_JSON and COUCH_DOC_IS_COMPRESSED)
+
+-------------------------------------
+author: Abby Duran
+date: 2014-01-09 09:08:57.559000000
+
+Patch Set 8:
+
+(2 comments)
+
+Line:277, src/couch-kvstore/couch-kvstore.cc -> Trond,
+
+Yeah, this is the confusing part from Couchstore. Couchstore requires us to set "COUCH_DOC_IS_COMPRESSED" flag if we want Couchstore to compress a given document. This means that if a document is already compressed by the client, we should NOT pass this flag to Couchstore to avoid the duplicate compression.
+
+Line:1346, src/couch-kvstore/couch-kvstore.cc -> COUCH_DOC_IS_COMPRESSED is set only if we explictly ask Couchstore to compress a doc. In this case, Couchstore will decompress a doc when a doc is retrieved. Btw, we thought that there can be other values for a datatype field that can be added in the future, in addition to JSON, COMPRESSED ...
+
+-------------------------------------
+author: Asher Vang
+date: 2014-01-09 09:21:41.837000000
+
+Patch Set 8:
+
+(2 comments)
+
+Line:277, src/couch-kvstore/couch-kvstore.cc -> Given the limited number of "clients" of couchstore we should probably file an RFE to change the behavior here, so that COUCH_DOC_IS_COMPRESSED means that it _IS_ compressed, and rather have COUCH_DOC_TRY_COMPRESSION to indicate that it should try to compress it ;-)
+
+Line:1346, src/couch-kvstore/couch-kvstore.cc -> Hmm.. it would be nice if we could get a way to retrieve the document body compressed and have the COUCH_DOC_IS_COMPRESSED flag preserved (perhaps a special mode when we're opening the couchfile). When it comes to the various values for the datatype I would say that since this is what's used in the singe byte in the header frames on the wire in the binary protocol we should be pretty restrictive on what we'll allow there. We only have a really limited number of values available, and those should be used to something we can actually utilize in our product. Other "nice to have" information should be put in the "flex metadata" section for objects.. that's my personal opinion. We could for instance add the use of compression from the client all the way to the on disk (and back) without changing anything in the format items are stored on disk with couchstore (and thus no changes would be necessary in the indexer etc).
+
+It is great that we've added the possibility to allow for storage of variable-sized metadata don't get me wrong, but I'd rather see new opcodes used to operate on this piece of information instead of hacking on the package headers in the binary protocol. We _COULD_ reserve a single bit in the datatype byte to say that the object contains flex metadata and ship that back to the client (and ensure that the flex/value encoding is standardized). then memcached would just strip off the flex part if the client don't support flex metadata..
+
+-------------------------------------
+author: Abby Duran
+date: 2014-01-10 01:37:07.230000000
+
+Patch Set 8:
+
+(1 comment)
+
+Line:277, src/couch-kvstore/couch-kvstore.cc -> I think that makes sense to me. As it requires some adaptations in Couchstore, and affects other components as well, I think we should address it separately soon.
+
+-------------------------------------
+author: Asher Vang
+date: 2014-01-10 06:50:37.642000000
+
+Patch Set 8:
+
+(1 comment)
+
+Line:277, src/couch-kvstore/couch-kvstore.cc -> Yeah, it is a completely separate task. But as we agree upon, it is kind of confusing when you read the code ;-)
+
+-------------------------------------
+author: Tate Garrett
+date: 2014-01-14 07:08:15.970000000
+
+The change could not be merged due to a path conflict.
+
+Please rebase the change locally and upload the rebased commit for review.
+
+-------------------------------------

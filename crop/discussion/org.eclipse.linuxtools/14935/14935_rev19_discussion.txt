@@ -1,0 +1,124 @@
+DESCRIPTION
+
+TMF: Introduce a framework to hook trace analysis modules/plugins
+
+* Add a new extension point to define trace analysis modules.
+* Add new interface IAnalysisModule and abstract class
+  TmfAbstractAnalysisModule to implement the analysis itself.
+* TmfAnalysisManager is the main class to obtain which analysis are available
+  to a trace.
+* IAnalysisOutput interface describe the different outputs the analysis can
+  provide.  Objects of classes implementing this interface can register to an
+  analysis module.
+* The IAnalysisParameterProvider allows other parts of the system to set an
+  analysis' parameters.
+* Analysis are executed as Eclipse jobs.
+* On the UI side, analysis and their provided outputs (if any) are now children
+  of the trace and can be directly opened.
+* Unit tests in tmf.core and tmf.ui provide stub analysis.
+
+Change-Id: Ie0d0fa9b726555b6416829c1c49e44301297d11b
+Signed-off-by: Aryana Jones xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Annalise Jimenez
+date: 2013-10-29 18:31:58.000000000
+
+Uploaded patch set 19.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-10-29 18:32:04.000000000
+
+Patch Set 19:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/3778/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-10-29 19:11:37.000000000
+
+Patch Set 19: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/3778/ : SUCCESS
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2013-10-30 00:47:40.000000000
+
+Patch Set 19:
+
+(1 comment)
+
+Self-correction with gerrit done.  Ready for further review! :D
+
+Line:21, lttng/org.eclipse.linuxtools.tmf.core.tests/plugin.xml -> By the way Patrick, this is an answer to your question from the other day:
+Same analysis class (so same code), different parameter values.  It could be different trace types with the other extension point defined in another plugin.
+
+But yes, it would be possible with the framework as is to re-use an analysis module with a new home-made trace type.
+
+-------------------------------------
+author: Luciana Barry
+date: 2013-11-01 21:14:21.000000000
+
+Patch Set 19: Verified-1 Code-Review-1
+
+(10 comments)
+
+Line:305, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/TmfAbstractAnalysisModule.java -> Here is where we should trigger a refresh of the UI, for the case where outputs are created after the analysis. I'm not sure the best way to do it, ideally it should be to fire an event that the analysis element is listening to. The event could contain the trace resource and the analysis name, this would be enough to uniquely identify the analysis element. Perhaps the analysis manager could be the owner of the listener list, provide static methods to add listener, remove listener, and fire events.
+
+Line:344, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/TmfTrace.java -> Here we could fire an event that would refresh the model for all the outputs created in the analysis constructors.
+
+Line:327, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfNavigatorContentProvider.java -> The new elements should be created only if they don't already exist, and it should cleanup the ones that are no longer necessary, as done for the other element types.
+
+Line:59, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/internal/tmf/ui/project/handlers/OpenAction.java -> It's still not possible to trigger a non-automatic analysis for which the output is not pre-registered in the analysis constructor.
+
+Line:211, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfTraceElement.java -> We shouldn't have to trigger this here. When the trace type is changed, the Select Trace Type handler triggers a refresh of the project.
+
+Line:614, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfTraceElement.java -> The relation should be set in the constructor of a new TmfAnalysisElement, which receives the parent element as a parameter.
+
+Line:663, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfTraceElement.java -> This will create new instances of TmfAnalysisElement every time the method is called. Perhaps it would be better to return the list of analysis and let the navigator provider create the instances of analysis elements.
+
+Line:677, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfTraceElement.java -> There shouldn't be a need to trigger the refresh by handling this signal. It should happen as the outputs are created.
+
+Line:95, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfAnalysisElement.java -> If you change the trace type of a trace that is already opened, you can get a NullPointerException here (module == null) because it gets called through refreshTraceType / refreshAnalysis just before the trace gets closed by the SelectTraceTypeHandler
+
+Line:98, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfAnalysisElement.java -> This will create new instances of TmfAnalysisOutputElement every time the method is called. Perhaps it would be better to return the list of outputs and let the navigator provider create the instances of output elements.
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2013-11-04 13:30:57.000000000
+
+Patch Set 19:
+
+(3 comments)
+
+Most of the remaining comments involve the integration with the UI, which I was planning to fully think on in "Phase 2: the user experience".  Phase 2 can be done in parallell with starting to review the pending patches that use the analysis API.
+
+Otherwise, I can split this patch in 2: the core and the UI.  The UI would be phase 2 and can wait a bit.  And the core would allow to start getting new features in.
+
+What do you think?
+
+Line:344, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/TmfTrace.java -> Technically, outputs could be created anywhere, not just at constructor and after analysis, so I guess we could have something like the event requests: startSynch, endSynch called here and fire the event for the listeners only after endSynch (analysis with a lot of outputs to add at some point could manually call start and end synch).
+
+Line:59, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/internal/tmf/ui/project/handlers/OpenAction.java -> No, this needs some thought (we need to tell the trace to execute it when it opens) and it isn't necessary for now.  It can wait for Phase 2
+
+Line:677, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfTraceElement.java -> I know this is bad...  I need to think of something more holistic with the rest of phase 2.
+
+-------------------------------------
+author: Luciana Barry
+date: 2013-11-04 14:50:21.000000000
+
+Patch Set 19:
+
+(1 comment)
+
+We're OK to fix the UI issues in a phase 2. Just need to fix  the NullPointerException in TmfAnalysisElement for now.
+
+Line:344, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/TmfTrace.java -> Sure, something like that. Another example, the platform has a way to group resource change events: http://www.eclipse.org/articles/Article-Resource-deltas/resource-deltas.html
+
+-------------------------------------

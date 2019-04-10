@@ -1,0 +1,77 @@
+DESCRIPTION
+
+"Bare" Repository should not return working directory.
+
+If a repository is "bare", it currently still returns a working directory.
+This conflicts with the specification of "bare"-ness.
+
+Bug: 311902
+
+Change-Id: Ib54b31ddc80b9032e6e7bf013948bb83e12cfd88
+Signed-off-by: Willow Cantrell xxx@xxx.xxx
+
+COMMENTS
+
+author: Willow Cantrell
+date: 2010-06-15 08:06:02.000000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-06-15 14:59:36.000000000
+
+Patch Set 5: I would prefer that you didn't submit this; No score
+
+Sorry this is turning into a nightmare, but the corresponding code in git-core is equally disastrous.  For legacy reasons, you can't just trust core.bare (turns out, this is actually my fault in git-core).  Even modern repositories sometimes don't have core.bare set, e.g. the `repo` tool used by Android forcibly removes core.bare when it creates a new git repository and requires the fallback detection logic to be used.
+
+Given the complexity of this logic, I wonder if we shouldn't add some unit tests to help validate that the behavior matches what we expect to occur under the various states.
+
+Line:261, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> Style-nit: Please don't nest a end-of-line // style comment inside of a method call in the middle of an if conditional.  It just feels so wrong...  I'd prefer to have this comment in the { } block part of the conditional instead.
+
+Line:265, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> I think the better approach here is:
+
+ if (workTreeConfig != null) {
+    workDir = fs.resolve(d, workTreeConfig);
+ } else if (getConfig().getString("core", null, "bare") != null)) {
+    if (getConfig().getBoolean("core", "bare", true))
+      workDir = gitDir.getParentFile();
+    else
+      workDir = null;
+ } else if (Constants.DOT_GIT.equals(gitDir.getName())) {
+    workDir = gitDir.getParentFile();
+ } else {
+    workDir = null;
+ }
+
+No, its not pretty.  None of the "setup" code in git-core is sane.  Its a horrible mess that nobody likes to touch, because the algorithm is completely, utterly broken, but users just expect it to keep working like it has been.
+
+Line:1323, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> With all of the logic in the constructor, I wonder if we can simplify this method down to:
+
+  public boolean isBare() {
+    return workDir == null;
+  }
+
+-------------------------------------
+author: Willow Cantrell
+date: 2010-06-15 15:36:27.000000000
+
+MISMATCHED INLINE COMMENT
+Line:261, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> Absolutely.
+
+-------------------------------------
+author: Willow Cantrell
+date: 2010-06-15 15:36:27.000000000
+
+MISMATCHED INLINE COMMENT
+Line:265, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> Thanks a lot for the code.
+I believe it must be !getConfig().getBoolean... See next patch set.
+
+-------------------------------------
+author: Willow Cantrell
+date: 2010-06-15 15:36:27.000000000
+
+MISMATCHED INLINE COMMENT
+Line:1323, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> Done
+
+-------------------------------------

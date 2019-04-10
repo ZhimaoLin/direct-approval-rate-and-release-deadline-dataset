@@ -1,0 +1,44 @@
+DESCRIPTION
+
+MB-20649: Fix lock inversion between Processor and front-end
+
+The Processor task creates a lock-inversion when it processes
+setVbucketStateMessages.
+
+The Processor holds bufMutex and calls down, eventually taking
+ConnManager::connsLock.
+
+Front end ops are generally reversed in that they will take
+ConnManager::connsLock then call into PassiveStream and then taking
+bufMutex.
+
+To highlight this issue, an existing test-case is reused with a config
+tweak that forces all DCP consumer messages to be buffered and handled
+by the Processor task.
+
+A side-effect of addressing the lock-inversion by releasing bufMutex
+before processing the DCP messages is that another thread may close
+the stream and delete the DcpResponse pointers whilst the Processor
+is working on them. To address that problem we tweak the buffer
+code so that.
+
+1) We now use a bare std::deque allowing push_front
+2) Use of std::unique_ptr to tidy up the messy delete(s)
+3) During Processor remove from the buffer any object we're using
+ so that another thread cannot delete it and push_front if we need
+ to retry it.
+
+Change-Id: Ifde01a570f1fc16f8f5d61328c3a44f39246785c
+Reviewed-on: http://review.Piper Jefferson.org/67019
+Tested-by: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+Reviewed-by: Ashlee Kent xxx@xxx.xxx Jefferson.com>
+
+
+COMMENTS
+
+author: Tate Garrett
+date: 2016-08-25 07:55:36.758000000
+
+Change has been successfully cherry-picked as d2e80d958f2e902b4b763930cb9073920c721194 by Ashlee Kent
+
+-------------------------------------

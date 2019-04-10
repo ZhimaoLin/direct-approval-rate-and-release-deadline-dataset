@@ -1,0 +1,104 @@
+DESCRIPTION
+
+Implement delete-with-value with store() instead of delete()
+
+During investigation of issues with 'fully' deleting documents
+(i.e. discarding their bodies) which are in state Delete-with-value, I
+found that there's two bugs which interact to allow some transitions
+between Deleted states, but not others...
+
+Prior to Spock, the valid state transitions for StoredValues (relating
+to deletion) were:
+
+              /---\
+              |   |
+              |   V
+              Alive -----------------\
+                ^                    |
+                |                    V
+                \---------------- Deleted
+                                 (no value)
+
+With the advent of Deleted Bodies for system XATTRs, Deleted SVs can
+optionally have a value (Blob) associated with them, which can be
+changed (or removed) without going back to Alive:
+
+              /---\
+              |   |
+              |   V
+              Alive -----------------\
+                ^                    |
+                |                    V
+                \---------------- Deleted <------------\
+                           (with-value or no-value)    |
+                                     |                 |
+                                     \-----------------/
+
+While the above transitions should be supported, StoredValue was not
+fully updated to allow transitioning between the two Deleted variants.
+Specifically, if an item had the `deleted` flag set, then calling
+StoreValue::del() while in the Deleted-with-Value state became a no-op
+- the value was not removed:
+
+    void del(HashTable &ht) {
+        if (isDeleted()) {
+            return;
+        }
+        ...
+        resetValue();  // <-- Value removed here
+
+This means the Deleted-with-value -> Deleted-no-value transition is
+broken - the deleted value was not removed.
+
+If we want to fix this, and handle 'deleting-a-deleted-value' in
+HashTable, then we need to allow the HashTable to re-delete an item
+(essentially remove the early exit in StoredValue:del(). However in
+doing so, it breaks *setting* the deleted value, due to a second bug
+in VBucket::processSoftDelete():-
+
+VBucket::processSoftDelete() (which is the function which handles both
+Delete-with-value and Delete-no-value) assumes the deletion should
+have no value (it calls softDeleteStoredValue() with
+onlyMarkDeleted==false), and hence the item should have its body
+discarded. However due to the aforementioned 'bug' (early-exit) in
+StoredValue::del(), the body was kept (and Delete-with-Value ->
+Delete-with-Value transition currently works).
+
+To resolve this, it seems simpler and cleaner to implement
+Delete-with-Value as a Mutation - i.e. call down the EvpStore path
+instad of EvpItemDelete. As EvpStore already passes an Item object all
+the way down the call-chain to updateStoredValue(), we can simply use
+the existing Item object to convey the the `del` op instead of a
+`set`.
+
+Change-Id: I3b9223da101b38e3e25aef237d0e52ee55bae623
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2017-04-04 13:59:54.172000000
+
+Uploaded patch set 11.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-04-04 14:37:19.800000000
+
+Patch Set 11: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4231/ : FAILURE
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-addresssanitizer-master/4231/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/5445/ : FAILURE
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/5445/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/5659/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/4954/ : SUCCESS
+
+-------------------------------------

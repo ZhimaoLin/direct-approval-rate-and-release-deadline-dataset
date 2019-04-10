@@ -1,0 +1,165 @@
+DESCRIPTION
+
+Add Publisher implementation
+
+Adds the server-side Publisher implementation and protocol. The
+Publisher hooks the post-receive update and generates packs to cover
+all connected Sessions. Clients estabilsh Sessions that store their
+subscriptions and stream pointers for PublisherPacks. PublisherPacks
+are split into PublisherPackSlices, which are created by the
+PublisherPackFactory. All Packs are placed in a global linked-list
+that each client creates an iterator for. The memory footprint of
+Packs is managed by the PublisherBuffer, which garbage-collects the
+list of Packs and loads the Slices in and out of memory as necessary
+to reclaim memory.
+
+Change-Id: I35cadea785160585fc76ed9280c7a16f3da9e724
+
+
+COMMENTS
+
+author: Karlee Dorsey
+date: 2012-07-26 22:32:23.000000000
+
+Uploaded patch set 12.
+
+-------------------------------------
+author: Warren Watkins
+date: 2012-08-01 21:27:43.000000000
+
+Patch Set 12: I would prefer that you didn't submit this
+
+(9 inline comments)
+
+Overall the architecture seems OK, but I want to focus on the supporting structures, before I get into the publisher code. Here are my thoughts on the ConcurrentLinkedList and PublisherBuffer.
+
+Line:151, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherBuffer.java -> You don't need a GC thread if you have allocate return an object that keeps track of its position in a doubly linked list. You could then call deallocate() on that object.
+
+Line:78, org.eclipse.jgit/src/org/eclipse/jgit/util/ConcurrentLinkedList.java -> I don't think this should be called an Iterator, since there is a lot of additional functionality in this.
+
+Line:95, org.eclipse.jgit/src/org/eclipse/jgit/util/ConcurrentLinkedList.java -> probably unused
+
+Line:116, org.eclipse.jgit/src/org/eclipse/jgit/util/ConcurrentLinkedList.java -> copy is a bad name
+
+Line:294, org.eclipse.jgit/src/org/eclipse/jgit/util/ConcurrentLinkedList.java -> it seems suspect that you do this in a loop, since you will wait the entire timeout on wakeup
+
+Line:343, org.eclipse.jgit/src/org/eclipse/jgit/util/ConcurrentLinkedList.java -> rename to add()
+
+Line:367, org.eclipse.jgit/src/org/eclipse/jgit/util/ConcurrentLinkedList.java -> unused. remove
+
+Line:395, org.eclipse.jgit/src/org/eclipse/jgit/util/ConcurrentLinkedList.java -> So this class has more functionality than you need. I think if we remove the unneeded functionality, you can get some nice properties out of this class.  For example, if you only keep a pointer to the tail, then the garbage collector will automatically clean up any unused nodes as soon as they are not referenced by a Buffer (see below).  I've updated this container to represent a stream, and each publisher has its own Buffer into the stream.
+
+public class ConcurrentStream<T> {
+
+	private static class Node<T> {
+		private final CountDownLatch signal = new CountDownLatch(1);
+		private final T data;
+		private volatile Node<T> next;
+
+		private Node(T data) {
+			this.data = data;
+		}
+
+		private Node<T> getNext() {
+			return next;
+		}
+
+		private T getData() {
+			return data;
+		}
+
+		private Node<T> getNext(long time, TimeUnit unit) {
+			if (next != null) {
+				return next;
+			}
+			signal.await(time, unit);
+			if (next == null) {
+				throw new TimeoutException();
+			}
+			return next;
+		}
+
+		private void setNext(Node<T> n) {
+			if (n == null) {
+				throw new NullPointerException();
+			}
+			next = n;
+			signal.countDown();
+		}
+	}
+
+	public static class Buffer<T> {
+		private Node<T> curr;
+		private Node<T> next;
+		private Node<T> marked;
+		private Node<T> first;
+
+		private Buffer(Node<T> start) {
+			if (start == null) {
+				throw new NullPointerException("start");
+			}
+			curr = first = start;
+		}
+
+		public T poll(long time, TimeUnit unit)
+				throws InterruptedException, TimeoutException {
+			if (next == null) {
+				next = curr.getNext(time, unit);
+			}
+			if (marked != first) {
+				first = null;
+			}
+			curr = next;
+			next = null;
+			return curr.getData();
+		}
+
+		public T peek() {
+			if (next == null) {
+				next = curr.getNext();
+			}
+			return (next != null) ? next.getData() : null;
+		}
+
+		public void mark() {
+			marked = curr;
+			if (marked != first) {
+				first = null;
+			}
+		}
+
+		public void reset() {
+			if (marked == null) {
+				throw new InvalidMarkException();
+			}
+			if (marked == first) {
+				curr = marked;
+			} else {
+				next = marked;
+			}
+		}
+	}
+
+	private final AtomicReference<Node<T>> tail = new AtomicReference<Node<T>>(
+			new Node<T>(null));
+
+	public void add(T item) {
+		Node<T> n = new Node<T>(item);
+		Node<T> curr;
+		do {
+			curr = tail.get();
+		} while (!tail.compareAndSet(curr, n));
+		curr.setNext(n);
+	}
+
+	public Buffer<T> newBuffer() {
+		return new Buffer<T>(tail.get());
+	}
+}
+
+Line:15, /COMMIT_MSG -> grammar nit: 
+that each client creates an iterator for.
+--->
+for which each client creates an iterator.
+
+-------------------------------------

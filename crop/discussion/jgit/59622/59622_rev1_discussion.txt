@@ -1,0 +1,136 @@
+DESCRIPTION
+
+Include ancestors of reused bitmap commits in reuse bitmap again
+
+Until 320a4142 (Update bitmap selection throttling to fully span
+active branches, 2015-10-20), setupTipCommitBitmaps contained code
+along the following lines:
+
+	for (PackBitmapIndexRemapper.Entry entry : bitmapRemapper) {
+		if (!reuse(entry))
+			continue;
+		RevCommit rc = (RevCommit) rw.peel(rw.parseAny(entry));
+
+		reuseCommits.add(new BitmapCommit(rc));
+		EWAHCompressedBitmap bitmap =
+			remap.ofObjectType(remap.getBitmap(rc), OBJ_COMMIT);
+		writeBitmaps.addBitmap(rc, bitmap, 0);
+		reuse.add(rc, OBJ_COMMIT);
+	}
+	writeBitmaps.clearBitmaps();	// Remove temporary bitmaps
+
+This loop OR-ed together bitmaps for commits whose bitmaps would be
+reused.  A subtle point is the use of the add() method, which ORs in a
+bitmap from the BitmapIndex when it exists and falls back to OR-ing in
+a single bit when that bitmap does not exist in the BitmapIndex.
+
+Commit 320a4142 removed the addBitmap step, so the bitmap does not
+exist in the BitmapIndex and the fallback behavior is triggered.
+
+Simplify and restore the intended behavior by avoiding use of the
+subtle use of the add() method --- use or() directly instead.
+
+Change-Id: I30844134bfde0cbabdfaab884c84b9809dd8bdb8
+
+
+COMMENTS
+
+author: Eden Lin
+date: 2015-11-04 01:47:01.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-11-04 01:47:07.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7385/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-11-04 01:54:43.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7385/ : SUCCESS
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2015-11-04 07:05:29.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:375, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> This line just looks wrong to me. We can't assume that all the reused bitmaps from a previous pack are all in a single linear history, so ORing in "reuse" here seems incorrect.
+
+I think the way to move forward is to simplify and clarify semantics (like you are doing by replacing BitmapBuilder.add()) and add tests that verify those semantics. Then maybe things won't be so murky. I'll think about a test for this.
+
+-------------------------------------
+author: Eden Lin
+date: 2015-11-04 07:12:51.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:375, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> I don't think there's any assumption of linearity. I wonder if it's a vestige of some code path that doesn't exist any more. I can do a little history mining tomorrow.
+
+But (luckily?) if I am reading correctly it would be safe to remove this line. Consider where this bitmap is used after this line:
+
+1. It gets recorded in tipCommitBitmaps
+2. In the while((rc = rw.next()) != null) walk, we check if it contains each commit 'rc'. Luckily the commits in 'reuse' cannot appear as 'rc', since each commit in reuseCommits has already been marked uninteresting.
+3. We then AND the bitmap against the complement of reuse.
+
+So the OR-ing against reuse would have had no effect, since it was soon undone.
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2015-11-04 16:06:59.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:375, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> I'm not making my point very well. This loop is setting up the full reachability bitmap for each branch tip. It may be the case that some of the commits for which we are reusing bitmaps are not reachable by a particular branch. If not, then the bitmaps for those commits should not be used to build the bitmap for that branch tip. This line seems to be violating that.
+
+-------------------------------------
+author: Eden Lin
+date: 2015-11-04 18:53:28.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:375, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> Upshot of in-person conversation:
+
+- the bitmap.or(reuse) and bitmap.andNot(reuse) calls do not appear to be needed. Will add a change to remove those calls
+- the content of the BitmapBuilder in tipCommitBitmaps is underdocumented. Will add a comment in the same or a followup change.
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2015-11-05 20:09:49.000000000
+
+Patch Set 1: Code-Review+1
+
+(1 comment)
+
+Line:353, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> You lost this trim() call. Since this is a transient object that is immediately discarded, that is fine. I didn't look at what trim did but I shouldn't have carried it forward in the first place.
+
+-------------------------------------
+author: Eden Lin
+date: 2015-11-05 20:22:06.000000000
+
+Patch Set 1: Code-Review+2
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-11-05 22:08:26.000000000
+
+Change has been successfully merged into the git repository by Eden Lin
+
+-------------------------------------

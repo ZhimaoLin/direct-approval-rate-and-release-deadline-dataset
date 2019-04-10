@@ -1,0 +1,67 @@
+DESCRIPTION
+
+MB-18426: Reduce compaction_number_of_kv_workers from 4 to 1
+
+There have been a number of instances where the IO cost of compaction
+has had a detremental effect on normal "front-end" KV operations - see
+MB for full details, but as one example:
+
+  In a heavy write use case where a document is written to once, read
+  once then deleted. The documents are only stored in the bucket until
+  they are processed, so in a normal state a document only exists for
+  a few minutes. It was noted that when the 3 (see note) compactors
+  ran the disk would be come full saturated and this would cause huge
+  spikes in the disk queues up to 36 millions. When the
+  compaction_number_of_kv_workers was reduced, it had the following
+  impacts:
+  * Reduce the disk queue to ten of thousands from 36 million,
+    which also reduce the amount of memory the bucket was using.
+  * Reduce the disk IO.
+  * Most surprisingly reducing the disk space required from 280GB to
+    40GB. I suspect this was because the deletes were being blocked on
+    the disk write queue.
+  * The fragmentation percentages fluctuates a lot more.
+
+Similar results have been reported in 2 other customer enviroments.
+
+This patch reduces the default number down to 1 - it can still be
+overridden if necessary via diag/eval.
+
+  Note: While the value of compaction_number_of_kv_workers was
+  previously 4, we would normally only see 3 compactors run in
+  parallel in ep-engine due to not scheduling more than num_shards/2 +
+  1 compactors at once - see EventuallyPersistentStore::compactDB.
+
+Change-Id: I87bc03681f93f1c7df5535181c7fa1c640cb8e68
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2016-06-09 12:47:09.920000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-06-09 12:47:17.933000000
+
+Patch Set 1: Well-Formed-1
+
+Branch restricted. PLEASE READ this URL: 
+
+http://server.jenkins.couchbase.com/job/restricted-branch-check/16253/artifact/restricted.html : FAILURE
+
+-------------------------------------
+author: Keira Washington
+date: 2016-06-09 12:53:26.278000000
+
+Patch Set 1: Code-Review+2
+
+-------------------------------------
+author: Roselyn Villegas Code Review
+date: 2016-07-18 11:08:39.533000000
+
+Change has been successfully cherry-picked as 36f707463d86472485f94d0745c946fe002c4221 by Ashlee Kent
+
+-------------------------------------

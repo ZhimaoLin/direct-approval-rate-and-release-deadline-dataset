@@ -1,0 +1,126 @@
+DESCRIPTION
+
+Buffer the response until request parsing has done
+
+This is a continuation from https://git.eclipse.org/r/#/c/4716/. For a
+non-bidirectional request, we need to consume the request before writing
+any response. In UploadPack, we write "shallow"/"unshallow" responses
+before parsing "have" lines. This has happened not to be a problem most
+of the time in the smart HTTP protocol because the underlying
+InputStream has a 32 KiB buffer in SmartOutputStream.
+
+Change-Id: I7c61659e7c4e8bd49a8b17e2fe9be67bb32933d3
+Signed-off-by: Sandra Garrison xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Sandra Garrison
+date: 2017-03-31 20:58:31.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-03-31 20:58:37.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/10070/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-03-31 21:16:11.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/10070/ : SUCCESS
+
+-------------------------------------
+author: Eden Lin
+date: 2017-03-31 23:07:49.000000000
+
+Patch Set 1:
+
+(4 comments)
+
+I like it. Some nits below.
+
+Line:661, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> This is safe because the TimeoutOutputStream is responsible for closing output and we assign 'output = o' to ensure we close the TimeoutOutputStream.
+
+But why did it start warning now? Was it warning before and we just didn't suppress it yet?
+
+Line:725, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> Feels too clever. Do we need RAII here? Would a try {} finally work okay?
+
+If unbuffer fails e.g. due to the client disconnecting, it seems okay for that to mask another exception that was thrown in the try block. In other words, I don't think we need the https://docs.oracle.com/javase/7/docs/api/java/lang/Throwable.html#addSuppressed(java.lang.Throwable) magic.
+
+Is it guaranteed when unbuffer is called that we have finished reading rawIn? Should unbuffer tell rawIn to consume any remaining input? What happens if someone tries to read from pckIn afterward?
+
+Line:1592, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> The second parameter is to avoid creating an unnecessary ByteArrayOutputStream in the bidi case?
+
+An alternative would be
+
+  o = new ResponseBufferedOutputStream(rawOut);
+  if (biDirectionalPipe) {
+    o.unbuffer();
+  }
+
+which feels simpler, though it's less efficient.
+
+What you have here is sensible.
+
+Line:1628, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> optional: it's not obvious from the name what this does. Maybe something like stopBuffering()? Or a javadoc comment would work.
+
+-------------------------------------
+author: Sandra Garrison
+date: 2017-03-31 23:56:57.000000000
+
+Patch Set 1:
+
+(4 comments)
+
+Line:661, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> All of sudden Eclipse starts complaining about this. I don't know how it infers the resource leak. It won't complain the InputStream. (shrug)
+
+Line:725, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> The client disconnect case is just one case that IOException represents. Maybe there's another.
+
+Now, I realize that if ServiceMayNotContinueException is caused by a client disconnect but the exception doesn't have that in the exception chain, this adds that information. We might want to look into the suppressed exceptions to detect client disconnects.
+
+---
+
+The request drain was intentionally not included in this change. I want to do that in another change.
+
+Line:1592, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> Yeah. Maybe the simpler is better.
+
+Line:1628, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> Done
+
+-------------------------------------
+author: Sandra Garrison
+date: 2017-03-31 23:58:48.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:725, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> The client disconnect case is just one case that IOException represents. Maybe there's another.
+
+So, I think it's better not to conceal the first exception by the IOException thrown by unbuffer.
+
+-------------------------------------
+author: Sandra Garrison
+date: 2017-04-04 17:55:19.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:725, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> It seems the exception is swallowed by UploadPackServlet later in smart HTTP, so the exception thrown here wouldn't make any difference.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2017-04-04 18:25:41.000000000
+
+Change has been successfully merged into the git repository by Eden Lin
+
+-------------------------------------

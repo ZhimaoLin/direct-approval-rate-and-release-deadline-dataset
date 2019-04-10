@@ -1,0 +1,229 @@
+DESCRIPTION
+
+Migrate encode/decode from Item to ItemMetaData
+
+Change-Id: I4a0e83902cc91964f6a44f6ca76479ff353423dd
+
+
+COMMENTS
+
+author: Macie Morton
+date: 2012-05-10 20:50:53.748000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Noah Dean
+date: 2012-05-10 21:25:41.884000000
+
+Patch Set 2: I would prefer that you didn't submit this
+
+(15 inline comments)
+
+I think there's way too much code here for what it does.  The contracts are a bit loose so it looks like it's easy to sneak some bugs in.  It also looks *really* easy to unit test, but there aren't any tests.
+
+Line:126, item.hh -> I don't think you need to describe a forward declaration as such.
+
+Line:143, item.hh -> I think we need proper docs on the constructors.  Also, they should probably be explicit, especially if single argument.
+
+Line:144, item.hh -> I don't think both this and the other should exist.
+
+Line:148, item.hh -> If 1 is your magic number, you should probably define a constant for it.
+
+Line:156, item.hh -> I usually just write this as assert(data);
+
+Line:161, item.hh -> This is a really confusing contract.  At the very least, it should document what it's doing very carefully.
+
+Line:174, item.hh -> I don't understand why parse and encode are more than a single memcpy.  This looks difficult and fragile.
+
+Line:189, item.hh -> I don't think it makes sense to put return at the end of a void method.  That's what happens anyway.
+
+Line:196, item.hh -> Does it really make sense to heap allocate something fixed and so small?  This is only two bytes offset over the standard encode, so why wouldn't you just add the two bytes to the output and then append the standard encoding output?
+
+Line:206, item.hh -> This should be documented, but it looks like you have a two output parameters -- or worse, a parameter that is both input *and* output.  Passing in the size of your data and having your local value change seems like it'd make it easy to have hard to track down bugs.
+
+Why not just return the size_t you calculate at the top and be done with it?
+
+Line:210, item.hh -> I don't think you need this variable.  It's a bit confusing.
+
+In general, I think this whole function shouldn't be more than around eight lines of code.
+
+Line:224, item.hh -> This is harder to read than ``meta += 2''
+
+Line:239, item.hh -> Why does this exist?  It looks like sizeof(ItemMetaData)
+
+Line:1115, mc-kvstore/mc-engine.cc -> where did nmeta come from here?  Why isn't it just sizeof(meta)?
+
+Line:1148, mc-kvstore/mc-engine.cc -> This is happening here, too.  There's a magic 30 and then a seemingly unrelated thing describing the size of the buffer that gets passed in.  If the sizeof(ItemMetaData) goes above 30, does this just silently corrupt things?
+
+-------------------------------------
+author: Asher Vang
+date: 2012-05-10 21:36:05.915000000
+
+Patch Set 2: I would prefer that you didn't submit this
+
+(3 inline comments)
+
+
+
+Line:1364, ep.cc -> This block seems a bit confusing to me... I would have expected the v-> things to be passed into the object in the constructor and then have something like:
+itemMeta.encode(meta, metasize);
+
+
+bool encode(uint8_t*buf, size_t &size)
+
+(returning true/false if encode succeeded or not, buf is where to store the data, size is the size of the buffer on input, and the size of the encoded data on output)
+
+THat way we can change the incoding internally and our code will give us errors if we increase the size outside the buffers we've got.
+
+Line:3769, ep_engine.cc -> we should probably pass in the buffer size? so that we can  grasefully detect errors instead of accessing illegal memory?
+
+Line:3847, ep_engine.cc -> as above
+
+-------------------------------------
+author: Noah Dean
+date: 2012-05-10 21:39:03.203000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:1364, ep.cc -> I don't think passing the size_t as a reference makes sense.  If you really want to mutate it, I'd rather it be a pointer so the caller has a chance of knowing his data's going to get blown (besides, I'd use sizeof(mybuffer) most of the time).
+
+If you need the size written, you can return it.  Isn't -1 a valid size_t?
+
+-------------------------------------
+author: Asher Vang
+date: 2012-05-10 21:41:25.466000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:1364, ep.cc -> well, in this case a 0 would probably also indicate a failure ;)
+
+-------------------------------------
+author: Macie Morton
+date: 2012-05-10 22:16:49.233000000
+
+Patch Set 2: (11 inline comments)
+
+
+
+Line:126, item.hh -> I just followed the current code style in ep.hh and other places. What is the "right" way of forward declaration? It seems pretty hard to follow.
+
+Line:144, item.hh -> I think you want to have a constructor to build ItemMetaData from a chunk of meta, from your comment in previous commit. Please clarify.
+
+Line:148, item.hh -> In current code base, this magic number is used here and there. I am not sure if we need a different commit to clean that.
+
+Line:161, item.hh -> This is not new, it is the same as existent function defined in Item.
+
+Line:174, item.hh -> Yes, one memcpy would be better but this is also the existent code which passed code review and has existed for a while. Seems I need to learn how to respect existent code.
+
+Line:189, item.hh -> Isn't it a better coding practice to always add return even in void function?
+
+Line:206, item.hh -> Again, this is to adapt to existent function signature, which I assume already documented and known by others.
+
+Line:1115, mc-kvstore/mc-engine.cc -> nname is size of item metadata in existent code. I do not understand why we use that instead of sizeof(meta)
+ 
+size_t nmeta = itm.getNMetaBytes();
+
+Line:1364, ep.cc -> Seems to me 
+
+bool encode(uint8_t*buf, size_t size)
+
+is better, we can use returned value to determine success/failure
+
+Line:3769, ep_engine.cc -> the memory is from incoming request, we count on that.  we do not allocate any memory. 
+
+What buffer size shall we put here and how do we make sure we indeed have that amount of memory?
+
+Line:3847, ep_engine.cc -> same as above
+
+-------------------------------------
+author: Noah Dean
+date: 2012-05-10 22:48:46.239000000
+
+Patch Set 2: (10 inline comments)
+
+
+
+Line:126, item.hh -> You could just do it.  It's not a big deal either way, but I think a comment that describes exactly what a standard construct is is just a bit superfluous for a one-off.  If you wanted to define a section, that'd be OK, but it's not necessary.
+
+Line:144, item.hh -> You have two, and as far as I can tell, you never use this one -- not even in a unit test.
+
+Line:148, item.hh -> I don't see that in the code pulled from below.
+
+If you're going to make it a method, just make it the right method.
+
+Line:161, item.hh -> That doesn't make it less confusing.  It's now a method on a new class.  You should document classes you create and methods you put on them.
+
+When refactoring it into a method, supplying the right parameters for that method is not bad, even if you ignore them.
+
+Line:174, item.hh -> You're making it a method, so now there's an object with its context.  You can do the right thing in this implementation.  IMO, this method doesn't make any sense, though.  It just takes a pointer to something and does stuff.  This is what should happen in the constructor (and be verified in a test).
+
+Line:189, item.hh -> I can't imagine why you'd think that.  It's a better coding practice to add as few lines as absolutely required to make something be clear and correct.
+
+Do you think the code will continue to run into the next method when you don't see the return?  All functions return at the end.  That's just how C is defined, and C++ kept this, so you don't have a fear of a function not returning when it runs out of scope.
+
+Line:206, item.hh -> Assuming people know something and therefore it shouldn't be documented is not a good idea.
+
+This is a method on an object that uses no properties of the object.  That makes it not a method, but a function.  Your usage demonstrates that.  It's just moved here just to be moved here.  It can do better.
+
+Line:1115, mc-kvstore/mc-engine.cc -> I'm suggesting you not have a variable there at all.  Especially one you got from somewhere else, is unrelated to the size you're passing, and is intending to be overwritten.  Just use sizeof(meta), which will at least be accurate.
+
+Line:1364, ep.cc -> Should probably return the size.
+
+Line:3769, ep_engine.cc -> Yeah, this is user input.  It's trivial to construct a packet and send whatever size data I want.  That shouldn't cause stuff to break.  Isn't "metabytes" the size you got?
+
+-------------------------------------
+author: Macie Morton
+date: 2012-05-11 01:03:24.444000000
+
+Patch Set 2: Do not submit
+
+(3 inline comments)
+
+Thanks for all these comments. Now I do need to start XDCR stuff and temporarily suspend this change-set.
+
+Line:144, item.hh -> I added them before I thought you wanted them. Anyway, I will remove this one and keep the other.
+
+Line:148, item.hh -> Please look at other places, e.g. ep_testsuit.cc. Everybody uses 0x01... Again, if we clean it, probably it should be another commit.
+
+Line:1364, ep.cc -> Here all the caller wants to know is a success, or a failure, what is the usage to return actual size?  Does caller need to write something like if(size == e) or if (size == 0) to determine it is a success or not? The existent encode() returns boolean.
+
+-------------------------------------
+author: Noah Dean
+date: 2012-05-11 01:14:36.427000000
+
+Patch Set 2: (3 inline comments)
+
+
+
+Line:144, item.hh -> I think you're missing the point.
+
+We need a proper interface to this thing.  The point of encapsulating them in this class is to provide that interface.  If you model this interface after the thing you're trying to improve, you just have a really confusing thing.
+
+If you're not using the thing you're adding, it's dead code.
+
+Every line of code should be justified.
+
+If you can't use it reasonably as a constructor, make a static method that returns the itemMetadata or an error or something similar.  Just think about how it should be used and make the best usage from there.
+
+Again, unit tests help a *lot* here, because if you've never used it, you can't know how confusing it might be to use.
+
+Line:148, item.hh -> OK.  It was done wrong.  I also thing 1 is a bad magic number and it's very confusing to look at here.  It's not part of the interface, so it matters less.
+
+Line:1364, ep.cc -> You don't think it'd be beneficial for the caller to have some idea how much of the buffer was consumed by the encoding?
+
+If you think the existing implementation and interface are correct, then why are you bothering to change them at all?
+
+-------------------------------------
+author: Abby Duran
+date: 2012-05-11 06:31:46.639000000
+
+Patch Set 2: Abandoned
+
+Thanks for the good comments. I will consider them and work on this refactoring separately sooner or later.
+
+-------------------------------------

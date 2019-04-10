@@ -1,0 +1,99 @@
+DESCRIPTION
+
+MB-16684: DCP Producer could miss fetching items from a stream
+
+Here's the scenario:
+- Stream currently in backfill phase
+- When backfill is received, 1 item added to readyQ
+    - itemsReady of stream set to true (Producer notified)
+- Front end op comes in
+    - item added to checkpoint queue
+    - itemsReady not set to true, as it already is (Producer not
+      notified)
+- Producer calls stream::next()
+    - stream in backfillPhase(): 1 item popped from readyQ
+    - backfill task still running => no state transition to IN_MEMORY
+    - 1 op returned to producer, producer re-adds vbucket to ready list
+- Backfill completes
+- Producer calls stream::next()
+    - stream in backfillPhase(): no items in readyQ
+    - As backfill task has completed, state transitions to IN_MEMORY
+    - no items in readyQ => NULL returned
+    - As no op obtained, producer doesn't re-add vbucket to ready list
+
+=> Front end item remains stuck in checkpoint queue, until more front
+end ops come in - which would notify the producer
+
+Change-Id: I3403d3926f97788074990ef0e4c69cac902b2a93
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2015-12-08 01:12:53.545000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-12-08 01:18:44.190000000
+
+Patch Set 2:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/966/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-12-08 01:29:35.931000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1724/ : SUCCESS
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/966/ : SUCCESS
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2015-12-08 02:46:34.005000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:852, src/dcp/stream.cc -> This will not handle     
+if (lastSentSeqno.load() >= end_seqno_) {
+        endStream(END_STREAM_OK);
+}
+This may not be a big problem though.
+
+Best solution would be to call nextCheckpointItem() in inMemoryPhase() only. The fix should put back the vbucket into readyQ if there are any items in the checkpoint.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-12-08 02:52:17.687000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:852, src/dcp/stream.cc -> That isn't a solution at all. The problem here is with in-memory phase not running at all. I'll think of something to handle the lastSentSeqno > end_seqno case.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2015-12-08 06:35:45.809000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:852, src/dcp/stream.cc -> Ok sounds good.
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-12-09 05:17:10.989000000
+
+Change has been successfully cherry-picked as a095083ed0bec34f0ade7131e5e2afe1b0ab6efe
+
+-------------------------------------

@@ -1,0 +1,44 @@
+DESCRIPTION
+
+MB-17631: Fix sporadic ep-engine unit test failures
+
+Fix resolves ep_engine testcase failures triggered by request to
+access couch-db before it is being created. This commit fixes
+failures of the following CV regression testcases:
+- test_est_vb_move
+Here are some more details about underlying problem.
+1. Thread A.
+Testcase (actually couple of them) fails in
+"CouchKVStore::getNumPersistedDeletes" proc right after calling
+openDB( ) api with RDONLY mode for bucket 0. It fails because
+this call does not complete with success, and the reason is that
+couch-db "0.couch.1" file attempted to be opened does not exist,
+to be exact has not been created yet, and is not being created in
+this call because the api has RDONLY mode.
+2. Thread B.
+This thread runs "test_setup" proc, as part of which "0.couch.1"
+file for bucket 0 should be created. What we do here is schedule
+task which will create file "0.couch.1" and without waiting till
+it completes start testcase itself in Thread A. And so basically
+there is a racing condition between threads A & B. Though request
+to schedule task for file "0.couch.1" creation in Thread B happens
+before we start testcase in Thread A, this request is not being
+completed by the time openDB call is being issued in Thread A.
+Code committed with check-in allows to fix the testcase, and in
+particularly wait till couch-db file "0.couch.1" will be created,
+so testcase can check that the content of this file is correct
+(numPersistedDeletes == 0) for bucket 0.
+Change-Id: Ibe20b471a12afea559b319671599076b0f2a0876
+Reviewed-on: http://review.Piper Jefferson.org/59420
+Tested-by: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+Reviewed-by: Abby Duran <Abby xxx@xxx.xxx Jefferson.com>
+
+
+COMMENTS
+
+author: Tate Garrett
+date: 2016-03-12 00:18:40.200000000
+
+Change has been successfully cherry-picked as b4c873b53a1fe57c72651bcf6d9a12f16894aec4
+
+-------------------------------------

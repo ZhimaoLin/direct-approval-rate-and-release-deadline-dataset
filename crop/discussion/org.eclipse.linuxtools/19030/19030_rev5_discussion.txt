@@ -1,0 +1,261 @@
+DESCRIPTION
+
+tmf: Implement a cache of TmfStateValue.
+
+This patch provides a caching implementation in the TmfStateValue factory.
+TmfStateValue are immutable and can be shared.
+
+By changing the size of the cache, we observed this cache ratio.
+
+size         hit      total     ratio
+  2 count:  7369956/15551000 [0.4739216770625683]
+  4 count: 11742495/15530000 [0.7561168705730843]
+  8 count: 14622383/15545000 [0.9406486330009649]
+ 16 count: 15007948/15552000 [0.965017232510288]
+ 32 count: 15372868/15543000 [0.9890541079585665]
+ 64 count: 15432506/15523000 [0.9941703279005347]
+128 count: 15488720/15534000 [0.9970851036436205]
+
+Which seems to be an excellent ratio for a really small cache.
+The same idea is used with Integer.valueOf(...).
+
+Change-Id: I3701b900035d83b19531101ab60e7292899d8cef
+Signed-off-by: Jordon Obrien xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Braxton Mccarthy
+date: 2013-11-29 20:57:23.000000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-11-29 21:02:33.000000000
+
+Patch Set 5: Verified+1 Code-Review+1 IP-Clean+1
+
+I just re-organized some things.
+
+We already did "cache" some values in lttng2.kernel.core (saving ITmfStateValue's instead of the int's), but that can only go so far: no way of knowing in advance what values will be present in the trace. Good idea doing this, it saves a LOT of small object allocations (final immutable objects do get collected quite quickly, but that's still work we can avoid to the garbage collector).
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-29 21:23:28.000000000
+
+Patch Set 5:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4307/
+
+-------------------------------------
+author: Luciana Barry
+date: 2013-11-29 21:47:21.000000000
+
+Patch Set 5:
+
+I did some testing and found that it is slower with the cache for Double and String, with a 100% cache hit ratio (only 16 different values).
+
+It is more than two times faster for Integer and Long, though.
+
+-------------------------------------
+author: Jordon Obrien
+date: 2013-11-29 21:49:32.000000000
+
+Patch Set 5:
+
+Do you have metrics on memory consumption.
+I'm not surprise it is slower, we need to "hash" the string and the double. Which is not the case for int/long.
+
+Maybe a faster hash function can works fine.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-29 22:04:06.000000000
+
+Patch Set 5: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4307/ : SUCCESS
+
+-------------------------------------
+author: Luciana Barry
+date: 2013-11-29 22:06:58.000000000
+
+Patch Set 5:
+
+It not only adds a hash, but a compare also.
+
+For the memory, I only have what Eclipse displays in the status bar with "Show Heap Status".
+
+Without the cache, for 100M Strings created in a loop local variable, the heap jumps by about 200M before it gets garbage collected.
+
+With the cache, it is even worse... but not by much.
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-11-29 22:43:18.000000000
+
+Patch Set 5:
+
+In a synthetic benchmark where nothing else is happening, the GC can run with no interference. In a use case where the machine is already loaded (loading a trace, indexing, state systems, etc.) the GC might not be as quick, or may slow down the rest.
+
+It's really hard to determine. final/immutable objects do get GC'ed really fast. On the other hand this patch reduces the load on the GC. Question is, is it worth it.
+
+Perhaps the Strings cache is a little bit big. Especially since each String is typically bigger than one int or one double. Maybe we should only cache int's and long's, where the impact is minimal?
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2013-11-29 22:47:28.000000000
+
+Patch Set 5:
+
+I believe it would be good to add a later patch with the code that generated the commit message as the project can always use more orthogonal benchmarks.
+
+-------------------------------------
+author: Jordon Obrien
+date: 2013-11-29 22:57:27.000000000
+
+Patch Set 5:
+
+I didn't benchmark double/string cache.
+On a short term, you can remove them.
+My guess is that string are expensive to hash, and string compare to validate it's the same string is also expensive.
+
+Do you benchmark lttng only? or any CTF traces?
+Alex told us there is values cache for lttng.
+If this is true, we also need to benchmark generic TMF traces.
+
+But, my benchmark in the message log come from a "lttng" traces.
+
+-------------------------------------
+author: Jordon Obrien
+date: 2013-11-30 04:08:43.000000000
+
+Patch Set 5:
+
+I discover jmap.exe in the jdk which is helpful to debug/analyse memory consumption. Here are the bytes use by loading a lttng-trace in the RPC (without doing anything, just startup).
+
+Here is the command-line used:
+ % jmap.exe  -histo:live <pid> | grep .statevalue.
+
+
+This is the result WITHOUT the optimisation:
+
+ num     #instances         #bytes  class name
+----------------------------------------------
+   7:        144439        3466536  java.lang.String
+  55:          3699          59184  org.eclipse.linuxtools.tmf.core.statevalue.IntegerStateValue
+ 145:           791          12656  org.eclipse.linuxtools.tmf.core.statevalue.StringStateValue
+1132:             5            120  org.eclipse.linuxtools.tmf.core.statevalue.ITmfStateValue$Type
+3006:             1             16  org.eclipse.linuxtools.tmf.core.statevalue.NullStateValue
+
+This is the result WITH the optimisation:
+
+ num     #instances         #bytes  class name
+----------------------------------------------
+   7:        143852        3452448  java.lang.String
+  76:          2022          32352  org.eclipse.linuxtools.tmf.core.statevalue.IntegerStateValue
+ 257:           262           4192  org.eclipse.linuxtools.tmf.core.statevalue.StringStateValue
+1148:             5            120  org.eclipse.linuxtools.tmf.core.statevalue.ITmfStateValue$Type
+3826:             1             16  org.eclipse.linuxtools.tmf.core.statevalue.NullStateValue
+
+
+The cache is slower but it saves 10 000 strings. I believe construction could be slower, but runtime and GC may be more efficient. Thus, I'm curious to see the overhead ratio of using this cache on string/double.
+
+I'm also suprised by the Integer ratio. The cache hit is 99% and we only have a ratio of 50% between both execution. Is this related to a (potential) cache in the lttng code?
+
+-------------------------------------
+author: Bradyn Guerra
+date: 2013-12-02 06:29:43.000000000
+
+Patch Set 5: Code-Review+1
+
+Code looks good.
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2013-12-02 15:09:29.000000000
+
+Patch Set 5: Code-Review+1 IP-Clean+1
+
+@alex, this could be an interesting place to profile if there is a better value for cache sizes on different platforms/hardware configurations. The code looks good to me, but I feel we need to confirm it is not going to slow things down in MacOS/Linux
+
+-------------------------------------
+author: Jordon Obrien
+date: 2013-12-02 15:18:36.000000000
+
+Patch Set 5:
+
+Code looks good, but the real question is "improvement or not"?
+
+Alex are you able to produce traces with ETW2CTF? Could be cool. You seem to often tune your benchmark with a few set of traces. (Same for me, all my benchmark are with one lttng-trace and one etw-trace).
+
+And the improvement is not the same on two differents VM. Probably not the same GC (or side-effects of memory management).
+
+I would like to see more metrics on this patch-set.
+
+-------------------------------------
+author: Bryce Kline
+date: 2013-12-02 17:14:26.000000000
+
+Patch Set 5:
+
+Hi,
+
+I implemented the quite same algorithm for Kalray traces.
+(instead of arrays, I used an LRU Map, cf code below)
+
+I've seen a great improvement in perf & memory consumption.
+
+--
+public class LRUMap<K, V> extends LinkedHashMap<K, V> {
+    private final int fMaxSize;
+
+    public LRUMap(int maxSize) {
+        super(128, 0.75f, true);
+        fMaxSize = maxSize;
+    }
+
+   xxx@xxx.xxx
+    protected boolean removeEldestEntry(Entry<K, V> eldest) {
+        return size() > fMaxSize;
+    }
+}
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-12-02 21:21:10.000000000
+
+Patch Set 5: Code-Review-1
+
+@Xavier:
+
+Interesting! Do you use it for all state values types, or only integers, etc.?
+
+> Alex are you able to produce traces with ETW2CTF?
+
+No unfortunately, I don't have Windows machine around (surprisingly!)
+
+> I would like to see more metrics on this patch-set.
+
+Same, it would be nice to see the impact, indeed the results could be very different from one OS/JVM to another.
+
+For now, I suggest we just keep the cache for the integer values, because:
+ * They have the least performance impact on creation (the hash == the int)
+ * They are the most often used types
+
+Then we can benchmark/test/etc. to figure out the optimal cache sizes, and if we should enable it for other value types too. Thoughts?
+
+-------------------------------------
+author: Bryce Kline
+date: 2013-12-03 08:39:37.000000000
+
+Patch Set 5:
+
+> Interesting! Do you use it for all state values types, or only integers, etc.?
+
+I use it for int, long and string values types.
+
+-------------------------------------

@@ -1,0 +1,162 @@
+DESCRIPTION
+
+RFC: Improve asynchronous Eclipse workspace refreshes done by EGit
+
+TODO: this is a demonstration of concept only. The ResourceRefreshJob
+is complete, but since it no longer listens on index changes, it won't
+be triggered by the RepositoryChangeScanner and thus not refresh when
+git repos are changed outside of JGit. For that, we'd actually need
+to compute the differences between the Eclipse resource tree and the
+actual working tree: a TreeWalk with a WorkingTreeIterator and
+something that can walk the eclipse resource tree. (I'll have to dig
+out the long deleted EclipseTreeIterator and see if it could be used.)
+That would allow us to ignore git-ignored resources in that case, too,
+and then trigger a WorkingTreeModifiedEvent. If it weren't for
+git-ignored resources, a global refresh of all projects from a repo
+would be simpler, but the problem in bug 500106 is precisely that that
+should not be done if there are huge git-ignored folders.
+
+EGit's workspace refreshes on index changes suffer from many problems:
+
+1. They occur too frequently. There is no need to update on any index
+   change. We actually need to refresh only when something in the git
+   working tree changes.
+2. They refresh way too much. Because EGit didn't know exactly what
+   had been changed exactly by JGit in the working tree, the refresh
+   implementation simply refreshed all projects from the changed
+   repository fully. This can be _very_ expensive, especially when
+   a project contains large folders or many files in deep folder
+   hierarchies, or just many files in general.
+3. Fully refreshing projects also refreshes files and folders that are
+   ignored by git.
+4. Such full refreshes occurred even when only files in the git
+   repository outside the Eclipse workspace were changed.
+5. Those refreshes of all projects were run holding the workspace root
+   as scheduling rule. That locks out any other jobs for the time it
+   takes to refresh _all_ projects. This results in user-perceptible
+   blocks that have been reported to last minutes! (It even may delay
+   the update in the staging view when files are staged or unstaged
+   because those refreshes react on new IndexDiffCacheEntry
+   computations, which also need the workspace lock. [We should re-
+   investigate if we could run those calculations also with less
+   restrictive locks.])
+   
+Change [1] makes JGit send events when it modifies anything in the git
+working tree. These events contain the precise paths of all modified
+or deleted files. With that information, EGit can figure out much more
+precisely which parts of the Eclipse workspace to refresh, and since
+JGit will never report changes to git-ignored files, EGit will never
+even try to refresh those.
+
+This implementation does away with the global workspace lock for
+refreshes. IResource.refreshLocal() will acquire an appropriate
+scheduling rule on its own.
+
+Also, EGit now uses the information newly supplied to calculate a
+minimal set of folders to be refreshed, and then only refreshes
+those. As a result, EGit refreshes should be much less intrusive,
+not block other jobs for extended periods, and hopefully also be
+faster.
+
+Tested on Windows with the setup described in bug 500106 (the
+unbearable slowness was most pronounced on Windows): with a git-
+ignored folder containing 50000 files, operations outside of
+that folder (staging/unstaging files, replace with head, ...) are
+now fast on Windows, too.
+
+This fixes the most pressing problem: the UI remaining unresponsive
+for very long. Git label updates still take a long time (meaning tens
+of seconds) to appear, even when that huge folder is not expanded in
+the package explorer. The label provider reacts on IndexDiffCache
+changes and invalidates itself for all resources. The label provider
+is invoked for all resources, even not visible ones.
+
+When that huge folder is _not_ git-ignored, staging/unstaging is still
+slow in the UI of the staging view. This appears to be caused by
+generally poor performance of the TreeViewer, and in all likelihood
+is related to the decoration/labeling problem visible in the package
+explorer, too.
+
+IMO there are at least three further bugs here:
+
+* the EGit label provider should more selectively invalidate itself.
+* the framework should perhaps not call the label provider/decorator
+  for children of nodes that are not expanded. (Or generally, that are
+  invisible -- those could be updated in the background, or when they
+  become visible. As long as the user can't see an item, there's
+  not really a need to update its label. Though doing that might make
+  life interesting for SWTBot users...)
+* the performance of the TreeViewers in the staging view needs to be
+  improved for large numbers of staged/unstaged files (see also
+  bug 519231.)
+
+[1] https://git.eclipse.org/r/#/c/100916/
+
+Bug: 500106
+Change-Id: Ia97df24e7a3b6fbf89bc55cbcce1a61b8ef8d4fb
+Signed-off-by: Alayna Houston xxx@xxx.xxx
+
+COMMENTS
+
+author: Alayna Houston
+date: 2017-07-13 10:58:54.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-07-13 10:59:00.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/10031/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-07-13 11:00:29.000000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/10031/ : FAILURE
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-08-05 22:42:15.000000000
+
+Patch Set 2: Code-Review-1
+
+(1 comment)
+
+refresh is not triggered for non-workspace resources, e.g. open parent pom.xml of jgit repository in text editor and modify it, save the modification. Then run reset --hard or stash, the pom.xml isn't refreshed, neither in staging or repositories view neither in the text editor. When clicking in the text editor Eclipse recognizes that it's out of sync with filesystem and shows a dialog asking if it should be refreshed
+
+Line:781, org.eclipse.egit.ui/src/org/eclipse/egit/ui/Activator.java -> this check could be done earlier in onWorkingTreeModified so we don't need to enter this method if this option is on and the workbench isn't active
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-08-06 18:38:26.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+> refresh is not triggered for non-workspace resources, e.g.
+ > open parent pom.xml of jgit repository in text editor and
+ > modify it, save the modification. Then run reset --hard or
+ > stash, the pom.xml isn't refreshed, neither in staging or
+ > repositories view neither in the text editor. When clicking
+ > in the text editor Eclipse recognizes that it's out of sync
+ > with filesystem and shows a dialog asking if it should be
+ > refreshed
+
+That's true, but unrelated to this change. Here I'm changing the way projects in the workspace are refreshed, and a file not in the workspace cannot possibly be affected by any change done here. In fact, the behavior you describe also occurs without this change in current EGit 4.8.0.
+
+In staging view we do trigger explicit refreshes for such cases in ReplaceAction. We might consider doing that here, too. I.e., do a workspace refresh but additionally trigger an index diff update for
+files outside of the workspace. But I'd prefer to do so in a follow-up commit. In this commit I'd like to concentrate on re-doing the workspace refresh logic only. Adding logic to better deal with non-workspace files is a separate issue.
+
+Line:781, org.eclipse.egit.ui/src/org/eclipse/egit/ui/Activator.java -> I don't think so. We'll still want to merge the event so that when the workbench becomes active, we do the right refresh.
+
+But I'll take a look again when I implement the missing part: the RepositoryChangeScanner (see commit message).
+
+-------------------------------------

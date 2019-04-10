@@ -1,0 +1,135 @@
+DESCRIPTION
+
+MB-21916: StoredDocKey - A DocKey container and test code
+
+This commit introduces StoredDocKey - a container to replace
+our use of std::string for document keys. The container can be used
+in std::map/set etc... and allows for us to store all items that are
+needed to reference a document.
+
+- the key (and the key size)
+- the document namespace (a critical piece for Collections)
+
+StoredDocKey will store a key of n-bytes in an n+2 byte buffer. The
+key is copied and the copy owned by the StoredDocKey object.
+
+The reason for storing +2 bytes:
+
+1. We still may need to print key data as C-strings.
+2. When persisting a StoredDocKey (say in couchstore) the DocNamespace
+must form part of the key in the btree. The storage path must not
+have to bear the cost of further heap-allocations and copies to format
+a DocNamespace prefixed key, thus when allocating a StoredDocKey we
+get the data ready for this common end-point of all keys.
+
+Change-Id: I1221e55d0081427c5f477773234ebbab482a6226
+
+
+COMMENTS
+
+author: Jim WNathalie Landryer
+date: 2016-12-06 12:42:25.148000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-12-06 12:42:33.085000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/2056/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-12-06 12:48:08.478000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/819/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-12-06 12:49:13.347000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1976/ (3/4)
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-12-06 13:06:39.936000000
+
+Patch Set 1: Code-Review-1
+
+(5 comments)
+
+Line:46, src/storeddockey.h -> Are we essentially storing the address and length of the key twice here?
+
+I think it would be be preferable to create an abstract DocKeyIface or whatever which just exposes the interface, and then have StoredDocKey and DocKey both inherit from that - saving ~24 bytes or so per key.
+
+Line:56, src/storeddockey.h -> I'd be tempted to implement storage in terms of a std::string which has an extra `namespaceBytes` at the front - you don't have to worry about memory management then and get things like std::string (and any potential future fbstring) optimisations like small-string-optimization.
+
+Note regarding null-termination, c_str() is declared as const, which essentially means that std::string (or even fbstring) internally will have to null-terminate for you.
+
+It should also reduce the amount of boilerplate code (swap, ==) you need to implement.
+
+Line:58, src/storeddockey.h -> second?
+
+Line:130, src/storeddockey.h -> Might be worth highlighting it's null-terminated.
+
+Line:187, src/storeddockey.h -> Again, if you use std::string we can just chain down to its hash function.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-12-06 13:13:39.756000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1650/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-12-06 13:19:11.846000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/819/ : FAILURE
+
+Compile error at /home/Piper Jefferson/jenkins/workspace/ep-engine-addresssanitizer-master/ep-engine/src/storeddockey.h:174:10:
+error: no type named unique_ptr in namespace std
+ ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-addresssanitizer-master/819/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1650/ : FAILURE
+
+Compile error at /home/Piper Jefferson/jenkins/workspace/ep-engine-clang_analyzer-master/ep-engine/src/storeddockey.h:174:10:
+error: unique_ptr in namespace std does not name a template type
+ ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-clang_analyzer-master/1650/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1976/ : FAILURE
+
+Compile error at /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/storeddockey.h:174:10:
+error: no type named unique_ptr in namespace std
+ ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/1976/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/2056/ : FAILURE
+
+-------------------------------------
+author: Keira Washington
+date: 2016-12-06 13:47:48.677000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:46, src/storeddockey.h -> I'm not convinced an abstract interface really makes sense since I don't see a motivation for runtime polymorphism. What you'd really want is concepts but I think you could probably settle for the interfaces just happening to be the same (In the same way that std containers happen to be the same).
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-12-12 13:30:48.409000000
+
+Change has been successfully cherry-picked as 07df3775f7a9eaf5af445b0183088bcbcd596d3f by Ashlee Kent
+
+-------------------------------------

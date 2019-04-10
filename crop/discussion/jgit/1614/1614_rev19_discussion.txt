@@ -1,0 +1,198 @@
+DESCRIPTION
+
+Add basic support for attributes.
+
+Core classes to parse and process .gitattributes files including
+support for reading attributes in WorkingTreeIterator and the
+dirCacheIterator.
+
+The implementation follows the git ignore implementation. It supports
+lazy reading attributes while walking the working tree.
+
+Bug: 342372
+Change-Id: I05f3ce1861fbf9896b1bcb7816ba78af35f3ad3d
+Also-by: Saniya Hill xxx@xxx.xxx
+Also-by: Rocco Fowler xxx@xxx.xxx
+Also-by: Bernard Hawkins xxx@xxx.xxx
+Signed-off-by: Rocco Fowler xxx@xxx.xxx
+Signed-off-by: Saniya Hill xxx@xxx.xxx
+Signed-off-by: Bernard Hawkins xxx@xxx.xxx
+
+COMMENTS
+
+author: Bernard Hawkins
+date: 2014-11-03 13:51:28.000000000
+
+Uploaded patch set 19.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-11-03 14:07:31.000000000
+
+Patch Set 19:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/5649/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-11-03 14:15:38.000000000
+
+Patch Set 19: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/5649/ : SUCCESS
+
+-------------------------------------
+author: Lillian Burnett
+date: 2014-11-25 05:06:21.000000000
+
+Patch Set 19: Code-Review-1
+
+(14 comments)
+
+* I think the gitattributes parsing could be tightened-up using regular expressions/match-groups rather than string splitting/searching.
+* I suspect the implementation of gitattributes syntac is not quite right (I don't believe it needs to reference gitignore syntax)
+* I think the way the lazy-loading is implemented is too external, literal and hazardous. I would have gone for an opaque, internal implementation.
+* There are a couple of just "cumbersome" code sections, but I've tried to resist imposing my personal ideas of "code style"
+
+Line:274, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheIterator.java -> I can't get a full context of the source file (I'm not sure of the origin of cep.path, but it seems "weird" at least to be comparing string fragments as byte arrays.
+
+Line:299, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheIterator.java -> Again, I think the lazy-loading should be internalised opaquely into AttributesNode.
+
+Line:638, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> IMHO, this dynamic replacement with a base AttributesNode is a bit dicey.
+
+Primarily the PerDirectoryAttributesNode class's behaviour could be merged into AttributesNode with a lazy-load test in #getRules().
+
+Also I think a generic AttributesNode class could be made without custom path-hunting logic for the Info/Global subclasses (And I strongly suspect this could be merged down into the base class too).
+
+Line:1351, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> I think this belongs inside AttributesNode
+
+Line:100, org.eclipse.jgit/src/org/eclipse/jgit/attributes/Attribute.java -> I would have thought State.UNSET would be the null-safe default, or possibly CUSTOM/UNSET depending on whether the value parameter is null or not.
+
+Line:128, org.eclipse.jgit/src/org/eclipse/jgit/attributes/Attribute.java -> Just a thought: I don't suppose it's possible to us JSE 1.7 Objects#equals() (I think not), or Apache commons ObjectUtils#equals() (Probably also not) or a common local implementation of them?
+
+Line:72, org.eclipse.jgit/src/org/eclipse/jgit/attributes/AttributesRule.java -> I think this could really benefit from better regular expressions. The attributes could be split on "\\s" and then just tested against patterns for set ("^[^-=][^=]*$"), unset ("^-.*$") and set-value ("^(?<key>[^=]+)=(?<value>.*)$")
+(Haven't tested those patterns, though).
+
+Line:130, org.eclipse.jgit/src/org/eclipse/jgit/attributes/AttributesRule.java -> Why mess-around with endIndex and pattern2 - why not just set pattern = pattern.substring(0, pattern.length() - 1) in this if() block and do-away with the other two variables?
+
+Line:200, org.eclipse.jgit/src/org/eclipse/jgit/attributes/AttributesRule.java -> Again, I'd suggest Apache commons StringUtils.isBlank() or a local static util class with equivalent behaviour.
+
+Line:82, org.eclipse.jgit/src/org/eclipse/jgit/attributes/AttributesNode.java -> I don't think there's enough commonality between gitignore and gitattributes to make this statement - They're two different formats.
+
+Line:94, org.eclipse.jgit/src/org/eclipse/jgit/attributes/AttributesNode.java -> I don't think you want to trim the input - e.g. my reading of the gitarrtibutes documentation indicates patterns start at column 0 - stripping leading whitespace may upset something.
+
+Line:96, org.eclipse.jgit/src/org/eclipse/jgit/attributes/AttributesNode.java -> I can't see any mention of comments or "negative patterns" w/r to gitatttributes documentation - I don't think these tests are needed.
+
+Line:97, org.eclipse.jgit/src/org/eclipse/jgit/attributes/AttributesNode.java -> Wouldn't this be much easier/more-readable to achieve with regular expressions?
+Something like Pattern.compile("^(?<path_pat>\\S*)\\s+(?<args>.*)$").
+Mind you - I can't see any documentation for how gitattributes proposes dealing with whitespace in file names (My guess is you must glob it, if you need to capture it)
+
+Line:142, org.eclipse.jgit/src/org/eclipse/jgit/attributes/AttributesNode.java -> It seems the only reason to iterate in reverse is to test whether the key's set and not override if so.
+You could possibly build the lists in reverse using add(0, x), then iterate forwards using for(:) - for a slightly more compact implementation.
+Alternatively if the need to guard against overrides could be eliminated (e.g. by the caller dealing with picking-out its own overrides) then you could just iterate forwards through both lists (As overriding a locally-generated mapping naturally gets you the last value in the end).
+
+-------------------------------------
+author: Jayvion Booth
+date: 2014-11-25 08:08:40.000000000
+
+Patch Set 19:
+
+(3 comments)
+
+Line:72, org.eclipse.jgit/src/org/eclipse/jgit/attributes/AttributesRule.java -> I would be very cautious to using Pattern API, see my previous comment. Also the code here isn't that complicated but proposed patterns are.
+
+Line:96, org.eclipse.jgit/src/org/eclipse/jgit/attributes/AttributesNode.java -> https://www.kernel.org/pub/software/scm/git/docs/gitattributes.html
+"The rules how the pattern matches paths are the same as in .gitignore files; see gitignore(5). Unlike .gitignore, negative patterns are forbidden."
+
+Line:97, org.eclipse.jgit/src/org/eclipse/jgit/attributes/AttributesNode.java -> See same url "That is, a pattern followed by an attributes list, separated by whitespaces". Unfortunately no hint what whitespaces are - that means, one have to check how the native git CLI works.
+Regarding Patterns: using Pattern API in sensible places *can* affect performance, see for example https://bugs.eclipse.org/bugs/show_bug.cgi?id=450466
+
+-------------------------------------
+author: Bernard Hawkins
+date: 2014-11-25 17:49:45.000000000
+
+Patch Set 19:
+
+(13 comments)
+
+Line:274, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheIterator.java -> Cep comes from this line "final byte[] cep = currentEntry.path;" which is  already an array of bytes. So I did not want to create 2 new string only to compare them. From my little experience of the JGit project I would say that this is the way a JGit committer would do it but I can be mistaken.
+
+Line:299, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheIterator.java -> See comments in the WorkingTreeIterator
+
+Line:638, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> Once again this is legacy code from previous committer. It has been reviewed several time by JGit committers that seem to be ok with it. However I would agree with you that their is a smarter way to it. However we have to move forward on this review, Marc started to work on this almost 2 years ago. What I would suggest is to accept the current implementation of the AttributeNode and in future review refactor it to be more clever. Is this something that sounds reasonable to you?
+
+Line:1351, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> (See previous commit) Will be changed in a future review that refactor the AttributeNode.
+
+Line:100, org.eclipse.jgit/src/org/eclipse/jgit/attributes/Attribute.java -> This is inherited code from Marc (the first committer on this review).  I agree it might not be the best value to fallback to. However, the only use case when "state" can be null is by calling "new Attribute("someKey",null)" (the other constructor force the value to CUSTOM). In this case I'm really not sure what the client wants. It can either be SET or UNSET or CUSTOM with a null value. So I would suggest to prevent null value for the "state" argument and raise an IllegalArgumentException.
+
+Line:128, org.eclipse.jgit/src/org/eclipse/jgit/attributes/Attribute.java -> Apache commons does not belong to the dependencies so I can not use that. Regarding Java7 I think JGit is considering it but I not sure that the final decision has been made. Moreover I really not sure that the current build infrastructure would currently support it. Regarding a local implementation I'm not sure if it will add any interest at this stage of the review.
+
+Line:72, org.eclipse.jgit/src/org/eclipse/jgit/attributes/AttributesRule.java -> I agree with Andrey.
+
+Line:130, org.eclipse.jgit/src/org/eclipse/jgit/attributes/AttributesRule.java -> Done.
+
+Line:200, org.eclipse.jgit/src/org/eclipse/jgit/attributes/AttributesRule.java -> Once again, we have no dependency again Apache common so I can not use your solution. Once again this is legacy code that has already been reviewed so I did not want to change it at this stage of the review. Maybe we can do that in a future review?
+
+Line:82, org.eclipse.jgit/src/org/eclipse/jgit/attributes/AttributesNode.java -> Done.
+
+Line:94, org.eclipse.jgit/src/org/eclipse/jgit/attributes/AttributesNode.java -> I agree the documentation is not clear on that. However I have done some tests with CGit using the command "git check-attr -a" and the printed result removes all whitespaces before and after an attribute.
+
+Line:97, org.eclipse.jgit/src/org/eclipse/jgit/attributes/AttributesNode.java -> I agree, using Pattern might degrade the performances. Once again this is legacy code from the previous committer.
+
+Regarding the whitespace, after some tests on CGit using git "check-attr -a" it appears that it removes all whitespace (and all tab \t) before and after any attribute.
+
+Line:142, org.eclipse.jgit/src/org/eclipse/jgit/attributes/AttributesNode.java -> In fact you have to look at the next review [1] to understand why I have implemented this method this way. The gitattributes will be computed in the TreeWalk since it needs both a WorkingTreeIterator and a DirCacheIterator [3]. Moreover to correctly compute the attributes we have to respect the precedence order which is "$GIT_DIR/info/attributes > .gitattributes files along the path > global and system-wide files" [4]. $GIT_DIR/info/attributes and system-wide file are only available from the WorkingTreeIterator.
+
+Here is what the TreeWalk do:
+
+1. Creates a new Map<String,Attribute> of attributes.
+
+2. Asks the AttributeNode responsible for $GIT_DIR/info/attributes to fill the hash map.
+
+3. Asks all AttributeNode along the path to fill the map but does not override existing entries.
+
+4. Asks the AttributeNode responsible for the system-wide file to fill but does not override existing entries.
+
+This implementation iterates only once on each AttributeNode and only creates one Map.
+
+If I have understood correctly your solution I should take the problem in reverse that is to say:
+
+1. Creates a new Map<String,Attribute> of attributes.
+
+2. Asks the AttributeNode responsible for the system-wide file to fill the map.
+
+3. Asks all AttributeNode along the path (in reverse order) to fill the map and overrides existing entries.
+
+4. Asks the AttributeNode responsible for $GIT_DIR/info/attributes to fill the map and overrides existing entries.
+
+However the step 3. is unatural since it does not follow the TreeWalk iterator order.
+Maybe I did not get right what you meant but I would rather not change this piece of code without having a second feedback since it impacts a lot of my code.
+
+
+
+[1] https://git.eclipse.org/r/#/c/35377/
+
+[2] https://www.kernel.org/pub/software/scm/git/docs/gitattributes.html
+
+[3] From [2]  "When deciding what attributes are assigned to a path, git consults $GIT_DIR/info/attributes file (which has the highest precedence), .gitattributes file in the same directory as the path in question, and its parent directories up to the toplevel of the work tree (the further the directory that contains .gitattributes is from the path in question, the lower its precedence). Finally global and system-wide files are considered (they have the lowest precedence)."
+
+[4] From [2] "When the .gitattributes file is missing from the work tree, the path in the index is used as a fall-back. During checkout process, .gitattributes in the index is used and then the file in the working tree is used as a fall-back."
+
+-------------------------------------
+author: Lillian Burnett
+date: 2015-01-04 10:21:39.000000000
+
+Patch Set 19:
+
+(3 comments)
+
+Line:72, org.eclipse.jgit/src/org/eclipse/jgit/attributes/AttributesRule.java -> Done
+
+Line:96, org.eclipse.jgit/src/org/eclipse/jgit/attributes/AttributesNode.java -> Done
+I was following http://git-scm.com/docs/gitattributes (Which I now suspect is not canon)
+
+Line:97, org.eclipse.jgit/src/org/eclipse/jgit/attributes/AttributesNode.java -> Done
+
+-------------------------------------

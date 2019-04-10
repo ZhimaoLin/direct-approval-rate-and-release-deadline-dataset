@@ -1,0 +1,141 @@
+DESCRIPTION
+
+tmf : queryHistoryRange performance fix
+
+This patch fix an unnecessary loop for the small resolution and increase the performance.
+
+Benchmark :
+
+Before :
+Query resolution 1022444670: 0.245
+Query resolution 102244467: 1.167
+Query resolution 10224446: 3.390s
+Query resolution 1022444: 4.028s
+Query resolution 102244: 4.285s
+Query resolution 10224: 5.451s
+Query resolution 1022: 10.970s
+Query resolution 102: 37.396s
+Query resolution 10: 306.308s
+
+After :
+Query resolution 1022444670: 0.278s
+Query resolution 102244467: 1.138s
+Query resolution 10224446: 3.373s
+Query resolution 1022444: 3.976s
+Query resolution 102244: 4.329s
+Query resolution 10224: 5.309s
+Query resolution 1022: 8.001s
+Query resolution 102: 8.145s
+Query resolution 10: 8.231s
+
+Reference :
+Performance with queryHistoryRange without resolution : 8.414s
+
+Change-Id: I6022dc6c562d994310f9419c362dd1f06a414036
+Signed-off-by: Ayanna Reed xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Ayanna Reed
+date: 2014-03-06 15:50:59.000000000
+
+Uploaded patch set 7.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-03-06 15:51:04.000000000
+
+Patch Set 7:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/5807/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-03-06 16:46:13.000000000
+
+Patch Set 7: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/5807/ : SUCCESS
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2014-03-11 22:12:30.000000000
+
+Patch Set 7: Code-Review-1
+
+(1 comment)
+
+Line:712, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/StateSystem.java -> if( currentInterval.getEndTime() - ts <=  resolution ) 
+this can equal 0, therefore, we can loop for ever.
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-03-11 22:22:12.000000000
+
+Patch Set 7: Code-Review-1
+
+(2 comments)
+
+Line:720, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/StateSystem.java -> ...here instead of this check, simply update ts to getEndTime() + 1:
+
+ ts = Math.max(ts, currentInterval.getEndTime() + 1);
+
+In this case though, this might change the returned intervals (since we could be offset compared to the previous resolution). That's less bad than return more intervals overall, I think ;)
+
+(Matthew asked to be credited for the code snippet, but only if it works!)
+
+Line:712, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/StateSystem.java -> Hmm, this is really hard to understand :/ Maintanable > performant imo. Current code becomes faster over time (Moore's Law), but there is no law that says that code becomes clearer. Usually it's the opposite ;)
+
+How about keeping the check the same, and....
+
+-------------------------------------
+author: Ayanna Reed
+date: 2014-03-12 02:34:26.000000000
+
+Patch Set 7:
+
+(2 comments)
+
+:)
+
+Line:720, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/StateSystem.java -> I'm agree with this solution, but in fact you sould consider the patch set 2.
+
+Line:712, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/StateSystem.java -> It's more if( ((currentInterval.getEndTime() - ts) < 0) because we have +1. 
+So if currentInterval.getEndTime() < ts, but this case is not possible because : currentInterval = querySingleState(TS,...) so ts <= currentInterval.getEndTime().
+We have any logic problem here !
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2014-03-12 15:04:58.000000000
+
+Patch Set 7:
+
+(1 comment)
+
+Line:712, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/StateSystem.java -> The issue was an operation priority issue. It is clear to the compiler, not super clear to an outside reader. Please consider the solution proposed by Alex and me. It is clearer, does the same thing and should be slightly faster.
+
+-------------------------------------
+author: Ayanna Reed
+date: 2014-03-12 15:23:17.000000000
+
+Patch Set 7:
+
+(1 comment)
+
+Matthew and Alex, I'm aggre with your solution but we change the behaviour as well as PS2.
+
+Line:712, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/StateSystem.java -> Ok, I'm agree with your solution, but it's NOT the same thing, we come back to the Patch Set 2, and the behaviour of the function change.
+So please consider previous comments on PS2 and PS6.
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2014-03-31 19:36:41.000000000
+
+Patch Set 7:
+
+This patch has been hanging around for a while. Any definitive consensus between PS1 and PS2 (or whatever) or is the only consensus to leave it on gerrit?
+
+-------------------------------------

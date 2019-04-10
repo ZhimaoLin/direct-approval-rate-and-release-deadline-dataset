@@ -1,0 +1,84 @@
+DESCRIPTION
+
+MB-5746: Fix set with meta test case
+
+When you set the expiration time of an item and the exptime is below
+30 days then we set the expiration to 30 days from this point of time.
+Anything over 30 days is considered absolute time after the epoch. Item
+meta data created in a test case doesn't do through the conversion for
+values under 30 days. As a result the time here was being set to 5 minutes
+after the epoch.
+
+This is a problem for test cases because the item will expire if it is
+accessed after being set and will throw off tests that aren't expecting
+the item to expire.
+
+In one of the tests there were two set with meta operations. If the
+sequence was set-expire-set then the cas value would be one higher
+than if the sequence was set-set-(expire on next call).
+
+Change-Id: I24550ac8a866d3bf6cf7549335d92e0e06bf36e7
+
+
+COMMENTS
+
+author: Macie Morton
+date: 2012-06-30 08:14:31.729000000
+
+Patch Set 1:
+
+"When you set the expiration time of an item and the exptime is below
+30 days then we set the expiration to 30 days from this point of time."
+
+Are you saying we use touch to set the expiration time, say 1 minute, it would be converted 30 days from now? 
+
+
+In test, the exp_time is 300 seconds (5 minutes) from now, should be more than enough to finish the test. Why did we see the items expire?
+
+-------------------------------------
+author: Kenny Maynard
+date: 2012-06-30 08:19:48.133000000
+
+Patch Set 1:
+
+My commit message might have been a bit confusing. Here's an example:
+
+exp_time = 5 // Sets exp_time to 5 seconds from now
+exp_time = 2592000 // sets exp_time to 30 days from now
+exp_time = 2592000// Sets exp_time to Sat, 31 Jan 1970 00:00:01 GMT
+
+But in the test cases we skip this logic since you explicitly define the exptime meaning 300 becomes 5 minutes after the epoch.
+
+-------------------------------------
+author: Macie Morton
+date: 2012-06-30 08:31:12.530000000
+
+Patch Set 1:
+
+But if exptime=300 in testcase means 300 seconds after Jan 1, 1970.  The item would expire immediately and no test can finish. This is not the case.  Do I miss anything here?
+
+-------------------------------------
+author: Macie Morton
+date: 2012-06-30 08:33:59.737000000
+
+Patch Set 1:
+
+Also, where is the logic (>30 days treated as absolute time) coded? The testcases call into ep_engine code, do they bypass some code?
+
+-------------------------------------
+author: Kenny Maynard
+date: 2012-06-30 19:11:18.805000000
+
+Patch Set 1:
+
+The code that does this is in memcached and is accessible via a callback. See ep_abs_time and ep_reltime in ep_time.h. In memcached the functions are abstime and realtime and can be found in memcached.c. I think your code is correct, but test is incorrect. I don't think it makes sense to make this conversion since when doing cross data center replication we already know that the value has been converted. As testers we just need to be aware of this.
+
+-------------------------------------
+author: Tate Garrett
+date: 2012-07-05 20:13:11.092000000
+
+Your change could not be merged due to a path conflict.
+
+Please merge (or rebase) the change locally and upload the resolution for review.
+
+-------------------------------------

@@ -1,0 +1,116 @@
+DESCRIPTION
+
+MB-19359: [2] Address lock inversion with vb's state lock and snapshot lock
+
++ [Not a backport, this code was altered/removed in master]
++ Address this lock inversion by moving reading the vbucket snapshot
+  range to outside the vbucket's state lock context.
+
+WARNING: ThreadSanitizer: lock-order-inversion (potential deadlock) (pid=245522)
+  Cycle in lock order graph: M21518 (0x7d640003e220) => M21515 (0x7d640003e0f0) => M21518
+
+  Mutex M21515 acquired here while holding mutex M21518 in thread T17:
+    #0 pthread_rwlock_rdlock <null> (engine_testapp+0x000000462260)
+    #1 cb_rw_reader_enter <null> (libplatform.so.0.1.0+0x000000004800)
+    #2 RWLock::readerLock() ep-engine/src/rwlock.h:38 (ep.so+0x000000132360)
+    #3 ReaderLockHolder::ReaderLockHolder(RWLock&) ep-engine/src/locks.h:167 (ep.so+0x0000000f8087)
+    #4 EventuallyPersistentStore::addTAPBackfillItem(Item const&, unsigned char, bool) ep-engine/src/ep.cc:851 (ep.so+0x0000000d9ba7)
+    #5 PassiveStream::commitMutation(MutationResponse*, bool) ep-engine/src/dcp-stream.cc:1370 (ep.so+0x00000029dd8c)
+    #6 PassiveStream::processMutation(MutationResponse*) ep-engine/src/dcp-stream.cc:1346 (ep.so+0x00000029cbd0)
+    #7 PassiveStream::processBufferedMessages(unsigned int&) ep-engine/src/dcp-stream.cc:1286 (ep.so+0x00000029c522)
+    #8 DccpConsumer::processBufferedItems() ep-engine/src/dcp-consumer.cc:599 (ep.so+0x000000262e04)
+    #9 Processer::run() ep-engine/src/dcp-consumer.cc:48 (ep.so+0x0000002629ff)
+    #10 ExecutorThread::run() ep-engine/src/executorthread.cc:109 (ep.so+0x0000001e38f1)
+    #11 launch_executor_thread(void*) ep-engine/src/executorthread.cc:34 (ep.so+0x0000001e2f1a)
+    #12 platform_thread_wrap platform/src/cb_pthreads.c (libplatform.so.0.1.0+0x00000000377c)
+
+  Mutex M21518 acquired here while holding mutex M21515 in main thread:
+    #0 pthread_mutex_lock <null> (engine_testapp+0x00000047e9e0)
+    #1 cb_mutex_enter <null> (libplatform.so.0.1.0+0x0000000039c0)
+    #2 Mutex::acquire() ep-engine/src/mutex.cc:31 (ep.so+0x0000001e241e)
+    #3 LockHolder::lock() ep-engine/src/locks.h:71 (ep.so+0x000000080bc3)
+    #4 LockHolder::LockHolder(Mutex&, bool) ep-engine/src/locks.h:48 (ep.so+0x000000080832)
+    #5 VBucket::getCurrentSnapshot(unsigned long&, unsigned long&) ep-engine/src/vbucket.h:233 (ep.so+0x0000000fae05)
+    #6 EventuallyPersistentEngine::doSeqnoStats(void const*, void (*)(char const*, unsigned short, char const*, unsigned int, void const*), char const*, int) ep-engine/src/ep_engine.cc:4255 (ep.so+0x00000014f202)
+    #7 EventuallyPersistentEngine::getStats(void const*, char const*, int, void (*)(char const*, unsigned short, char const*, unsigned int, void const*)) ep-engine/src/ep_engine.cc:4372 (ep.so+0x000000150bcb)
+    #8 EvpGetStats(engine_interface*, void const*, char const*, int, void (*)(char const*, unsigned short, char const*, unsigned int, void const*)) ep-engine/src/ep_engine.cc:214 (ep.so+0x000000136a72)
+    #9 mock_get_stats memcached/programs/engine_testapp/engine_testapp.c (engine_testapp+0x0000004c8403)
+    #10 get_int_stat(engine_interface*, engine_interface_v1*, char const*, char const*) ep-engine/tests/ep_test_apis.cc:771 (ep_testsuite.so+0x0000000e21ea)
+    #11 wait_for_stat_to_be(engine_interface*, engine_interface_v1*, char const*, int, char const*) ep-engine/tests/ep_test_apis.cc:860 (ep_testsuite.so+0x0000000e8d2b)
+    #12 test_dcp_replica_stream_backfill(engine_interface*, engine_interface_v1*) ep-engine/tests/ep_testsuite.cc:5306 (ep_testsuite.so+0x00000008e601)
+    #13 execute_test memcached/programs/engine_testapp/engine_testapp.c (engine_testapp+0x0000004c4e9f)
+    #14 main crtstuff.c (engine_testapp+0x0000004c2e01)
+
+Change-Id: Ia4dd34ab152d1cc1d1658ebe957da7c3b8d32c06
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2016-04-27 17:37:58.750000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-27 17:38:05.312000000
+
+Patch Set 5:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-3.0.x/202/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-27 17:38:11.861000000
+
+Patch Set 5: Well-Formed+1
+
+Permission granted to commit: 
+
+http://server.jenkins.Piper Jefferson.com/job/restricted-branch-check/13363/artifact/restricted.html : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-27 17:48:09.756000000
+
+Patch Set 5:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/597/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-27 17:51:36.117000000
+
+Patch Set 5:
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-3.0.x/202/ : FAILURE (skipped)
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-3.0.x/202/ )
+
+ThreadSanitizer issue: lock-order-inversion (potential deadlock) ??:0 pthread_rwlock_rdlock  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-3.0.x/202/ )
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-27 18:04:34.850000000
+
+Patch Set 5: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/597/ : SUCCESS
+
+-------------------------------------
+author: Keira Washington
+date: 2016-04-27 21:01:38.920000000
+
+Patch Set 5: Code-Review+2
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-04-27 23:37:39.921000000
+
+Change has been successfully cherry-picked as 4b25964c5c96471a6e9720f10e99a9ebcff1f818 by Abby Duran
+
+-------------------------------------

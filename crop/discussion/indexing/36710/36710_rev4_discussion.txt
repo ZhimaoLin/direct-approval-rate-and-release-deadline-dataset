@@ -1,0 +1,89 @@
+DESCRIPTION
+
+CBIDXT-52 Initial Implementation for Mutation Manager
+
+MutationManager handles messages from Indexer to manage Mutation Streams
+and flush mutations from mutation queues.
+
+Patchset 3:
+- Better error handling in case of stream reader panic/error
+- Improved documentation to make the contract more explicit
+- Shutdown is no longer part of interface. Its changed to a message
+for both Mutation Manager and Stream Reader
+
+Patchset 4:
+- Add buffered channel to mutation manager to be able to handle
+multiple worker messages
+- Add panic handler for mutation manager
+
+Change-Id: Idecbf250e4a6670f5a048ad7e1116b0ba6feeb2e
+
+
+COMMENTS
+
+author: Maliyah Fischer
+date: 2014-06-08 14:25:23.051000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Dominique Stanton
+date: 2014-06-09 20:54:59.850000000
+
+Patch Set 4:
+
+(11 comments)
+
+Line:294, secondary/indexer/flusher.go -> Looking at 3.0 code, the seqno is initialized to 0 per vbucket in ep-engine.   When a mutation is added, checkpoint mgr will first increment the seqNo before assigning it to the mutation.  But if the seqNo overflows, then it is possible that 0 is a valid seqNo.
+
+Line:48, secondary/indexer/commmon.go -> Should we just use uint64?  Just to anticipate for cases like multi-tenancy (cloud).
+
+Line:69, secondary/indexer/mutation_manager.go -> You mean supvCmdch is closed, then mutation mgr will close its loop?  The supervisor should not close the respch until the muation mgr is completely shut down.
+
+Line:114, secondary/indexer/mutation_manager.go -> During shutdown, why do you need to send message to the command channel again?  Do you intend to send it to the supvRespch instead?
+
+Line:133, secondary/indexer/mutation_manager.go -> Do we expect the supervisor to shutdown the mutation manager once it gets this error?
+
+Line:147, secondary/indexer/mutation_manager.go -> Where does idx.wrkrRecvCh comes from?
+
+Line:168, secondary/indexer/mutation_manager.go -> How to restart the stream reader?
+
+Line:177, secondary/indexer/mutation_manager.go -> Loop not exiting.
+
+Line:202, secondary/indexer/mutation_manager.go -> Do you want to check if you are already shutting down when the panic happens?
+
+Line:335, secondary/indexer/mutation_manager.go -> Which function actually get messages from mutMgrRecvCh?
+
+Line:595, secondary/indexer/mutation_manager.go -> Where does streamReaderExitedChMap[streamId] being allocated?
+
+-------------------------------------
+author: Maliyah Fischer
+date: 2014-06-14 07:48:29.101000000
+
+Patch Set 4:
+
+(11 comments)
+
+Line:294, secondary/indexer/flusher.go -> Thats concerning. If seqNo overflows and start repeating, lot of things will go bad e.g. the seq btree in storage layer.
+
+Line:48, secondary/indexer/commmon.go -> will change in next patchset.
+
+Line:69, secondary/indexer/mutation_manager.go -> Yes if supvCmdch get closed, that is treated as an unexpected error condition and mutation mgr will terminate its loop. Yes right, respch should not be closed until shutdown or else it can result in panic.
+
+Line:114, secondary/indexer/mutation_manager.go -> every command from supervisor has a synchronous response. In this case, to indicate when the shutdown is complete.
+
+Line:133, secondary/indexer/mutation_manager.go -> Actually this channel is internal to Mutation Manager and is never closed, so its reasonable to assume the "else" condition here doesn't happen. I'll remove this.
+
+Line:147, secondary/indexer/mutation_manager.go -> Done
+
+Line:168, secondary/indexer/mutation_manager.go -> the message is propagated upto the supervisor, which then restarts the stream and take any other action required. Code added in next patchset.
+
+Line:177, secondary/indexer/mutation_manager.go -> Done
+
+Line:202, secondary/indexer/mutation_manager.go -> Done
+
+Line:335, secondary/indexer/mutation_manager.go -> listenWorkerMsgs().. sorry there was a typo there..fixed in next patchset.
+
+Line:595, secondary/indexer/mutation_manager.go -> Done
+
+-------------------------------------

@@ -1,0 +1,110 @@
+DESCRIPTION
+
+MB-18865 - Capturing view timing stats in cbcollect_info
+
+Change-Id: I76dee40a777a37c771609697378893e0ed8c8e03
+
+
+COMMENTS
+
+author: Kate Hughes
+date: 2016-04-07 06:16:33.162000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Kate Hughes
+date: 2016-04-07 06:22:53.678000000
+
+Patch Set 1:
+
+Sample output in couchbase.log:
+
+View query timing stat(in ms) bucket: 'test1' ddoc: '_design/ddoc1'
+['curl', '-sS', '--proxy', '', '-u', ':*****', u'http://127.0.0.1:8092/_set_view/test1/_design/ddoc1/_get_query_stats']
+==============================================================================
+{"query_timing_in_ms":{"_design/ddoc1":{"view1":{"1":0,"10":8,"100":1,"1000":2,"10000":0,"100000":0}}}}
+==============================================================================
+View query timing stat(in ms) bucket: 'default' ddoc: '_design/ddoc1'
+['curl', '-sS', '--proxy', '', '-u', ':*****', u'http://127.0.0.1:8092/_set_view/default/_design/ddoc1/_get_query_stats']
+==============================================================================
+{"query_timing_in_ms":{"_design/ddoc1":{"view1":{"1":0,"10":6,"100":1,"1000":2,"10000":0,"100000":0}}}}
+
+-------------------------------------
+author: Ayla Reynolds
+date: 2016-04-07 07:55:24.370000000
+
+Patch Set 1:
+
+(6 comments)
+
+Line:322, cbcollect_info -> No need to change it, but I think it's always good to get ideas from different coding styles. I would have written something like that:
+
+    buckets = correct_split(buckets, ",")
+    memcached_buckets = correct_split(memcached_buckets, ",")
+    couchbase_buckets = set(buckets) - set(memcached_buckets)
+    for bucket in couchbase_buckets:
+
+Line:333, cbcollect_info -> I would rename it to `make_task`, that's esier to grep and less general.
+
+Line:334, cbcollect_info -> Are the ports in cbcollect_info always hard-coded? This means you can't collect infos from a ./cluster_run cluster (I really don't know if that's supported at all).
+
+Please keep lines < 80 characters.
+
+Line:335, cbcollect_info -> Are the escapes of the single quotes (`'`) needed?
+
+Line:338, cbcollect_info -> Please keep it <80 characters.
+
+Although I like list comprehension, I think a nested one is way harder to parse than a normal loop. I would write it as:
+
+    tasks = []
+    for bucket in bucket_ddoc_map:
+        for ddoc_name in bucket_ddoc_map[bucket]:
+           tasks.append(make_task(bucket, ddoc_name))
+    return tasks
+
+Line:747, cbcollect_info -> Please keep lines < 80 characters.
+
+-------------------------------------
+author: Kate Hughes
+date: 2016-04-07 10:03:08.996000000
+
+Patch Set 1:
+
+(5 comments)
+
+Thanks Volker for review
+
+Line:333, cbcollect_info -> Done
+
+Line:334, cbcollect_info -> memcached/moxi/rest/projector ports need not to be hardcoded because dict obtained from initargs captures them. But unfortunately to get capi_port, I *think* it would require nested list of tuples within ns_config or fire a diag eval call like below:
+
+% curl --data "erlang:element(2, ns_config:search({node, hd(erlang:element(2, ns_config:search(nodes_wanted))), capi_port}))." -u Administrator:asdasd http://localhost:9000/diag/eval
+9500
+%
+
+Would use this diag call for now(unless ns_server folks think there is an easier way)
+
+I wanted to follow < 80 chars limit but then I saw many preexisting offending entries :) I will follow <80 limit
+
+Line:335, cbcollect_info -> Added the so that nutshell could easily use it as delimiter while parsing the log message. Looks like its redundant.
+
+Line:338, cbcollect_info -> Done
+
+Line:747, cbcollect_info -> Done
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2016-04-09 02:05:13.074000000
+
+Patch Set 1:
+
+Is there going to be a patch that addresses Volker's comments?
+
+-------------------------------------
+author: Roselyn Villegas Code Review
+date: 2016-04-19 16:10:22.579000000
+
+Change has been successfully cherry-picked as 02e1095473aa8ff6ea9d5b6b97da982ceef483ae
+
+-------------------------------------

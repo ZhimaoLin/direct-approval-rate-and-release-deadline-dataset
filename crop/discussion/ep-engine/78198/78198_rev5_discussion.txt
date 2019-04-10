@@ -1,0 +1,51 @@
+DESCRIPTION
+
+MB-24394: Peform an unlocked reset of ExecutorThread::currentTask
+
+When performing currentTask.reset with currentTaskMutex held a
+lock inversion situation occurs if:
+
+* the task hits a ref-count of 0
+* the task owns a VBucketPtr (shared_ptr)
+* the VBucket is marked for deferred deletion
+* the VBucketPtr hits a ref-count of 0
+
+This occurs because the VBucketPtr deleter will schedule a new task
+to delete the VBucket and thus we re-enter the task code with a
+different lock ordering (TaskQueue::tMutex->currentTaskMutex vs
+currentTaskMutex->TaskQueue::tMutex).
+
+To fix this issue we simply need to not hold the currentTaskMutex
+whilst calling currentTask.reset().
+
+We switch ExTask over to being a std::shared_ptr and use its well
+define move constructor (via std::move) to move the ref-counted
+pointer into unlocked scope, and then reset that.
+
+Change-Id: I883cb4d0e8a2c4dbc91cdf93f0a9a967863dcb31
+
+
+COMMENTS
+
+author: Jim WNathalie Landryer
+date: 2017-05-17 10:06:28.945000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-05-17 10:12:54.566000000
+
+Patch Set 5: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5751/ : ABORTED
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/5056/ : ABORTED
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/299/ : ABORTED
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6585/ : ABORTED
+
+-------------------------------------

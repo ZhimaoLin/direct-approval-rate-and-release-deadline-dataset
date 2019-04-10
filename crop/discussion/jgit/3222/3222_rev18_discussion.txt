@@ -1,0 +1,179 @@
+DESCRIPTION
+
+Add command support for line history.
+
+This command supports generating a comprehensive
+collection of all the lines that have been present in any
+revision of a file.  Each revision contains a collection of
+lines in that revision and each line has a start revision,
+end revision, and the line number it existed at in each
+revision it was present in.
+
+CQ: 5110
+Bug: 306161
+Change-Id: I84b8ea4838bb7d25f4fcdd540547884704661b8f
+Signed-off-by: Jaidyn Nichols xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Jaidyn Nichols
+date: 2011-05-15 21:10:17.000000000
+
+Uploaded patch set 18.
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-05-15 21:10:20.000000000
+
+Patch Set 18:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/424/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-05-15 21:13:18.000000000
+
+Patch Set 18: Build Successful
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/424/ : SUCCESS
+
+-------------------------------------
+author: Malia Sampson
+date: 2011-05-17 15:08:55.000000000
+
+Patch Set 18:
+
+Shawn, are you happy with this now?
+
+-------------------------------------
+author: Jaidyn Nichols
+date: 2011-05-23 16:18:50.000000000
+
+Patch Set 18:
+
+Shawn, any feedback on this? Would be nice to have EGit support for Show Annotation in editors for the 1.0 release.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-05-25 18:05:51.000000000
+
+Patch Set 18: (30 inline comments)
+
+
+
+Line:76, org.eclipse.jgit/src/org/eclipse/jgit/blame/RevisionBuilder.java -> This should be final.
+
+Line:153, org.eclipse.jgit/src/org/eclipse/jgit/blame/RevisionBuilder.java -> Replace this all with:
+
+  byte[] contents = loader.getCachedBytes(Integer.MAX_VALUE);
+
+Line:169, org.eclipse.jgit/src/org/eclipse/jgit/blame/RevisionBuilder.java -> This isn't really correct. These lines don't belong to commit. We don't know where they came from until *after* the next iteration of build() can execute and we can accurately blame them on revision, or they need to carry earlier.
+
+I would build these Line objects with no commit at all at this stage. If no commit is set, it means we don't yet know the origin of the Line. Later during mergeLines() we assign the commit to a Line if the Line appears in the B range (assuming you invert the diff like I suggest below).
+
+Line:173, org.eclipse.jgit/src/org/eclipse/jgit/blame/RevisionBuilder.java -> The names current and previous are confusing here. Can we name them a and b to match what they mean in edits?
+
+One of these (is it previous?) corresponds to the older revision, aka the "A" side of the EditList, and the other matches the newer revision, aka the "B" side of the EditList.
+
+It would be nice if you can make that obvious to the reader. Because I'm confused... and I shouldn't be.
+
+Or better, reuse the exact same names as you have in the build() loop, since this is only called from that method.
+
+Line:229, org.eclipse.jgit/src/org/eclipse/jgit/blame/RevisionBuilder.java -> I find the convention of using a callback function so the caller can tell you when to stop iterating awkward.
+
+I would prefer to have this behave like an iterator that the caller can invoke to get the next Revision built and returned to them, and expose a release() method that the caller can use to clean up your RevWalk. That implies moving the RevWalk and TreeWalk into instance members. But the API then starts to work and behave like RevWalk itself, making it more consistent.
+
+Line:232, org.eclipse.jgit/src/org/eclipse/jgit/blame/RevisionBuilder.java -> I would prefer having all of this code inside of the try/finally. Just in case new TreeWalk throws due to OutOfMemoryError, we can at least clean up the revWalk with a release() before the exception pops up the call stack.
+
+Line:241, org.eclipse.jgit/src/org/eclipse/jgit/blame/RevisionBuilder.java -> I understand why you call this "next", but the way its used is confusing.
+
+This is the newer revision of the file. But we are walking backwards, so it was the last thing examined.
+
+I think I would have still named it "lastRevision" and "lastText" since from the perspective of the loop below it was the last thing examined... even though its actually the more recent revision. At least to me, I find code like this easier to read when everything speaks normally about the loop (e.g. last iteration of the loop) and I only need to remember that the loop itself is going through the graph in a particular direction (backwards).
+
+Line:251, org.eclipse.jgit/src/org/eclipse/jgit/blame/RevisionBuilder.java -> If blobWalk is null, break the traversal. We can't continue to dig around the history if the file in question has disappeared.
+
+Line:262, org.eclipse.jgit/src/org/eclipse/jgit/blame/RevisionBuilder.java -> I would invert this diff. Run the algorithm as:
+
+  diffAlgorithm.diff(textComparator, currentText, nextText)
+
+Then we are looking at the diff "normally", rather than in reverse. Lines that were added by nextText (aka the prior loop iteration) are shown on the "B" side of the difference as additions, the same way you would see that if you ran `git log -p`. This makes it easier to reason about how the difference is being used during mergeLines().
+
+Line:269, org.eclipse.jgit/src/org/eclipse/jgit/blame/RevisionBuilder.java -> I hate myself for not exposing the rename data out of RevWalk. It means we have to do it twice here. *sigh*
+
+A cleaner way to do this is to do it after-the-fact. That is, have your code be something like:
+
+  TreeWalk blobWalk = TreeWalk.forPath(reader, currentPath, commit.getTree());
+  if (blobWalk == null) {
+    if (next == null)
+      break;  // The file never existed. Abort traversal.
+
+    // Maybe the file was renamed?
+    ... diff next's tree against commit.getTree()
+    ... see if next's path was renamed
+    ... if so, update currentPath
+    ... if not, break
+  }
+  ... run blame on this path ...
+
+Line:275, org.eclipse.jgit/src/org/eclipse/jgit/blame/RevisionBuilder.java -> We should actually use RENAME or COPY here. If you look at the bottom of FollowFilter we have a tiny method for this:
+
+	private static boolean isRename(DiffEntry ent) {
+		return ent.getChangeType() == ChangeType.RENAME
+			|| ent.getChangeType() == ChangeType.COPY;
+	}
+
+Line:69, org.eclipse.jgit/src/org/eclipse/jgit/blame/Revision.java -> Please declare this final.
+
+Line:79, org.eclipse.jgit/src/org/eclipse/jgit/blame/Revision.java -> Style-nit: Unnecessary blank line.
+
+Line:82, org.eclipse.jgit/src/org/eclipse/jgit/blame/Revision.java -> Looks like this can be final.
+
+Line:103, org.eclipse.jgit/src/org/eclipse/jgit/blame/Revision.java -> xxx@xxx.xxx
+
+Line:107, org.eclipse.jgit/src/org/eclipse/jgit/blame/Revision.java -> xxx@xxx.xxx
+
+Line:113, org.eclipse.jgit/src/org/eclipse/jgit/blame/Revision.java -> "this" is not necessary.
+
+Line:118, org.eclipse.jgit/src/org/eclipse/jgit/blame/Revision.java -> xxx@xxx.xxx
+
+Line:119, org.eclipse.jgit/src/org/eclipse/jgit/blame/Revision.java -> Style-nit: "this" is not necessary.
+
+Line:178, org.eclipse.jgit/src/org/eclipse/jgit/blame/Revision.java -> Why is it acceptable for line to be null here, but then not increment index?
+
+Line:191, org.eclipse.jgit/src/org/eclipse/jgit/blame/Revision.java -> "this" is not necessary.
+
+Line:201, org.eclipse.jgit/src/org/eclipse/jgit/blame/Revision.java -> "this" isn't necessary. And then line wraps badly. And I prefer to put the variable in the middle. That is, rewrite as:
+
+  if (0 <= lineNumber && lineNumber < lines.length)
+    return lines[lineNumber];
+  return null;
+
+Line:211, org.eclipse.jgit/src/org/eclipse/jgit/blame/Revision.java -> "this" is not necessary.
+
+Line:222, org.eclipse.jgit/src/org/eclipse/jgit/blame/Revision.java -> Do not expose this. Callers will think they can use it to get any line at random, but it has no caching and will perform horribly. On a tiny 3 line file it *might* be acceptable. On a typical source file, it will be too slow to complete.
+
+Line:236, org.eclipse.jgit/src/org/eclipse/jgit/blame/Revision.java -> Same remark as above.
+
+Line:243, org.eclipse.jgit/src/org/eclipse/jgit/blame/Revision.java -> You can replace all of this with:
+
+  byte[] input = loader.getCachedBytes(Integer.MAX_VALUE);
+
+It handles reading from a stream into a byte array if its large for you. But throws LargeObjectException if the array cannot be allocated, or if the object size exceeds the array size.
+
+Line:92, org.eclipse.jgit/src/org/eclipse/jgit/blame/Line.java -> This generates a lot of garbage, and I'm not sure every consumer of blame wants it.
+
+I would prefer to push this to the application. If they want to track all of the line data from every revision, they should somehow copy our output on each iteration of the main blame loop. Which is yet another reason why I want the blame loop to act like an iterator, so the application can stop and inspect our "scoreboard" of lines, and snapshot something if they want to preserve it.
+
+But if they are just blaming the current file and showing it, they don't need tracking of lines through everything. And they don't need the garbage that goes along with this method.
+
+Line:129, org.eclipse.jgit/src/org/eclipse/jgit/blame/Line.java -> xxx@xxx.xxx
+
+Line:134, org.eclipse.jgit/src/org/eclipse/jgit/blame/Line.java -> xxx@xxx.xxx
+
+Line:138, org.eclipse.jgit/src/org/eclipse/jgit/blame/Line.java -> xxx@xxx.xxx
+
+-------------------------------------

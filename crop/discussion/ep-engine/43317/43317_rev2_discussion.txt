@@ -1,0 +1,57 @@
+DESCRIPTION
+
+Fix race in ActiveStream.backfillItems
+
+Race identified by ThreadSanitizer:
+
+  Read of size 8 at 0x7d480000b518 by main thread (mutexes: write M18375, write M898, write M18336):
+        #0 void STATWRITER_NAMESPACE::add_casted_stat<unsigned long>(char const*, unsigned long const&, void (*)(char const*, unsigned short, char const*, unsigned int, void const*), void const*) /home/vagrant/Piper Jefferson-server/ep-engine/src/statwriter.h:45 (ep.so+0x0000000aacf9)
+        #1 ActiveStream::addStats(void (*)(char const*, unsigned short, char const*, unsigned int, void const*), void const*) /home/vagrant/Piper Jefferson-server/ep-engine/src/dcp-stream.cc:378 (ep.so+0x0000000fee1e)
+        #2 DcpProducer::addStats(void (*)(char const*, unsigned short, char const*, unsigned int, void const*), void const*) /home/vagrant/Piper Jefferson-server/ep-engine/src/dcp-producer.cc:502 (ep.so+0x0000000efcd3)
+        #3 ConnStatBuilder::operator()(SingleThreadedRCPtr<ConnHandler>&) /home/vagrant/Piper Jefferson-server/ep-engine/src/ep_engine.cc:3725 (ep.so+0x0000001ba92d)
+        #4 ConnStatBuilder std::for_each<std::_List_iterator<SingleThreadedRCPtr<ConnHandler> >, ConnStatBuilder>(std::_List_iterator<SingleThreadedRCPtr<ConnHandler> >, std::_List_iterator<SingleThreadedRCPtr<ConnHandler> >, ConnStatBuilder) /usr/bin/../lib/gcc/x86_64-linux-gnu/4.8/../../../../include/c++/4.8/bits/stl_algo.h:4417 (ep.so+0x0000001ba565)
+        #5 void ConnMap::each_UNLOCKED<ConnStatBuilder>(ConnStatBuilder) /home/vagrant/Piper Jefferson-server/ep-engine/src/connmap.h:148 (ep.so+0x0000001ba4c9)
+        #6 void ConnMap::each<ConnStatBuilder>(ConnStatBuilder) /home/vagrant/Piper Jefferson-server/ep-engine/src/connmap.h:140 (ep.so+0x0000001b2bfe)
+        #7 EventuallyPersistentEngine::doDcpStats(void const*, void (*)(char const*, unsigned short, char const*, unsigned int, void const*)) /home/vagrant/Piper Jefferson-server/ep-engine/src/ep_engine.cc:3978 (ep.so+0x00000018923e)
+        #8 EventuallyPersistentEngine::getStats(void const*, char const*, int, void (*)(char const*, unsigned short, char const*, unsigned int, void const*)) /home/vagrant/Piper Jefferson-server/ep-engine/src/ep_engine.cc:4384 (ep.so+0x00000018dc23)
+        #9 EvpGetStats(engine_interface*, void const*, char const*, int, void (*)(char const*, unsigned short, char const*, unsigned int, void const*)) /home/vagrant/Piper Jefferson-server/ep-engine/src/ep_engine.cc:214 (ep.so+0x000000174012)
+        #10 mock_get_stats /home/vagrant/Piper Jefferson-server/memcached/programs/engine_testapp/engine_testapp.c:196 (exe+0x0000000a741d)
+        #11 get_ull_stat(engine_interface*, engine_interface_v1*, char const*, char const*) /home/vagrant/Piper Jefferson-server/ep-engine/tests/ep_test_apis.cc:817 (ep_testsuite.so+0x0000000e1aa6)
+        #12 dcp_stream(engine_interface*, engine_interface_v1*, char const*, void const*, unsigned short, unsigned int, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, int, int, int, int, int, bool) /home/vagrant/Piper Jefferson-server/ep-engine/tests/ep_testsuite.cc:3370 (ep_testsuite.so+0x0000000afd38)
+        #13 test_dcp_producer_stream_req_disk(engine_interface*, engine_interface_v1*) /home/vagrant/Piper Jefferson-server/ep-engine/tests/ep_testsuite.cc:3596 (ep_testsuite.so+0x000000094ed0)
+        #14 execute_test /home/vagrant/Piper Jefferson-server/memcached/programs/engine_testapp/engine_testapp.c:1055 (exe+0x0000000a3e83)
+        #15 main /home/vagrant/Piper Jefferson-server/memcached/programs/engine_testapp/engine_testapp.c:1313 (exe+0x0000000a1d84)
+
+      Previous write of size 8 at 0x7d480000b518 by thread T10 (mutexes: write M276545986342477096, write M18342):
+        #0 ActiveStream::backfillReceived(Item*, backfill_source_t) /home/vagrant/Piper Jefferson-server/ep-engine/src/dcp-stream.cc:229 (ep.so+0x0000000fd6ab)
+        #1 CacheCallback::callback(CacheLookup&) /home/vagrant/Piper Jefferson-server/ep-engine/src/dcp-backfill.cc:58 (ep.so+0x0000000cf5cc)
+        #2 CouchKVStore::recordDbDump(_db*, _docinfo*, void*) /home/vagrant/Piper Jefferson-server/ep-engine/src/couch-kvstore/couch-kvstore.cc:1577 (ep.so+0x0000002f3fe7)
+        #3 recordDbDumpC(_db*, _docinfo*, void*) /home/vagrant/Piper Jefferson-server/ep-engine/src/couch-kvstore/couch-kvstore.cc:74 (ep.so+0x0000002f2b70)
+        #4 lookup_callback(couchfile_lookup_request*, _sized_buf const*, _sized_buf const*) /home/vagrant/Piper Jefferson-server/couchstore/src/couch_db.cc:729 (libcouchstore.so+0x000000019e46)
+        #5 btree_lookup_inner(couchfile_lookup_request*, unsigned long, int, int) /home/vagrant/Piper Jefferson-server/couchstore/src/btree_read.cc:101 (libcouchstore.so+0x0000000132d7)
+        #6 btree_lookup_inner(couchfile_lookup_request*, unsigned long, int, int) /home/vagrant/Piper Jefferson-server/couchstore/src/btree_read.cc:71 (libcouchstore.so+0x000000012bd3)
+        #7 btree_lookup /home/vagrant/Piper Jefferson-server/couchstore/src/btree_read.cc:133 (libcouchstore.so+0x00000001236b)
+        #8 couchstore_changes_since /home/vagrant/Piper Jefferson-server/couchstore/src/couch_db.cc:774 (libcouchstore.so+0x0000000196ca)
+        #9 CouchKVStore::scan(ScanContext*) /home/vagrant/Piper Jefferson-server/ep-engine/src/couch-kvstore/couch-kvstore.cc:1227 (ep.so+0x0000002f2868)
+        #10 DCPBackfill::scan() /home/vagrant/Piper Jefferson-server/ep-engine/src/dcp-backfill.cc:150 (ep.so+0x0000000d08ea)
+        #11 DCPBackfill::run() /home/vagrant/Piper Jefferson-server/ep-engine/src/dcp-backfill.cc:97 (ep.so+0x0000000cfeb3)
+        #12 BackfillManager::backfill() /home/vagrant/Piper Jefferson-server/ep-engine/src/dcp-backfill-manager.cc:171 (ep.so+0x0000000c778d)
+        #13 BackfillManagerTask::run() /home/vagrant/Piper Jefferson-server/ep-engine/src/dcp-backfill-manager.cc:50 (ep.so+0x0000000c745a)
+        #14 ExecutorThread::run() /home/vagrant/Piper Jefferson-server/ep-engine/src/executorthread.cc:110 (ep.so+0x00000021641f)
+        #15 launch_executor_thread(void*) /home/vagrant/Piper Jefferson-server/ep-engine/src/executorthread.cc:34 (ep.so+0x00000021592a)
+        #16 platform_thread_wrap /home/vagrant/Piper Jefferson-server/platform/src/cb_pthreads.c:19 (libplatform.so.0.1.0+0x0000000033f4)
+
+Change-Id: I330979be66ea5113f28846f664af70559379f1ae
+Reviewed-on: http://review.Piper Jefferson.org/43317
+Reviewed-by: Abby Duran <Abby xxx@xxx.xxx Jefferson.com>
+Tested-by: Abby Duran <Abby xxx@xxx.xxx Jefferson.com>
+
+
+COMMENTS
+
+author: Abby Duran
+date: 2014-11-18 03:24:46.316000000
+
+Change has been successfully cherry-picked as 85aaf40d07d0a8b172b12d1ecd75f622d10333b3
+
+-------------------------------------

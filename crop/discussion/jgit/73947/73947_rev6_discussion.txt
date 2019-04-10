@@ -1,0 +1,155 @@
+DESCRIPTION
+
+WIP: time based eviction strategy for repository cache
+
+When Repository.close() decrements the useCount to 0 currently the cache
+immediatly evicts the repository from WindowCache and RepositoryCache.
+This leads to I/O overhead on busy repositories because
+packfiles/references are inserted and deleted from the cache frequently.
+
+This commit defers the eviction of a repo from the caches until last use
+of the repository is older than time to live. The eviction is handled by
+a terminator thread which runs periodically.
+
+TODO: allow configuration of time to live and check interval.
+TODO: tests,...
+
+Change-Id: I4a0214ad8b4a193985dda6a0ade63b70bdb948d7
+Also-by: Douglas Trujillo xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2016-06-01 19:41:32.000000000
+
+Patch Set 6:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/8444/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-06-01 19:47:09.000000000
+
+Patch Set 6: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/8444/ : FAILURE
+
+-------------------------------------
+author: Mitchell Griffith
+date: 2016-06-02 12:44:12.000000000
+
+Patch Set 6:
+
+> Build Failed
+ > 
+ > https://hudson.eclipse.org/jgit/job/jgit.gerrit/8444/ : FAILURE
+
+To fix the breaking test, replace RepositoryCacheTest.testRepositoryUnregisteringWhenClosing by:
+
+@Test
+public void testRepositoryNotUnregisteringWhenClosing() throws Exception {
+  FileKey loc = FileKey.exact(db.getDirectory(), db.getFS());
+  Repository d2 = RepositoryCache.open(loc);
+  assertEquals(1, d2.useCnt.get());
+  assertThat(RepositoryCache.getRegisteredKeys(),
+    hasItem(FileKey.exact(db.getDirectory(), db.getFS())));
+  assertEquals(1, RepositoryCache.getRegisteredKeys().size());
+
+  d2.close();
+
+  assertEquals(0, d2.useCnt.get());
+  assertEquals(1, RepositoryCache.getRegisteredKeys().size());
+}
+
+-------------------------------------
+author: Mitchell Griffith
+date: 2016-06-02 12:46:32.000000000
+
+Patch Set 6:
+
+(2 comments)
+
+Line:18, /COMMIT_MSG -> done in https://git.eclipse.org/r/#/c/74287/
+
+Line:19, /COMMIT_MSG -> one test case done in https://git.eclipse.org/r/#/c/74287/
+
+-------------------------------------
+author: Mitchell Griffith
+date: 2016-06-02 13:11:53.000000000
+
+Patch Set 6:
+
+(2 comments)
+
+Line:192, org.eclipse.jgit/src/org/eclipse/jgit/lib/RepositoryCache.java -> Now that this method moved to RepositoryCache, do we really need it?
+
+We could move the content directly in terminator Runnable.
+
+Line:199, org.eclipse.jgit/src/org/eclipse/jgit/lib/RepositoryCache.java -> replace those 2 lines by (see comments on PS5):
+
+close(repo);
+
+-------------------------------------
+author: Mitchell Griffith
+date: 2016-06-02 13:27:19.000000000
+
+Patch Set 6:
+
+Any chance we can get this one done in time for 4.4 or it's already too late?
+
+I am asking because I would like to have this fix in Gerrit 2.13 and not have to fork JGit if possible or wait for 4.5.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2016-06-02 14:05:35.000000000
+
+Patch Set 6:
+
+> Any chance we can get this one done in time for 4.4 or it's already
+ > too late?
+ > 
+ > I am asking because I would like to have this fix in Gerrit 2.13
+ > and not have to fork JGit if possible or wait for 4.5.
+
+I talked with Matthias about that yesterday. We both thought it's too dangerous to put this in in a hurry. We saw some very severe bugs during development (e.g. a JGit command line process which doesn't want to terminate anymore because because we failed to kill the scheduler correctly).
+But producing a minor release as soon as this is accepted should be no problem.
+
+-------------------------------------
+author: Mitchell Griffith
+date: 2016-06-02 14:09:49.000000000
+
+Patch Set 6:
+
+> > Any chance we can get this one done in time for 4.4 or it's
+ > already
+ > > too late?
+ > >
+ > > I am asking because I would like to have this fix in Gerrit 2.13
+ > > and not have to fork JGit if possible or wait for 4.5.
+ > 
+ > I talked with Matthias about that yesterday. We both thought it's
+ > too dangerous to put this in in a hurry. We saw some very severe
+ > bugs during development (e.g. a JGit command line process which
+ > doesn't want to terminate anymore because because we failed to kill
+ > the scheduler correctly).
+ > But producing a minor release as soon as this is accepted should be
+ > no problem.
+
+Sounds good.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2016-06-02 16:13:58.000000000
+
+Patch Set 6:
+
+(2 comments)
+
+Line:192, org.eclipse.jgit/src/org/eclipse/jgit/lib/RepositoryCache.java -> Done
+
+Line:199, org.eclipse.jgit/src/org/eclipse/jgit/lib/RepositoryCache.java -> Done
+
+-------------------------------------

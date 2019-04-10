@@ -1,0 +1,175 @@
+DESCRIPTION
+
+Bug 468796 - ClassCastException in Theme$1.propertyChange (127)
+
+Theme Property Change Listener is made to process values either of type FontData[] or String for fonts and
+either of type RGB or String for colours. So it could process the typed values as well as their String representations.
+
+Change-Id: I4c99f66fded977d3489c16a1164c25673efe3ec2
+Signed-off-by: vrubezhny xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Sawyer Richmond
+date: 2015-06-05 14:02:05.000000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-06-05 14:02:11.000000000
+
+Patch Set 5:
+
+Build Started https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/5851/
+
+-------------------------------------
+author: Sebastian Porter
+date: 2015-06-05 14:07:19.000000000
+
+Patch Set 5:
+
+It does for me (when changing dialog font):
+
+Thread [main] (Suspended (breakpoint at line 111 in Theme$1))	
+	Theme$1.propertyChange(PropertyChangeEvent) line: 111	
+	ScopedPreferenceStore$3.run() line: 351	
+	SafeRunner.run(ISafeRunnable) line: 42	
+	ScopedPreferenceStore.firePropertyChangeEvent(String, Object, Object) line: 347	
+	ScopedPreferenceStore$2.preferenceChange(IEclipsePreferences$PreferenceChangeEvent) line: 182	
+	EclipsePreferences$3.run() line: 896	
+	SafeRunner.run(ISafeRunnable) line: 42	
+	InstancePreferences(EclipsePreferences).firePreferenceEvent(String, Object, Object) line: 899	
+	InstancePreferences(EclipsePreferences).put(String, String) line: 912	
+	ScopedPreferenceStore.setValue(String, String) line: 641	
+	ColorsAndFontsPreferencePage.saveTreeExpansion() line: 1900	
+	ColorsAndFontsPreferencePage.performOk() line: 1574	
+	PreferenceDialog$12.run() line: 925	
+	SafeRunner.run(ISafeRunnable) line: 42	
+	JFaceUtil$1.run(ISafeRunnable) line: 50	
+	SafeRunnable.run(ISafeRunnable) line: 173	
+	WorkLeon OchoachPreferenceDialog(PreferenceDialog).okPressed() line: 909	
+	WorkLeon OchoachPreferenceDialog(FilteredPreferenceDialog).okPressed() line: 409	
+	WorkLeon OchoachPreferenceDialog.okPressed() line: 168	
+	WorkLeon OchoachPreferenceDialog(PreferenceDialog).buttonPressed(int) line: 233	
+	Dialog$2.widgetSelected(SelectionEvent) line: 619	
+	TypedListener.handleEvent(Event) line: 248	
+	EventTable.sendEvent(Event) line: 84	
+	Display.sendEvent(EventTable, Event) line: 4362	
+	Button(Widget).sendEvent(Event) line: 1113	
+	Display.runDeferredEvents() line: 4180	
+	Display.readAndDispatch() line: 3769	
+	WorkLeon OchoachPreferenceDialog(Window).runEventLoop(Shell) line: 827	
+	WorkLeon OchoachPreferenceDialog(Window).open() line: 803	
+	WorkLeon OchoachPreferenceDialog.open() line: 211	
+	OpenPreferencesAction.run() line: 63	
+	OpenPreferencesAction(Action).runWithEvent(Event) line: 473	
+	ActionContributionItem.handleWidgetSelection(Event, boolean) line: 595	
+	ActionContributionItem.access$2(ActionContributionItem, Event, boolean) line: 511	
+	ActionContributionItem$5.handleEvent(Event) line: 420	
+	EventTable.sendEvent(Event) line: 84	
+	Display.sendEvent(EventTable, Event) line: 4362	
+	MenuItem(Widget).sendEvent(Event) line: 1113	
+	Display.runDeferredEvents() line: 4180	
+	Display.readAndDispatch() line: 3769	
+	PartRenderingEngine$4.run() line: 1127	
+	Realm.runWithDefault(Realm, Runnable) line: 337	
+	PartRenderingEngine.run(MApplicationElement, IEclipseContext) line: 1018	
+	E4WorkLeon Ochoach.createAndRunUI(MApplicationElement) line: 156	
+	WorkLeon Ochoach$5.run() line: 654	
+	Realm.runWithDefault(Realm, Runnable) line: 337	
+	WorkLeon Ochoach.createAndRunWorkbench(Display, WorkbenchAdvisor) line: 598	
+	PlatformUI.createAndRunWorkLeon Ochoach(Display, WorkbenchAdvisor) line: 150	
+	IDEApplication.start(IApplicationContext) line: 139	
+	EclipseAppHandle.run(Object) line: 196	
+	EclipseAppLauncher.runApplication(Object) line: 134	
+	EclipseAppLauncher.start(Object) line: 104	
+	EclipseStarter.run(Object) line: 380	
+	EclipseStarter.run(String[], Runnable) line: 235	
+	NativeMethodAccessorImpl.invoke0(Method, Object, Object[]) line: not available [native method]	
+	NativeMethodAccessorImpl.invoke(Object, Object[]) line: 57	
+	DelegatingMethodAccessorImpl.invoke(Object, Object[]) line: 43	
+	Method.invoke(Object, Object...) line: 601	
+	Main.invokeFramework(String[], URL[]) line: 648	
+	Main.basicRun(String[]) line: 603	
+	Main.run(String[]) line: 1465	
+	Main.main(String[]) line: 1438	
+
+
+
+
+NOTE: This only allows to "see" that string values are sent. Unfortunately, it will not reach the code line that has the CCE.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-06-05 14:42:28.000000000
+
+Patch Set 5: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/5851/ : FAILURE
+
+-------------------------------------
+author: Sawyer Richmond
+date: 2015-06-05 14:49:21.000000000
+
+Patch Set 5:
+
+Sure, you're correct. An event has fired by ScopedPreferenceStore listener. And that event has String representation of font as new value.
+This case is to work with no any CCEs.
+
+Regarding the comment preceeding JavaScriptPlugin.ensurePreferenceStoreBackwardsCompatibility(), line 395, we need to have an 'old' workspace with JFaceResources.TEXT_FONT value set. This will cause conversion to occur, so PreferenceConverter.setValue() will be invoked with FontData[] type argument. So, it looks like due to reproduce we just have to call PrererenceConverter.setValue(..., PreferenceConstants.EDITOR_TEXT_FONT, (FontData[]) newValue) and skipping those checks for fonts propagation made around line 395 of JavaScriptPlugin.ensurePreferenceStoreBackwardsCompatibility().
+ 
+So it looks like you're right and we have to process both types of values for font: FontData[] and its string representation. 
+
+Looking on what about the colour preference. It isn't set from JavaScriptPlugin.ensurePreferenceStoreBackwardsCompatibility() at all, but probably there may be places where it is set as RGB.
+
+-------------------------------------
+author: Sebastian Porter
+date: 2015-06-05 14:53:11.000000000
+
+Patch Set 5:
+
+>  but probably there may be places where it is set as RGB.
+
+Yes, definitely.
+
+-------------------------------------
+author: Sawyer Richmond
+date: 2015-06-05 16:00:36.000000000
+
+Patch Set 5:
+
+It looks like there is some problem with Hudson. It's built successfully in my local environment, while Hudson faces some timeout issues.
+
+-------------------------------------
+author: Sawyer Richmond
+date: 2015-06-05 16:31:46.000000000
+
+Patch Set 5:
+
+And existing JUnit tests for org.eclipse.ui.workLeon Ochoach passed successfully with this change as well:
+
+[INFO] Reactor Summary:
+[INFO] 
+[INFO] eclipse.platform.ui ................................ SUCCESS [  2.290 s]
+....
+[INFO] org.eclipse.ui.workLeon Ochoach ........................... SUCCESS [ 28.226 s]
+
+JUnit Tests for org.eclipse.jface.tests.databinding are failing in my local environment, however I don't think there is a relation to these preferences (org.eclipse.core.tests.databinding.observable.value.AbstractObservableValueTest fails for me)
+
+-------------------------------------
+author: Sawyer Richmond
+date: 2015-09-24 10:29:49.000000000
+
+Patch Set 6: Patch Set 5 was rebased
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-10-12 08:30:58.000000000
+
+Change has been successfully merged into the git repository by Sebastian Porter
+
+-------------------------------------

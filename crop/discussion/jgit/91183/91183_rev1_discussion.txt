@@ -1,0 +1,409 @@
+DESCRIPTION
+
+Revert "gc: loosen unreferenced objects"
+
+This reverts commit 8bec98cec089fa488f3903e97ee6493b727d7d21 which can be disastrous on a Gerrit server.
+
+Change-Id: I511ee1c1d2d512d06e4181b191ee2b51a0995470
+Signed-off-by: Zane xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Zane Norton
+date: 2017-02-15 16:21:15.000000000
+
+Patch Set 1:
+
+I believe it was a mistake to merge this commit, it did not resolve things the "jgit" way.  If there was a bug, it should be fixed, but this change is likely worse then the bug.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-02-15 20:45:24.000000000
+
+Patch Set 1:
+
+> I believe it was a mistake to merge this commit, it did not resolve
+ > things the "jgit" way.  If there was a bug, it should be fixed, but
+ > this change is likely worse then the bug.
+
+why ?
+
+-------------------------------------
+author: Zane Norton
+date: 2017-02-15 22:44:27.000000000
+
+Patch Set 1:
+
+> why ?
+
+See the discussion on the original change: https://git.eclipse.org/r/#/c/55148/
+
+-------------------------------------
+author: Elise Key
+date: 2017-02-16 02:51:39.000000000
+
+Patch Set 1: Code-Review-1
+
+> > why ?
+ > 
+ > See the discussion on the original change: https://git.eclipse.org/r/#/c/55148/
+
+It would be better to summarise that discussion and justify the revert in more detail in the commit message.
+
+This needs to be rebased anyway, because it conflicts with the latest head of the branch.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2017-02-16 15:27:38.000000000
+
+Patch Set 1:
+
+> > why ?
+ > 
+ > See the discussion on the original change: https://git.eclipse.org/r/#/c/55148/
+
+Is this a typo? You mention 55148 but I guess you meant the discussion in 89455, or?
+
+-------------------------------------
+author: Carissa Dunn
+date: 2017-02-16 19:36:28.000000000
+
+Patch Set 1: Code-Review-1
+
+What about this instead? https://git.eclipse.org/r/91327
+
+-------------------------------------
+author: Zane Norton
+date: 2017-02-16 22:12:49.000000000
+
+Patch Set 1:
+
+> Is this a typo? You mention 55148 but I guess you meant the
+ > discussion in 89455, or?
+
+Yes, my bad, sorry.  I meant https://git.eclipse.org/r/#/c/89455
+
+My belief is that change 89455 is not needed and that it is detrimental.  I think most parties agree that it is detrimental, the open question is then whether it actually serves a purpose. 
+
+I think it would help to hear a clear explanation of what race this is trying to fix.  Something this potentialy detrimental should have a strong justification for staying in the code base.  Eden Lin is the only person who reviewed that change, and on it he wrote: "But what you're doing here doesn't make anything worse. It's a start".  It sounds like Jonathan now agrees that it actually does potentially make things worse.
+
+My perception is that there is a belief that loosening an unreferenced object and keeping it around for a while somehow prevents a race when that unreferenced object might suddenly become re-referenced.  I believe that many discussions on the git mailing list have dissproved this.  Loosening the object simply delays the opportunity for this race until the loose object is finally pruned (it can become re-referenced right then).  So this does not remove the race, it simply shifts it in time.  Does this shifting somehow help a specific use case?
+
+I believe their is a race that leaving unreferenced loose objects around does help, and that is when new loose objects are created, right before they are referenced.  However these objects are loose to start with, and never make it into a pack unless they are already referenced.  So once they are in a pack, reloosening them will never help this situation.
+
+I would like to point out another race that existed until recently, that was a bug and has now been fixed.  jgit uses a .keep file to protect incoming packs from deletion during gc.  However, jgit was looking for the wrong keep file name, see https://git.eclipse.org/r/#/c/87776/ , and this meant that incoming packs could actually be deleted before they became referenced!  This bug may actually be the reason that people started implementing the 'prunepackexpire' feature in the first place.  I do not believe this race would be helped by loosening unreferenced objects since they would only exist in packfiles that did not exist before gc started, and thus these object would not get loosened and saved.
+
+Although it is hard to argue how jgit doesn't need this without really understanding why it is believe that it is needed, I will point out one thing that I believe jgit does differently then git, that makes this even less needed.  jgit uses 'prunepackexpire' to allow old packs to stick around for a while after gc.  This means that unreferenced objects in these packs will still be around after gc until the packs expire.  This should serve a similar purpose as loosening the objects without having the potential detrimental downside that loosening has.
+
+For clarity purposes, in my previous discussion, I was also under the impression that jgit placed unreferenced object in their own pack during gc (regular git now has a flag that can append them to the end of the new pack file). I do not see the code to do this, I only see it for the DFS layer.  However, this is likely irrelevant since I believe this is not actually needed.  If for some reason a race is believed to still exist, I believe either of these solutions are superior to loosening objects.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2017-02-17 09:10:32.000000000
+
+Patch Set 1:
+
+> > Is this a typo? You mention 55148 but I guess you meant the
+ > > discussion in 89455, or?
+ > 
+ > Yes, my bad, sorry.  I meant https://git.eclipse.org/r/#/c/89455
+ > 
+ > My belief is that change 89455 is not needed and that it is
+ > detrimental.  I think most parties agree that it is detrimental,
+ > the open question is then whether it actually serves a purpose.
+
+I also think that it's not good to have this change active in all
+situations. E.g. when used inside Gerrit on server side it looks it's
+detrimental. We should guard it with a config parameter. 
+
+ > I think it would help to hear a clear explanation of what race this
+ > is trying to fix.  Something this potentialy detrimental should
+
+I personally don't know about a race condition beeing fixed by 
+that. Maybe others can give examples. But I liked the feature this
+change brings that unreferenced objects are pruned with a individual
+grace period. If you don't unpack objects when they get
+unreferenced you can't say anymore "this object x is garbage for at
+least <x> days -> prune it". Since I thought this
+grace period for unreferenced objects is a feature of native git
+which was not there in JGit I liked this feature. When I use JGit
+locally (e.g. with Eclipse/EGit) I think it is useful that certain unreferenced
+blobs are removed only after 2 weeks. And with a big garbage 
+pack which gets updated with every gc I thought it's harder to implement
+the individual grace period.
+
+ > 
+ > I would like to point out another race that existed until recently,
+ > that was a bug and has now been fixed.  jgit uses a .keep file to
+ > protect incoming packs from deletion during gc.  However, jgit was
+ > looking for the wrong keep file name, see https://git.eclipse.org/r/#/c/87776/
+ > , and this meant that incoming packs could actually be deleted
+ > before they became referenced!  This bug may actually be the reason
+ > that people started implementing the 'prunepackexpire' feature in
+ > the first place.  I do not believe this race would be helped by
+ > loosening unreferenced objects since they would only exist in
+ > packfiles that did not exist before gc started, and thus these
+ > object would not get loosened and saved.
+
+I was working on the deletion of obsolete packfiles in 
+74743bc547 (Add config parameter gc.prunePackExpire ...) and
+6b65adca2 (Add a grace period for packfiles...). In $dayjob I looked a
+huge repo stored on data on NFS and I saw race conditions when deleting
+old packfiles. I introduced the same grace period which exists for
+loose objects also for packs in 6b65adca2. That was a mistake.
+A lot of pushes each day leading to packfiles which can only
+be pruned after weeks led to an explosion of the nr. of packfiles and
+file system spaced needed for that repo. Since intention of the
+grace period for packfiles was just to cope with race conditions
+I needed a grace period of minutes. So I introduced a specific 
+grace period for packfiles in 74743bc547. Since then this
+works nicely for the huge repos I can inspect.
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2017-02-17 15:43:09.000000000
+
+Patch Set 1:
+
+> And with a big garbage pack which gets updated with every gc
+> I thought it's harder to implement the individual grace period.
+
+The change in https://git.eclipse.org/r/90465 makes it so that if you
+enable a ttl for garbage packs, the coalescing into an existing pack
+will never cross day boundaries. If the ttl is N days then the effective
+ttl is N+1d - 1 second, but it makes it so garbage actually does expire.
+
+-------------------------------------
+author: Zane Norton
+date: 2017-02-17 15:47:34.000000000
+
+Patch Set 1:
+
+> > I think it would help to hear a clear explanation of what race
+ > > this is trying to fix.  Something this potentialy detrimental should
+
+ > I was working on the deletion of obsolete packfiles in
+ > 74743bc547 (Add config parameter gc.prunePackExpire ...) and
+ > 6b65adca2 (Add a grace period for packfiles...). In $dayjob I
+ > looked a huge repo stored on data on NFS and I saw race conditions 
+ > when deleting old packfiles. I introduced the same grace period which 
+ > exists for loose objects also for packs in 6b65adca2. That was a 
+ > mistake. A lot of pushes each day leading to packfiles which can only
+ > be pruned after weeks led to an explosion of the nr. of packfiles
+ > and file system spaced needed for that repo. Since intention of the
+ > grace period for packfiles was just to cope with race conditions
+ > I needed a grace period of minutes. So I introduced a specific
+ > grace period for packfiles in 74743bc547. Since then this
+ > works nicely for the huge repos I can inspect.
+
+On NFS, there is another problem with deleting pack files, the handle can still be open on another server.  Unfortunately, adding a grace period to deleting pack files doesn't really prevent this problem.  A better solution is 
+A better solution to the NFS problem is to use the new --preserve-oldpacks and --prune-preserved options.  They prevent the new use of a packfile slated for deletion, yet they keep it around for one more gc cycle so that any open file handle do not become stale, see: 
+https://git.eclipse.org/r/#/c/87969/
+
+-------------------------------------
+author: Carissa Dunn
+date: 2017-02-17 18:23:46.000000000
+
+Patch Set 1:
+
+> > Is this a typo? You mention 55148 but I guess you meant the
+ > > discussion in 89455, or?
+ > 
+ > Yes, my bad, sorry.  I meant https://git.eclipse.org/r/#/c/89455
+ > 
+ > My belief is that change 89455 is not needed and that it is
+ > detrimental.  I think most parties agree that it is detrimental,
+ > the open question is then whether it actually serves a purpose.
+ > 
+ > I think it would help to hear a clear explanation of what race this
+ > is trying to fix.  Something this potentialy detrimental should
+ > have a strong justification for staying in the code base.  Jonathan
+ > Nieder is the only person who reviewed that change, and on it he
+ > wrote: "But what you're doing here doesn't make anything worse.
+ > It's a start".  It sounds like Jonathan now agrees that it actually
+ > does potentially make things worse.
+ 
+We upgraded to jgit 4.6.  This caused auto GC to happen after fetches.  That GC was deleting objects that we cared about.  Let me just give some background about what we're doing, so that we can understand why this happened: we have a "monorepo" composed of thousands of hg repositories (we call them "codebases") knit together by one "meta" repository.  We are trying to migrate this to git submodules. The "codebases" are migrated using git-remote-hg; the meta repository requires custom software (the "mirror"), which uses jgit.  There are multiple servers doing this conversion, both for automatic failover, and, because there are multiple active branches, for performance.  There are merges in the repository.  In order to convert a merge, we must first convert both parents.  After we convert one parent, the newly-created git revision is temporarily unreferenced while we convert the other parent.  The same is true recursively (e.g. a right parent's left parent).  If we fetch during this time, gc kicks in and deletes our objects.  The two-week grace period is long enough to prevent this.  Apparently the default gc.prunepackexpire of one hour is not (when one of our mirror servers is very out-of-date).
+
+It's possible that adjusting gc.prunepackexpire would also work.  I didn't think to try it because I am used to the regular git model.  Also, keeping large numbers of packs around is quite bad for performance.  I do think that something like https://git.eclipse.org/r/#/c/90465/ might work (at the cost of keeping too many packs around), but that commit only affects the DfsGarbageCollector, and we are not using the DFS backend.
+
+Also, since unreferenced objects are kept loose, it is possible (with the default gc.auto settings) to get into a gc loop where every fetch triggers a gc.  In this case, if gc.prunepackeexpire is set to a high value, packs will start to take up an unreasonable amount of disk space.  Loosening objects instead of adjusting gc.prunepackexpire solves this.  Of course, we can (and did) adjust our gc.auto settings, but it was not clear what value to choose.  Any underestimate here would cause the cascading packs problem.  
+
+ > My perception is that there is a belief that loosening an
+ > unreferenced object and keeping it around for a while somehow
+ > prevents a race when that unreferenced object might suddenly become
+ > re-referenced.  I believe that many discussions on the git mailing
+ > list have dissproved this.  Loosening the object simply delays the
+ > opportunity for this race until the loose object is finally pruned
+ > (it can become re-referenced right then).  So this does not remove
+ > the race, it simply shifts it in time.  Does this shifting somehow
+ > help a specific use case?
+ 
+Yes, ours.  Objects are unreferenced only briefly.  After two weeks, they will all be referenced (there is no true garbage created).  Applying this patch has, I believe, fixed our missing object problem.  By this logic, we don't need 
+
+ > I believe their is a race that leaving unreferenced loose objects
+ > around does help, and that is when new loose objects are created,
+ > right before they are referenced.  However these objects are loose
+ > to start with, and never make it into a pack unless they are
+ > already referenced.  So once they are in a pack, reloosening them
+ > will never help this situation.
+ 
+Due to some details of our process, it is possible for this referenced/unreferenced/referenced again situation to happen.  Perhaps we could change our code to not reference these objects so that they never get packed in the first place, but it seems odd that *adding* a ref to an object would make it *more likely* to be deleted.
+
+ > I would like to point out another race that existed until recently,
+ > that was a bug and has now been fixed.  jgit uses a .keep file to
+ > protect incoming packs from deletion during gc.  However, jgit was
+ > looking for the wrong keep file name, see https://git.eclipse.org/r/#/c/87776/
+ > , and this meant that incoming packs could actually be deleted
+ > before they became referenced!  This bug may actually be the reason
+ > that people started implementing the 'prunepackexpire' feature in
+ > the first place.  I do not believe this race would be helped by
+ > loosening unreferenced objects since they would only exist in
+ > packfiles that did not exist before gc started, and thus these
+ > object would not get loosened and saved.
+ 
+I don't think this was our problem.
+
+ > Although it is hard to argue how jgit doesn't need this without
+ > really understanding why it is believe that it is needed, I will
+ > point out one thing that I believe jgit does differently then git,
+ > that makes this even less needed.  jgit uses 'prunepackexpire' to
+ > allow old packs to stick around for a while after gc.  This means
+ > that unreferenced objects in these packs will still be around after
+ > gc until the packs expire.  This should serve a similar purpose as
+ > loosening the objects without having the potential detrimental
+ > downside that loosening has.
+ 
+See above for the practical problems with this approach.
+
+ > For clarity purposes, in my previous discussion, I was also under
+ > the impression that jgit placed unreferenced object in their own
+ > pack during gc (regular git now has a flag that can append them to
+ > the end of the new pack file). I do not see the code to do this, I
+ > only see it for the DFS layer.  However, this is likely irrelevant
+ > since I believe this is not actually needed.  If for some reason a
+ > race is believed to still exist, I believe either of these
+ > solutions are superior to loosening objects.
+
+I don't understand why placing unreferenced objects into their own pack is better than loosening objects.  I guess loose objects require more syscalls to read if you're reading all of them, but if you just want a few objects, and you have a lot of packs, then it's still more efficient.
+
+-------------------------------------
+author: Zane Norton
+date: 2017-02-17 20:28:29.000000000
+
+Patch Set 1:
+
+> This caused auto GC to happen after fetches.  That GC was deleting objects that we 
+> cared about.  Let me just give some background about what we're doing, so that we
+> can understand why this happened: we have a "monorepo" composed of thousands of hg
+> repositories (we call them "codebases") knit together by one "meta" repository.  We
+> are trying to migrate this to git submodules. The "codebases" are migrated using 
+> git-remote-hg; the meta repository requires custom software (the "mirror"), which
+> uses jgit.  There are multiple servers doing this conversion, both for automatic
+> failover, and, because there are multiple active branches, for performance.  There
+> are merges in the repository.  In order to convert a merge, we must first convert
+> both parents.  After we convert one parent, the newly-created git revision is
+> temporarily unreferenced while we convert the other parent.  The same is true
+> recursively (e.g. a right parent's left parent).  If we fetch during this time, gc
+> kicks in and deletes our objects.  The two-week grace period is long enough to
+> prevent this.  Apparently the default gc.prunepackexpire of one hour is not (when
+> one of our mirror servers is very out-of-date).
+
+Thank you for giving this example.  Something doesn't quite seem right for me when reading this, perhaps I still don't understand.  It sounds like you are creating loose objects and you want them to stick around unreferenced for a while.  Can you explain how they are getting deleted, because from the simple scenario you mention, they shouldn't (since the loose objects shouldn't get pruned for 2 weeks).  Are you creating your new objects via a push, so that they are not new loose objects, but instead new packed objects?
+
+
+
+
+
+> I don't understand why placing unreferenced objects into their own pack is better
+> than loosening objects.  I guess loose objects require more syscalls to read if
+> you're reading all of them, but if you just want a few objects, and you have a lot 
+> of packs, then it's still more efficient.
+
+Try this when you are ready to feel some pain on your machine.  Clone linus' repo, delete all the tags, then run git gc.  Warning this may put your machine out of commission for a while.
+
+-------------------------------------
+author: Carissa Dunn
+date: 2017-02-18 02:54:14.000000000
+
+Patch Set 1:
+
+> > This caused auto GC to happen after fetches.  That GC was
+ > deleting objects that we
+ > > cared about.  Let me just give some background about what we're
+ > doing, so that we
+ > > can understand why this happened: we have a "monorepo" composed
+ > of thousands of hg
+ > > repositories (we call them "codebases") knit together by one
+ > "meta" repository.  We
+ > > are trying to migrate this to git submodules. The "codebases" are
+ > migrated using
+ > > git-remote-hg; the meta repository requires custom software (the
+ > "mirror"), which
+ > > uses jgit.  There are multiple servers doing this conversion,
+ > both for automatic
+ > > failover, and, because there are multiple active branches, for
+ > performance.  There
+ > > are merges in the repository.  In order to convert a merge, we
+ > must first convert
+ > > both parents.  After we convert one parent, the newly-created git
+ > revision is
+ > > temporarily unreferenced while we convert the other parent.  The
+ > same is true
+ > > recursively (e.g. a right parent's left parent).  If we fetch
+ > during this time, gc
+ > > kicks in and deletes our objects.  The two-week grace period is
+ > long enough to
+ > > prevent this.  Apparently the default gc.prunepackexpire of one
+ > hour is not (when
+ > > one of our mirror servers is very out-of-date).
+ > 
+ > Thank you for giving this example.  Something doesn't quite seem
+ > right for me when reading this, perhaps I still don't understand. 
+ > It sounds like you are creating loose objects and you want them to
+ > stick around unreferenced for a while.  Can you explain how they
+ > are getting deleted, because from the simple scenario you mention,
+ > they shouldn't (since the loose objects shouldn't get pruned for 2
+ > weeks).  Are you creating your new objects via a push, so that they
+ > are not new loose objects, but instead new packed objects?
+ 
+I think they must be referenced/unreferenced/referenced again.  While they're referenced the first time, they're packed (since gc was looping for us, this is not unreasonable).  
+
+ > > I don't understand why placing unreferenced objects into their
+ > own pack is better
+ > > than loosening objects.  I guess loose objects require more
+ > syscalls to read if
+ > > you're reading all of them, but if you just want a few objects,
+ > and you have a lot
+ > > of packs, then it's still more efficient.
+ > 
+ > Try this when you are ready to feel some pain on your machine. 
+ > Clone linus' repo, delete all the tags, then run git gc.  Warning
+ > this may put your machine out of commission for a while.
+
+Took about a minute and a half, and I didn't notice it running.  No biggie.
+
+-------------------------------------
+author: Elise Key
+date: 2017-09-21 06:59:27.000000000
+
+Abandoned
+
+message
+
+-------------------------------------
+author: Elise Key
+date: 2017-09-21 07:23:24.000000000
+
+Patch Set 1:
+
+> Abandoned
+ > 
+ > message
+
+Sorry for the unhelpful message.  This change was abandoned automatically by a script, and due to operator error the correct message was not added.
+
+It should have read:  "Abandoning after 3 months of inactivity.  If this change is still needed, please restore it."
+
+-------------------------------------

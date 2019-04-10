@@ -1,0 +1,176 @@
+DESCRIPTION
+
+MB-18135: Check for the existence of dead connections
+
+Dead connections are usually cleaned-up by manageConnections.
+manageconnections is invoked in the run() of ConnManager,
+which is a NONIO Task.  The task has a MIN_SLEEP_TIME of 2s,
+which means dead connections will only be clean-up at most
+every 2s.  Therefore if we delete a bucket which calls the
+shutdownAllConnections function it is possible for dead
+connections remain.  This causes the function
+responsible for destroying a bucket to wait indefinitely
+for the dead connections to be disconnected.
+
+The fix is to ensure that all dead connections are
+cleaned-up in the shutdownAllConnections function.
+
+A corresponding test is also introduced that checks to
+see if dead connections remain after calling the
+shutdownAllConnections function.
+
+Change-Id: Id229cccb26e9efb09c285854f5500355a0f1c4e1
+
+
+COMMENTS
+
+author: Kymani Ramirez
+date: 2016-02-29 21:51:50.020000000
+
+Uploaded patch set 45.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-29 21:52:01.219000000
+
+Patch Set 45:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1995/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-29 22:07:06.375000000
+
+Patch Set 45: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1995/ : FAILURE
+
+Failure of a CTest test  ( http://factory.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/1995/ )
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2741/ : FAILURE
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-03-01 08:18:58.147000000
+
+Patch Set 45: -Verified
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1996/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-03-01 08:31:15.753000000
+
+Patch Set 45: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1996/ : FAILURE
+
+Failure of a CTest test  ( http://factory.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/1996/ )
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2742/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-03-01 08:37:31.706000000
+
+Patch Set 45: -Verified
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1997/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-03-01 08:47:26.325000000
+
+Patch Set 45: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1997/ : ABORTED
+
+Failure of a CTest test  ( http://factory.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/1997/ )
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2742/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-03-01 08:47:35.840000000
+
+Patch Set 45: -Verified
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2743/ (2/2)
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-03-01 08:56:25.010000000
+
+Patch Set 45: Code-Review-1
+
+(1 comment)
+
+Line:112, tests/module_tests/dcp_test.cc -> You're missing the call to engine_v1->destroy() in this function (before destroy_engine()) - given that the SetUp function calls create_instance.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-03-01 09:02:43.950000000
+
+Patch Set 45: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1999/ : FAILURE
+
+Failure of a CTest test  ( http://factory.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/1999/ )
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2743/ : FAILURE
+
+-------------------------------------
+author: Kymani Ramirez
+date: 2016-03-01 09:04:52.464000000
+
+Patch Set 45:
+
+(1 comment)
+
+Line:112, tests/module_tests/dcp_test.cc -> The destroy is different for the different test cases.
+In the stream test we can pass false
+In the connection case we need to pass true (because we have had to setMaxNonIO to 0.
+Also in the connection case.  We need to call  engine_v1->destroy() before delete connMap.  Because although the task does not run.  It gets cleaned up during the  engine_v1->destroy().  (This issues was found with valgrind).
+
+Shall I move the create Instance outside of the Setup?
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-03-01 09:08:19.919000000
+
+Patch Set 45:
+
+(1 comment)
+
+Line:112, tests/module_tests/dcp_test.cc -> Ultimately the issue is the asymmetry for me - the TearDown() function should destroy exactly what was created in SetUp().
+
+Can we not just always pass force==true? It might be better to always set MaxNonIO to 0 in the base class anyways, as that should give more deterministic test behaviour.
+
+-------------------------------------
+author: Kymani Ramirez
+date: 2016-03-01 09:16:23.715000000
+
+Patch Set 45:
+
+(1 comment)
+
+Line:112, tests/module_tests/dcp_test.cc -> We can do that.  And set MaxNonIO to zero in both cases.
+However does address the problem of connmap needing to be deleted after engine_v1->destroy() .
+
+One option to create a connmap in the base case.  But your stream tests would not use it - which does not feel right.
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-03-01 20:17:28.586000000
+
+Change has been successfully cherry-picked as f47eb0ed00f26f275435728be979e18e2eb60094
+
+-------------------------------------

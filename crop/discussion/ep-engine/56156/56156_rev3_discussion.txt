@@ -1,0 +1,112 @@
+DESCRIPTION
+
+MB-12352 Remove unnesscary couchstore open/reads from backfill
+
+CPU profiling of memcached during a rebalance showed that we opened and read
+from each vbucket file twice. The source of the opens and reads were tracked
+down to two places.
+
+1. open/read - How many items for stat reporting using getNumItems
+2. open/read - Scan for items using sequence number
+
+To reduce the total number of reads (and opens) we can merge 1 into 2 by
+calculating 1. as part of callbacks performed by 2.
+
+This patch changes the unused statistic backfillRemaining to be called
+backfillTotal and subtly changes how the estimate stat is calculated
+as it will count as the backfill reads items, opposed to being set
+from the now removed getNumItems.
+
+Change-Id: I670f21047c1b91930294e6669d5809bfdb8bab83
+
+
+COMMENTS
+
+author: Jim WNathalie Landryer
+date: 2015-10-16 13:22:43.294000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-10-16 13:22:48.066000000
+
+Patch Set 3:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1311/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-10-16 13:31:04.330000000
+
+Patch Set 3: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1311/ : FAILURE
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-10-16 15:55:22.940000000
+
+Patch Set 3: -Verified
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1314/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-10-16 16:28:47.899000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1314/ : SUCCESS
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-10-16 18:54:21.964000000
+
+Patch Set 3: Code-Review-1
+
+(1 comment)
+
+Line:264, src/dcp/stream.h -> Looking at the description for this stat, I think it would be more appropriate to leave the stat name as it was before, but track it as you are with this patch. backfillTotal doesn't quite meet this stat's description.
+
+-------------------------------------
+author: Abby Duran
+date: 2015-10-16 21:37:25.762000000
+
+Patch Set 3: Code-Review-1
+
+(1 comment)
+
+Line:164, src/dcp/backfill.cc -> I'm not sure if it is good to change a way of estimating this stat. The main reason for exporting this stat allows us to get the estimated backlog size for backfill completion, which is occasionally useful for us.
+
+-------------------------------------
+author: Abby Duran
+date: 2015-10-17 03:23:41.692000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:164, src/dcp/backfill.cc -> I think we can avoid an extra couchstore open / close call by having KVStore::initScanContext (line 166) return the estimated number of items in scanCtx instance. KVStore::initScanContext() opens a couchstore file to init the scan context and KVStore::scan() in line 189 below uses the same DB handle to scan a given sequence range.
+
+Please note that "backfill_remaining" stat is intended to include the backfill backlog items that are not read from disk yet.
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-10-19 18:30:18.268000000
+
+The change could not be merged due to a path conflict.
+
+Please rebase the change locally and upload the rebased commit for review.
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-10-19 18:49:04.810000000
+
+Change has been successfully cherry-picked as 9147c6156d3add6d05fb380c3ea51227b486ec24
+
+-------------------------------------

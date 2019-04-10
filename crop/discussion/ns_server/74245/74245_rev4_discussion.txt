@@ -1,0 +1,152 @@
+DESCRIPTION
+
+MB-22877: Add --tmp-dir as a cbcollect_info argument
+
+The --tmp-dir argument will override any TMPDIR environment variable
+set. Unlike the environment variable, --tmp-dir will cause
+cbcollect_info to fail if it's not a suitable directory.
+
+Change-Id: I8c0a9a9ccc7d3b4518b67cfcb9d2fb3006d57d09
+
+
+COMMENTS
+
+author: Alonso Chapman
+date: 2017-06-27 13:59:27.572000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Matilda Gallagher
+date: 2017-07-03 13:03:39.197000000
+
+Patch Set 4: Code-Review+1
+
+-------------------------------------
+author: Darian Blanchard
+date: 2017-07-13 16:40:55.198000000
+
+Patch Set 4: Verified+1
+
+-------------------------------------
+author: Darian Blanchard
+date: 2017-07-13 16:49:19.925000000
+
+Patch Set 4: Code-Review+1
+
+I will let one of the people in ns_server +2, but I'm pretty happy with the change.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2017-07-14 22:31:37.820000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:262, cbcollect_info -> What if TMPDIR is something like /var/tmp and is it's usable. It will fail this check.
+
+-------------------------------------
+author: Alonso Chapman
+date: 2017-07-17 17:31:11.932000000
+
+Patch Set 4:
+
+(2 comments)
+
+Line:262, cbcollect_info -> This sounds correct. If TMPDIR was set and usable we only want to log the "Using temporary dir...", and not the "Could not use..."
+
+-------------------------------------
+author: Kian Santos
+date: 2017-07-26 01:01:02.352000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:262, cbcollect_info -> I think Aliaksey's point is that if TMPDIR is defined and is a usable directory, but happens to fail this test: os.path.split(self.tmpdir)[0] != os.getenv("TMPDIR"), we won't use it -- when it seems like the user would expect that it should.
+
+Why do you require that the temp directory has to reside under the default location where temp directories are created as defined by mkdtemp()?
+
+-------------------------------------
+author: Alonso Chapman
+date: 2017-07-26 01:22:53.338000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:262, cbcollect_info -> So by this point the decision to use it or not has already been made. mkdtemp() will *try* to use the env var TMPDIR and fall back to the default for the OS if TMPDIR isn't usable.
+
+The trouble is that this is silent. If you pass mkdtemp() a path and it can't use it, it will fail (hence the try/except), but it only treats the env var as a kind of hint; so the user might have set it and had it ignored.
+
+Here we're checking to see if that ignoring took place:
+- If --tmp-dir was set (tmp_dir at this point), then self.tmpdir isn't expected to match the env var, so move on.
+- If the env var wasn't set, we shouldn't compare the two
+- Iff the env var was set, compare it with the dir that mkdtemp() chose to use. If they don't match, then mkdtemp() wasn't able to use the env var for some reason, hence we log the following line to let the user know that we ignored the env far.
+
+Regardless, log the one we're actually using.
+
+-------------------------------------
+author: Kian Santos
+date: 2017-07-26 01:30:56.242000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:262, cbcollect_info -> Actually I misunderstood Aliaksey's comment. If TMPDIR is /var/tmp, mkdtemp() will return something like /var/tmp/tmpfoo123. When we split that, take the first element we'll compare "/var" and "/var/tmp" and we'll erroneously log that we couldn't use /var/tmp - when this is precisely where the tmp dir was created.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2017-07-26 01:34:17.271000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:262, cbcollect_info -> Thanks for clarifying. I was under impression that James agreed with my point.
+
+-------------------------------------
+author: Alonso Chapman
+date: 2017-07-26 01:42:05.594000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:262, cbcollect_info -> Yeah, thanks for clarifying. This still seems fine to me though:
+
+# TMPDIR='/var/tmp' ./cbcollect_info foo.zip
+Using temporary dir /var/tmp
+uname (uname -a) - OK
+...
+
+The reason being, we're using os.path.split, which does something like this:
+
+>>> os.path.split('/foo/bar/baz/tmpdir123')
+('/foo/bar/baz', 'tmpdir123')
+
+So the [0] is only binning the randomly named dir that mkdtemp() put on the end so we can compare the rest of the path.
+
+-------------------------------------
+author: Kian Santos
+date: 2017-07-26 03:12:49.916000000
+
+Patch Set 4: Code-Review+2
+
+(1 comment)
+
+Line:262, cbcollect_info -> Got it - I didn't carefully look up the behavior of os.split().
+
+This patch has certainly gotten its fair share of attention. :-) I'm comfortable with it and will +2.
+
+-------------------------------------
+author: Kian Santos
+date: 2017-07-26 03:13:50.132000000
+
+Patch Set 4:
+
+James - if you can rebase, we can merge
+
+-------------------------------------

@@ -1,0 +1,154 @@
+DESCRIPTION
+
+Split delta search buckets by byte weight
+
+Instead of assuming all objects cost the same amount of time to
+delta compress, aggregate the byte size of objects in the list
+and partition threads with roughly equal total bytes.
+
+Before splitting the list select the N largest paths and assign
+each one to its own thread. This allows threads to get through the
+worst cases in parallel before attempting smaller paths that are
+more likely to be splittable.
+
+By running the largest path buckets first on each thread the likely
+slowest part of compression is done early, while progress is still
+reporting a low percentage. This gives users a better impression of
+how fast the phase will run. On very complex inputs the slow part
+is more likely to happen first, making a user realize its time to
+go grab lunch, or even run it overnight.
+
+If the worst sections are earlier, memory overruns may show up
+earlier, giving the user a chance to correct the configuration and
+try again before wasting large amounts of time. It also makes it
+less likely the delta compression phase reaches 92% in 30 minutes
+and then crawls for 10 hours through the remaining 8%.
+
+Change-Id: I7621c4349b99e40098825c4966b8411079992e5f
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2013-04-17 18:31:07.000000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-04-17 18:31:12.000000000
+
+Patch Set 6:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3391/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-04-17 18:36:18.000000000
+
+Patch Set 6: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3391/ : SUCCESS
+
+-------------------------------------
+author: Warren Watkins
+date: 2013-04-17 18:43:48.000000000
+
+Patch Set 6: Looks good to me, approved
+
+
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2013-04-17 18:53:13.000000000
+
+Patch Set 6: IP review completed
+
+
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2013-04-17 18:53:14.000000000
+
+Change has been successfully merged into the git repository.
+
+-------------------------------------
+author: Shyanne Larsen
+date: 2013-10-17 11:03:41.000000000
+
+Patch Set 6:
+
+This change seems to really bring down GC performance on large gits.
+
+Running a GC on a large Git (4.8 million objects) with 12 Threads ends
+up taking 13m44:
+
+  Pack refs:              100% (107/107)
+  Counting objects:       4848969
+  Finding sources:        100% (4848969/4848969)
+  Getting sizes:          100% (513390/513390)
+  Writing objects:        100% (4848969/4848969)
+  Selecting commits:      51230
+  Selecting commits:       98% (50336/51230)
+  Building bitmaps:       100% (1293/1293)
+  Counting objects:       521
+  Finding sources:        100% (521/521)
+  Getting sizes:          100% (241/241)
+  Writing objects:        100% (521/521)
+
+  real	13m44.588s
+  user	13m25.706s
+  sys	0m25.154s
+
+Running with only 1 thread yields the far better results 7m18s:
+
+  Pack refs:              100% (107/107)
+  Counting objects:       4848969
+  Finding sources:        100% (4848969/4848969)
+  Getting sizes:          100% (513390/513390)
+  Writing objects:        100% (4848969/4848969)
+  Selecting commits:      51230
+  Selecting commits:       98% (50336/51230)
+  Building bitmaps:       100% (1293/1293)
+  Counting objects:       521
+  Finding sources:        100% (521/521)
+  Getting sizes:          100% (241/241)
+  Writing objects:        100% (521/521)
+
+  real	7m18.385s
+  user	6m55.238s
+  sys	0m24.634s
+
+When running on a machine with more cores (e.g. defaults to more threads) the result
+gets even more notable.
+
+Looking at the worker threads, it seems only one of them can actually do any 
+real work at any point in time, while the rest of threads are locked out:
+
+http://i.imgur.com/MPXvaX2.png
+
+I'm not totally comfortable with these parts of the the code, but the synchronization
+on DeltaTask.stealWork() in combination of continuously searching for large slices
+seems to be (one of) the culprits.(?)
+
+Note: JGit was built xxx@xxx.xxx
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2013-10-18 00:43:02.000000000
+
+Patch Set 6:
+
+Thanks Gustaf, this is an incredibly helpful bug report.
+
+-------------------------------------
+author: Shyanne Larsen
+date: 2013-10-23 11:50:16.000000000
+
+Patch Set 6:
+
+Np. Do you want me to create an issue report over at bugs.eclipse.org?
+
+-------------------------------------

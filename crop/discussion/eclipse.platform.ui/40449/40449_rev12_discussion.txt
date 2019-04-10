@@ -1,0 +1,176 @@
+DESCRIPTION
+
+Bug 445538 - [Perspectives] Pin Editor command broken and can no longer
+be added to perspective's toolbar
+
+Because CommandContributionItem's are now replaced with
+HandledContributionItem's in CoolBarToTrimManager we can't update the
+state of originally contributed items anymore.
+
+Moved the "pin editor" show/hide and refresh logic from the anonymous
+subclass of the ContributionItemFactory.CommandContributionItem into the
+WorkLeon OchoachActionBuilder.
+
+Updated CPD tooltips and popup text which warn user that selected item
+visibility can't be changed via CPD if the item represents an initially
+disabled CommandContributionItem (default is enabled).
+
+Change-Id: I313290938b012c9578a05a999a05f76bac5e2bfb
+Signed-off-by: Jayvion Booth xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Jayvion Booth
+date: 2015-02-24 17:53:09.000000000
+
+Uploaded patch set 12.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-02-24 17:53:15.000000000
+
+Patch Set 12:
+
+Build Started https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/4701/
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-02-24 17:56:13.000000000
+
+Patch Set 12:
+
+Noopur,
+I simply can't reproduce - on Linux it just works :-(
+
+However the last patchset is rebased *and* I've changed
+propPrefListener callback in WorkLeon OchoachActionBuilder to run the updatePinActionToolbar() asynchronously.
+
+Hope this fixes your issue.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-02-24 18:14:55.000000000
+
+Patch Set 12: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/4701/ : SUCCESS
+
+-------------------------------------
+author: Skylar Chambers
+date: 2015-02-25 08:46:23.000000000
+
+Patch Set 12:
+
+The latest patchset 12 does not fix the issue.
+
+I checked on a colleague's machine which has RHEL 6.5 and GTK 2.24.23, and I could reproduce the issue. With the given steps, if we first click "Apply" in preference, we can see the enabled "Pin Editor" appears on toolbar. After that, when we click OK in the preference dialog, the tool button gets disabled.
+
+> Can you reproduce it without opening CPD? 
+No, I couldn't.
+> Can you reproduce it after opening CPD but *not* clicking anywhere and simply pressing OK?
+Yes, step to invoke Make Item Visible dialog is not required. Just open CPD and close via OK/Cancel.
+
+On debugging found that in HandlerServiceHandler.isEnabled(), HandlerServiceImpl.lookUpHandler(..) returns null for "executionContext" -  PartImpl(org.eclipse.e4.ui.compatibility.editor)Context and "commandId" - org.eclipse.ui.window.pinEditor.
+As a result, the tool item is set as disabled.
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-02-25 09:48:50.000000000
+
+Patch Set 12:
+
+> I checked on a colleague's machine which has RHEL 6.5 and GTK 2.24.23, and I could reproduce the issue. With the given steps, if we first click "Apply" in preference, 
+
+The "Apply" was not in the steps. I will try to debug this evening too.
+
+> Yes, step to invoke Make Item Visible dialog is not required. Just open CPD and close via OK/Cancel.
+
+Strange... Can it be related to the disposal of the command contributions in the CoolbarToTrimManager???
+Can you un-apply changes from https://git.eclipse.org/r/40448/ and try if it is still can be reproduced?
+
+> On debugging found that in HandlerServiceHandler.isEnabled(), HandlerServiceImpl.lookUpHandler(..) returns null for "executionContext" - PartImpl(org.eclipse.e4.ui.compatibility.editor)Context and "commandId" - org.eclipse.ui.window.pinEditor. As a result, the tool item is set as disabled.
+
+So could be that if the preferences dialog is opened, the "right" context (have no idea what "right" should be) is gone? Or is it related to the contexts set/unset in CPD for the temporary toolbar creation code?
+
+Just curious: if instead of opening CPD dialog before opening Preferences, you open any other wizard/dialog - does it still happen?
+
+BTW I haven't asked yet but I should - but can we see this issue without this two patches we are currently reviewing???
+
+In case we will not find the root cause soon - I would propose to move this discussion to a dedicated new bug. 
+
+I think this last issue is not that critical but I would like to see most of the CPD related patches integrated soon, and the "pin" button issue is one of "bigger" remaining CPD issues.
+
+What do you think?
+
+-------------------------------------
+author: Skylar Chambers
+date: 2015-02-25 10:52:51.000000000
+
+Patch Set 12:
+
+> Can you un-apply changes from https://git.eclipse.org/r/40448/ and try if it is still can be reproduced?
+Yes, it is reproducible even without the above changes.
+> Or is it related to the contexts set/unset in CPD for the temporary toolbar creation code?
+Could be.
+> if instead of opening CPD dialog before opening Preferences, you open any other wizard/dialog - does it still happen?
+If I open any other dialog *instead* of CPD before Preferences, it does not happen. If I open some other dialog, then CPD and then Preferences, it happens. So it is related to CPD.
+> can we see this issue without this two patches we are currently reviewing???
+On master, without this patch, I don't even see the "Pin Editor" tool item on toolbar.
+> In case we will not find the root cause soon - I would propose to move this discussion to a dedicated new bug.
+Yes, we should do that. This is a minor bug. The tool button gets enabled when we click anywhere outside the editor and works fine after that.
+In that case, patchset 11 is good and changes in patchset 12 for trying to fix this bug are not required.
+Dani, please check if the new messages need any modification. Rest looks good.
+
+-------------------------------------
+author: Skylar Chambers
+date: 2015-02-25 10:55:50.000000000
+
+Patch Set 12:
+
+Re-posting previous comment with proper newlines.
+
+- Can you un-apply changes from https://git.eclipse.org/r/40448/ and try if it is still can be reproduced? 
+
+Yes, it is reproducible even without the above changes. 
+
+- Or is it related to the contexts set/unset in CPD for the temporary toolbar creation code? 
+
+Could be. 
+
+- if instead of opening CPD dialog before opening Preferences, you open any other wizard/dialog - does it still happen? 
+
+If I open any other dialog *instead* of CPD before Preferences, it does not happen. If I open some other dialog, then CPD and then Preferences, it happens. So it is related to CPD. 
+
+- can we see this issue without this two patches we are currently reviewing??? 
+
+On master, without this patch, I don't even see the "Pin Editor" tool item on toolbar. 
+
+- In case we will not find the root cause soon, I would propose to move this discussion to a dedicated new bug. 
+
+Yes, we should do that. This is a minor bug. The tool button gets enabled when we click anywhere outside the editor and works fine after that. 
+
+In that case, patchset 11 is good and changes in patchset 12 for trying to fix this bug are not required.
+
+Dani, please check if the new messages need any modification. Rest looks good.
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-02-25 19:53:55.000000000
+
+Patch Set 12:
+
+OK. How CPD is involved still unclear (I even removed entire dispose() code in CPD and CustomizeActionBars without success), but at least one the workaround is available.
+
+Adding this snippet to the end of the EditorsPreferencePage.performOK() method (where the pin button preference is managed) fixes the "disabled button on 'Apply' after CPD was opened" issue.
+
+ PlatformUI.getWorkLeon Ochoach().getDisplay().asyncExec(new Runnable() {
+@Override
+public void run() {
+ICommandService commandService = PlatformUI.getWorkLeon Ochoach().getService(ICommandService.class);			commandService.refreshElements(IWorkbenchCommandConstants.WINDOW_PIN_EDITOR, null);
+}
+});
+
+-------------------------------------

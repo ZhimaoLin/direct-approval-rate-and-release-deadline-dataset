@@ -1,0 +1,66 @@
+DESCRIPTION
+
+SYNC replication may return before items get replicated
+
+SYNC replication clients are unblocked when an item is retrieved from
+a TAP connection queue. This is not ideal, as the time delta between this
+event and the instant the replica server receives the item might be very
+significant. With this change set, if the TAP client requests a TAP
+connection with explicit ACK support, SYNC replication clients will be
+unbocked after receiving an ACK from replication servers - all the TAP
+connections created by the vbucketmigrator component (and used for replication)
+use explicit ACKs.
+
+This is a fix for the issue MB-3763.
+
+Change-Id: I603deb6730ed74c6143e4429d7acdf1f30de3b07
+
+
+COMMENTS
+
+author: Porter Oconnor
+date: 2011-05-07 22:16:12.581000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Abby Duran
+date: 2011-05-07 23:06:39.125000000
+
+Patch Set 5: I would prefer that you didn't submit this
+
+(2 inline comments)
+
+
+
+Line:567, tapconnection.cc -> Please use "EventuallyPersistentStore::getStoredValue" to get "StoredValue" instance for a given key. We should avoid adding additional variable to "QueuedItem" class if possible
+
+Line:109, queueditem.hh -> Please avoid adding this variable to this class. You can get StoredValue instance for a given key from EventuallyPersistentStore::getStoredValue(...)
+
+-------------------------------------
+author: Abby Duran
+date: 2011-05-08 07:34:33.474000000
+
+Patch Set 5: (3 inline comments)
+
+
+
+Line:581, tapconnection.cc -> We use implicit ACK by default if ACK is enabled, which means that we don't require an ACK for every TAP message, but instead explicitly requests an ACK for every N messages (N=1000 by default).
+
+However, if the TAP client was not able to process a given TAP message due to some failures (e.g., temporary OOMs, too big persistence queue), the client will always send an NACK to the master even if the master does not request an ACK for that message.
+
+So, this means that you have to update the replication counters for all StoredValue instances that correspond to all items from tapLog.begin() to (iter -1) here, rather than updating the above.
+
+Line:615, tapconnection.cc -> In this case, we received the NACK for a given item, but this means that all items from tapLog.begin() to (iter -1) are implicitly acked. The nacked item will be requeued. Therefore, you have to update the replication counters for all items from tapLog.begin() to (iter - 1) except for the nacked item.
+
+Line:618, tapconnection.cc -> Similarly, we received the unknown response for a given item, but this still means that all items from tapLog.begin() to (iter -1) are implicitly acked. Therefore, you have to update the replication counters for all items from tapLog.begin() to (iter - 1).
+
+-------------------------------------
+author: Tate Garrett
+date: 2011-05-09 17:43:17.130000000
+
+Your change could not be merged due to a path conflict.
+
+Please merge (or rebase) the change locally and upload the resolution for review.
+
+-------------------------------------

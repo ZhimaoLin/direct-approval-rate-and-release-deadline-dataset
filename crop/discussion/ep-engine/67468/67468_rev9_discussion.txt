@@ -1,0 +1,198 @@
+DESCRIPTION
+
+MB-20611: Adapting ForestKVStore to map a vbucket to a file
+
++ Removing the commitInterval paradigm
++ Seperate kvshandle maps for RW, RO, Default (state)
+
+Change-Id: Ib96b13ad9b54eff8a228086abc658904ce444227
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2016-09-09 03:14:05.029000000
+
+Uploaded patch set 9.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-09-09 03:14:14.423000000
+
+Patch Set 9:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1215/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-09-09 03:14:14.554000000
+
+Patch Set 9:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/111/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-09-09 03:14:14.778000000
+
+Patch Set 9:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1029/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-09-09 03:14:14.923000000
+
+Patch Set 9:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1303/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-09-09 03:30:57.726000000
+
+Patch Set 9: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1303/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1215/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1029/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/111/ : SUCCESS
+
+-------------------------------------
+author: Abby Duran
+date: 2016-09-09 18:48:51.950000000
+
+Patch Set 9:
+
+(24 comments)
+
+Line:586, src/ep.h -> I think it would be better to use this flag for wake semantics only. 'false' means that we don't need to wake up the task. If you want to add 'cancel' option, then I would define enum class like
+
+enum class CompactionAction {
+    WAKE,
+    CANCEL,
+    ...
+}
+
+Line:1747, src/ep.cc -> I don't think this will cancel the compaction task for db_file_id because the condition in line 1736 is satisfied and the execution wouldn't be reached here. Can we just keep the current implementation at this time?
+
+Line:570, src/forest-kvstore/forest-kvstore.cc -> Please adapt the log message properly.
+
+Line:192, src/forest-kvstore/forest-kvstore.cc -> We don't need to call this function anymore as ForestDB removes a partially compacted file as part of the first open operation for a given file. Also note that we don't append ".compact" to the file name for compaction in FDB as we support interleaving the compactor with the flusher.
+
+Line:211, src/forest-kvstore/forest-kvstore.cc -> We don't need this stmt.
+
+Line:217, src/forest-kvstore/forest-kvstore.cc -> We don't need these stmts as they are automatically cleared within this destructor.
+
+Line:232, src/forest-kvstore/forest-kvstore.cc -> As I mentioned, we should cancel the compaction by calling fdb_cancel_compaction before calling fdb_destroy
+
+Line:266, src/forest-kvstore/forest-kvstore.cc -> I don't think we should pass kvsHandle to this function because if the caller passes the incorrect KV handle to this function, then we wouldn't get the correct vbucket state from the corresponding KV store.
+
+I think we should call
+
+std::shared_ptr<ForestKvsHandle> fkvsHandle = getOrCreateFKvsHandle(vbId, KVSOption::STATE);
+
+at the beginning of this function to get the correct KV handle for a given vbucket
+
+Line:298, src/forest-kvstore/forest-kvstore.cc -> Please see my comment above.
+
+Line:450, src/forest-kvstore/forest-kvstore.cc -> As I mentioned, we should call fdb_cancel_compact to cancel any active compaction tasks before calling fdb_destroy
+
+Line:794, src/forest-kvstore/forest-kvstore.cc -> I don't think we need this for loop. let's get rid of it.
+
+Line:822, src/forest-kvstore/forest-kvstore.cc -> A vbucket state update should be committed along with the above batch write. Otherwise, the vbucket state info wouldn't be consistent upon crash recovery. This is the reason why we have a separate call for updateFileInfo in a line 817
+
+Line:855, src/forest-kvstore/forest-kvstore.cc -> For safety, let's us snprintf and check the return value too.
+
+Line:899, src/forest-kvstore/forest-kvstore.cc -> It would be better to use swtich
+
+Line:1662, src/forest-kvstore/forest-kvstore.cc -> You can move this line to the beginning of this function and use kvsHandle variable in the places which refer to it.
+
+Line:1702, src/forest-kvstore/forest-kvstore.cc -> We should use fdb_destroy instead.
+
+Line:1714, src/forest-kvstore/forest-kvstore.cc -> As I mentioned above, i don't think we need this function as we should use fdb_destroy instead.
+
+Line:417, src/forest-kvstore/forest-kvstore.h -> I'm not sure why we need to define another enum type. handleType isn't enough? Then, I would define the following enum class and remove handleType:
+
+enum class KvsHandleType {
+    READ_ONLY,
+    READ_WRITE,
+    STATE_SNAPSHOT
+}
+
+Line:434, src/forest-kvstore/forest-kvstore.h -> 'vb state snapshot operations'
+
+Line:461, src/forest-kvstore/forest-kvstore.h -> Minor: please pass the reference of the file handle. Can you also add some comments to these functions?
+
+Line:466, src/couch-kvstore/couch-kvstore.h -> Minor one: 'dbname' should be 'filename'
+
+Line:958, src/kvstore.h -> I think it would be better to pass the reference of the vector if we always expect this function to return the list of vbucket ids.
+
+Line:959, src/kvstore.h -> It would be better to rename 'fileformat' to 'filename_suffix'
+
+Line:961, src/kvstore.h -> Please add some comments to these functions.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-09-09 20:13:25.578000000
+
+Patch Set 9:
+
+(19 comments)
+
+Line:586, src/ep.h -> Done
+
+Line:1747, src/ep.cc -> Yes, you're right, i'll get this addressed.
+
+Line:192, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:211, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:217, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:232, src/forest-kvstore/forest-kvstore.cc -> Yes, the compaction is cancelled in ep.cc.
+
+Line:266, src/forest-kvstore/forest-kvstore.cc -> Yes, this is already addressed in the current patch.
+
+Line:450, src/forest-kvstore/forest-kvstore.cc -> Yes, this is invoked in ep.cc.
+
+Line:794, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:822, src/forest-kvstore/forest-kvstore.cc -> Yes thats correct, now updateFileInfo is part of setVBucketState, so let me know if that doesn't work.
+
+Line:855, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:899, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:1662, src/forest-kvstore/forest-kvstore.cc -> Already addressed in the current patch.
+
+Line:1702, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:1714, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:417, src/forest-kvstore/forest-kvstore.h -> Done
+
+Line:958, src/kvstore.h -> Done
+
+Line:959, src/kvstore.h -> Done
+
+Line:961, src/kvstore.h -> Done
+
+-------------------------------------
+author: Abby Duran
+date: 2016-09-09 20:52:25.555000000
+
+Patch Set 9:
+
+(1 comment)
+
+Line:232, src/forest-kvstore/forest-kvstore.cc -> No, it won't cancel the compaction task that is currently running. I don't think we need to cancel the compaction task waiting in the queue, but think we should cancel the active running task by calling fdb_cancel_compact.
+
+If fdb_destroy fails and the error return code is not equal to FDB_RESULT_NO_SUCH_FILE, then we should push the file name to pendingFileDeletions like we do for Couchstore.
+
+-------------------------------------

@@ -1,0 +1,221 @@
+DESCRIPTION
+
+Shallow fetch: Respect "shallow" lines
+
+When fetching from a shallow clone, the client sends "have" lines
+to tell the server about objects it already has and "shallow" lines
+to tell where its local history terminates. In some circumstances,
+the server fails to honor the shallow lines and fails to return
+objects that the client needs.
+
+UploadPack passes the "have" lines to PackWriter so PackWriter can
+omit them from the generated pack. UploadPack processes "shallow"
+lines by calling RevWalk.assumeShallow() with the set of shallow
+commits. RevWalk creates and caches RevCommits for these shallow
+commits, clearing out their parents. That way, walks correctly 
+terminate at the shallow commits instead of assuming the client had
+history going back behind them. UploadPack converts its RevWalk to an
+ObjectWalk, maintaining the cached RevCommits, and passes it to
+PackWriter.
+
+Unfortunately, to support shallow fetches the PackWriter does the
+following:
+  if (shallowPack && !(walk instanceof DepthWalk.ObjectWalk))
+    walk = new DepthWalk.ObjectWalk(reader, depth);
+
+That is, when the client sends a "deepen" line (fetch --depth=<n>)
+and the caller has not passed in a DepthWalk.ObjectWalk, PackWriter
+throws away the RevWalk that was passed in and makes a new one. The
+cleared parent lists prepared by RevWalk.assumeShallow() are lost.
+Fortunately UploadPack intends to pass in a DepthWalk.ObjectWalk.
+It tries to create it by calling toObjectWalkWithSameObjects() on
+a DepthWalk.RevWalk. But it doesn't work: because DepthWalk.RevWalk
+does not override the standard RevWalk#toObjectWalkWithSameObjects
+implementation, the result is a plain ObjectWalk instead of an
+instance of DepthWalk.ObjectWalk.
+
+The result is that the "shallow" information is thrown away and
+objects reachable from the shallow commits can be omitted from the
+pack sent when fetching with --depth from a shallow clone.
+
+Somewhat accidentally, this bug is limited to fetching the direct
+parent of a commit that the client reports as both a "have" and a
+"shallow". In terms of queueing objects for the object walk,
+DepthGenerator ignores commits marked by markStart() and only
+queues commits marked by markRoot(). Have commits are marked via
+markStart() and want commits are marked via markRoot(). If a want
+commit is an ancestor of a have commit then that have commit is never
+enqueued in the ObjectWalk, and the lazy propagation of that have
+commit's "uninteresting" state never takes place. The call to
+markStart() for a have commit does create RevCommit objects for both
+that commit and its parent, so only if the want commit is the same as
+the have commit's parent does the want appear "uninteresting".
+
+Change-Id: I6e14b57b2f85e52d28cdcf356df647870f475440
+Signed-off-by: Ariel Sawyer xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Ariel Sawyer
+date: 2016-08-04 18:15:11.000000000
+
+Uploaded patch set 4: Commit message was updated.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-08-04 18:15:19.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/8865/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-08-04 18:22:28.000000000
+
+Patch Set 4: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/8865/ : FAILURE
+
+-------------------------------------
+author: Eden Lin
+date: 2016-08-04 19:01:29.000000000
+
+Patch Set 4:
+
+(2 comments)
+
+Line:19, /COMMIT_MSG -> nit: trailing whitespace
+
+Line:47, /COMMIT_MSG -> I don't think this is true.
+
+For a shallow fetch from a shallow repo, PackWriter always loses the shallow information. This is partially mitigated because DepthGenerator is bad at propagating the UNINTERESTING information to ancestry of "have"s.
+
+A "have" that is not an ancestor of a root gets depth -1. We don't do anything special to handle this, so its parents get depth 0 (oops), just as though they were roots. Then we keep enqueueing parents and walking until we hit the maximum depth. What makes the loss of shallow information hard to reproduce is that that maximum depth can be pretty low, so e.g. trying
+
+  git clone --depth=1 https://kernel.googlesource.com/pub/scm/git/git
+  git -C git fetch --depth=1 origin v1.5.0
+
+doesn't reproduce this bug, while
+
+  git clone https://kernel.googlesource.com/pub/scm/git/git
+  git clone --depth=1 https://kernel.googlesource.com/pub/scm/git/git repro
+  git -C repro fetch --depth=100 origin $(git -C git rev-parse HEAD~10)
+
+does.
+
+-------------------------------------
+author: Eden Lin
+date: 2016-08-04 21:08:35.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:47, /COMMIT_MSG -> It's even worse. DepthGenerator doesn't call carryFlagsImpl so the UNINTERESTING flag doesn't propagate to parents. Which makes the PackWriter interpret the parent generation to a "have" as "want"s.
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2016-08-04 22:00:01.000000000
+
+Patch Set 4:
+
+(3 comments)
+
+Line:19, /COMMIT_MSG -> Done
+
+Line:47, /COMMIT_MSG -> It is observably true as shown by the unit tests added by this change. The DepthWalk code is very difficult to understand through pure inspection. Try patching this change into a client and running it under a debugger. You will see that a "have" that is not an ancestor of a root never gets touched by the DepthWalk.RevWalk/ObjectWalk. 
+
+I originally had some wrong assumptions and posited incorrect reasoning for the observed behavior. Now that I have observed the code running under a debugger, I think my description is accurate.
+
+I'd prefer sticking to behavior shown by unit tests to reason about what is going on. I tried the git clone/fetch steps you outline above with GIT_TRACE_PACKET=1 set, and it appears to be a different bug than the one that is solved here. The bug solved here occurs when UploadPack completes the negotiation and PackWriter fails to pack any objects. Your clone/fetch recipe is failing in UploakPack's negotiation phase. It is very likely related to problems in DepthWalker, but as an example it doesn't invalidate the fix I am making here.
+
+I'll see if I can recreate the issue by writing new unit tests for UploadPack.
+
+Line:47, /COMMIT_MSG -> You may be right, but it isn't the cause of the bug being fixed in this change.
+
+-------------------------------------
+author: Eden Lin
+date: 2016-08-04 23:25:26.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:47, /COMMIT_MSG -> The commit message says "this bug is limited to fetching the direct parent of a commit that the client reports as both a "have" and a "shallow".
+
+I don't understand from the code why that would be true. I don't understand how the tests could demonstrate it, either --- "is limited to" means that there is no other way to trigger the bug.
+
+I also don't see why that's an important thing to have in the commit message. It makes the patch more confusing. That's why I keep commenting on it --- it is because I don't understand it.
+
+Meanwhile I am very happy with the bugfix in this commit. Perhaps a good way forward would be to open a bug in bugzilla with that description and say "This can be difficult to reproduce because of bug#<num>". Would that work?
+
+-------------------------------------
+author: Eden Lin
+date: 2016-08-05 00:21:03.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:47, /COMMIT_MSG -> Filed https://bugs.eclipse.org/bugs/show_bug.cgi?id=499198
+
+-------------------------------------
+author: Eden Lin
+date: 2016-08-05 18:04:24.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:47, /COMMIT_MSG -> Sorry to be so dense. Now I finally understand. Multiple factors collude to make this especially hard to reproduce:
+
+1. As you noticed, commits with depth != 0 don't enter DepthGenerator's pending queue. That means a "have" cannot have any effect on DepthGenerator unless it is also a "want".
+2. DepthGenerator#next() doesn't call carryFlagsImpl, so the uninteresting flag is not propagated to ancestors there even if a "have" is also a "want".
+3. JGit treats a depth of 1 as "1 past the wants", ruling out another reproduction case (see below).
+
+Because of (2), the only place the UNINTERESTING flag can leak to a shallow commit's parents is in the carryFlags call from markUninteresting. carryFlags only traverses commits that have already been parsed: commits yet to be parsed are supposed to inherit correct flags from their parent in PendingGenerator#next (which doesn't happen here --- that is (2)). So the list of commits that have already been parsed becomes relevant.
+
+When we hit the markUninteresting call, all "want"s, "have"s, and commits to be unshallowed have been parsed. The bug only affects us if there is a path from a "have" to an ancestor of "want" that
+
+* passes through a "shallow" commit
+* only involves "want"s, "have"s, and commits to be unshallowed
+
+So reproducing the bug requires a "shallow" commit that is either a "want" or a "have".
+
+Because of (3), a "shallow" can't be a "want". We are walking at least 1 past the wants, so any shallow that is also a want becomes unshallow. The fix https://git.eclipse.org/r/78481 changes that --- then it becomes possible to have a reproduction case (time flowing left to right, arrows pointing to parents):
+
+  A <-- B <-- C <-- D
+
+I first do
+
+  git clone --depth 2 <repo>
+
+which gives me D as a "have" and C as a "shallow" commit. Then if I try
+
+  git fetch --depth 1 <repo> B:refs/heads/B C:refs/heads/C
+
+I am not sent the objects for B and C is considered uninteresting. (have D, shallow C, want C, want B)
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2016-08-05 22:30:35.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:47, /COMMIT_MSG -> Parts of this are clearer than my explanation so I incorporated it.
+
+I rewrote the reproduction steps to work without r/78481.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-08-05 22:37:51.000000000
+
+Change has been successfully merged into the git repository by Eden Lin
+
+-------------------------------------

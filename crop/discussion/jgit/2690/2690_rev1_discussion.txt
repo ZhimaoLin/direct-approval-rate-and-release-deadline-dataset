@@ -1,0 +1,90 @@
+DESCRIPTION
+
+ObjectIdOwnerMap: More lightweight map for ObjectIds
+
+OwnerMap is about 200 ms faster than SubclassMap, more friendly to the
+GC, and uses less storage: testing the "Counting objects" part of
+PackWriter on 1886362 objects:
+
+  ObjectIdSubclassMap:
+    load factor 50%
+    table: 4194304 (wasted 2307942)
+    ms spent 36998 36009 34795 34703 34941 35070 34284 34511 34638 34256
+    ms avg 34800 (last 9 runs)
+
+  ObjectIdOwnerMap:
+    load factor 100%
+    table: 2097152 (wasted 210790)
+    directory: 1024
+    ms spent 36842 35112 34922 34703 34580 34782 34165 34662 34314 34140
+    ms avg 34597 (last 9 runs)
+
+The major difference with OwnerMap is entries must extend from
+ObjectIdOwnerMap.Entry, where the OwnerMap has injected its own
+private "next" field into each object. This allows the OwnerMap to use
+a singly linked list for chaining collisions within a bucket. By
+putting collisions in a linked list, we gain the entire table back for
+the SHA-1 bits to index their own "private" slot.
+
+Unfortunately this means that each object can appear in at most ONE
+OwnerMap, as there is only one "next" field within the object instance
+to thread into the map. For types that are very object map heavy like
+RevWalk (entity RevObject) and PackWriter (entity ObjectToPack) this
+is sufficient, these entity types are only put into one map by their
+container.  By introducing a new map type, we don't break existing
+applications that might be trying to use ObjectIdSubclassMap to track
+RevCommits they obtained from a RevWalk.
+
+The OwnerMap uses less memory. Each object uses 1 reference more (so
+we're up 1886362 references), but the table is 1/2 the size (2^20
+rather than 2^21). The table itself wastes only 210790 slots, rather
+than 2307942. So we're wasting around 200k fewer references in total.
+
+OwnerMap is more friendly to the GC, because it hardly ever generates
+garbage. As the map reaches its 100% load factor target, it doubles in
+size by allocating additional segment arrays of 2048 entries. (So the
+first grow allocates 1 segment, second 2 segments, third 4 segments,
+etc.)  These segments are hooked into the pre-allocated directory of
+1024 spaces. This permits the map to grow to 2 million objects before
+the directory itself has to grow. By using segments of 2048 entries,
+we are asking the GC to acquire 8,204 bytes in a 32 bit JVM. This is
+easier to satisfy then 2,307,942 bytes (for the 512k table that is
+just an intermediate step in the SubclassMap). By reusing the
+previously allocated segments (they are re-hashed in-place) we don't
+release any memory during a table grow.
+
+When the directory grows, it does so by discarding the old one and
+using one that is 4x larger (so the directory goes to 4096 entries on
+its first grow). A directory of size 4096 can handle up to 8 millon
+objects. The second directory grow (16384) goes to 33 million objects.
+At that point we're starting to really push the limits of the JVM
+heap, but at least its many small arrays. Previously SubclassMap would
+need a table of 67108864 entries to handle that object count, which
+needs a single contiguous allocation of 256 MiB. That's hard to come
+by in a 32 bit JVM. Instead OwnerMap uses ~8192 arrays of about 2 MiB
+each. This should be much easier to fit into a fragmented heap.
+
+Change-Id: Ia4acf5cfbf7e9b71bc7faa0db9060f6a969c0c50
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2011-03-11 00:11:27.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/56/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-03-11 00:13:43.000000000
+
+Patch Set 1: Build Successful
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/56/ : SUCCESS
+
+-------------------------------------

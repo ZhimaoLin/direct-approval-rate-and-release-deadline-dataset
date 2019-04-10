@@ -1,0 +1,86 @@
+DESCRIPTION
+
+Fix NPE in DfsGarbageCollector and further reduce memory
+
+DfsGarbageCollector asks PackWriter for the set of objects packed
+after the bitmap index is written out.  This is now null as it was
+cleared to release memory. Instead use PackBitmapIndexBuilder to
+build the set as it also has the objects.
+
+Reduce memory in PackBitmapIndexBuilder by fully discarding the
+ObjectToPack instances. This was the original intent of commit
+4bb523475d44 ("PackWriter: shed memory while creating bitmaps")
+but failed as the instances were still held live here.
+
+Switch to BlockList instead of ObjectToPack[]. This allows the
+JVM to allocate many smaller arrays instead of one contiguous
+array with 5.2M reference pointers. In a tight heap the smaller
+allocations are more feasible.
+
+Reduce the initial EWAHCompressedBitmaps for the 4 type maps.  On
+average a typical repository is 30% commits, 30% trees and 30% blobs.
+These bitmaps are typically very dense.  PackWriter orders objects by
+commit, tree, blob when writing the file so these should always be a
+very dense run of 1s with some 0s before and after. So even the 1/3rd
+allocation is likely too large, but the later trim() will reduce the
+internal buffer anyway.
+
+Change-Id: If0b80a31cb00894f1485ff8f53ef7ae5a759a046
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2015-08-14 04:36:39.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-08-14 04:36:46.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7011/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-08-14 04:44:10.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7011/ : SUCCESS
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2015-08-14 17:40:33.000000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:93, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackBitmapIndexBuilder.java -> Stylistically, either passing byOffset into the sortByOffset() function or having sortByOffset() allocate and return it gives a better indication that an effect of calling sortByOffset is to change the byOffset list.
+
+Line:95, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackBitmapIndexBuilder.java -> Add a comment about the reasoning behind dividing by 3.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-08-14 18:13:58.000000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:93, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackBitmapIndexBuilder.java -> Done
+
+Line:95, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackBitmapIndexBuilder.java -> Done
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-08-14 18:26:46.000000000
+
+Change has been successfully merged into the git repository by Yoselin Hanna
+
+-------------------------------------

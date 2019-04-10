@@ -1,0 +1,91 @@
+DESCRIPTION
+
+Prevent finding wrong refs on case insensitive file systems
+
+If multiple refs existed in a repository which are not distinguishable
+on a case insensitive file system we found and returned a ref with the
+wrong case since the file system tricked us.
+
+Bug: 376270
+Change-Id: I48cddc527237cd2fc75b8f36dd2a49023d5b1868
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+Signed-off-by: Zachary Orozco xxx@xxx.xxx
+
+COMMENTS
+
+author: Brenden Conley
+date: 2012-05-18 15:17:28.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1851/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-05-18 15:21:22.000000000
+
+Patch Set 1: Verified
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1851/ : SUCCESS
+
+-------------------------------------
+author: Juliet Cantu
+date: 2012-05-18 15:58:00.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(2 inline comments)
+
+
+
+Line:794, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/RefDirectory.java -> Use parent.getFS() instead
+
+Line:795, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/RefDirectory.java -> Seem C Git does not do this. That may still be useful. Are you sure this is not too expensive  We may have lots of refs and getCanonicalPath is very very expensive, which is one reason we have avoided it so far. It may even fail sometimes.
+
+If we do this we should only do this when the name comes
+through the public API and not when it comes from our own
+scan of the file system, which I presume return the correct
+case.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2012-05-18 21:56:19.000000000
+
+Patch Set 1: (2 inline comments)
+
+
+
+Line:794, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/RefDirectory.java -> Done
+
+Line:795, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/RefDirectory.java -> We need this when the public method RefDirectory.getRef(String refname) is called with a refname which is duplicate when ignoring case and does not match the ref which is stored on disk as a loose ref. 
+
+For the case reported in bug 376270 the tags cdt_8_0 and CDT_8_0 are duplicate when ignoring case. When cloning this repo on Mac we ended up with refs/tags/CDT_8_0 as a loose ref on disc. 
+
+But, since HFS+ is case insensitive, RefDirectory.getRef("cdt_8_0") matches this file.  getRef(refname) also matches when the case is wrong since new File(parent, "cdt_8_0") returns the file refs/tags/CDT_8_0 in our case, this constructor is called from scanRef(null, "cdt_8_0"). Hence this generates a refsChanged event triggering an IndexDiff re-computation in EGit. 
+
+Some time later RepositoryChangeScanner will enumerate all refs calling RefDirectory.getRefs("") which only finds the refs which are really on disc, so this time it doesn't find cdt_8_0. Hence this again generates a refsChanged event again triggering IndexDiff recomputation. Since RepositoryChangeScanner is scheduled every 10 sec this leads to excessive resource consumption by recomputing IndexDiff on the large CDT repository every 10 sec.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2012-05-19 05:04:45.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:795, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/RefDirectory.java -> Another example: on Mac/Windows you have a repo with a ref 'a' in the packed-refs file. Then you create a new ref "A" which will be persisted as loose ref under filename "A". If you know iterate over all known refs (the ref name does not come from outside through a public API!) and you ask for "a" the you'll find the loose ref "A" ... which is definitly a bug.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2012-05-19 16:39:24.000000000
+
+Change could not be merged because of a missing dependency.
+
+The following changes must also be submitted:
+
+* I03f59d07bcc3338ef8d392cbd940799186ca03bd
+
+
+-------------------------------------

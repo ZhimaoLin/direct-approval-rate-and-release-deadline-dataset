@@ -1,0 +1,123 @@
+DESCRIPTION
+
+Add Attribute Macro Expansion
+
+Attributes MacroExpander implements macros in git attributes. This is
+implemented inside the TreeWalk using the MacroExpanderImpl class. Basic
+attribute tests use a NullMacroExpander.
+
+Change-Id: I2e69c9fc84e9d7fb8df0a05817d688fc456d8f00
+Signed-off-by: Nicolas Patterson xxx@xxx.xxx
+
+COMMENTS
+
+author: Nicolas Patterson
+date: 2015-11-30 13:16:36.000000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-11-30 13:16:42.000000000
+
+Patch Set 6:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7652/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-11-30 13:24:42.000000000
+
+Patch Set 6: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7652/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-12-03 21:21:29.000000000
+
+Patch Set 6:
+
+(15 comments)
+
+Line:65, org.eclipse.jgit.test/tst/org/eclipse/jgit/attributes/MacroExpanderTest.java -> I like this test class. EclEmma says you managed to have very high test coverage on MacroExpanderImpl.
+
+Line:52, org.eclipse.jgit/src/org/eclipse/jgit/attributes/MacroExpander.java -> Do we really an interface and multiple implementations of MacroExpander? Why don't we just have a class MacroExpander which has the code of MacroExpanderImpl? Then we could drop MacroExpanderImpl and NullMacroExpander. We could save the additional parameter for getAttributes and always use MacroExpander.
+Maybe you have use cases in mind for different macroexpander implementations. Do you?
+
+Line:142, org.eclipse.jgit/src/org/eclipse/jgit/attributes/AttributesNode.java -> I would love to get rid of this parameter
+
+Line:1170, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/TreeWalk.java -> why do we again and again get the always same rootNodeAttr? Couldn't we assume that changes which happen to  .gitattributes files during one treewalk are not detected by us. When we need attributes for the first time we'll merge all global/info/root-work-tree .gitattributes field in one field rootAttributesNode. In that we search for macro definitions. And when traversing down the tree we do not touch global/info files again but just merge rootAttributesNode with the .gitattributes files we find while traversing the worktree
+
+Line:1363, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/TreeWalk.java -> isn't this a lot of duplicate code from getCurrentAttributesNode?
+
+Line:98, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/AbstractTreeIterator.java -> Instead storing a reference to the root iterator couldn't we directly store a AttributesNode which contains the merged content of global/info/root-worktree .gitattributes?
+
+Line:91, org.eclipse.jgit/src/org/eclipse/jgit/attributes/MacroExpanderImpl.java -> The rules stored in a AttributesNode are not unmutable. On a given attributesNode you can call parse again and again and change the rules stored in that instance. Therefore doing checks like globalNode == actualGlobalNode is not sufficient, or? Imagine globalNode==actualGlobalNode is true and then you call actualGlobalNode.parse(newStream). Afterwards  globalNode==actualGlobalNode will still be true although they don't contain the same entries.
+
+Either we make AttributesNode unmutable, or we do call .equals() or we explain why we are sure that == is enough to detect modification.
+
+Line:104, org.eclipse.jgit/src/org/eclipse/jgit/attributes/MacroExpanderImpl.java -> Shouldn't this be a static constant? It only depends on static stuff. Maybe not only a static constant for this rule but a constant for our set of default rules.
+
+Line:105, org.eclipse.jgit/src/org/eclipse/jgit/attributes/MacroExpanderImpl.java -> why substring(6) if MACRO_PREFIX is a constant which can change. Better use MACRO_PREFIX.length()
+
+Line:106, org.eclipse.jgit/src/org/eclipse/jgit/attributes/MacroExpanderImpl.java -> Don't you have to clear expansions during a reload before you refill it. Imagine once the global attributes contained an attribute "custom". The file was changed and does not contain attribute custom anymore. Where do we remove "custom" from the expansions field? There should be a test which covers this.
+
+Line:114, org.eclipse.jgit/src/org/eclipse/jgit/attributes/MacroExpanderImpl.java -> see above
+
+Line:127, org.eclipse.jgit/src/org/eclipse/jgit/attributes/MacroExpanderImpl.java -> Why initializing with 1. Isn't it very likely that there are more than one Attributes (like with "text"). I would use 5 or so.
+
+Line:135, org.eclipse.jgit/src/org/eclipse/jgit/attributes/MacroExpanderImpl.java -> Is the purpose of this construct to remove duplicates from collector? Wouldn't it be more efficient if expandMacroRec takes care to reuse an entry with the same key so that expandMacroRec promises never to create duplicates. Or collector could be a Map from the beginning and we would always return collector.values()
+
+Line:138, org.eclipse.jgit/src/org/eclipse/jgit/attributes/MacroExpanderImpl.java -> I don't understand this name. What's a MacroRec?
+
+Line:143, org.eclipse.jgit/src/org/eclipse/jgit/attributes/MacroExpanderImpl.java -> you mean native git, or?
+
+-------------------------------------
+author: Nicolas Patterson
+date: 2015-12-06 15:19:19.000000000
+
+Patch Set 6:
+
+(15 comments)
+
+Line:65, org.eclipse.jgit.test/tst/org/eclipse/jgit/attributes/MacroExpanderTest.java -> thx
+
+Line:52, org.eclipse.jgit/src/org/eclipse/jgit/attributes/MacroExpander.java -> Done
+
+Line:142, org.eclipse.jgit/src/org/eclipse/jgit/attributes/AttributesNode.java -> Done
+moved the whole method to MacroExpander. That one has the complete knowledge about how to parse, merge and interpret attributes
+
+Line:1170, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/TreeWalk.java -> Done
+
+Line:1363, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/TreeWalk.java -> Done
+
+Line:98, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/AbstractTreeIterator.java -> OK, I will give it a try with one node.
+
+Line:91, org.eclipse.jgit/src/org/eclipse/jgit/attributes/MacroExpanderImpl.java -> Done
+
+Line:104, org.eclipse.jgit/src/org/eclipse/jgit/attributes/MacroExpanderImpl.java -> Done
+
+Line:105, org.eclipse.jgit/src/org/eclipse/jgit/attributes/MacroExpanderImpl.java -> Done
+
+Line:106, org.eclipse.jgit/src/org/eclipse/jgit/attributes/MacroExpanderImpl.java -> Done
+
+Line:114, org.eclipse.jgit/src/org/eclipse/jgit/attributes/MacroExpanderImpl.java -> Done
+
+Line:127, org.eclipse.jgit/src/org/eclipse/jgit/attributes/MacroExpanderImpl.java -> Done
+
+Line:135, org.eclipse.jgit/src/org/eclipse/jgit/attributes/MacroExpanderImpl.java -> Done
+
+Line:138, org.eclipse.jgit/src/org/eclipse/jgit/attributes/MacroExpanderImpl.java -> Done
+
+Line:143, org.eclipse.jgit/src/org/eclipse/jgit/attributes/MacroExpanderImpl.java -> Done
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-02-11 16:50:55.000000000
+
+Change has been successfully merged into the git repository by Zachary Orozco
+
+-------------------------------------

@@ -1,0 +1,95 @@
+DESCRIPTION
+
+Use read ahead during copyPackThroughCache
+
+If a block is missing from the block cache, open the pack stream,
+retain the ReadableChannel, and turn on read-ahead.  This should help
+to load a medium sized pack into a cold cache more quickly from a
+slower IO stream, as the pack is scanned sequentially and missing
+blocks are more likely to be available through the read-ahead.
+
+Change-Id: I3300d936b9299be6d9eb642992df7c04bb439cde
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2017-06-27 17:08:06.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-06-27 17:08:11.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/10388/
+
+-------------------------------------
+author: Eden Lin
+date: 2017-06-27 17:11:21.000000000
+
+Patch Set 1: Code-Review+1
+
+(2 comments)
+
+Line:494, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsPackFile.java -> optional: can simplify by using try-with-resources, which knows not to close a null resource:
+
+  try (ReadableChannel rc = null) {
+    ...
+  }
+
+Line:818, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsPackFile.java -> optional: likewise. Here I think I prefer what you already have, but for completeness it would look something like
+
+  try (ReadableChannel toClose = packChannel == null ? rc : null) {
+   ...
+  }
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2017-06-27 17:14:58.000000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:494, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsPackFile.java -> No because you cannot assign to a variable declared in a try-with-resources block and I assign to it further below if we have a cache miss and decide to open the stream to fulfill that miss.
+
+Line:818, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsPackFile.java -> Your suggestion not much different from what we have now, but comes with the side effect of needing yet another variable in scope whose only purpose is to know if we close or not in the (now transparent) finally. But we still need the finally anyway for the readBlockMicros, so its really not saving us anything.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-06-27 17:19:23.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/10388/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2017-06-27 17:20:49.000000000
+
+Patch Set 1: Code-Review+2
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2017-06-27 17:20:51.000000000
+
+Change has been successfully merged by Yoselin Hanna
+
+-------------------------------------
+author: Eden Lin
+date: 2017-06-27 17:37:46.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Thanks.
+
+Line:494, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsPackFile.java -> Ah, I hadn't realized those variables are implicitly final. Makes sense.
+
+-------------------------------------

@@ -1,0 +1,69 @@
+DESCRIPTION
+
+JCBC-72: Return errors when encountering non-200 http responses
+
+Change-Id: Iee0b1de24a9ea245b6554aea5a30462cf7b613ef
+
+
+COMMENTS
+
+author: Andreas Short
+date: 2012-07-09 21:12:53.371000000
+
+Patch Set 1: Do not submit
+
+(1 inline comment)
+
+I'm sorry, I know you put a lot of effort into this, but I think it needs a revision.
+
+There are two possible situations that can come up when querying a view.  They each have very different meanings though, and the control flow of the calling code will be different depending on what the errors are.
+
+1st scenario- HTTP status code is <400:
+This means something is wrong with the request or something is wrong with the server.  The response will have no information related to the request.  The response will have a JSON body with two fields: "error" and "reason".  I think I'd have to recommend this exception be a (or extend) RuntimeException, since a client cannot recover in any meaningful way.
+
+2nd scenario- HTTP status code is <=200 and >300:
+This means the request has been handled correctly.  However, during the processing of this request on the distributed cluster, a problem was found.  Could be a node down.  Could be a node crashed in the middle.  Could be a vbucket is warming up.  The presence of an errors array is what tells us this is the case.  We should again throw an exception, but this time it should be a checked exception, as the client can recover.
+
+For example:
+Query  query = new Query();
+View view = client.getView(ddocname, viewname);
+ArrayList<ErrorMessages> errors = new ArrayList<ErrorMessages>();
+HttpFuture<ViewResponse> queryResults = null;
+ViewResponse response = null;
+try {
+  queryResults = client.asyncQuery(view, query)
+  response = queryResults.get();
+  displayResults(response);
+} catch (ViewException ex) {
+  // process the error messages
+  // display some error to the user-- this query may not have all results, etc.
+  displayResults(response);  // display what results we do have!
+}
+
+Do you see the general idea I think is in order here?  When a node fails, the user can then decide to display the best info they have or they can decide to display nothing.  That's all pretty application dependent.  They should plan for this with Couchbase, since someday a node will fail.  For example, when Google does this with search results, you just may miss some results in this particular search.  It's a short term thing because their failover replaces that system very quickly.  Thus, search is always available, but all search results are not always available.
+
+Line:291, src/test/java/com/couchbase/client/ViewTest.java -> when using junit, it's generally bad to use assert.  it makes it hard to discern unexpected conditions (the assert) from test failures (the junit assert classes).  For example, many of these could be assertEquals("Something went wrong!", foo, bar) instead and then if the test fails you get the message, not an error in the log that you have to trace down to a line.
+
+I know we have a lot of the old style, but we should make sure all added code gets to a correct style.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2012-07-09 21:26:14.545000000
+
+Patch Set 1:
+
+I'm actually a bit confused as to why this code wouldn't work the way you pointed out. Right now, unless there is a parsing error, timeout error, or connection error you always get back a response with results and errors. Doing a group for example returns an error in the row errors and the result rows list is empty as it should be. In a distributed scenario when we encounter an error (eg. server down) we still return the results from the other servers and place the errors in the errors list.
+
+I would actually rather not throw an exception in the case of an error. It should be up to the user to check both the result and error list and I would rather have less exception catching than more.
+
+Let's discuss this offline.
+
+-------------------------------------
+author: Andreas Short
+date: 2012-07-09 21:48:48.834000000
+
+Patch Set 1:
+
+I see what you're saying, we can discuss this at some point later today or tomorrow.  I do think a RuntimeException is relevant here.
+
+-------------------------------------

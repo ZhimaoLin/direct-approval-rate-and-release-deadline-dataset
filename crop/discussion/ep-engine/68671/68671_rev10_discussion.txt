@@ -1,0 +1,136 @@
+DESCRIPTION
+
+[Ephemeral Bucket]: Create an abstract base class KVBucket
+
+Currently “EventuallyPersistentStore” is the class that engineers the
+Piper Jefferson bucket behavior in the kv-engine. It
+(i) handles get/set requests, any spl requests defined in our protocol,
+(ii) spawns tasks like flusher, bgfetcher, pager, access scanner etc
+(iii) sets up config params for DCP, HT, Vbucket
+(iv) interactions with KV store (say forestdb or couchstore) for
+     persistence, vb snapshotting, rollback etc and many more
+
+Ephemeral bucket is a new bucket type and it has some similar but
+many distinct features w.r.t Piper Jefferson bucket. For example we
+(i) do not need flusher, bgfetcher tasks
+(ii) handle get/sets differently as we do not have anything called
+     full eviction/value eviction and hence no bloom filters
+(iii) No KV store (storage) interactions
+(iv) use modified HT+ skiplist structures to store/get items.
+
+Hence it is a good idea to derive new class “EphemeralBucket” and
+“EventuallyPersistentStore” as peer subclasses from the base class
+“KVBucket”.
+
+This commit just creates the abstract base class and makes the
+the clients of EventuallyPersistentStore which are expected to be
+clients of EphemeralStore as well to use base class KVBucket.
+
+Subsequent commits will add "EphemeralBucket" class and
+rename "EventuallyPersistentStore" to "EPBucket".
+
+Change-Id: Ia1e403b4c718d8ee8abd84316287d58743397cf8
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2016-10-20 01:19:24.370000000
+
+Uploaded patch set 10.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-20 01:19:30.058000000
+
+Patch Set 10:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1629/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-20 01:20:14.119000000
+
+Patch Set 10:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/423/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-20 01:23:58.677000000
+
+Patch Set 10:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1301/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-20 01:25:23.835000000
+
+Patch Set 10:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1528/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-20 01:43:22.768000000
+
+Patch Set 10: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/423/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1301/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1528/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1629/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-10-20 09:09:57.241000000
+
+Patch Set 10: Code-Review-1
+
+(4 comments)
+
+Mostly looks good. Only blocking issue for me is the commit of the commented-out (new) code.
+
+If you fix that I'm happy :)
+
+Line:2202, src/ep_engine.cc -> I'd be tempted to change kvBucket to an owning ptr (unique_ptr) at the same time - less new == good.
+
+Line:2204, src/ep_engine.cc -> This should be removed for now - include it properly in the next (subsequent) patch.
+
+Line:46, src/htresizer.h -> Nit: As you're updating this stuff, it's worth considering if a raw pointer is the correct type for members like this.
+
+* Should it be a reference (if it is always non-null)?
+* Should it be some form of shared pointer (if the lifetime of the holder - HashtableResizerTask in this case) can exceed the lifetime of the object.
+
+(No need to change in this patch, but something to consider while you're refactoring).
+
+Line:87, tests/module_tests/evp_store_test.h -> Style: I'm assuming that the base class has a virtual destructor. Using `override` (instead of virtual) here makes that explicit, the reader knows the base class has a virtual destructor.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2016-10-20 18:33:50.716000000
+
+Patch Set 10:
+
+(3 comments)
+
+Line:2202, src/ep_engine.cc -> There are many places that use kvBucket as a raw ptr. Most of them can be converted to reference and others to ref counted ptr. Think it is best to address that in a separate refactoring commit.
+Have noted it down as a TODO
+
+Line:2204, src/ep_engine.cc -> Done
+
+Line:46, src/htresizer.h -> Will consider it in refactoring, will note it down
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-10-20 20:34:43.676000000
+
+Change has been successfully cherry-picked as a7b5e9c998f82377c7a9aec75d035ec03834cb19 by Adrianna Holmes
+
+-------------------------------------

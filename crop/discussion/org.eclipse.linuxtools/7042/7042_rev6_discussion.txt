@@ -1,0 +1,132 @@
+DESCRIPTION
+
+tmf: Use tabs in statistics view for each traces
+
+When an experiment/trace is selected, the statistics view creates a
+global viewer and a specific viewer for each trace contained in the
+experiment. These viewers are placed in tabs and shown in the
+statistics view. Also, a factory is now used to create a viewer based
+on his definition in the plug-in.xml from the trace type. An
+extension point element has been added to the trace type extension
+point to provide custom statistics viewer.
+
+Signed-off-by: Simeon Moses xxx@xxx.xxx
+
+Change-Id: I8d380e8c28cba855b5361069200e50ab0cbca7f3
+
+
+COMMENTS
+
+author: Simeon Moses
+date: 2012-08-12 05:52:24.000000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Ricky Reeves
+date: 2012-08-13 19:36:15.000000000
+
+Patch Set 6: I would prefer that you didn't submit this
+
+(11 inline comments)
+
+The changes look very good. 
+
+There are a few things to fix in the TmfStatisticsViewer, and some minor updates to do.
+
+BTW, I created a custom statistics viewer for Legacy LTTng and it worked. Also I tried it with streaming.
+
+Line:239, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/statistics/TmfStatisticsViewer.java -> In case of streaming this method is call repeatedly. So for sub-sequent calls the method (requestTimeRangeData() shouldn't be called, only for the first time. See HistogramView for an example how it handles this case.
+
+Line:256, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/statistics/TmfStatisticsViewer.java -> Before your changes there was a check for number of events to avoid sending of unnecessary requests (in TmfStatisticsView)
+
+        /*
+         * In the normal case, the statistics request is coalesced with indexing
+         * and the number of events are the same, there is nothing to do. But if
+         * it's not the case, trigger a new request to count the new events.
+         */
+        if (nbEvents < experiment.getNbEvents()) {
+            requestData(experiment, experiment.getTimeRange());
+        }
+
+I debugged and I see that in your version requestData() is called from this method. I think we need to put this check back. 
+
+This signal handler exoerimentUpdated() was introduced to fix bug 382438
+
+Line:27, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/statistics/ITmfExtraEventInfo.java -> I know it's redundant information, but it looks better in generated Java doc web-page
+
+Line:67, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/views/statistics/TmfStatisticsView.java -> Unsed constant (actually was moved to TmfStatisticsViewer)
+
+Line:74, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/views/statistics/TmfStatisticsView.java -> Unsed constant (actually was moved to TmfStatisticsViewer)
+
+Line:79, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/views/statistics/TmfStatisticsView.java -> Unsed constant (actually was moved to TmfStatisticsViewer)
+
+Line:84, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/views/statistics/TmfStatisticsView.java -> Unsed constant (actually was moved to TmfStatisticsViewer)
+
+Line:89, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/views/statistics/TmfStatisticsView.java -> Unsed constant (actually was moved to TmfStatisticsViewer)
+
+Line:95, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/views/statistics/TmfStatisticsView.java -> Unsed constant (actually was moved to TmfStatisticsViewer)
+
+Line:200, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/views/statistics/TmfStatisticsView.java -> Just calling a signal handler of signal TmfExperimentRangeUpdatedSignal won't cause the coalescing of requests when sending the request to the experiment. Experiment at this point doesn't know that more than one request is coming and dispatches each request separately. So we need to do a little trick to achieve the coalescing of the requests of multiple viewers. We need to call fExperiment.startSynch(new TmfStartSynchSignal(0)); before the loop and fExperiment.endSynch(new TmfEndSynchSignal(0)); after the loop.
+
+I tried it with 2 viewers and it works.
+
+Line:221, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/views/statistics/TmfStatisticsView.java -> If it's not used remove it
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2012-08-14 15:53:22.000000000
+
+Patch Set 6: (2 inline comments)
+
+Could you:
+- rebase this on latest -kepler
+- add a reference to bug 387217 in the commit message
+
+A small comment (instanceof checks are also null checks), and a couple questions in the viewer factory.
+
+Line:526, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/statistics/TmfStatisticsViewer.java -> First check is redundant, "instanceof" checks for null also.
+
+Line:47, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/TmfViewerFactory.java -> Sorry, I still don't understand what this part >.<
+
+"Retrieves and instantiates a viewer based on his plug-in definition for a specific trace type."
+
+Shouldn't it be called something like getTraceViewer() then? (and the factory will make sure it's the right type)
+
+And could it return a (I)TmfViewer instead of an Object? The class type check and the cast can be done in here, so calling methods won't have to do it on their own.
+
+-------------------------------------
+author: Simeon Moses
+date: 2012-08-14 19:10:11.000000000
+
+Patch Set 6: (13 inline comments)
+
+
+
+Line:239, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/statistics/TmfStatisticsViewer.java -> Done
+
+Line:256, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/statistics/TmfStatisticsViewer.java -> Done - test it with streaming and tell me if it is working. Thanks
+
+Line:526, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/statistics/TmfStatisticsViewer.java -> Done
+
+Line:47, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/TmfViewerFactory.java -> Moved to TmfTraceType
+
+Line:27, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/statistics/ITmfExtraEventInfo.java -> Aaaww - Done
+
+Line:67, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/views/statistics/TmfStatisticsView.java -> Done
+
+Line:74, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/views/statistics/TmfStatisticsView.java -> Done
+
+Line:79, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/views/statistics/TmfStatisticsView.java -> Done
+
+Line:84, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/views/statistics/TmfStatisticsView.java -> Done
+
+Line:89, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/views/statistics/TmfStatisticsView.java -> Done
+
+Line:95, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/views/statistics/TmfStatisticsView.java -> Done
+
+Line:200, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/views/statistics/TmfStatisticsView.java -> Done
+
+Line:221, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/views/statistics/TmfStatisticsView.java -> Done
+
+-------------------------------------

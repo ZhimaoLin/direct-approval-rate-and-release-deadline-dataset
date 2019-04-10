@@ -1,0 +1,90 @@
+DESCRIPTION
+
+Add Attribute Macro Expansion
+
+Attributes MacroExpander implements macros used in git attributes. This
+is implemented inside the TreeWalk using a lazy created MacroExpander.
+In addition, the macro expander caches the global and info attributes
+node in order to provide fast merge of attributes.
+
+Change-Id: I2e69c9fc84e9d7fb8df0a05817d688fc456d8f00
+Signed-off-by: Nicolas Patterson xxx@xxx.xxx
+
+COMMENTS
+
+author: Nicolas Patterson
+date: 2015-12-06 15:14:16.000000000
+
+Uploaded patch set 7.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-12-06 15:14:23.000000000
+
+Patch Set 7:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7673/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-12-06 15:22:38.000000000
+
+Patch Set 7: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7673/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-12-14 13:30:09.000000000
+
+Patch Set 7:
+
+(7 comments)
+
+Line:146, org.eclipse.jgit/src/org/eclipse/jgit/attributes/MacroExpander.java -> do we really need to expose these two methods to the outside. Shouldn't we do this merging internally in this class.
+
+Line:274, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/TreeWalk.java -> My main concern here is where the code is located. I think currently we pollute TreeWalk too much. It seems strange to me that TreeWalk learns about a MacroExpander. A treewalk knows all the different trees participating in the walk. Additionaly he knows the opType (CHECKOUT, CHECKIN). He shouldn't know the details about how to compute the effective set of attributes. The code to merge AttributeNodes, epxands macros belongs in my eyes in the org.eclipse.jgit.attributes package. E.g. if you would have constructor for macroexpander taking AttributesNodeProvider and three TreeIterators then we could do the work in the attributes package.
+
+Line:1155, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/TreeWalk.java -> see my comments on getCurrentTreeNode. I think we don't need this changes.
+
+Line:1190, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/TreeWalk.java -> The MacroExpander knows info and global nodes. Why should TreeWalk care to call all this in the correct order. That knowledge about how to merge current,info,global should be hidden in the MacroExpander.
+
+Line:1191, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/TreeWalk.java -> Ivan, what do you think about the idea that only AttributesNode know about macroexpander. And that AttributesNode.getRules() returns a set of expanded rules.
+
+Line:1258, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/TreeWalk.java -> why do you rename this method? For me the old name getTree is better than getCurrentTreeNode (I don't know treeNodes; the word "current" makes make think that this method checks whether the returned tree really matches the current head of the walk line in line 700)
+
+Line:1351, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/TreeWalk.java -> Every MacroExpander needs to know a root attributes node. And he is the only one interested in the attributes at the root level. All other use cases need the effective merged set of Attributes. getRootAttributesNode() and the logic of  getRootTreeNode() could go into a constructor of MacroExpander
+
+-------------------------------------
+author: Nicolas Patterson
+date: 2016-01-07 11:48:05.000000000
+
+Patch Set 7:
+
+(7 comments)
+
+Line:146, org.eclipse.jgit/src/org/eclipse/jgit/attributes/MacroExpander.java -> Right, we can make it protected. Not private, since I need access for unit testing,
+
+Line:274, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/TreeWalk.java -> Done
+
+Line:1155, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/TreeWalk.java -> Done
+
+Line:1190, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/TreeWalk.java -> Done
+
+Line:1191, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/TreeWalk.java -> I moved all knowledge of attributes to the MacroExpander that has itself only a reference to the TreeWalk. That way all is moved away and at the site of decision.
+In order to make that work I had to add some public getters to the TreeWalk. Please review that in particular.
+MacroExpander could optionally be renamed to AttributesManager.
+
+Line:1258, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/TreeWalk.java -> Done
+
+Line:1351, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/TreeWalk.java -> Done
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-02-11 16:50:55.000000000
+
+Change has been successfully merged into the git repository by Zachary Orozco
+
+-------------------------------------

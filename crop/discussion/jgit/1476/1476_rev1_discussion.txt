@@ -1,0 +1,243 @@
+DESCRIPTION
+
+[DRAFT] Support for git blame
+
+Based on the initial contribution by Manuel, this is a (manually rebased)
+version of git blame support for JGit. It internally uses the same algorithm
+as cgit in order to calculate the commits in charge.
+
+I refactored several classes to use the existing MyersDiff, removed some
+obsolete code and refactored almost every test to compile again.
+
+Added command for blame which was initially covered by BlameEngine
+
+Things need to be cleaned up heavily as of now to use non-deprecated
+API and several usecases don't yet work in my initial smoke tests. For
+simple histories, the blaming already works as expected.
+
+Change-Id: I265cfa870d4ec3eecca9c8245efcd1142c051bcb
+Signed-off-by: Marley Hopkins xxx@xxx.xxx
+Coauthored-by: Manuel Woelker xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Marley Hopkins
+date: 2010-08-31 20:32:19.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+Shawn, would it be possible to have a quick look to get an overall feeling. I don't think you need to review code style issues at the moment as I'm planning several refactorings and trying to adapt the jgit code style on the way.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-09-01 00:17:00.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(30 inline comments)
+
+
+
+Line:63, org.eclipse.jgit/src/org/eclipse/jgit/blame/Range.java -> Elsewhere in JGit we often speak of ranges in terms of [start, end) and not [start, start + length).  Its probably a fair amount of code change to modify the semantics here, but I wonder if we shouldn't anyway.  Our Edit class for example in diff package uses [start, end) semantics.  And that's what we use in RawParseUtils for pretty much every parse function.  Etc.
+
+Line:57, org.eclipse.jgit/src/org/eclipse/jgit/blame/Scoreboard.java -> This might be the main data structure, but its a horrible entry point.  We should make this package-private and wrap it up in a BlameWalk class or something easier to guess upon.  I just read almost every other class in this package wondering where the main driver was.  :-(
+
+Line:60, org.eclipse.jgit/src/org/eclipse/jgit/blame/Scoreboard.java -> If this is true (and I suspect it is) we need to clearly document that the owners of that code are OK with us relicensing to BSD.
+
+Line:78, org.eclipse.jgit/src/org/eclipse/jgit/blame/Scoreboard.java -> We should also support taking in a starting and ending line number.  Callers might only need us to blame a particular region.  (Aka the -L flag on the command line.)  If we know the region we should be able to reduce the space we are initially pushing into the queue and terminate sooner.
+
+Line:99, org.eclipse.jgit/src/org/eclipse/jgit/blame/Scoreboard.java -> I know this is a tall order, but I want this incremental.
+
+That is, we should have two public APIs here:
+
+  /**
+   * Fully blame a file and return the list sorted by lines.
+   * This method blocks until all lines have been covered.
+   */
+  List<BlameEntry> getBlame() {
+    List<BlameEntry> r = new ArrayList<BlameEntry>();
+    for (;;) {
+      List<BlameEntry> step = getNextBlame();
+      if (step == null)
+        break;
+      r.addAll(step);
+    }
+    Collections.sort(r, new Comparator<BlameEntry>(){
+      public int compare(BlameEntry a, BlameEntry b) {
+        return a.range.start - b.range.start;
+      }
+    });
+    return r;
+  }
+
+  /**
+   * Compute the blame for one portion of the file.
+   *
+   * This method returns as soon as one or more regions can be
+   * proven to be the responsibility of a particular origin (commit).
+   * The regions can be any part of the starting file, but will never
+   * overlap with a region previously returned, or that will be in on
+   * a future call.
+   */
+  List<BlameEntry> getNextBlame();
+
+That way EGit can implement an incremental blame view like git gui does, and users can watch it fill in.  Obviously we'll run getNextBlame() on a background worker thread, but as soon as a block is ready we can forward it to the UI thread for painting.
+
+Since we have to have a queue anyway to keep track of the regions we have pushed off onto our parent, we can easily return back from getNextBlame() with the regions we couldn't blame onto the parent and that the current commit needs to take responsibility for.
+
+Line:304, org.eclipse.jgit/src/org/eclipse/jgit/blame/Scoreboard.java -> Uh, yea, OK.  So my major problem here is the scoreboard and the OriginWalk are too disconnected from each other.
+
+OriginWalk is doing this nasty linearization of all Origins.  Which then leads to this sort of crap.  Its horrifically confusing.
+
+IMHO, OriginWalk should just be folded outright into this class.  The code should actually get a lot simpler because you stop trying to linearize the different origins.
+
+Line:71, org.eclipse.jgit/src/org/eclipse/jgit/blame/Origin.java -> Please call this path.  Elsewhere in the diff package (e.g. DiffEntry) that's what we call it.  Likewise with TreeWalk.forPath().
+
+Line:103, org.eclipse.jgit/src/org/eclipse/jgit/blame/Origin.java -> This needs to use TreeWalk.forPath().  And translating IOException to a RuntimeException is bad.  :-)
+
+But actually, this should be set in the constructor as a final field.  It appears to be known by anyone who constructs an origin, and its a performance sensitive thing to be able to respond with the ObjectId of the content.  (See OriginWalk findLastSameCommit.)
+
+Line:130, org.eclipse.jgit/src/org/eclipse/jgit/blame/Origin.java -> Try to use getCachedBytes(int).  Assuming you can promise you won't edit it.  :-)
+
+Line:57, org.eclipse.jgit/src/org/eclipse/jgit/blame/IDiff.java -> This should obviously be dropped.  If we're going to keep an abstract diff interface it should be in our diff package, not blame.  :-)
+
+Line:56, org.eclipse.jgit/src/org/eclipse/jgit/blame/SameNameOriginSearchStrategy.java -> This should have an instance singleton that we can use, rather than making callers create their own instance.
+
+Line:64, org.eclipse.jgit/src/org/eclipse/jgit/blame/SameNameOriginSearchStrategy.java -> Should use TreeWalk.forPath().
+
+Line:58, org.eclipse.jgit/src/org/eclipse/jgit/blame/IOriginSearchStrategy.java -> Since every Origin should be from the same Repository, and we are blaming a single file at hopefully high speed, we should actually be using a single ObjectReader for things like looking up the scapegoats.
+
+I think we should have a single object that represents the BlameWalk that carries the Repository and ObjectReader around to the various classes that need them.  So for the strategies we should be passing through the BlameWalk and the Origin, and the strategy can use the BlameWalk's ObjectReader to perform its reading work.
+
+Line:53, org.eclipse.jgit/src/org/eclipse/jgit/blame/BlameEntry.java -> Please.  :-)  This shouldn't have public fields, but it should have public accessors.  Its OK for the fields to be package-access though, we do that in revwalk all of the time.
+
+Line:69, org.eclipse.jgit/src/org/eclipse/jgit/blame/CopyModifiedSearchStrategy.java -> This score should be configurable.
+
+Line:73, org.eclipse.jgit/src/org/eclipse/jgit/blame/CopyModifiedSearchStrategy.java -> Should be configurable.
+
+Line:84, org.eclipse.jgit/src/org/eclipse/jgit/blame/CopyModifiedSearchStrategy.java -> You shouldn't cross pools like this.  That BlameWalk object I was talking about in the interface definition clearly needs a RevWalk too, so that classes like this can ensure the parents are parsed under the same revision pool as the source commit.
+
+We've already allocated the objects and setup pointers to the parents, we might as well just parse in-place and keep going rather than trying to create and destroy pools all of the time.
+
+Line:106, org.eclipse.jgit/src/org/eclipse/jgit/blame/CopyModifiedSearchStrategy.java -> The better way to handle this section of code is:
+
+  while (treeWalk.next()) {
+    switch (treeWalk.getRawMode(0) & FileMode.TYPE_MASK) {
+    case TYPE_MISSING:
+    case TYPE_TREE:
+    case TYPE_GITLINK:
+      continue;
+    }
+
+That also lets you avoid the isSubtree test above.
+
+Line:129, org.eclipse.jgit/src/org/eclipse/jgit/blame/CopyModifiedSearchStrategy.java -> This is going to be slow as snot.
+
+What you need to do here is use SimilarityIndex from the diff package.  Its not public, so you'll need to either use RenameDetector, or make SimilarityIndex public.  The latter might be better.
+
+Create a SimilarityIndex for the current origin.  Then for each path the TreeWalk is providing you, create a SimilarityIndex and score it against the origin's SimilarityIndex.  If the score is over the threshold then its common enough to consider as a candidate.
+
+Line:133, org.eclipse.jgit/src/org/eclipse/jgit/blame/CopyModifiedSearchStrategy.java -> Ick.  Boxing integers on a custom list type?  Nak.  Boxing is expensive so we try to avoid it in these performance critical sections.
+
+Line:137, org.eclipse.jgit/src/org/eclipse/jgit/blame/CopyModifiedSearchStrategy.java -> Instead of doing this, maybe extend Origin class with a private static inner class here that has an additional score field.  For each path that scores above the threshold, create an instance of this subclass, put the score into it, and push that into a collection.
+
+If we want a cap on the number of items we keep in the collection (I think here you want the two highest scoring paths yes?) then just use a TreeSet with a custom Comparator that knows how to look at that score field.  If the size of the set after adding the new Origin is larger than the threshold, remove the smallest item from the set.  Usually I hate using JRE collections classes in performance critical code, but here its a TreeSet of just 2-3 items.  Its not that bad.
+
+Line:53, org.eclipse.jgit/src/org/eclipse/jgit/blame/CommonChunk.java -> I wonder if this shouldn't just extend Edit and be a REPLACE of equal sizes on either side.  Might be too much of an abuse of an existing class.
+
+If its not going to extend Edit, it should smell just like it.  getBeginA(), getBeginB() rather than getAstart().
+
+Line:157, org.eclipse.jgit/src/org/eclipse/jgit/blame/OriginWalk.java -> I don't think we should use a copy here.  We should follow what RevWalk does which is to iterate exactly once, and provide an Iterator API only to provide a brain-dead simple use case.  If you need multiple traversals you should buffer the results yourself.
+
+Line:167, org.eclipse.jgit/src/org/eclipse/jgit/blame/OriginWalk.java -> Instead of implementing Iterator I'd do what we do in RevWalk where next() returns null at end, and the Iterator returned by iterator() buffers by one in order to implement hasNext().
+
+Line:202, org.eclipse.jgit/src/org/eclipse/jgit/blame/OriginWalk.java -> You shouldn't do this.  You can't start a RevCommit into a different pool than it was parsed out of.
+
+You should be using the internal RevWalk of this class.  Just reset it, enqueue the start, and then run.
+
+But this makes no sense.  Near as I can tell the walk is only used to parse other commits.  Its not actually used for a traversal.  So marking a starting point, or setting its sorting to TOPO is pointless.
+
+Line:209, org.eclipse.jgit/src/org/eclipse/jgit/blame/OriginWalk.java -> Should use TreeWalk.forPath().
+
+Line:223, org.eclipse.jgit/src/org/eclipse/jgit/blame/OriginWalk.java -> I get what this method is doing.  Its a short-cut to try and skip through a chain of commits which haven't modified the file.  But its implementation is obtuse.  I wonder if we can't just leverage RevWalk to do it for us:
+
+  rw.markStart(origin.commit);
+  rw.setTreeFilter(TreeFilter.ANY_DIFF);
+  RevCommit r = rw.next();
+  rw.reset();
+  return r;
+
+If that isn't fast enough to skip through the chain, we should try to fix RevWalk.
+
+Line:229, org.eclipse.jgit/src/org/eclipse/jgit/blame/OriginWalk.java -> Why do we need to expose this?
+
+Line:239, org.eclipse.jgit/src/org/eclipse/jgit/blame/OriginWalk.java -> Why do we need to expose this?
+
+Line:243, org.eclipse.jgit/src/org/eclipse/jgit/blame/OriginWalk.java -> Since this owns a RevWalk, it needs a release() method that can release the contained RevWalk.
+
+-------------------------------------
+author: Danika Greer
+date: 2010-11-04 14:46:51.000000000
+
+Patch Set 1:
+
+Benjamin, are you still working on this? If not, I'd be interested :).
+
+-------------------------------------
+author: Marley Hopkins
+date: 2010-11-09 16:16:59.000000000
+
+Patch Set 1: No score
+
+Yep, still in my queue to work on this but will not have any time before end of next week. Maybe you want to work on this in the meantime and we try to get this in shape together.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-12-30 14:09:20.000000000
+
+Patch Set 1: (5 inline comments)
+
+
+
+Line:118, org.eclipse.jgit/src/org/eclipse/jgit/blame/Origin.java xxx@xxx.xxx doc doesn't match the description.
+javadocs need to be fixed up before merging to master
+
+Line:162, org.eclipse.jgit/src/org/eclipse/jgit/blame/Origin.java -> just add or xor git object hashCodes into the hash since they are well distributed.
+
+Line:181, org.eclipse.jgit/src/org/eclipse/jgit/blame/Origin.java -> I think the whole if/else can be handled using just AnyObjectId here
+
+Line:184, org.eclipse.jgit/src/org/eclipse/jgit/blame/Origin.java -> Strange, the "else" part is after the whole thing, though I see the general pattern that leads to this it is still quite tricky to read.
+
+if (filename == null)
+    return other.filename == null;
+else
+    return filename.equals(other.filename)
+
+Line:88, org.eclipse.jgit/src/org/eclipse/jgit/blame/BlameEntry.java -> Avoid one multiply:int result = (guilty ? 1231 : 1237);;
+
+-------------------------------------
+author: Mallory Peters
+date: 2011-03-15 13:48:28.000000000
+
+Patch Set 1:
+
+Are you still working on this? Is it feasible to get this in shape for Indigo? Do you need help?
+
+-------------------------------------
+author: Marley Hopkins
+date: 2011-03-15 18:51:19.000000000
+
+Patch Set 1:
+
+For Indigo, i will not find the time to work on this. Sorry.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-05-28 03:00:54.000000000
+
+Patch Set 1: Abandoned
+
+Replaced by change I84b8ea4838bb7d25f4fcdd540547884704661b8f.
+
+-------------------------------------

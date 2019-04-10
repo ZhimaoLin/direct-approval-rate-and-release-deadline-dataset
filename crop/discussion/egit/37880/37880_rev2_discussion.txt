@@ -1,0 +1,162 @@
+DESCRIPTION
+
+Don't let ignored resources cause index update jobs.
+
+Changes to ignored resources cause deltas fired by eclipse. These deltas
+will cause index update jobs even though there is nothing to do. In the
+worst case, a lot of resources are changed, and even though nothing
+happened to tracked files, a full re-index is done because the changed
+resource count threshold was reached.
+
+Change-Id: Ic8ab3a93cb877a7a896c9bd88a878eb35c29d046
+Signed-off-by: Bryanna Douglas xxx@xxx.xxx
+
+COMMENTS
+
+author: Bryanna Douglas
+date: 2014-12-10 09:14:25.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-12-10 10:04:37.000000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/6539/ : FAILURE
+
+-------------------------------------
+author: Jayvion Booth
+date: 2014-12-10 10:38:03.000000000
+
+Patch Set 2: Code-Review-1
+
+(6 comments)
+
+Line:122, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/indexdiff/GitResourceDeltaVisitor.java -> Return is OK, but I would not return "false" here because of paranoia I have if someone decides to stop visiting because of that.
+
+Line:139, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/indexdiff/GitResourceDeltaVisitor.java -> As soon as the .gitignore changes are there the old state can't be consulted anymore. Therefore isIgnoredInOldIndex() should return false if gitIgnoreChanged == true.
+
+Line:148, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/indexdiff/GitResourceDeltaVisitor.java -> I fear that iterating through the entire set on huge repos with lot of ignore rules could be expensive.
+
+What if you create a set of visited *ignored* folders in the visit() above and have *two* methods: one to check ignored directories and another one to check ignored files.
+
+We know that directories are always visited first, so check for ignored files will always check if the "knownIgnoredDir" contain path of the parent, which should be cheap as the set will be small.
+
+Check for ignored directories method will not traverse *all* ignored entries from the IndexDiff but check one by one itself, parent path, grand parent path and so on. So worst case we do path.segmentsCount() number of checks which should be for huge repos usually less then getIgnoredNotInIndex() size.
+
+Line:142, org.eclipse.egit.core.test/src/org/eclipse/egit/core/internal/indexdiff/IndexDiffCacheTest.java -> I wish me new tests (just few ideas):
+ * testAddDirectoryToIgnoredDir
+ * testAddFileToIgnoredDir
+ * testAddGitIgnoreFileToIgnoredDir
+ * testRemoveDirectoryFromIgnoredDir
+ * testRemoveFileFromIgnoredDir
+ * testRemoveGitIgnoreFileFromIgnoredDir
+
+Basically all the expected optimizations (and possible regressions) of the patch should be tested.
+
+Line:158, org.eclipse.egit.core.test/src/org/eclipse/egit/core/internal/indexdiff/IndexDiffCacheTest.java -> I didn't get why the explicit refresh is needed. Is it now because of your fix? Then the fix isn't OK.
+
+Line:164, org.eclipse.egit.core.test/src/org/eclipse/egit/core/internal/indexdiff/IndexDiffCacheTest.java -> Same as above
+
+-------------------------------------
+author: Bryanna Douglas
+date: 2014-12-10 11:33:21.000000000
+
+Patch Set 2:
+
+(5 comments)
+
+Line:122, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/indexdiff/GitResourceDeltaVisitor.java -> OK. i can do that.
+
+Line:139, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/indexdiff/GitResourceDeltaVisitor.java -> As a performance optimization maybe, yes. it will not change anything, as this data is not used at all if a gitignore changes.
+
+Still I will put in the check.
+
+Line:148, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/indexdiff/GitResourceDeltaVisitor.java -> I get what you want, basically ;) However I don't get how you would want the directory check to look like? Where should I get the ignore information from? I could use RepositoryUtil.isIgnored for that...
+
+I will experiment a little and see whats the outcome.
+
+Still, just to let you know, having this iteration is WAY less expensive than running all the update jobs - it saves me a minute on the build (5 minutes vs. previous 6 minutes) in a workspace with 900 bundles and ~40.000 java files.
+
+Line:142, org.eclipse.egit.core.test/src/org/eclipse/egit/core/internal/indexdiff/IndexDiffCacheTest.java -> Hm, i will have to see whether I have time to write them.. :|
+
+Line:158, org.eclipse.egit.core.test/src/org/eclipse/egit/core/internal/indexdiff/IndexDiffCacheTest.java -> With the fix, adding a (ignored) file to and already ignored directory will not cause the index update job to run. That is EXACTLY what the whole thing is about. Having the updater run all the time for nothing costs us tons of CPU time in real world environments. This is not a problem with 5 files, or 10 files or even 10.000 files. But with > 50.000 files, this is a real problem.
+
+That's why I previously said that this test failing is actually proof that the fix works ;)
+
+Also, to be honest, I don't get the reason for this test... Why would I want to react on ignored files in ignored folders? It just burns CPU, as the index diff data will not contain any information about it, except that it is ignored (as is the parent folder already).
+
+-------------------------------------
+author: Bryanna Douglas
+date: 2014-12-10 11:46:26.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:148, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/indexdiff/GitResourceDeltaVisitor.java -> Even better. I will use RepositoryUtil.isIgnored in the first place, and ignore the old index completely. Since the auto-ignore resource change listener also uses this, I assume that it is OK to do this :)
+
+-------------------------------------
+author: Bryanna Douglas
+date: 2014-12-10 12:01:23.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:148, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/indexdiff/GitResourceDeltaVisitor.java -> I was wrong. isIgnored is not fast. On the contrary it hangs the build because it's so slow :( please tell me how you'd imagine your algorithm for directory ignores to work.
+
+BTW. there is one drawback when using a cached directory list to check for ignore: what if the file itself is explicitly ignored...? then it's directory won't be on the list and I can only detect by having a look at the ignores.
+
+-------------------------------------
+author: Jayvion Booth
+date: 2014-12-10 12:14:23.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:148, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/indexdiff/GitResourceDeltaVisitor.java -> I meant that the method which should check directories can still use IndexDiffData but *do not iterate* through the entire set, just check if set contains the current path, the parent path and so on:
+indexDiff.getIgnoredNotInIndex().contains(path) etc...
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-12-10 21:52:07.000000000
+
+Patch Set 2: -Verified
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/6546/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-12-10 22:10:50.000000000
+
+Patch Set 2: Code-Review-1
+
+Build Unstable 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/6546/ : UNSTABLE
+
+-------------------------------------
+author: Jayvion Booth
+date: 2014-12-14 20:07:30.000000000
+
+Patch Set 2:
+
+(2 comments)
+
+Hi Markus,
+I've played a bit with the code/tests. 
+Sounds reasonable for me.
+
+What would be nice: it is wrong that the changes on .gitignore file cause *full* index update: it is not necessary! Instead, simply the parents of those files has to be added as changed directories and an incremental update should be triggered on them.
+
+Line:158, org.eclipse.egit.core.test/src/org/eclipse/egit/core/internal/indexdiff/IndexDiffCacheTest.java -> OK, got it, but: if I comment out the line above test do not fail, so please remove it.
+
+Line:164, org.eclipse.egit.core.test/src/org/eclipse/egit/core/internal/indexdiff/IndexDiffCacheTest.java -> Please add waitForListenerNotCalled(); before this new entry.refresh() call. This one *is* indeed now needed  :-)
+
+-------------------------------------

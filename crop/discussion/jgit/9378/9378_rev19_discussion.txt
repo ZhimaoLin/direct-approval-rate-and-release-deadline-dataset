@@ -1,0 +1,118 @@
+DESCRIPTION
+
+RFC Extend the FS class for Java7
+
+The most important difference is that in Java7 we have symbolic links
+and for most operations in the work tree we want to operate on the link
+itself rather than the link target, which the old File methods generally
+do.
+
+We also add support for the hidden attribute, which only makes sense
+on Windows and exists, just since there are claims that Files.exists
+is faster the File.exists.
+
+A new bundle is only activated when run with a Java7 execution
+environment. It is implemented as a fragment.
+
+Change-Id: I3d6580d6fa7b22f60d7e54ab236898ed44954ffd
+
+
+COMMENTS
+
+author: Juliet Cantu
+date: 2013-03-06 23:38:23.000000000
+
+Uploaded patch set 19.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-03-07 13:28:36.000000000
+
+Patch Set 19:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3088/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-03-07 13:33:49.000000000
+
+Patch Set 19: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3088/ : SUCCESS
+
+-------------------------------------
+author: Samuel Christensen
+date: 2013-03-10 05:13:59.000000000
+
+Patch Set 19:
+
+I have just looked at the FS.java changes from an API point of view. My comments:
+
+- The setLastModified() Javadoc has a typo ("Get" should be "Set")
+
+- The setFactory() method should have some Javadoc comment regarding the timing: when is it valid to inject a factory from the outside, vs when or how is a factory "pulled" at runtime ? I guess there are limitations with how the Java7 fragment can be implemented in plain Java, but you should also allow injecting an "Eclipse" based factory from the outside (eg factory for EFS based implementation, as per https://bugs.eclipse.org/bugs/show_bug.cgi?id=354367#c11)
+
+- I find it a bit dangerous that when symbolic links are supported, the semantics of many methods (like exists(), timestamp, length etc) are changed from an "fstat()" semantic to an "lstat" semantic. This might actually be desired in the context of jgit; but it might also have unexpected side-effects on code that does not know or does not care whether a file is a symbolic link. After all, the default behavior of most file systems is transparent fstat() kind of semantics. It would seem safer to me to keep API additions smaller, or more clearly document the overall design of FS in this respect, or to more clearly encapsulate API additions into a FileAttributes class that is obtained with a single fstat() or lstat() call. This might actually improve performance too. Consider how EFS did it with IFileInfo .
+
+-------------------------------------
+author: Samuel Christensen
+date: 2013-03-10 05:59:39.000000000
+
+Patch Set 19:
+
+Regarding, FS API, the Attributes approach from
+
+- https://git.eclipse.org/r/#/c/9642/
+- https://bugs.eclipse.org/bugs/show_bug.cgi?id=353771
+
+looks much better to me than individual query/set attributes.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2013-03-10 08:00:28.000000000
+
+Patch Set 19: (1 inline comment)
+
+Also see the change https://git.eclipse.org/r/#/c/1815/12 which uses native lstat over JNI, I could try to get this change integrated into the central build using Nexus which is now available at Eclipse.
+
+Line:260, org.eclipse.jgit/src/org/eclipse/jgit/util/FS.java -> s/Get the/Set the/
+
+as pointed out by Martin
+
+-------------------------------------
+author: Juliet Cantu
+date: 2013-03-10 10:39:05.000000000
+
+Patch Set 19: (1 inline comment)
+
+I kept the Attributes approach separate for comparison. In the end I also believe it's a better way. Performance wise there seem to be no difference at all, but I only measured on OS X.
+
+Line:260, org.eclipse.jgit/src/org/eclipse/jgit/util/FS.java -> Done
+
+-------------------------------------
+author: Juliet Cantu
+date: 2013-03-10 10:47:08.000000000
+
+Patch Set 19:
+
+The FS class is there to support JGit/EGit only and hence must have the semantics JGit needs. The old behavior is the same as when core.symlinks is false. Only when core,symlinks is true do we change behavior. Note thet the old behavior is broken in the precense of symlinks anyway.
+
+Seems I do not need the setFactory, removing it for now. If we start supporting EFS we need a major overhaul of the FS class hierarchy so let's not speculate too much into the details here.
+
+-------------------------------------
+author: Samuel Christensen
+date: 2013-03-10 21:14:22.000000000
+
+Patch Set 19:
+
+I've reviewed https://git.eclipse.org/r/#/c/1815/ and I like the API used by the jgit JNI approach.
+
+Though I still think it would make sense to allow injecting some other implementation of jgit FS, like the Eclipse EFS one. Eclipse EFS has been proven and stable for years, and it's available on many Platforms. The API is really easy to code against, and there are no dependencies other than the org.eclipse.core.filesystem bundle and fragment itself.
+
+I could contribute an EFS -> jgit FS bridge if desired by the team, it should be really easy to do since the FS API is really thin.
+
+In general, allowing the user to inject an implementation seems more flexible to me than only pulling known implementations.
+
+-------------------------------------

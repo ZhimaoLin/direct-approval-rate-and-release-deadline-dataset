@@ -1,0 +1,128 @@
+DESCRIPTION
+
+MB-15946: Move DCP cursors to new open chkPt when the chkPt has only meta items
+
+(1): When a new checkpoint is created and only queue_op_empty and
+queue_op_checkpoint_start are added, we must move any DCP and persistence
+cursors pointing to queue_op_checkpoint_end in the previous checkpoint to this
+new checkpoint. Note we cannot move the TAP cursors in the same way when they
+are pointing to queue_op_checkpoint_end. This is because TAP replication
+protocol expects to receive queue_op_checkpoint_end.
+Hence the change also adds a flag to identify if a cursor needs
+queue_op_checkpoint_end or not.
+
+(2): Also, when items for replication are got from the checkpoint, we can move
+to the new checkpoint even if we encounter queue_op_checkpoint_end. This is
+needed because, we do not want to leave any replication cursors hanging onto
+queue_op_checkpoint_end in the closed checkpoint when there are only meta items
+in the current open checkpoint.
+
+Both the above changes will help release the memory occupied by the closed
+checkpoints.
+Change-Id: I5c46bfd250dc486cf1adac7e243806e600ddc8b6
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2016-02-20 00:46:56.838000000
+
+Uploaded patch set 12.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-20 00:47:05.566000000
+
+Patch Set 12:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2631/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-20 00:58:51.456000000
+
+Patch Set 12: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1884/ : FAILURE
+
+Failure of a CTest test  ( http://factory.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/1884/ )
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2631/ : FAILURE
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-02-20 01:33:13.213000000
+
+Patch Set 12:
+
+(2 comments)
+
+Line:1700, tests/ep_testsuite_dcp.cc -> After you've destroyed the cookie, there will be a close_stream(DISCONNECTED) sent to TestDcpConsumer, so you should probably have this line:
+
+cb_assert(cb_join_thread(dcp_thread) == 0);
+
+?
+
+Line:1768, tests/ep_testsuite_dcp.cc -> Same comment as above.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-02-22 09:38:41.111000000
+
+Patch Set 12: Code-Review+1
+
+(2 comments)
+
+Line:638, tests/module_tests/checkpoint_test.cc -> Nit: checkpoint
+
+Line:653, tests/module_tests/checkpoint_test.cc -> Can we also check that the DCP replication cursor's checkpoint ID has moved forward?
+
+-------------------------------------
+author: Abby Duran
+date: 2016-02-22 17:49:31.381000000
+
+Patch Set 12:
+
+Manu,
+
+please address the comments from Abhinav and DaveR. Then, I will review it again and get it merged for Watson today.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2016-02-23 01:27:22.615000000
+
+Patch Set 12:
+
+(4 comments)
+
+Line:638, tests/module_tests/checkpoint_test.cc -> Done
+
+Line:653, tests/module_tests/checkpoint_test.cc -> It is checked below by the code,
+manager->getAllItemsForCursor(dcp_cursor.c_str(), items);
+EXPECT_EQ(1, items.size());
+
+If the DCP cursor had not moved forward we would have got 2 items.
+
+Line:1700, tests/ep_testsuite_dcp.cc -> Actually we don't send StreamEndResponse when a connection is disconnected. So TestDcpConsumer is not expecting anything
+
+Line:1768, tests/ep_testsuite_dcp.cc -> Done
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-02-23 09:17:32.346000000
+
+Patch Set 12:
+
+(1 comment)
+
+Line:653, tests/module_tests/checkpoint_test.cc -> Sure, I more meant a second explicit check - that's more obvious to a reader in future if it fails.
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-02-24 23:23:47.654000000
+
+Change has been successfully cherry-picked as ef72046d58bbe9c67bf2ab760f9bd7bbeefb85e8
+
+-------------------------------------

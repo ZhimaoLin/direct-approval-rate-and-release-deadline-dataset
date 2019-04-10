@@ -1,0 +1,64 @@
+DESCRIPTION
+
+Don't use java.nio channel for file size determination
+
+Java NIO has some problems (like files closing unexpectedly because the
+thread was interrupted). To avoid those problems, don't use a NIO
+channel to determine the size of a file, but rather ask the File itself.
+
+We have to be prepared to handle wrong/outdated information in this case
+too, as the inode of the File may change between opening and determining
+file size.
+
+Change-Id: Ic7aa6c3337480879efcce4a3058b548cd0e2cef0
+
+
+COMMENTS
+
+author: Bryanna Douglas
+date: 2012-03-12 15:08:52.000000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2012-03-12 15:14:07.000000000
+
+Patch Set 6: I would prefer that you didn't submit this
+
+(1 inline comment)
+
+
+
+Line:149, org.eclipse.jgit/src/org/eclipse/jgit/util/IO.java -> This can't be true, as Math.min() would return max if nsz would be > maz. :-)
+
+I think you really meant to write:
+
+  if (buf.length == valid) {
+    if (buf.length == max)
+      throw
+
+When buf.length == valid we have to grow the buffer to read more data from the file, but we can't grow the buffer because growing it would put the buffer larger than the maximum size the caller wants this method to read and return.
+
+Yes there is a small issue here where the whole file might fit and we haven't seen EOF yet, but if we read once more we would see EOF. We can work around that by checking for EOF before throwing:
+
+  if (buf.length == valid) {
+    if (buf.length == max) {
+      int next = in.read();
+      if (next < -1)
+        break;
+      throw ...
+
+-------------------------------------
+author: Bryanna Douglas
+date: 2012-03-12 15:24:32.000000000
+
+Patch Set 6: (1 inline comment)
+
+
+
+Line:149, org.eclipse.jgit/src/org/eclipse/jgit/util/IO.java -> hah... I/O and messing with byte arrays is not my most loved task ;D i tend to make mistakes and/or miss things - thanks for taking close looks :)
+
+it again took me some thinking about this, why we don't have to handle the possible valid byte from in.read() in this case - of course it doesn't fit anywhere if there is one :)
+
+-------------------------------------

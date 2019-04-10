@@ -1,0 +1,109 @@
+DESCRIPTION
+
+MB-16949: BackfillManager: Fix leak due to circular reference
+
+There is a circular reference between BackfillManager and DcpProducer,
+which means that BackfillManager is never deleted. This is caused by
+BackfillManager holding an (unused) SingleThreadedRCPtr to
+DcpProducer.
+
+Fix this by Removing this unused smart pointer. Unfortunately exposes
+a latent deadlock when destructing BackfillManager - ~BackfillManager
+(indirectly) calls ~ActiveStream, which in turn calls
+BackfillManager::bytesSent() which attempts to acquire the Backfill
+lock; however the lock is already acquired in ~BackfillManager.
+
+Fix this by removing the call to bytesSent() in ~ActiveStream - as
+it's already been updated in other methods.
+
+The now correct deletion of DcpProducer and the smart-pointer
+triggered deletion of ActiveStream leads to a lock-inversion
+problem in that different locks are being acquired in different
+orders on the possible deletion paths.
+
+Fix this by removing the lock acquisition from destructors.
+The locks in destructors are providing no protection, no
+code should be refering to the deleting object, they risk
+accessing freed memory with or without the locks.
+
+Change-Id: Id79fbf8bc39463d4874c2f61378b7f110345631b
+
+
+COMMENTS
+
+author: Jim WNathalie Landryer
+date: 2015-12-07 13:23:14.170000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-12-07 13:23:22.709000000
+
+Patch Set 2:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/957/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-12-07 13:34:50.082000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1715/ : SUCCESS
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/957/ : SUCCESS
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2015-12-07 19:54:25.507000000
+
+Patch Set 2:
+
+(1 comment)
+
+Don't we need this change in sherlock ?
+In that case, shouldn't we make a change in sherlock and merge it onto master
+
+Line:699, src/dcp/stream.cc -> Why should we not reset bufferedBackfill.bytes and bufferedBackfill.items to zero here ?
+If some logic gets added with stream in dead state (I know we should not add such a logic, but it can happen), it is good to have these parameters at zero.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2015-12-07 20:01:04.357000000
+
+Patch Set 2:
+
+I saw the Jasmin Rangel for sherlock http://review.Piper Jefferson.org/#/c/57417
+
+Why not merge that onto master ?
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2015-12-08 14:37:21.851000000
+
+Patch Set 2:
+
+> I saw the Jasmin Rangel for sherlock http://review.Piper Jefferson.org/#/c/57417
+ > 
+ > Why not merge that onto master ?
+
+That's the plan, but for now we get thread-sanitiser checking this patch as there's no tsan run on sherlock.
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2015-12-10 13:31:27.399000000
+
+Patch Set 2: Code-Review+1
+
+Some of these changes originated from me, hence +1.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-12-15 19:21:40.307000000
+
+Patch Set 3: Patch Set 2 was rebased
+
+-------------------------------------

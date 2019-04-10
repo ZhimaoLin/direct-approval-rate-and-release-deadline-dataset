@@ -1,0 +1,80 @@
+DESCRIPTION
+
+MB-12222: improved mnPoll
+
+This change contains:
+
+1. Added stopTimestamp instead of isCanceled. Timestamp is more reliable
+during reload of async operations.
+2. Removed unused properties stateChangeStartBind and cache.
+3. Separation of doСall from calculation of interval.
+4. Added ability to show spinner with specific name.
+
+Change-Id: Ib6380b6b6bdd58a3ebc52e86e600535d4fee11fc
+
+
+COMMENTS
+
+author: Shaniya Barton
+date: 2016-01-07 08:29:15.863000000
+
+Uploaded patch set 6: Patch Set 5 was rebased.
+
+-------------------------------------
+author: Shaniya Barton
+date: 2016-01-07 10:28:42.311000000
+
+Patch Set 6:
+
+Let's consider the following situation
+
+1. cycle started
+2. we want to reload cycle in the same time doCall still in progress, it has status "pending" and for new logic value of timestamp is 1.
+
+With old logic:
+1. reload()
+2. stop() sets flag isCanceled as true;
+3. reload() sets flag isCanceled as false; (we need this in order to allow new doCall)
+4. new doCall()
+5. status of old doCall() becomes 200;
+6. isCanceled === false, self.deferred.notify(result) is going to be notified using result of old doCall (BUG)
+
+With new logic 
+1. reload()
+2. stop() sets stopTimestamp as 2
+3. new doCall() has timestamp 3
+5. status of old doCall() becomes 200; (with timestamp 1)
+6. !(1 >= 2) === true // return; (there is no BUG)
+7. new doCall() becomes 200; (with timestamp 3)
+8. !(3 >= 2) === false //continue new cycle
+
+-------------------------------------
+author: Shaniya Barton
+date: 2016-01-07 10:35:21.950000000
+
+Patch Set 6: Code-Review+1 Verified+1
+
+-------------------------------------
+author: Kian Santos
+date: 2016-01-07 18:28:46.118000000
+
+Patch Set 6: Code-Review-1
+
+(1 comment)
+
+Line:29, priv/public/ui/app/components/mn_poll.js -> Ok, I get it. 
+
+Can you do the following: 
+1) add a new method on Poller called isStoppedAtTime(startTimestamp) the semantics of which should be returns true if the poller is stopped if it had been started at startTimestamp
+
+Refactor the various checks on whether the poller is stopped by calling the method. I think it'll make it a lot easier to the review. 
+
+Thanks for the explanation!
+
+-------------------------------------
+author: Roselyn Villegas Code Review
+date: 2016-01-15 05:20:10.832000000
+
+Change has been successfully cherry-picked as d92ccf56981238e398d36d91dd40c860384d0370
+
+-------------------------------------

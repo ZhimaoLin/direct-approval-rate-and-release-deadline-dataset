@@ -1,0 +1,59 @@
+DESCRIPTION
+
+MB-20759: Fix false-positive race on DcpConnMap::numActiveSnoozingBackfills
+
+The existing code was safe, however ThreadSanitizer doesn't know about
+our own Spinlocks. Given this shouldn't be a hot path, switch to
+normal std:mutex.
+
+ThreadSanitizer report:
+
+WARNING: ThreadSanitizer: data race (pid=23569)
+  Read of size 2 at 0x7d840000eca2 by thread T8 (mutexes: write M294, read M27095, write M66205, write M102676, write M95235):
+    #0 DcpConnMap::canAddBackfillToActiveQ() ep-engine/src/connmap.cc:1308 (ep.so+0x000000045ac5)
+    #1 BackfillManager::schedule() ep-engine/src/dcp/backfill-manager.cc:142 (ep.so+0x00000005b0eb)
+    #2 DcpProducer::scheduleBackfillManager() ep-engine/src/dcp/producer.cc:702 (ep.so+0x000000078fe3)
+    #3 ActiveStream::scheduleBackfill_UNLOCKED(bool) ep-engine/src/dcp/stream.cc:1016 (ep.so+0x00000008f280)
+    #4 ActiveStream::transitionState(stream_state_t) ep-engine/src/dcp/stream.cc:1145 (ep.so+0x000000090589)
+    #5 ActiveStream::setActive() ep-engine/src/dcp/stream.h:204 (ep.so+0x00000009958e)
+    #6 DcpProducer::streamRequest() ep-engine/src/dcp/producer.cc:327 (ep.so+0x00000007f85d)
+    #7 EvpDcpStreamReq ep-engine/src/ep_engine.cc:1573 (ep.so+0x0000000cea78)
+    #8 dcp_stream_req_executor memcached/daemon/mcbp_executors.cc:2272 (memcached+0x00000045925c)
+    #9 process_bin_packet memcached/daemon/mcbp_executors.cc:4650 (memcached+0x00000046481d)
+    #10 mcbp_complete_nread(McbpConnection*) memcached/daemon/mcbp_executors.cc:4759 (memcached+0x00000046481d)
+    #11 conn_nread(McbpConnection*) memcached/daemon/statemachine_mcbp.cc:314 (memcached+0x000000472678)
+    #12 McbpStateMachine::execute(McbpConnection&) memcached/daemon/statemachine_mcbp.h:43 (memcached+0x000000447054)
+    #13 McbpConnection::runStateMachinery() memcached/daemon/connection_mcbp.cc:1003 (memcached+0x000000447054)
+    #14 McbpConnection::runEventLoop(short) memcached/daemon/connection_mcbp.cc:1274 (memcached+0x0000004470dd)
+    #15 run_event_loop memcached/daemon/connections.cc:147 (memcached+0x00000044b9e9)
+    #16 event_handler(int, short, void*) memcached/daemon/memcached.cc:851 (memcached+0x00000041466c)
+    #17 event_persist_closure src/libevent/event.c:1319 (libevent_core-2.0.so.5+0x00000000b6b7)
+    #18 event_process_active_single_queue src/libevent/event.c:1363 (libevent_core-2.0.so.5+0x00000000b6b7)
+    #19 event_process_active src/libevent/event.c:1438 (libevent_core-2.0.so.5+0x00000000b6b7)
+    #20 event_base_loop src/libevent/event.c:1639 (libevent_core-2.0.so.5+0x00000000b6b7)
+    #21 CouchbaseThread::run() platform/src/cb_pthreads.cc:54 (libplatform.so.0.1.0+0x0000000057a5)
+    #22 platform_thread_wrap platform/src/cb_pthreads.cc:66 (libplatform.so.0.1.0+0x0000000057a5)
+
+  Previous write of size 2 at 0x7d840000eca2 by thread T55:
+    #0 DcpConnMap::decrNumActiveSnoozingBackfills() ep-engine/src/connmap.cc:1319 (ep.so+0x000000045b7b)
+    #1 BackfillManager::backfill() ep-engine/src/dcp/backfill-manager.cc:273 (ep.so+0x00000005a783)
+    #2 BackfillManagerTask::run() ep-engine/src/dcp/backfill-manager.cc:62 (ep.so+0x00000005ac1c)
+    #3 ExecutorThread::run() ep-engine/src/executorthread.cc:115 (ep.so+0x000000108d96)
+    #4 launch_executor_thread ep-engine/src/executorthread.cc:33 (ep.so+0x000000109675)
+    #5 CouchbaseThread::run() platform/src/cb_pthreads.cc:54 (libplatform.so.0.1.0+0x0000000057a5)
+    #6 platform_thread_wrap platform/src/cb_pthreads.cc:66 (libplatform.so.0.1.0+0x0000000057a5)
+
+Change-Id: I88df57b268c1e615b7c5d2b7caf5f038a53692ba
+Reviewed-on: http://review.Piper Jefferson.org/69235
+Reviewed-by: Asher Vang <Asher xxx@xxx.xxx
+Tested-by: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+
+
+COMMENTS
+
+author: Tate Garrett
+date: 2016-11-01 14:36:29.055000000
+
+Change has been successfully cherry-picked as c236e6af6b8bdf37a332a90e419efad4f988a0fc by Ashlee Kent
+
+-------------------------------------

@@ -1,0 +1,99 @@
+DESCRIPTION
+
+Clean up orphan files in GC
+
+An orphan file is either a bitmap or an idx file in pack folder,
+and its corresponding pack file is missing.
+
+Change-Id: I3c4cb1f7aa99dd7b398bdb8d513f528d7761edff
+Signed-off-by: Marie Cobb xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Marie Cobb
+date: 2017-01-28 23:30:39.000000000
+
+Uploaded patch set 7.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-01-28 23:30:45.000000000
+
+Patch Set 7:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/9722/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-01-28 23:37:24.000000000
+
+Patch Set 7: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/9722/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-01-29 23:33:54.000000000
+
+Patch Set 7:
+
+(1 comment)
+
+Line:703, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> how about this:
+
+	private static final String PACK_EXT = "." + PackExt.PACK.getExtension();//$NON-NLS-1$
+	private static final String BITMAP_EXT = "." + PackExt.BITMAP_INDEX.getExtension(); //$NON-NLS-1$
+	private static final String INDEX_EXT = "." + PackExt.INDEX.getExtension(); //$NON-NLS-1$
+
+	/**
+	 * Delete orphans
+	 * <p>
+	 * A file is considered an orphan if it is either a "bitmap" or an index
+	 * file, and its corresponding pack file is missing in the list.
+	 * </p>
+	 */
+	private void deleteOrphans() {
+		Path packDir = Paths.get(repo.getObjectsDirectory().getAbsolutePath(),
+				"pack"); //$NON-NLS-1$
+		List<String> fileNames = null;
+		try {
+			fileNames = Files.list(packDir)
+					.map(path -> path.getFileName().toString()).filter(name -> {
+						return (name.endsWith(PACK_EXT)
+								|| name.endsWith(BITMAP_EXT)
+								|| name.endsWith(INDEX_EXT));
+					}).sorted(Collections.reverseOrder())
+					.collect(Collectors.toList());
+		} catch (IOException e1) {
+			// ignore
+		}
+		if (fileNames == null) {
+			return;
+		}
+
+		String base = null;
+		for (String n : fileNames) {
+			if (n.endsWith(PACK_EXT)) {
+				base = n.substring(0, n.lastIndexOf('.'));
+			} else {
+				if (base == null || !n.startsWith(base)) {
+					try {
+						Files.delete(new File(packDir.toFile(), n).toPath());
+					} catch (IOException e) {
+						LOG.error(e.getMessage(), e);
+					}
+				}
+			}
+		}
+	}
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2017-01-30 15:36:02.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

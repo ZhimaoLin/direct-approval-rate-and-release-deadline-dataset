@@ -1,0 +1,138 @@
+DESCRIPTION
+
+CouchKVStore to enable direct I/O to CouchDB files
+
+CouchKVStore is a new backend of ep-engine that utilize couchstore api
+to directly read and write to a CouchDB file
+
+Change-Id: I8b2cd933fbf731d0bbe202d9c3c747db64106569
+
+
+COMMENTS
+
+author: Macie Morton
+date: 2012-03-15 00:29:08.085000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Broderick Chavez
+date: 2012-03-15 00:52:31.310000000
+
+Patch Set 4: Looks good to me, approved
+
+
+
+-------------------------------------
+author: Noah Dean
+date: 2012-03-15 03:33:22.952000000
+
+Patch Set 4: I would prefer that you didn't submit this
+
+I still think it's quite wrong to establish a TCP connection from the file writer code.  I'd rather fix this *before* it goes in as I think it makes the change much larger than it needs to be and much more fragile (massive data loss occurs if we have a problem signaling an update and it's unlikely that anyone actually cares about forcing a TCP round trip for every post-update notification).
+
+This is creating a circular dependency and makes unit testing all but impossible (which is why none of this code has any test coverage).
+
+I don't think it's that hard to get right from where this is.
+
+-------------------------------------
+author: Noah Dean
+date: 2012-03-15 05:40:02.568000000
+
+Patch Set 4: (20 inline comments)
+
+Expanding a bit on my previous comment, I went through the code in a bit more detail.  Many of these are minor (too much code for what it does, reinventing existing things, etc...).
+
+Line:12, mc-kvstore/mc-engine.hh -> This doesn't seem to be used here.
+
+Line:52, couch-kvstore/couch-kvstore.cc -> I don't think reimplementing strace is useful here.
+
+Line:62, couch-kvstore/couch-kvstore.cc -> I don't think reimplementing strace is useful here.
+
+Line:72, couch-kvstore/couch-kvstore.cc -> I don't think reimplementing strace is useful here.
+
+Line:82, couch-kvstore/couch-kvstore.cc -> I don't think reimplementing strace is useful here.
+
+Line:92, couch-kvstore/couch-kvstore.cc -> I don't think reimplementing strace is useful here.
+
+Line:102, couch-kvstore/couch-kvstore.cc -> I don't think reimplementing strace is useful here.
+
+Line:129, couch-kvstore/couch-kvstore.cc -> Does this mean "endsWith"?  Perhaps we could make a function called that.
+
+Line:145, couch-kvstore/couch-kvstore.cc -> Any reason not to use glob (as is used below) instead of reinventing it?
+
+Line:163, couch-kvstore/couch-kvstore.cc -> I don't see why we need another copy of this functionality.
+
+Line:215, couch-kvstore/couch-kvstore.cc -> This looks really weird to me.  The alignment is wrong -- there are parentheses around the boolean variable and then it's lined up to suggest the values are within the parenthesis.  Why not just do this all one one line?  And get rid of the parens.  And I'm pretty sure !isjson ≠ non_json_mode.
+
+Line:304, couch-kvstore/couch-kvstore.cc -> assert(false) isn't generally what you want.  It's abort().  false will not be true, so this will just leave a confusing error in the log.
+
+Line:370, couch-kvstore/couch-kvstore.cc -> If this were compiled with assertions disabled, this line of code wouldn't run.
+
+Line:381, couch-kvstore/couch-kvstore.cc -> ?
+
+Line:436, couch-kvstore/couch-kvstore.cc -> m.empty()?  And its' not clear why this optimization is necessary.
+
+Line:467, couch-kvstore/couch-kvstore.cc -> ?
+
+Line:1032, couch-kvstore/couch-kvstore.cc -> ?
+
+Line:1172, couch-kvstore/couch-kvstore.cc -> Can we use a C++ style cast here and not split the line after it?  That's a bit odd.  Or better, can this just be typesafe?
+
+Line:1181, couch-kvstore/couch-kvstore.cc -> Same here.  Perhaps use a union.
+
+Line:43, couch-kvstore/couch-kvstore.hh -> Will there be a lot of these?  There's a ton of padding in this data structure.
+
+-------------------------------------
+author: Asher Vang
+date: 2012-03-15 17:57:34.942000000
+
+Patch Set 4: Do not submit
+
+(10 inline comments)
+
+
+
+Line:46, mc-kvstore/mc-engine.hh -> not needed since this is in the destructor of the object...
+
+Line:50, couch-kvstore/couch-kvstore.cc -> For all of the OS file IO functions.. shouldn't transient errors cause the operations to be retried?
+
+Line:118, couch-kvstore/couch-kvstore.cc -> should be const?
+
+Line:215, couch-kvstore/couch-kvstore.cc -> _and_ even if it's allowed using ?: should only be used when it makes the code easier to read.. it will not produce a faster running binary, so it's way better to try to make the code as readable as possible...
+
+Line:227, couch-kvstore/couch-kvstore.cc -> Why not just write this as a good old if??? It would make the code easier to read...
+
+Line:260, couch-kvstore/couch-kvstore.cc -> WHats the motivation behind these retries? and why is it only two of them? and why couldnt it be done within getDbFile?
+
+Line:498, couch-kvstore/couch-kvstore.cc -> C++ code typically use pass by reference instead of sending double pointers..
+
+Line:1127, couch-kvstore/couch-kvstore.cc -> Please don't use goto... it makes the code hard to read and debug...
+
+Line:1306, ep_engine.cc -> I don't think it's a good idea to move this to another place.. by doing it here we ensure that _ALL_ versions of the object look the same (so that what we replicate to other nodes have the same content and size)
+
+Line:197, couch-kvstore/couch-kvstore.hh -> The C++ way is normally to use reference passing instead of sending in a pointer to a pointer..
+
+-------------------------------------
+author: Audrina Olson
+date: 2012-03-15 19:09:07.971000000
+
+Patch Set 4: (2 inline comments)
+
+
+
+Line:260, couch-kvstore/couch-kvstore.cc -> The retry is there to avoid a premature error return during compaction on the given vbucket (i.e. it can have only  "vbucket id".couch.compact for a very short period time).
+
+Line:1306, ep_engine.cc -> We longer need to call this as mccouch is internally parsing json data. However, CouchKVStore<->CouchStore initally required this routine to determine if the given data is json type. Please see more update regarding to this in the next patch set. Thanks.
+
+-------------------------------------
+author: Audrina Olson
+date: 2012-03-15 22:11:53.620000000
+
+Patch Set 4: (1 inline comment)
+
+
+
+Line:498, couch-kvstore/couch-kvstore.cc -> This was done to conform to the signature of couchstore api (open_db). We will look into this later after the couchstore api review is over. Thanks.
+
+-------------------------------------

@@ -1,0 +1,106 @@
+DESCRIPTION
+
+end-to-end from upr interface to indexer endpoint.
+
+Patchset-3:
+- changed NewHTTPServer() to use timeout values from const.go
+- improved logging.
+
+Patchset-4:
+- UPR client requirements.
+- golint fixes.
+
+Patchset-5:
+- adminport changes, test cases.
+
+Patchset-6:
+- minor bugfixes
+- test cases for streamlib loopback, dropdata, timeout
+- benchmark streamlib loopback.
+- goformating for indexing/adminport/*.go
+
+Patchset-7:
+- UpdateMutationStreamRequest implements Subscriber interface.
+- refactored GetEvaluators() and GetRouters() methods.
+
+Patchset-8:
+- Implemented review comments.
+
+Patchset-9:
+- refactored projector to scale with vbuckets, instead of engines.
+- use bucket-code mapping to identify {bucket, vbuckets} over a connection.
+- better log messages.
+
+Change-Id: I2f5453eca18522c37a64e944dcdf063ce4173ea6
+
+
+COMMENTS
+
+author: Leonel Abbott
+date: 2014-05-30 06:44:58.570000000
+
+Uploaded patch set 9.
+
+-------------------------------------
+author: Dominique Stanton
+date: 2014-06-03 04:44:06.873000000
+
+Patch Set 9:
+
+(7 comments)
+
+Line:66, secondary/projector/feed.go -> Does request.GetBuckets() always guarantee returning the buckets in the same order across projectors?  If not, then bcodes are specific to a Feed and bcode can refers to different bucket across different projectors.
+
+Line:420, secondary/projector/feed.go -> EndPoint has state.  Can we just remove it from the map without closing it?
+
+Line:426, secondary/projector/feed.go -> Since you set feed.endpoints to newendpoints, what is the reason to remove endpoint from feed.endpoints in the code above?
+
+Line:556, secondary/projector/feed.go -> Error is ignored if fail to send the vbmap to the Endpoint
+
+Line:197, secondary/indexer/streamd.go -> Multiple projector can send bcode to the same indexer (daemon), but are we sure that the same bcode means the same bucket, since each projector may assign a different bcode to the same bucket.
+
+Line:267, secondary/projector/bucket_feed.go -> Can this leave resource un-allcoated?  For example, if there is a panic in the first kvfeed.CloseFeed(), subsequent kvfeed will not be free.
+
+Line:82, secondary/common/mutation.go -> The bucket code is used outside projector/router and it is being sent as payload.  This may cause rolling upgrade issue if the type changes.
+
+-------------------------------------
+author: Dominique Stanton
+date: 2014-06-04 22:26:16.687000000
+
+Patch Set 9: Code-Review+1
+
+(1 comment)
+
+Line:41, secondary/projector/engine.go -> Is this supposed to be err == nil?
+
+-------------------------------------
+author: Leonel Abbott
+date: 2014-06-05 09:39:49.741000000
+
+Patch Set 9:
+
+(8 comments)
+
+Changed bucket-code implementation.
+
+Line:66, secondary/projector/feed.go -> Done
+
+Line:420, secondary/projector/feed.go -> Endpoints are either added or deleted by buidEndpoints()
+
+In case of deleted endpoints, there could be mutations in flight towards this endpoint all the way down to the indexer.
+
+We simply remove the endpoint from topology, and endpoint will commit harakiri, when it timesout on incoming mutation. Indexer can wait until all endpoint clients are closed and then shutdown.
+
+Line:426, secondary/projector/feed.go -> For logging the fact that these endpoints where actually removed from topology (above loop).
+
+Line:556, secondary/projector/feed.go -> Done
+
+Line:197, secondary/indexer/streamd.go -> Done
+
+Line:41, secondary/projector/engine.go -> Super catch !
+
+Line:267, secondary/projector/bucket_feed.go -> kvfeed.CloseFeed() shall never panic.
+
+Line:82, secondary/common/mutation.go -> Done
+
+-------------------------------------

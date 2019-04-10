@@ -1,0 +1,160 @@
+DESCRIPTION
+
+MB-17631: Fix sporadic ep-engine unit test failures
+
+Fix resolves dbname collision observed during parallel runs of
+testsuites with full eviction and value_only eviction modes.
+Change-Id: Ibe20b471a12afea559b319671599076b0f2a0876
+
+
+COMMENTS
+
+author: Cora Mccarty
+date: 2016-02-16 20:19:33.907000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-16 20:35:59.468000000
+
+Patch Set 3:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1773/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-16 20:43:15.717000000
+
+Patch Set 3: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1773/ : FAILURE
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2515/ : FAILURE
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-02-16 21:41:27.321000000
+
+Patch Set 3: Code-Review+1
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-16 21:56:46.739000000
+
+Patch Set 3: -Verified
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1776/ (2/2)
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-02-16 22:04:12.153000000
+
+Patch Set 3: Code-Review-1
+
+Could you provide a bit more explanation on how this would fix dbname collision?
+Note that EP_TEST_DIR was never used, meaning this change would semantically not change anything.
+
+Also when make test is run, dbname is passed in as a command line arg, look into CMakelists. If dbname was already set to some value as part of test config as seen in the test invocations in tests/ep_testsuite.cc, test/ep_testsuite_basic.cc etc, then the one from command line would overwrite it - this is how config parsing is done to avoid duplicate config parameters - look into programs/engine_testapp/engine_testapp.cc.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-16 22:08:08.858000000
+
+Patch Set 3: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1776/ : FAILURE
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2520/ : SUCCESS
+
+-------------------------------------
+author: Cora Mccarty
+date: 2016-02-17 02:19:52.126000000
+
+Patch Set 3:
+
+Here is some explanation regarding this change. With the original code,   debug run values of dbname_env and dbname on various stages of tests being run are set to defaulf_dbname (ex: ep_testsuite_dcp) for both modes full eviction as well as value-only one. 
+Also what was done in the code, is: a) copy const default_dbname into extern global dbname_env and then b) copy from it into dbname. Why extra copy, and of course it's never a good idea to use globals, and in particularly extern ones. And so as part of the fix this global was eliminated.
+After the fix value of dbname was consistently set to the specific directory given in cmake file, i.e. it differed for full eviction and value-only runs.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-02-17 02:34:03.990000000
+
+Patch Set 3: -Code-Review
+
+I'm ok with removing dbname_env as EP_TEST_DIR was never used before, and I agree with you on not needing the extra copy (for the same reason), but I don't understand - how this would address the problem at hand.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-02-17 02:38:51.341000000
+
+Patch Set 3:
+
+Is there a way you can second your argument that the same dbname being used in the tests was indeed the cause for the test failures seen?
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-02-17 09:18:29.282000000
+
+Patch Set 3: -Code-Review
+
+Agree with Abhinav here - while the path does simplify the code, it's not clear how it would actually solve this problem - the code paths taken when executed via CMake/CTest should *always* set a dbname via the config file.
+
+Additionally, you still have a failure in the latest run: http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1776/console - which suggests this isn't a complete solution.
+
+-------------------------------------
+author: Cora Mccarty
+date: 2016-02-17 20:12:27.366000000
+
+Patch Set 3:
+
+Please find below segment of print out while rerunning ep-engine test-cases yesterday night. This code has only the fixes submitted above. GET_DBNAME_NAME is the value returned by ep_testsuite_common.cc::get_dbname( ) routine.
+As one can see both dcp test suites (full eviction as well as value-only one) have correct values of dbname. 
+
+Running [0067/0068]: test MB-17517 CAS -1 TAP (couchstore)...
+ GET_DBNAME_NAME =  ./value_eviction_dcp
+ GET_DBNAME_NAME =  ./value_eviction_dcp
+ GET_DBNAME_NAME =  ./value_eviction_dcp
+(1 sec) OK
+# Passed 68 of 68 tests
+<end of output>
+Test time =  69.20 sec
+----------------------------------------------------------
+Test Passed.
+"ep-engine_dcp_tests" end time: Feb 16 17:27 PST
+"ep-engine_dcp_tests" time elapsed: 00:01:09
+----------------------------------------------------------
+
+20/22 Testing: ep-engine_full_eviction_dcp
+20/22 Test: ep-engine_full_eviction_dcp
+Command: "/usr/local/cb_m/build/memcached/engine_testapp" "-E" "/usr/local/cb_m/build/ep-engine/ep.so" "-T" "/usr/local/cb_m/build/ep-engine/ep_testsuite_dcp.so" "-v" "-e" "item_eviction_policy=full_eviction;dbname=./full_eviction_dcp"
+Directory: /usr/local/cb_m/build/ep-engine
+"ep-engine_full_eviction_dcp" start time: Feb 16 17:26 PST
+Output:
+----------------------------------------------------------
+Running [0000/0068]: test dcp vbtakeover stat no stream (couchstore)...
+ GET_DBNAME_NAME =  ./full_eviction_dcp
+ GET_DBNAME_NAME =  ./full_eviction_dcp
+ GET_DBNAME_NAME =  ./full_eviction_dcp
+(1 sec) OK
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-02-17 20:19:33.136000000
+
+Patch Set 3:
+
+Could you compare the above logs with logs when you run make test without your change?
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-03-12 00:18:40.200000000
+
+Change has been successfully cherry-picked as b4c873b53a1fe57c72651bcf6d9a12f16894aec4
+
+-------------------------------------

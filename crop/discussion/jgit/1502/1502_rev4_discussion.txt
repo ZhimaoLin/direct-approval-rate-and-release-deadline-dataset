@@ -1,0 +1,92 @@
+DESCRIPTION
+
+Refactor diff sequence API
+
+Instead of making the sequence itself responsible for the equivalence
+function, use an external function that is supplied by the caller.
+This cleans up the code because we now say cmp.equals(a, ai, b, bi)
+instead of a.equals(ai, b, bi).
+
+This refactoring also removes the odd concept of creating different
+types of sequences to have different behaviors for whitespace
+ignoring.  Instead DiffComparator now supports singleton functions
+that apply a particular equivalence algorithm to a type of sequence.
+
+Change-Id: I559f494d81cdc6f06bfb4208f60780c0ae251df9
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-09-04 06:56:13.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-09-04 08:33:01.000000000
+
+Patch Set 4: (2 inline comments)
+
+I reviewed all modifications now. Looks good to me. I have only two minor comments.
+
+Line:105, org.eclipse.jgit/src/org/eclipse/jgit/diff/RawText.java -> We accept a comparator here which we don't store but only once
+use in this Constructor. We use it only to fill hashes ... which is
+again not used anymore, or? Why don't we skip the comparator and remove hashes and computeHashes?
+
+Line:65, org.eclipse.jgit/src/org/eclipse/jgit/diff/SequenceComparator.java -> Why do we have this comment here: it is explicitly permissible to do something but callers should be smart enough not to do it. Do we really want to save one if in the implementations? If it brings huge performance gains I could unterstand, but not if it is e.g. not measurable in our tests
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-09-06 20:44:13.000000000
+
+Patch Set 4: (2 inline comments)
+
+
+
+Line:105, org.eclipse.jgit/src/org/eclipse/jgit/diff/RawText.java -> We currently do use the hashes collection, the RawTextComparator implementations reach inside and read it directly.  But I see your point.
+
+I think removing it is going to be a bit more work than I'd like to squash into this refactoring change, so I'd like to actually defer it until after we have PatienceDiff in.  Some of the optimizations I'd like to do is to avoid computing the hashes for the ranges we don't care about (basically do it after common header/footer elimination... aka step 1 of patience diff).
+
+Line:65, org.eclipse.jgit/src/org/eclipse/jgit/diff/SequenceComparator.java -> Good point.  I'll drop the last sentence.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-09-06 21:31:13.000000000
+
+Patch Set 4: (1 inline comment)
+
+
+
+Line:105, org.eclipse.jgit/src/org/eclipse/jgit/diff/RawText.java -> I agree, let's defer that until we have patience diff in.
+
+One comment about avoiding calculating unneeded hashes: I think that diff algorithms know what hashes they'll need and they should trigger the calculation, right?
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-09-06 22:43:02.000000000
+
+Patch Set 4: (1 inline comment)
+
+
+
+Line:105, org.eclipse.jgit/src/org/eclipse/jgit/diff/RawText.java -> Yes.  The diff implementation knows the hashes it needs.
+
+Actually what I'm planning on doing is removing the hashes collection altogether from the RawText object and making the diff implementation cache it.  Then RawTextComparator's hash method stops looking inside of RawText.hashes and instead computes the hash on the fly.
+
+For PatienceDiff this means we'll hash the lines after we've narrowed the file down by skipping common headers and footers, and then we'll keep those hash arrays throughout the execution of the diff.
+
+For MyersDiff, I think its the same thing.  Only right now its probably not doing the common header/footer elimination.
+
+Longer term, I might be changing PatienceDiff to actually construct the hashes table by assigning a unique int to each unique line.  Doing so by hashing both A and B into a single hashtable, and if its the first occurrence of that element, assign it a new unique value.  This way later on we can do compares during the recursive steps by just int equality and bypass the DiffComparator altogether.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2010-09-07 02:36:05.000000000
+
+Your change requires a recursive merge to resolve.
+
+Please merge (or rebase) the change locally and upload the resolution for review.
+
+-------------------------------------

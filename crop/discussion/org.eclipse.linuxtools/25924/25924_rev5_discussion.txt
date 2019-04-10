@@ -1,0 +1,134 @@
+DESCRIPTION
+
+ctf: replace hashmaps with arraylists for eventdeclaration storage
+
+Change-Id: I088943c5a041f16638cb89b832ab79f8ef9c1d76
+Signed-off-by: Ivy Mitchell xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Ivy Mitchell
+date: 2014-07-10 20:53:11.000000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-07-10 21:55:03.000000000
+
+Patch Set 5:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/7703/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-07-10 22:51:45.000000000
+
+Patch Set 5: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/7703/ : SUCCESS
+
+-------------------------------------
+author: Luciana Barry
+date: 2014-08-01 15:57:53.000000000
+
+Patch Set 5: Code-Review-1
+
+(13 comments)
+
+Line:88, lttng/org.eclipse.linuxtools.tmf.ctf.core/src/org/eclipse/linuxtools/tmf/ctf/core/CtfTmfEvent.java -> It's already a Long ?
+
+Line:474, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/CTFTrace.java -> In old code, it's adding the events to the stream that is already in the fStreams map. The new code adds/replaces the stream to the fStreams map. Does it do the same thing?
+
+Line:178, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/CTFStreamInputReader.java -> Maybe this will already be immutable. And a list.
+
+Line:250, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/CTFStream.java -> no. It will return more than that, all the holes in the array list will be included. I have a feeling CtfIterator and/or CtfTmfTrace has to be updated to handle it. Or filter them here.
+
+Line:257, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/CTFStream.java -> Why not wrap this too so that it doesn't have to be immutable?
+
+Line:265, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/CTFStream.java -> no
+
+Line:270, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/CTFStream.java -> Could be get(0) if using a SingletonList (see below) or even better if UNSET_EVENT_ID was 0...
+
+Line:272, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/CTFStream.java -> Do you want to return null or throw an IndexOutOfBoundsException?
+
+Line:304, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/CTFStream.java -> How about setting the list as SingletonList in this case, so then if you try to add anything else (set or unset id) then you can catch the UnsupportedOperationException then rethrow it as a ParseException.
+
+Line:316, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/CTFStream.java -> You can use ArrayList.ensureCapacity(). However, perhaps we could use a HashMap to store any eventid that is above a certain threshold? Or stop using the ArrayList in that case.
+
+Line:320, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/CTFStream.java -> Then they will just be null, no need for UNASSIGNED
+
+Line:325, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/CTFStream.java -> Is it just me or this code screams the use of a mutable list?
+
+Line:340, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/CTFStream.java -> Why not?
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2014-08-04 01:40:20.000000000
+
+Patch Set 5:
+
+(8 comments)
+
+thanks for the review, I tried making unset_event_id == 0, it maakes this more complicated. I am considering making a special class for the unsetid the extends this one, but that will be for 4.0.
+
+Line:88, lttng/org.eclipse.linuxtools.tmf.ctf.core/src/org/eclipse/linuxtools/tmf/ctf/core/CtfTmfEvent.java -> explicit unboxing. 
+http://www.javadeveloper.co.in/blog/convert-long-long-primitive-example
+
+Line:178, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/CTFStreamInputReader.java -> Oops, shoulda been a list. thanks! list.copyof(list) is free, but safer.
+
+Line:250, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/CTFStream.java -> Done
+
+Line:257, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/CTFStream.java -> It's already Immutable. But I can
+
+Line:270, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/CTFStream.java -> I tried, I could not get UNSET_EVENT_ID to be 0. If you have a list with event 0-1-2-3... how can you tell that 0 is not "unset"? then again, this is sunday night matthew replying.
+
+Line:272, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/CTFStream.java -> out of bounds... this is something that happens with corrupt streams. an oobe is IMO easier to catch.
+
+Line:316, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/CTFStream.java -> The advantage of the list seeks is non-negligeable in terms of performance. if we have a two events, 1 and 1000000, we store 3 event declarations, and 1 million references, this is actually not that bad in terms of memory use. 
+A compromise would be to look at the "treemap" patch.
+
+This is a pure cpu optimization, the other one is a better optimization in terms of memory usage
+
+Line:325, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/CTFStream.java -> Yes, unless you consider that the list is created during the reading of metadata (beginning) and is read millions of times. Immutable lists are slightly faster in random seeks
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2014-08-04 01:44:57.000000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:320, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/CTFStream.java -> Can't add a null to an immutable list
+
+-------------------------------------
+author: Luciana Barry
+date: 2014-08-04 15:41:10.000000000
+
+Patch Set 5:
+
+(5 comments)
+
+Line:88, lttng/org.eclipse.linuxtools.tmf.ctf.core/src/org/eclipse/linuxtools/tmf/ctf/core/CtfTmfEvent.java -> That did not convince me
+
+Line:257, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/CTFStream.java -> I meant fEvents doesn't have to be immutable
+
+Line:316, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/CTFStream.java -> But it could potentially be up to 2 GB array size, no? Maybe we can optimize for the normal case, but this exceptional case should work also (without busting memory).
+
+Line:320, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/CTFStream.java -> Don't use immutable list?
+
+Line:325, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/CTFStream.java -> Slightly or marginally? Is it really worth it?
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2014-08-14 00:47:25.000000000
+
+The change could not be merged due to a path conflict.
+
+Please rebase the change locally and upload the rebased commit for review.
+
+-------------------------------------

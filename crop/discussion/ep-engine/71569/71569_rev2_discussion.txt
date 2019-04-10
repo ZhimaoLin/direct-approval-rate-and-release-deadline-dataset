@@ -1,0 +1,312 @@
+DESCRIPTION
+
+[Refactor]: Move queueDirty() go from KVBucket to VBucket
+
+KVBucket::queueDirty() is a function used to put an item onto checkpoint
+after it is inserted into hash table. Both hash table and checkpoint are
+members of VBucket class and hence it is more appropriate to implement
+this function in VBucket class.
+
+Also, added VBUpdateReturnCtx which will indicate the KVBucket on the
+actions to be taken after adding/deleting/updating an item in VBucket.
+
+Implementing this functions in VBucket class will help in refactoring
+calls to hash table and also result better abstraction.
+
+Change-Id: I74ecdd774a88981feb482a34d375f38a12cfc900
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2017-01-05 19:53:02.930000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-05 19:53:10.451000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/2670/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-05 19:58:06.778000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2179/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-05 20:03:44.608000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2536/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-05 20:04:52.563000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1359/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-05 20:23:44.812000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/2670/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2179/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2536/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1359/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-05 21:31:22.365000000
+
+Patch Set 2: -Verified
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/2674/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-05 21:47:24.051000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2179/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2536/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1359/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/2674/ : SUCCESS
+
+-------------------------------------
+author: Keira Washington
+date: 2017-01-06 00:00:57.323000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:722, src/vbucket.cc -> Why can't the vbucket notify the flusher itself?
+
+    shard->getFlusher()->notifyFlushEvent();
+
+Line:66, src/vbucket.h -> There's a lot of code here for something that mostly just holds values. Even worse, most of its boilerplate.
+
+This is the only invariant you're maintaining in what would otherwise be a bare struct. It's usually better to push maintaining invariants as far down as possible so I think it would be useful both here and probably in a lot of other code around ep-engine to introduce a 'Monotonic' template class for values which shouldn't decrease. e.g.
+
+    template <typename T>
+    class Monotonic {
+        Monotonic() = default;
+
+        Monotonic(const Monotonic<T>& other)
+            : val(other.val) {
+        }
+
+        Monotonic<T>& operator= (const Monotonic<T>& other) {
+            if (val < other.val) {
+                val = other.val;
+            }
+
+            return *this;
+        }
+
+        Monotonic(const T& v)
+            : val(v) {
+        }
+
+        Monotonic<T>& operator= (const T& v) {
+            if (val < v) {
+                val = v;
+            }
+            return *this;
+        }
+
+        operator T() const {
+            return val;
+        }
+    private:
+        T val;
+    }
+
+Then you'd just replace `int64_t bySeqno` with `Monotonic<int64_t> bySeqno`, remove the setters/getters and you can make the members public. Which results in much less code for understanding what is a very simple class:
+
+    struct VBNotifyCtx {
+        Monotonic<int64_t> bySeqno = 0;
+        bool notifyFlusher = false;
+        bool notifyReplication = false;
+    };
+
+Short but highly readable.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-01-06 02:05:47.179000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:722, src/vbucket.cc -> In that case, i will have to pass the HT lock to this function and unlock it before notifying the flusher. Which I dont think is very correct and  elegant
+
+Line:66, src/vbucket.h -> I like the idea of monotonic.
+But, have a look at my future commit wherein notifyIOComplete is added. http://review.Piper Jefferson.org/#/c/71572/2
+I think this class will grow even more and hence though looks boilerplate, maybe good to leave as is for now. later on, once all of refactor is complete, we could decide what is best for VBNotifyCtx.
+
+-------------------------------------
+author: Keira Washington
+date: 2017-01-06 04:05:42.465000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:722, src/vbucket.cc -> I think it's much less elegant to be spreading this logic across both the VBucket class and KVBucket class, it rather defeats the point of pushing it down into the vbucket in the first place as its turning the VBucket into even more of a leaky abstraction than it already was.
+
+Now instead of calling a method on KVBucket that just works you now have to call a method on VBucket and then do something incredibly specific with what's returned.
+
+-------------------------------------
+author: Keira Washington
+date: 2017-01-06 04:27:13.482000000
+
+Patch Set 2:
+
+(6 comments)
+
+Line:690, src/kv_bucket.cc -> why
+
+Line:709, src/kv_bucket.cc -> is
+
+Line:2022, src/kv_bucket.cc -> all
+
+Line:2098, src/kv_bucket.cc -> this
+
+Line:2683, src/kv_bucket.cc -> code
+
+Line:3421, src/kv_bucket.cc -> duplicated
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-01-06 06:59:22.636000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:722, src/vbucket.cc -> We are moving this to VBucket because, the functions that call queueDirty() currently will all be moved to VBucket class soon.
+
+Yes, in our system (rather complicated one), we need to post process the operations on a particular level (update operations on VBucket), at another higher level which had initiated the operation (updates initiated at KVBucket level).
+
+These refactors are first step towards defining a better abstraction in whole of ep-engine. It is hard to switch over in one commit.
+
+Line:3421, src/kv_bucket.cc -> Because of the unlock that we need to do!
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-01-06 08:40:23.977000000
+
+Patch Set 2: Code-Review-1
+
+I think in general Will's comments are sensible - and the Monotonic helper class it a good call. 
+
+It's also true that we've moving things in a couple of stages - it's probably worth getting the whole series of patches up which perform the full queueDirty refactor, so they can be reviewed in the context of the final series.
+
+Certainly I agree that *if possible* we should just have the VBucket perform notifications if it can (notifyFlusher as it already knows about the flusher), but IOComplete / others may be more problematic.
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2017-01-06 13:49:10.445000000
+
+Patch Set 2: Code-Review-2
+
+(8 comments)
+
+Line:690, src/kv_bucket.cc -> in this example we could consider making a VBucket::unlocked_softDelete that captures this repeated sequence.
+
+VBNotifyCtx VBucket::unlocked_softDelete (StoredValue* v, LochHolder& lh) {
+    ht.unlocked_softDelete(v, 0, .../*does the VB know the eviction policy?*/);
+    auto rval = queueDirty(id);
+    lh.unlock();
+    return rval;
+}
+
+And just have the following repeated
+   notifyNewSeqno(vbid, vb->unlocked_softDelete(v, 0));
+
+Line:923, src/kv_bucket.cc -> This should be, no need for the local variable?
+
+  notifyNewSeqno(vb->getId(), vb->queueDirty(*v, &seqno));
+
+Line:1015, src/kv_bucket.cc -> As above.
+
+  notifyNewSeqno(vb->getId(), vb->queueDirty(*v, &seqno));
+
+Line:1081, src/kv_bucket.cc -> As above, no need for retCtx?
+
+Line:2531, src/kv_bucket.cc -> as above, no need for assignment to local, just call straight through
+
+Line:3421, src/kv_bucket.cc -> The duplication can be better handled by creating some functions, then just call the function(s)
+
+Line:3939, src/kv_bucket.cc -> nit: bracket alignment
+
+Line:3959, src/kv_bucket.cc -> There's currently a draft proposal from support to ensure everytime we log a vbucket, it's logged as "vb:vbid". it's a draft proposal, but unlikely to change from what i can see :)
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-01-06 23:30:55.072000000
+
+Patch Set 2:
+
+(10 comments)
+
+Line:722, src/vbucket.cc -> Further, call flusher notify from here VBucket class only. After looking through the code realized that it is not compulsory to unlock ht lock before calling flusher notify
+
+Line:690, src/kv_bucket.cc -> Yes that is the eventual plan.
+All vb->ht.XXXX() functions will be implemented in VBucket class
+queueDirty() will be internal in VBucket class. Also ht lock will be grabbed only in VBucket class. Hence only call notifyNewSeqno after VB::XXX call.
+
+Not all as part of this commit though.
+
+WIP commit http://review.Piper Jefferson.org/#/c/71543/
+
+Line:709, src/kv_bucket.cc -> vb->queueDirty(*v) will move VBucket class
+lh to be held only in VBucket class, hence lh.unlock() need not be called.
+notifyNewSeqno(vbid, retCtx) to be called based on return value from return value of a VB update call
+
+Line:923, src/kv_bucket.cc -> Done
+
+Line:1015, src/kv_bucket.cc -> Done
+
+Line:1081, src/kv_bucket.cc -> Done
+
+Line:2531, src/kv_bucket.cc -> Done
+
+Line:3939, src/kv_bucket.cc -> Done
+
+Line:3959, src/kv_bucket.cc -> Done
+
+Line:66, src/vbucket.h -> Ok using monotonic and avoiding boilerplate
+
+-------------------------------------
+author: Tate Garrett
+date: 2017-01-13 18:19:54.679000000
+
+Change has been successfully cherry-picked as e4c718e92cb817a7ee349e8d42764404dfe798ac by Adrianna Holmes
+
+-------------------------------------

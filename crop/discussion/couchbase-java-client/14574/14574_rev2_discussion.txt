@@ -1,0 +1,119 @@
+DESCRIPTION
+
+Reconnect to configuration stream if disconnected. JCBC-19
+
+With this change, a Bucket which is marked as disconnected will be
+later reconnected when noticed by a calling thread.
+
+The logic for this is a little convoluted at the moment, but tests
+to be correct.  In the future, this whole section should be refactored
+to be a better NodeLocator or something similar.  See JCBC-28.
+
+Change-Id: I8541493fdf7e8c504c4cbd512ca43e3416b03829
+
+
+COMMENTS
+
+author: Andreas Short
+date: 2012-04-05 20:30:49.161000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Andreas Short
+date: 2012-04-05 20:55:45.608000000
+
+Patch Set 2: Verified; Looks good to me, approved
+
+I messed up the commit earlier by pushing straight to Jasmin Rangel, so I fixed the repo but now I'm self approving given that the change over the previously approved commit is minor and mostly checkstyle oriented.
+
+Proof:
+
+diff --git a/src/main/java/com/couchbase/client/CouchbaseConnection.java b/src/main/java/com/couchbase/client/CouchbaseConnection.java
+index b5f8022..e744ebc 100644
+--- a/src/main/java/com/couchbase/client/CouchbaseConnection.java
++++ b/src/main/java/com/couchbase/client/CouchbaseConnection.java
+@@ -39,7 xxx@xxx.xxx import java.util.Iterator;
+ import java.util.List;
+ import java.util.Map;
+ 
+-import net.spy.memcached.ConnectionFactory;
+ import net.spy.memcached.ConnectionObserver;
+ import net.spy.memcached.FailureMode;
+ import net.spy.memcached.MemcachedConnection;
+@@ -59,10 xxx@xxx.xxx public class CouchbaseConnection extends MemcachedConnection  implements
+   protected volatile boolean reconfiguring = false;
+   private final CouchbaseConnectionFactory cf;
+ 
+-  public CouchbaseConnection(int bufSize, ConnectionFactory f,
++  public CouchbaseConnection(int bufSize, CouchbaseConnectionFactory f,
+       List<InetSocketAddress> a, Collection<ConnectionObserver> obs,
+       FailureMode fm, OperationFactory opfactory) throws IOException {
+     super(bufSize, f, a, obs, fm, opfactory);
++    this.cf = f;
+   }
+ 
+ 
+@@ -159,8 xxx@xxx.xxx public class CouchbaseConnection extends MemcachedConnection  implements
+       if (placeIn == null) {
+         placeIn = primary;
+         this.getLogger().warn(
+-            "Could not redistribute "
+-                + "to another node, retrying primary node for %s.", key);
++            "Node exepcted to receive data is inactive.  This could be due to a"
++            + "failure within the cluster.  Will check for updated "
++            + "configuration.  Key without a configured node is: %s.", key);
+         cf.checkConfigUpdate();
+       }
+     }
+diff --git a/src/main/java/com/couchbase/client/CouchbaseConnectionFactory.java b/src/main/java/com/couchbase/client/CouchbaseConnectionFactory.java
+index ed7218f..1a35e30 100644
+--- a/src/main/java/com/couchbase/client/CouchbaseConnectionFactory.java
++++ b/src/main/java/com/couchbase/client/CouchbaseConnectionFactory.java
+@@ -89,7 xxx@xxx.xxx public class CouchbaseConnectionFactory extends BinaryConnectionFactory {
+   private boolean needsReconnect;
+   private volatile long thresholdLastCheck = System.nanoTime();
+   private volatile int configThresholdCount = 0;
+-  private final int MAX_CONFIG_CHECK = 100; //maximum config checks in a second
++  private final int maxConfigCheck = 10; //maximum checks in 10 sec interval
+ 
+   public CouchbaseConnectionFactory(final List<URI> baseList,
+       final String bucketName, final String password)
+@@ -182,24 xxx@xxx.xxx public class CouchbaseConnectionFactory extends BinaryConnectionFactory {
+       configurationProvider.finishResubscribe();
+     } else {
+       LOGGER.log(Level.WARNING, "No reconnect required, though check requested."
+-              + "  Current config check is {0} out of a threshold of {1}.",
+-              new Object[]{configThresholdCount, MAX_CONFIG_CHECK});
++              + " Current config check is {0} out of a threshold of {1}.",
++              new Object[]{configThresholdCount, maxConfigCheck});
+     }
+   }
+ 
+   private boolean pastReconnThreshold() {
+     long currentTime = System.nanoTime();
+-    if (currentTime - thresholdLastCheck > 1000000000) { // if longer than 1 sec
++    if (currentTime - thresholdLastCheck > 100000000) { //if longer than 10 sec
+       configThresholdCount = 0;
+     }
+     configThresholdCount++;
+     thresholdLastCheck = currentTime;
+ 
+-    if (configThresholdCount >= MAX_CONFIG_CHECK) {
++    if (configThresholdCount >= maxConfigCheck) {
+       return true;
+-    } else {
+-      return false;
+     }
++    return false;
+   }
+ 
+ }
+
+-------------------------------------
+author: Andreas Short
+date: 2012-04-05 20:55:46.365000000
+
+Change has been successfully cherry-picked as 7c049c5290766789cc30098238d34858ea07cf14.
+
+-------------------------------------

@@ -1,0 +1,84 @@
+DESCRIPTION
+
+MB-16601: Remove GIGANTOR checks in ObjectRegistry
+
+ep-engine's ObjectRegistry memory tracking reads the value of
+stats.totalMemory after incrementing it to sanity check the result,
+checking it isn't a huge positive value or negative value.
+
+This check is surprisingly costly - some benchmarks on a 24 core
+Sandybridge Xeon show an increase in op/s of 14% when these checks are
+removed! It appears checks were added to try to detect invalid values
+for totalMemory; however at the current time I think their value is
+questionable, particularly given the cost they impose:
+
+1. If the check fails then we either cb_assert (terminating
+   memcached), or we disable memory tracking - which will ultimately
+   result in running OOM for DGM workloads as nothing will be ejected.
+
+2. I suspect the root cause of the bogus values in the first place was
+   issues with our atomics (see MB-15292), which were resolved in 3.x in
+   3.1.0, and in 4.0 onwards.
+
+Therefore get rid of these unnecessary checks from ObjectRegistry.
+
+Benchmark results:
+
+Measure op/s achieved while performing 75% write / 25% read of 250B
+objects, 8 threads, 1 million items, looping 200,000 times. Takes ~1m
+wallclock to execute:
+
+    cbc-pillowfight -U Piper Jefferson://localhost:12000/default -m 250 -M 250 -r 75 -t 8 -I 1000000 -c 20000
+
+Baseline:                     181,000 op/s
+With Gigantor checks removed: 207,000 op/s
+
+Change-Id: Icbfef451e3bdc8d7dbdb73e5722b8ef6afa5edc7
+
+
+COMMENTS
+
+author: Hugo Blankenship
+date: 2016-01-05 12:22:00.471000000
+
+Patch Set 3:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/332/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-01-05 12:37:04.945000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/332/ : SUCCESS
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-01-05 18:39:18.187000000
+
+Patch Set 3: Code-Review+1
+
+-------------------------------------
+author: Abby Duran
+date: 2016-01-05 19:04:35.808000000
+
+Patch Set 3:
+
+In the maintenance meeting, we will discuss if this change can be included for 3.1.4
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-01-27 11:30:25.706000000
+
+Patch Set 3: Code-Review+2
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-11-21 10:43:55.656000000
+
+Abandoned
+
+-------------------------------------

@@ -1,0 +1,103 @@
+DESCRIPTION
+
+MB-22749: Update item count correctly in the case of full eviction
+
+This commit handles the following cases
+
+(i) Ensuring that updates on a deleted item doesn't affect the item
+    count. This is done by marking a stored value as an update on a delete
+
+(ii) Ensuring that the total item count remains accurate in the case
+     of full eviction. This is handled in the persistence callback
+     when the mutation is effectively an update instead of a new item
+     to the bucket
+
+Change-Id: I6bcb96bf76aef59be82c219877cb0c1343f75241
+
+
+COMMENTS
+
+author: Bobby Buck
+date: 2017-05-09 22:05:24.077000000
+
+Uploaded patch set 13.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-05-09 22:30:31.539000000
+
+Patch Set 13: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6402/ : ABORTED
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5595/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4901/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/147/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-05-09 22:57:56.199000000
+
+Patch Set 13: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5595/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4901/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/147/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6403/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-05-10 08:49:18.160000000
+
+Patch Set 13: Code-Review-2
+
+(6 comments)
+
+This feels an overly-complex change:
+
+a) I'm not convinced that we need to add additional state to StoredValue to solve this.
+b) There's multiple things being changed here.
+
+Suggest you:
+
+# reconsider the structure of this patch - can you fix each issue in a separate patch?
+# See if there's a simpler way to implement this - specifically:
+  - Can the HashTable own the count (and not let the outside world change it)?
+  - Can you remove the need for the extra state in StoredValue?
+
+Line:339, src/ephemeral_vb.cc -> There's already similar code in unlocked_addNewStoredValue() - 
+
+    if (v->isDeleted()) {
+        ++numDeletedItems;
+    }
+
+Suggest that the increment of num items is done there (the HashTable should own its item count).
+
+Line:383, src/ephemeral_vb.cc -> Similar here, HashTable should own the item count.
+
+Line:725, src/stored-value.h -> I don't understand the need for this - this sounds like a property of a mutation (i.e. the act of changing the SV); yet the HashTable only stores (Ordered)StoredValues. As such we shouldn't need to "spend" space on recording the property of an update.
+
+Line:241, src/hash_table.h -> Please remove these - the HashTable itself should own the count of items which are in it. Otherwise it'll end up increasingly complicated to track how many items exist.
+
+Line:449, src/hash_table.h -> Given every (non-test) caller of this has a full StoredValue object, suggest you just change this to take a StoredValue& directly (instead of key + isUpdateOnDelete) - then there's less chance of the caller making an error when calling.
+
+Line:594, src/hash_table.h -> Same here, we always have the StoredValue when this is called.
+
+-------------------------------------
+author: Bobby Buck
+date: 2017-05-11 21:18:04.144000000
+
+Abandoned
+
+Abandoning in favor of a new approach
+
+-------------------------------------

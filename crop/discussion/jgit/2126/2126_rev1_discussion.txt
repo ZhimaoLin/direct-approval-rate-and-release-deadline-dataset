@@ -1,0 +1,72 @@
+DESCRIPTION
+
+Provide native readdir() via JNI
+
+Some platforms (notably Linux and FreeBSD) can supply not only the
+name of a file in a directory, but also what sort of file it is.
+This can be useful when traversing the directory structure as it
+may save lstat() calls on directories or symbolic links.
+
+Bug: 331071
+Change-Id: I40e753283fbd40a4ae9dd42f9bc0c7f2cd28c0c4
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-12-15 04:44:13.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(12 inline comments)
+
+This is still a work in progress, I pushed it out before i ran out the door.  But I would appreciate comments if anyone has any.
+
+Line:48, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/DirEnt.java -> These are obviously missing Javadoc.
+
+Line:191, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/fs/FileAccessNativeTest.java -> We probably shouldn't try the symlink if !isPosix().
+
+Line:213, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/fs/FileAccessNativeTest.java -> These tests assume that the underlying platform actually supports the d_type field.  Not every filesystem does, even if the operating system and libc do.  For example on Linux ext2/3/4 support it but FAT doesn't, resulting in TYPE_UNKNOWN coming back instead of the proper types.
+
+Line:71, libjgit_native/src/list.c -> This needs to be abstracted somehow.  Not every C library exports d_type.  If its not there, we need to use the DT_UNKNOWN code path (that is, return 0).
+
+Line:72, libjgit_native/src/list.c -> We could load these constants from the Java fields and store them in our struct DirEnt above, that way the native code doesn't have to be as closely coupled with the DirEnt class definition.  But it will result in slower machine code because we aren't returning constants anymore from a simple function.
+
+Line:76, libjgit_native/src/list.c -> Style-nit: I forgot to clean up trailing whitespace.
+
+Line:112, libjgit_native/src/list.c -> This malloc is ugly.  It would be nice if we could stack allocate the "average" buffer on this platform and avoid the malloc/free for common cases.  But that may just turn into wasted stack space if we guess wrong.
+
+Line:145, libjgit_native/src/list.c -> This is somewhat hideous.  We double the array, and then later we contract it back to the exact size necessary.  Makes me wonder if returning an immutable List<DirEnt> might be better, because then we don't need to contract the result array back to the correct size.  Unfortunately walking the List<DirEnt> would require allocating an Iterator<DirEnt>, so its an object allocation either way.
+
+Line:151, libjgit_native/src/list.c -> Some C libraries (Darwin aka Mac OS X) have a e->d_namlen that can tell us the length without performing a strlen().  That is faster, but its not available everywhere (notably its missing on Linux).
+
+Line:119, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/FileAccess.java -> We should document that "." and ".." are omitted from the returned listing.
+
+Line:123, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/FileAccess.java -> I'm not sure we have all of the potential errno cases covered here.  We may be translating other errors into exceptions with our generic jgit_ThrowErrno utility function.
+
+Line:157, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/FileAccessJava.java -> I really hate that for the pure-Java case we'll have to be a tad slower to make the File.list result conform to the API by wrapping the results.
+
+This should however let us avoid a number of stat calls to determine file type within FileTreeIterator, and that would really make up for it if our native library was widely deployed.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-12-16 03:03:46.000000000
+
+Patch Set 1: (6 inline comments)
+
+
+
+Line:48, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/DirEnt.java -> Done
+
+Line:71, libjgit_native/src/list.c -> Done
+
+Line:72, libjgit_native/src/list.c -> I've decided to leave this table as-is and just document in the Java DirEnt class that the values should not be changed.  Since they are public constants we already have to avoid changing them to prevent breaking binary compatibility with other Java code using the DirEnt class.
+
+Line:76, libjgit_native/src/list.c -> Done
+
+Line:119, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/FileAccess.java -> Done
+
+Line:123, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/FileAccess.java -> Done
+
+-------------------------------------

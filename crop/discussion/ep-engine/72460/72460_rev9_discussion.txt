@@ -1,0 +1,152 @@
+DESCRIPTION
+
+MB-16181: Add Collections::VB::Manifest
+
+An object for managing all the collections of a vbucket.
+
+This initial commit the object supports being updated
+from a Collections::Manifest
+
+- Supports addition of new collections
+- Supports the begining of deletion
+ (where a collection is marked as deleting)
+- Supports Collection::DocKey lookups
+- The threading/locking at this patch level is not tested
+
+Change-Id: I4a37974ce3778073755c582ccb95167100cf2088
+
+
+COMMENTS
+
+author: Jim WNathalie Landryer
+date: 2017-02-01 14:10:34.316000000
+
+Uploaded patch set 9: Patch Set 8 was rebased.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-02-01 14:10:42.647000000
+
+Patch Set 9:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/3488/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-02-01 14:10:42.732000000
+
+Patch Set 9:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/2133/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-02-01 14:10:42.987000000
+
+Patch Set 9:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/3309/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-02-01 14:10:43.233000000
+
+Patch Set 9:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2915/ (4/4)
+
+-------------------------------------
+author: Keira Washington
+date: 2017-02-01 14:40:14.586000000
+
+Patch Set 9: Code-Review-1
+
+(7 comments)
+
+Line:55, src/collections/vbucket_manifest.h -> I think you should abstract this monstrosity into a class of it's own. It has very delicate invariants that should be separate from the rest of this logic.
+
+Also for sanity I feel you should come up with a way to ensure the manifest name is const while the entry is in this map.
+
+Also I think you may have gone overkill on the heap indirection in order to stop the string from moving as currently:
+
+Manifest -> map_hashtable -> unique_ptr -> entry -> collection_name -> string_body
+
+All of those are stored in separately allocated bits of memory.
+
+Line:95, src/collections/vbucket_manifest.h -> for clarity this should just be a return false.
+
+a) our style guidelines say so
+
+b) it wasn't immediately obvious that there's no way to exit the enclosing if block.
+
+Line:140, src/collections/vbucket_manifest.h -> If you're picking up a lock I don't really see the benefit to inlining
+
+Line:168, src/collections/vbucket_manifest.h -> This function is completely useless. Every iterator it returns is unusable from the moment the function returns as the map could be modified.
+
+Line:25, tests/module_tests/collections/vbucket_manifest_test.cc -> This is a really awkward way of structuring the test fixture as you're combining two entirely unrelated classes.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-02-01 14:51:57.210000000
+
+Patch Set 9: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/3309/ : FAILURE
+
+ThreadSanitizer issue: data race /usr/bin/../lib/gcc/x86_64-linux-gnu/4.9/../../../../include/c++/4.9/bits/move.h:177 DcpProducer::closeAllStreams()  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/3309/ )
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/3309/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/3488/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2915/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/2133/ : SUCCESS
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2017-02-01 17:05:57.104000000
+
+Patch Set 9:
+
+(2 comments)
+
+Line:55, src/collections/vbucket_manifest.h -> which is why it (the map) is private to this class, so all the "delicate invariants" are managed here. You really need to provide suggestions as it's generally hard to know what you're actually requesting with many of your comments.
+
+Line:25, tests/module_tests/collections/vbucket_manifest_test.cc -> is it really causing a problem?
+
+-------------------------------------
+author: Keira Washington
+date: 2017-02-01 18:19:22.851000000
+
+Patch Set 9:
+
+(1 comment)
+
+Line:55, src/collections/vbucket_manifest.h -> Here's an (incomplete) example of what I meant: https://gist.github.com/Chippiewill/ce9e81342207a6cdc44bad08e49c4b81
+
+All the logic of managing the map having it's key as part of itself is encapsulated into a single class responsible for that one thing.
+
+https://en.wikipedia.org/wiki/Single_responsibility_principle
+
+The class is easy to look at in isolation and understand that it is correct. With it's application here I will be able to look at _this_ class and be satisfied that you're not inadvertently doing something dangerous with the map.
+
+At the moment this code is both hard to review and hard to modify because it does too many things.
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2017-02-02 10:04:24.589000000
+
+Patch Set 9:
+
+(1 comment)
+
+Line:55, src/collections/vbucket_manifest.h -> I agree with idea and am fully aware of the benefits of isolating functionality to smaller units without the patronising link to the wikipedia article.
+
+The code you link may in the pure sense of modern C++ be great, I however find the enormous amount of boiler plate around it and the amount of searching required through std library docs for all the details of the elements you use makes it less readable to me than something rawer.
+
+For now with this prototype code I prefer to keep the data structure management  close to the usage. Ultimately boost provides features for what I need which may be the future direction of this code.
+
+-------------------------------------

@@ -1,0 +1,190 @@
+DESCRIPTION
+
+[Ephemeral Bucket]: Add a class that stores ordered sequence of items in memory
+
+This commit adds an abstract base class 'SequenceList' that provides apis
+to store ordered sequence of items (StoredValues) in memory in our
+multi-threaded, monotonically increasing seq model.
+
+It also adds 'BasicLinkedList', a concrete class that implements SequenceList.
+'BasicLinkedList' uses a boost intrusive doubly linked list. It is essentially
+a linked list of 'StoredValues'.
+
+Currently, only appendToList() functionality is implemented. But the goal is,
+'BasicLinkedList' works in tandem with already existing 'HashTable' to achieve
+O(1) writes/updates, O(1) reads and range reads. Range read is necessary for
+an in-memory DCP backfill. Range reads provide point-in-time snapshots which
+is essential for our incremental DCP.
+
+And a module test is added as well.
+
+Change-Id: I9877c17c9e5b5be5bb55e559bbfb58f25281251d
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2017-03-02 03:37:26.588000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-03-02 03:53:27.458000000
+
+Patch Set 6: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/4433/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/3037/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/4213/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/3782/ : SUCCESS
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-03-02 04:13:54.024000000
+
+Patch Set 6:
+
+This is ready for review. Functionally correct. Need advise on the compile error:
+StoredValue becomes a non POD with introduction of list hooks and hence not allowed to use offsetof() at http://src.Piper Jefferson.org/source/xref/trunk/ep-engine/src/stored-value.h#507.
+Way around please ?
+
+-------------------------------------
+author: Keira Washington
+date: 2017-03-02 04:57:19.221000000
+
+Patch Set 6: Code-Review-1
+
+The term 'sol' comes to mind.
+
+offsetof conveniently relies on StandardLayoutType (http://en.cppreference.com/w/cpp/concept/StandardLayoutType). I say convenient because we can only pretend that the struct hack we perform on SerialisedDocKey is defined behaviour when *it* is a StandardLayoutType and it is the last member of a StandardLayoutType class.
+
+While you might be able to avoid the `offsetof` check we do need StoredValue to be standard layout.
+
+The way to achieve this would be to ensure all members of StoredValue have the same visibility (ie. private), this naturally causes issues with getting the 'pointer-to-member' for the hook. You can make the 'pointer-to-member' publicly available by explicitly making it available in a public static variable defined within the class (https://gist.github.com/Chippiewill/409965418bf73ff5c3f248d07b8c3c99)
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-03-02 10:20:02.860000000
+
+Patch Set 6:
+
+> The term 'sol' comes to mind.
+ > 
+ > offsetof conveniently relies on StandardLayoutType
+ > (http://en.cppreference.com/w/cpp/concept/StandardLayoutType). I
+ > say convenient because we can only pretend that the struct hack we
+ > perform on SerialisedDocKey is defined behaviour when *it* is a
+ > StandardLayoutType and it is the last member of a StandardLayoutType
+ > class.
+ > 
+ > While you might be able to avoid the `offsetof` check we do need
+ > StoredValue to be standard layout.
+ > 
+ > The way to achieve this would be to ensure all members of
+ > StoredValue have the same visibility (ie. private), this naturally
+ > causes issues with getting the 'pointer-to-member' for the hook.
+ > You can make the 'pointer-to-member' publicly available by
+ > explicitly making it available in a public static variable defined
+ > within the class (https://gist.github.com/Chippiewill/409965418bf73ff5c3f248d07b8c3c99)
+
+Another possibility (and one I was thinking about so we don't add the next/prev links to Persistent StoredValues) would be to *not* explicitly include SerialisedDocKey in the end of StoredValue. 
+
+It would still physically lie at the end of that object (i.e. layout in memory is the same), but it wouldn't be a member variable of StoredValue - instead we would add a method which "Adrianna Holmesally" does the appropriate pointer calculation to get the address of it.
+
+The reason for this is I'm thinking about creating a OrderedStoredValue "subclass" which has the next/prev in it - something like:
+
+ class StoredValue {
+     // Existing fields - value_t, next, cas, revSeqno, ...
+     // nru
+     // <NO explicit SerializedDocKey //
+ }
+
+ class OrderedStoredValue : public StoredValue {
+     StoredValue* next;
+     StoredValue* prev;
+ }
+
+Note neither class has a SerializedDocKey in the member variable list. /However/, they would both be allocated with one immediately following the object in memory. Assuming StoredValue is 56 bytes (exact number not important here):
+
+StoredValue:
+
+ 56 @ 0: <Fixed size StoredValue>
+ serializedKeyLen @ 56: <Variable len SerializedDocKey>
+
+OrderedStoredValue:
+
+ 56 @ 0: <Fixed size StoredValue>
+ 16 @ 56: <Fixed size next & prev links>
+ serializedKeyLen @ 72: <Variable len SerializedDocKey>
+
+Note above I used subclass in quotes - while it will be a subclass in the data layout sense (we can access the fixed part of a OrderedStoredValue object via a StoredValue ptr) - it will not use virtual methods for dynamic dispatch - we don't want to add the cost of an 8 byte vtable pointer to every StoredValue & OrderedStoredValue object.
+
+Instead, the proposal is we do Adrianna Holmesal tag dispatching. We'll add a new 1 bit flag to StoredValue (and hence also OrderedStoredValue):
+
+    bool isOrderedStoredValue : 1;
+
+For any method (in StoredValue) which needs to know the underlying type of the object (e.g. needs to figure out where SerializedDocKey actually lives), we check that bit - if false then handle as previous, if true then reinterpret_cast<> to OrderedStoredValue and call a method specific to that class (which for example will look for the SerializedDocKey at offset 72 instead of 56).
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-03-02 10:42:08.855000000
+
+Patch Set 6: Code-Review-1
+
+(10 comments)
+
+Line:28, src/seqlist.h -> Again, no need for full header, just forward-declare.
+
+Line:68, src/seqlist.h -> I'd probably drop this - I don't think debug implementationn details belong in the abstract base class. If desired classes want/ need it then they can add it themselves.
+
+Line:27, src/linkedlist.h -> Same - I don't think you need the full definition of StoredValue, just forward-declare (unless the boost hook needs it).
+
+Line:58, src/linkedlist.h -> I think we discussed this before, but it would be preferable to remove this and just create a MockBasicLinkedList subclass which implements this (maybe moving some of the private members to protected).
+
+Line:71, src/linkedlist.h -> Can we not use boost::instrusive_list's ability to count elements? - see constant_time_size - note this is enabled by default http://www.boost.org/doc/libs/1_63_0/doc/html/intrusive/usage.html
+
+Line:52, src/ephemeral_vb.cc -> Prefer make_unique<> - new is bad, mkay? ;)
+
+Line:21, src/ephemeral_vb.h -> You don't need this to instantiate a unique_ptr (it adds more header-file pollution). Just forward-declare the SequenceList class.
+
+Line:35, tests/module_tests/basic_ll_test.cc -> make_unique
+
+Line:39, tests/module_tests/basic_ll_test.cc -> Unnecessary - the destructor of unique_ptr will delete the managed object.
+
+Line:75, tests/module_tests/basic_ll_test.cc -> Do we need to free these?
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-03-03 07:59:47.115000000
+
+Patch Set 6:
+
+(10 comments)
+
+Line:28, src/seqlist.h -> Done
+
+Line:68, src/seqlist.h -> Done
+
+Line:27, src/linkedlist.h -> Actually boost demands the header include here
+
+Line:58, src/linkedlist.h -> Done
+
+Line:71, src/linkedlist.h -> Done
+
+Line:52, src/ephemeral_vb.cc -> Done
+
+Line:21, src/ephemeral_vb.h -> Done
+
+Line:35, tests/module_tests/basic_ll_test.cc -> Done
+
+Line:39, tests/module_tests/basic_ll_test.cc -> Done
+
+Line:75, tests/module_tests/basic_ll_test.cc -> HashTable will do it for us
+
+-------------------------------------

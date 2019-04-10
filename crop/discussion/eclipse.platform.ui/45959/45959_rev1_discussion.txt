@@ -1,0 +1,157 @@
+DESCRIPTION
+
+Bug 464838 - ModalContext.run method should call done() on the passed in
+progress monitor
+
+Change-Id: I18b179da6d04589bd59441948afbbe628c93bd1f
+Signed-off-by: Brock Pruitt xxx@xxx.xxx
+
+COMMENTS
+
+author: Brock Pruitt
+date: 2015-04-17 00:51:41.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-04-17 00:51:47.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/5412/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-04-17 01:22:33.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/5412/ : SUCCESS
+
+-------------------------------------
+author: Zaid Mosley
+date: 2015-04-17 06:47:41.000000000
+
+Patch Set 1: Code-Review+1
+
+Looks good
+
+-------------------------------------
+author: Sebastian Porter
+date: 2015-04-17 07:37:55.000000000
+
+Patch Set 1: Code-Review-2
+
+ModalContextThread#run itself does not report any progress but instead just passes on the progressMonitor via
+runnable#run(progressMonitor);
+
+The progress framework expects from runnable#run to call done() on the progressMonitor. And since
+progressMonitor = new AccumulatingProgressMonitor(monitor,..);
+this will also call done() on 'monitor'.
+
+The only little hole here is when the runnable is 'null'. In that case done() is currently not called.
+
+-------------------------------------
+author: Brock Pruitt
+date: 2015-04-17 08:48:07.000000000
+
+Patch Set 1:
+
+> The progress framework expects from runnable#run to call done() on the progressMonitor
+
+The whole point of this change is to shift responsibility for calling done() from runnable#run to the calling method. This is exactly what is requested in the bug.
+
+-------------------------------------
+author: Brock Pruitt
+date: 2015-04-17 09:01:49.000000000
+
+Patch Set 1:
+
+Shifting of responsibility to call IProgressMonitor.done() from the IRunnableWithProgress.run() method to the caller of that method would allow for simplification of implementations of IRunnableWithProgress.run() method. This will eventually result in net code size saving because there are many more implementations of IRunnableWithProgress.run() method than there are places were this method is called. The proposed division of responsibilities is the same as is recommended when SubMonitors are used.
+
+-------------------------------------
+author: Sebastian Porter
+date: 2015-04-17 09:09:02.000000000
+
+Patch Set 1:
+
+> The whole point of this change is to shift responsibility for calling done() from runnable#run to the calling method. This is exactly what is requested in the bug.
+
+I know that, but we can't just change the API/expectations in such a way, using the same method.
+
+-------------------------------------
+author: Brock Pruitt
+date: 2015-04-17 09:13:22.000000000
+
+Patch Set 1:
+
+Why not? This is a backward compatible change since multiple calls to done() are harmless.
+
+-------------------------------------
+author: Brock Pruitt
+date: 2015-04-17 09:31:26.000000000
+
+Patch Set 1:
+
+One more data point. The "caller is responsible for calling done()" convention is already used by the Jobs framework.
+
+-------------------------------------
+author: Sebastian Porter
+date: 2015-04-17 09:33:26.000000000
+
+Patch Set 1:
+
+Because it is much simpler to have clean and clear rules all over the code, and in this case the one who gets the monitor either passes it along or uses it to report progress and call done on it. If we add helper code here, then in some other place people might also assume that done() will be called and won't call it themselves.
+
+-------------------------------------
+author: Brock Pruitt
+date: 2015-04-17 09:50:56.000000000
+
+Patch Set 1:
+
+The eventual goal is exactly that - to make the "caller is responsible for calling done()" convention universal. But it can only be done piece by piece. This change is the first of these pieces.
+
+-------------------------------------
+author: Sebastian Porter
+date: 2015-04-17 11:44:32.000000000
+
+Patch Set 1:
+
+> The eventual goal is exactly that - to make the "caller is responsible for calling done()" convention universal.
+
+I'm not against that but our goal in the Eclipse top-level project is to always deliver a consistent story to our users. So, I would expect a root feature request that proposes such a change, lists the affected components and asks them for agreement to that overall change. Ideally, this is started in M1 or M2, so that the release has the complete work.
+
+If such a root bug exists, I'd be willing to go ahead with that change.
+
+Lars, what's your opinion on this?
+
+-------------------------------------
+author: Zaid Mosley
+date: 2015-04-17 11:52:40.000000000
+
+Patch Set 1:
+
+> If such a root bug exists, I'd be willing to go ahead with that change.
+
+We should definitely have a "master" bug for this work, if the plan to deliver it piecewise. I'm a little bit unclear how we want to make the caller responsible for calling done(). Is it planned to enforce this via the code or will this be a Javadoc convention?
+
+-------------------------------------
+author: Brock Pruitt
+date: 2015-04-17 14:05:25.000000000
+
+Patch Set 1:
+
+JavaDoc convention documented separately in multiple places.
+
+-------------------------------------
+author: Zaid Mosley
+date: 2015-04-17 14:07:32.000000000
+
+Patch Set 1:
+
+Thanks Sergej for the clarification. +1 from my side for this approach, under the assumption that we have an aggregator bug as Dani suggested.
+
+-------------------------------------

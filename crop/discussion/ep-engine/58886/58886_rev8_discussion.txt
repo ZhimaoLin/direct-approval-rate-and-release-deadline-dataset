@@ -1,0 +1,128 @@
+DESCRIPTION
+
+MB-17502: DCP performance regression fixed.
+
+Many patches were added to speed up DCP, however some of that
+performance was lost when doing some code tidying without
+re-profiling.
+
+With all the DCP performance patches (particuarly) 87869fd39 straight
+DCP performance is a touch slower. This is because DCP used to take
+one lock and then do work. The new code has more locks, but holds
+them for fewer lines of code. This means that DCP is friendlier/fairer
+to the other threads interacting with a DCP producer.
+The front-end operation threads are no longer stalled for long periods
+whilst DCP holds the one lock.
+
+Frontend latency before locking changes:
+
+ === Latency [With background DCP] - 100000 items
+                                 Percentile
+                   Median     95th     99th  Std Dev
+ Add               16.337   34.894   45.241   25.627
+ Get                1.226    1.524    1.745    0.435
+ Replace           16.311   34.386   42.097    8.435
+ Delete            15.636   32.915   41.999    7.408
+
+Frontend latency after locking changes:
+
+ === Latency [With background DCP] - 100000 items
+                                 Percentile
+                   Median     95th     99th  Std Dev
+ Add                3.996   12.159   20.724   11.376
+ Get                1.299    1.629    1.730    0.634
+ Replace            4.274   12.831   22.988    4.523
+ Delete             3.142   10.302   14.292    3.350
+
+The average and 95th/99th are all improved.
+
+Fix details:
+
+The roundRobin/vbReady code has a bufferLog.pauseIfFull call on the
+"hot" part of the loop, this is the main cause of the regression.
+
+With that fixed CPU profiling and benchmarking shows that DCP is back
+to 3.1.3 levels but highlighted that:
+
+1. DcpProducer::getNextItem was hot (5% of a DcpProducer thread).
+2. DcpConsumer::processBufferedItems was hitting SpinLock hard.
+   20 to 30% at times was consumed by SpinLock code.
+3. snapshot creation was frequently yielding even though it had work todo.
+
+So to address 1. the fix is actually to remove the roundRobin/vbReady
+code. It is actually no better and in some cases a little slower than
+the orginal. This code is replaces with std:: structures *but* the
+Mutex used has a much smaller scope.
+
+Note the DcpProducerReadyQueue has been profiled and proven that having
+the std::map powering find() is much faster than searching the list.
+This is important because the find method is part of the front-end
+operation thread.
+
+To address 2. it was observed that the consumer code is constructing
+a passive_stream_t frequently, then testing if there is a pointer.
+The construction uses the SpinLock code and can be avoided just by
+testing the streams[vb] directly and only then do we construct
+a copy of the passive_stream_t. This avoids the SpinLock code on
+every iteration of the for loop in the affected function.
+
+To address 3. ensure that the snapshot tasks work queue doesn't have
+duplicates, there's no need. Then raise the number of snapshots before
+yield. Various rebalances showed that around 250 was enough, so let's go
+with 256.
+
+Change-Id: I8fb0bd30f8e07d000192675de425726ad26e403a
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2016-01-27 22:13:54.765000000
+
+Uploaded patch set 8.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-01-27 22:14:00.934000000
+
+Patch Set 8:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/351/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-01-27 22:14:04.183000000
+
+Patch Set 8: Well-Formed+1
+
+Permission granted to commit to restricted branch
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-01-27 22:14:19.487000000
+
+Patch Set 8: Code-Review+2
+
+-------------------------------------
+author: Abby Duran
+date: 2016-01-27 22:16:41.412000000
+
+Patch Set 8: Code-Review+2
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-01-27 22:28:37.274000000
+
+Patch Set 8: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/351/ : SUCCESS
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-01-27 22:37:24.961000000
+
+Change has been successfully cherry-picked as ae39d7f216ae3d75e93aceda8d9b9992c5f7a1c4
+
+-------------------------------------

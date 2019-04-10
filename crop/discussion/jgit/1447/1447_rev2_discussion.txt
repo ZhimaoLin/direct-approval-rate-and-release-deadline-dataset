@@ -1,0 +1,76 @@
+DESCRIPTION
+
+TreeWalk optionally honors Index entries' "skipWorkTree" flag.
+
+DirCacheIterator can be configured to signal to skip entries
+for which 'skipWorkTree' flag has been set. This will only
+affect Index format version "3".
+
+Change-Id: I428d11412130b64fc46d7052011f5dff3d653802
+
+
+COMMENTS
+
+author: Saniya Hill
+date: 2010-08-30 13:40:54.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-08-31 00:50:12.000000000
+
+Patch Set 2: I would prefer that you didn't submit this
+
+(1 inline comment)
+
+
+
+Line:195, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheIterator.java -> Instead of mucking with the TreeWalk API, we can do this through a TreeFilter:
+
+  class SkipWorkTreeFilter {
+    private final int treeIdx;
+
+    SkipWorkTreeFilter(int treeIdx) {
+      this.treeIdx = treeIdx;
+    }
+
+    boolean include(TreeWalk walker) {
+      DirCacheIterator i = walker.getTree(treeIdx);
+      if (i == null)
+        return true;
+
+      DirCacheEntry e = i.getDirCacheEntry();
+      return e == null || !e.isSkipWorkTree();
+    }
+  }
+
+Callers who want work tree skipping can just and this filter in with any other filters they are running on the TreeWalk.
+
+-------------------------------------
+author: Saniya Hill
+date: 2010-08-31 12:18:27.000000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:195, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheIterator.java -> I though about that, but from my understanding TreeFilters are in the responsibility of the API user, while it's the responsibility of the DirCacheIterator to decide what is relevant for the TreeWalk. I guess that in almost every case one will use DirCacheIterator(DirCache dc) constructor, so from API user's perspective current solution seems to be easier and safer.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-08-31 19:30:24.000000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:195, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheIterator.java -> I still don't think this belongs on the iterators.  I think it belongs as a TreeFilter, and callers who are using a DirCache during a walk should be dropping in the skip filter of they don't want to see the currently skipped paths.
+
+I'm really thinking about cases like AddCommand or Merge which need to see the path no matter what, because they may need to un-skip the entry from the index if the working tree actually has that same location.  Or at the least error out.
+
+Meanwhile other cases like doing a status actually want to skip those paths.  Or do they?  Even on status, what should happen if I create foo/bar.txt when foo/bar.txt is marked as skipped in the index?  Shouldn't we highlight this case to the user?
+
+So blindly skipping a path because one iterator has it tagged as skipped doesn't seem quite right.  If the caller really does want to ignore that record, they can easily do so if we provide them with a TreeFilter that can perform the skipping.  And then its their job to add it into the filter graph, just like its their job to add in TreeFilter.ANY_DIFF if they want a difference across the trees.
+
+-------------------------------------

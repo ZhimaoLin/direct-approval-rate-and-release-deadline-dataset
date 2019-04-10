@@ -1,0 +1,94 @@
+DESCRIPTION
+
+MB-10086 [auto_collect]: basic manager and per-node processes
+
+Adds two new processes for cluster-wide log collection:
+collect_logs_manager and collect_logs_node:
+
+* collect_logs_manager: gen_server responsible for managing a user's
+  logs request, accepts requests for log collection and spawns a
+  collect_logs_node process on each cluster node which logs are
+  requested from, and aggregates their results.
+
+* collect_logs_node: gen_server responsible for running cbcollect_info
+  on a particular cluster node, and returning the result of that
+  process back to the manager.
+
+Change-Id: I6ef4c1b899a0519a317908f5e06b22170c71206f
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2014-04-30 14:53:32.851000000
+
+Uploaded patch set 21.
+
+-------------------------------------
+author: Philip Lara
+date: 2014-05-07 21:14:29.498000000
+
+Patch Set 21: Code-Review-1
+
+(1 comment)
+
+Line:164, src/collect_logs_manager.erl -> I think we should proceed with collecting data even if we cannot start children on some nodes. There are 2 reasons for that:
+1. Some nodes can be down/unhealthy. We still want the logs from the nodes that are healthy.
+2. In mixed clusters the rpc call will fail on nodes with version older than 3.0.
+
+Plus I think it will be a little bit more reliable to start the child process right before we start the actual job, because the node can go down and up while we are collecting on other nodes.
+
+Also as an alternative you can consider more straightforward OTP approach: keep collect_logs_node's alive but hibernated, managed by the ns_server_sup. Call them to perform the job and hibernate after the job is done.
+
+-------------------------------------
+author: Philip Lara
+date: 2014-05-07 21:14:49.815000000
+
+Patch Set 21:
+
+see comment inline
+
+-------------------------------------
+author: Philip Lara
+date: 2014-05-07 21:21:33.561000000
+
+Patch Set 21:
+
+(1 comment)
+
+Line:165, src/collect_logs_manager.erl -> And if not all the nodes are available for collecting we need a big fat warning that the info should be collected Adrianna Holmesally. We can even include the command line that should be executed to this warning.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2014-05-07 21:22:26.357000000
+
+Patch Set 21:
+
+Regarding Artem's comment. Warning should be on UI. And it can also suggest exact command line to run on those down nodes.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2014-05-08 12:36:16.632000000
+
+Patch Set 21:
+
+(2 comments)
+
+See inline
+
+Line:164, src/collect_logs_manager.erl -> re: Unable to start: This is actually an edge condition - the nodes which can be selected are already checked by the UI / argument validation (see meneleus_collect_logs.erl) so to get to this point there must have been a node go down between the user selecting them on the UI and getting to this point in the code. Having said that, I already have a follow-up patch (http://review.couchbase.org/#/c/36463/) which only skips the nodes which can't be communicated with. That patch just skips the nodes which couldn't be communicated with; I agree it's a good idea to flag this to the user, and will implement your suggestion, merging that patch (and unreachable change_ into here.  However the construction of the cbcollect_info command-line is delegated to the per-node process, so if we can't communicate with it we can't get the exact command-line arguments to run (e.g. don't know what the $TMPDIR / path to cbcollect_info is), so I think the command printed will have to be a little generic.
+
+Similary there is another patch I just uploaded (http://review.couchbase.org/#/c/36830/) which only exposes the REST endpoints if the cluster version is 3.0 and we are EE, so this ensures that collect-logs is only available once the cluster is upgraded.
+
+Regarding the arrangement of Erlang processes, one of the original design points AlkK mentioned was to ensure there wasn't any cluster-wide orchestration of the log collection (as we may be in a degraded state when taking logs), so the idea was to use the presence of the per-node processes to determine if a collection was in flight. By starting the child processes on collection start (and preventing a collection from starting if child processes already exist) this gives a simple method to only run one collection process (for a given set of nodes) at once without any heavyweight orchestrator.
+
+Additionally this was my first venture into Erlang / OTP and I can quite believe some parts aren't perfect; however at this point I'd prefer to keep the high level design as it stands if so we can get this merged into 3.0 in the near future.
+
+
+To summarise: 
+- Will follow-up with new "Unreachable" error, which will tell user to Adrianna Holmesally run cbcollect_info on the unreachable node(s).
+- Other concerns are hopefully covered in patches in this sequence.
+
+Line:165, src/collect_logs_manager.erl -> Agreed. Will add - see previous comment for details.
+
+-------------------------------------

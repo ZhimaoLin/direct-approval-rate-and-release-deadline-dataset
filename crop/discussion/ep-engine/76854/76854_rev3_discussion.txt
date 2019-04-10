@@ -1,0 +1,257 @@
+DESCRIPTION
+
+MB-23936: Use Threadlocal variables to accumulate stats
+
+Currently when we allocate/deallocate memory, we update the per bucket
+variable `totalMemory`. Mutiple threads contend on this variable heavily
+as mem allocation/deallocation happen often. The primary idea of
+this commit is to maintain threadlocal mem counters for each bucket and
+merge it to the `totalMemory` once the local counter reaches a threshold
+either based on size or no.of times the local counter has been updated.
+
+Limitations:
+-----------
+- We create one thread local variable per bucket. Different OS'es seem
+  to enforce different limits on the no.of tlv. Although we have a hard
+  limit of 10 buckets, I'm noting this here for future reference.
+  -> [NetBSD:256 Linux:1024 OSX:512 Windows:1088]
+
+- Windows does not seem to provide an api for releasing the mem
+  allocated for a thread-local on thread exit in a way like pthreads do.
+  So there will be a small leak of about (3*long) on every bucket unload.
+
+- Valgrind might say that the unit tests have leaks on the
+  threadlocals. This is because, in the tests, bucket init happens on
+  the main thread & when main thread exits the program it does not
+  call pthread_exit, so the dtors are not called.
+
+Change-Id: Id14ced2776a29afae18831b372140dd028136b32
+
+
+COMMENTS
+
+author: Trace Williamson
+date: 2017-04-19 18:11:23.519000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-04-19 18:44:26.530000000
+
+Patch Set 3: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6121/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4658/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/5875/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5363/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-20 07:53:57.251000000
+
+Patch Set 3: Code-Review-1
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-20 16:35:54.672000000
+
+Patch Set 3:
+
+If it simplifies things, we could use Boost's thread-local (which sounds like it does cleanup on all platforms - see http://www.boost.org/doc/libs/1_64_0/doc/html/thread/thread_local_storage.html).
+
+We'd have to add it to our cbdep of boost; but that's pretty trivial.
+
+-------------------------------------
+author: Trace Williamson
+date: 2017-04-20 19:24:53.549000000
+
+Patch Set 3:
+
+(13 comments)
+
+We might  have to investigate boost stuff in more detail as the page says:
+Note: on some platforms, cleanup of thread-specific data is not performed for threads created with the platform's native API. On those platforms such cleanup is only done for threads that are started with boost::thread unless boost::on_thread_exit() is called Adrianna Holmesally from that thread.
+
+Line:76, src/objectregistry.h -> This macro will be used a lot once we replace all the OnSwitchThread to this. I agree with the UPPERCASE. I chose otherwise only for readability because it is going to be used a lot on another commit.
+
+Line:650, src/ep_engine.cc -> Frankly I did what the previous code block did. The block above this code exactly does strtoull & checkNumeric :). But I'll change this piece.
+
+Line:6369, src/ep_engine.cc -> My bad, forgot to fix this.  - But I seriously prefer a computer fix this automatically rather than human pointing out and a human fixing it :)
+
+Line:6370, src/ep_engine.cc -> I did have the doubt when I coded it. In the ep-engine code base, there are [629 nullptr] and [1809 NULL]. Its just natural for any one writing code, to pick up NULL naturally just because it occurs 3 times more!! . Will fix it.
+
+Line:220, src/objectregistry.cc -> It would require to forward declare "ThreadLocal<EventuallyPersistentEngine*>" in objectregistry.h & move the "threadlocal.h" include to the same. Currently this function is used only in 2 places lightly. I'm planning to move all the OnSwitchThread to this guard soon(just like the arena branch). I'll make this change along with that commit
+
+Line:470, configuration.json -> For both count:1000 & size:1MB thresholds, I played with few options. The graphs pasted previously was for count:100, & 256B values which gave reasonable perf increase & the memory allocation graph was close enough to the base(not much deviation). Later I set the default to 1000. Independent of the bucket capacity, these numbers come into play only depending on the rate of operations on the bucket.Frankly I've no idea how cb-server is used by the customers. This is also why I made these 2 values configurable, so that we can play with the data on a live system & see how the mem graph moves.
+
+Line:481, configuration.json -> same as above.
+
+Line:179, src/stats.h -> sure. will fix this
+
+Line:208, src/stats.h -> Done - But I seriously prefer a computer fix this automatically rather than human pointing out and a human fixing it :)
+
+Line:223, src/stats.h -> Done - But I seriously prefer a computer fix this automatically rather than human pointing out and a human fixing it :)
+
+Line:343, src/stats.h -> Done
+
+Line:685, src/stats.h -> Done
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-20 20:08:02.744000000
+
+Patch Set 3:
+
+(5 comments)
+
+Line:650, src/ep_engine.cc -> Sure, perfectly reasonable - but given we're changing this and there's a simpler existing way, seems sensible to use that.
+
+Line:6369, src/ep_engine.cc -> I think git-clang-format will fix for you ;)
+
+I hope to have that running automatically via CV.
+
+Line:6370, src/ep_engine.cc -> Indeed, we historically had NULL, but for new stuff we're trying to move to nullptr (see coding standard).
+
+Line:220, src/objectregistry.cc -> ok, seems reasonable.
+
+Line:470, configuration.json -> Sure, I agree they should be configurable (as we do with most things like this). And indeed, the default of 100 is probably fine.
+
+My point was more we shouldn't "tie our hands" in future production situations and cap at a relatively low value.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-20 07:53:44.130000000
+
+MISMATCHED INLINE COMMENT
+Line:76, src/objectregistry.h -> I don't think this macro really adds anything - it just hides from the reader what's going on (we try to minimise macro usage).
+
+Suggest you remove the macro and just create the object directly. 
+
+(Also: macros should be named UPPERCASE to make it obvious they are marcos).
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-20 07:53:44.130000000
+
+MISMATCHED INLINE COMMENT
+Line:650, src/ep_engine.cc -> If you use std::stoull or similar you can avoid the checkNumeric() call - see setFlushParam()
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-20 07:53:44.130000000
+
+MISMATCHED INLINE COMMENT
+Line:654, src/ep_engine.cc -> Ditto
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-20 07:53:44.130000000
+
+MISMATCHED INLINE COMMENT
+Line:6369, src/ep_engine.cc -> Still needs braces fixing here and elsewhere.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-20 07:53:44.130000000
+
+MISMATCHED INLINE COMMENT
+Line:6370, src/ep_engine.cc -> Prefer `nullptr`
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-20 07:53:44.130000000
+
+MISMATCHED INLINE COMMENT
+File Comment: /COMMIT_MSG -> I think it's worth quoting the speedups in the commit message here.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-20 07:53:44.130000000
+
+MISMATCHED INLINE COMMENT
+Line:39, src/threadlocal_posix.h -> nullptr. Also - put member variables at the bottom of the class - especially priivate/protected ones - they aren't part of the interface, and hence shouldn't be emphasised.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-20 07:53:44.130000000
+
+MISMATCHED INLINE COMMENT
+Line:41, src/threadlocal_posix.h -> nullptr
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-20 07:53:44.130000000
+
+MISMATCHED INLINE COMMENT
+Line:40, src/threadlocal.h -> nullptr
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-20 07:53:44.130000000
+
+MISMATCHED INLINE COMMENT
+Line:220, src/objectregistry.cc -> Given these are so small; and we know they are very hot I think it's worth inlining these in the header.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-20 07:53:44.130000000
+
+MISMATCHED INLINE COMMENT
+Line:6629, tests/ep_testsuite.cc -> Please keep alphabetical.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-20 07:53:44.130000000
+
+MISMATCHED INLINE COMMENT
+Line:470, configuration.json -> This feels a bit constraining - 1000 allocations isn't really that much. I think we should at least give ourselves the option to increase it higher - say by a couple orders of magnitude?
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-20 07:53:44.130000000
+
+MISMATCHED INLINE COMMENT
+Line:481, configuration.json -> Same here - 1MB is pretty small if you have 100's of GB of bucket quota.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-20 07:53:44.130000000
+
+MISMATCHED INLINE COMMENT
+Line:179, src/stats.h -> Shouldn't be necessary to repeat the default here - they should come from the configuration (otherwise we end up with multiple copies of the defaults).
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-20 07:53:44.130000000
+
+MISMATCHED INLINE COMMENT
+Line:208, src/stats.h -> Style: whitespace either side of the operator (git clang-format should fix this for you).
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-20 07:53:44.130000000
+
+MISMATCHED INLINE COMMENT
+Line:223, src/stats.h -> As above: `force = false`
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-20 07:53:44.130000000
+
+MISMATCHED INLINE COMMENT
+Line:343, src/stats.h -> I think it's worth adding a comment here explaining why this is a signed value and that it's only statistical and not exact (and that the reader may have to take this into account)
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-20 07:53:44.130000000
+
+MISMATCHED INLINE COMMENT
+Line:685, src/stats.h -> Please document these.
+
+-------------------------------------

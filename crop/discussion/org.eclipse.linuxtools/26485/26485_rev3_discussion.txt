@@ -1,0 +1,74 @@
+DESCRIPTION
+
+ctf: Fix simple resource leak warnings
+
+Many warnings left though. For instance, the Stream/StreamInput/
+StreamInputReader etc. constructor should create their inner Closeable
+objects themselves (instead of having to pass say
+new StreamInput(new StreamInputReader(...)) ). That way they can keep
+a reference to it, and close() it in their own close() method.
+
+Right now nobody keeps a reference to them, and they never get closed.
+
+Change-Id: I708cfb7d2da12ea4d5c7c8f8a8bbcdf77263ddc1
+Signed-off-by: Braxton Mccarthy xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Braxton Mccarthy
+date: 2014-06-18 17:59:16.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-06-18 18:03:00.000000000
+
+Patch Set 3:
+
+About the list of FileInputStream's, those were kept solely so that they get closed when the CTFTrace is dispose()'d (which was changed to close() with the move to AutoCloseable).
+
+Turns out, a MappedByteBuffer will keeps its data even if the FileChannel it was mapped from is closed. Which means, we can close the fc/fis in there with no downsides. Which means, no need to keep track of the file handles, so CTFTrace doesn't need to be AutoCloseable after all!
+
+... however we can't remove it without breaking the %#%/$" API. So I've left a no-op close() method for now. But once we remove AutoCloseable, this will remove 4-5 of the new resource warnings.
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2014-06-18 18:10:26.000000000
+
+Patch Set 3: Code-Review+1
+
+(1 comment)
+
+Ok the pandora's box is opened now. It does solve a few warnings, but some of them are related to CTFTrace which doesn't need to autoCloseable anymore and will have to be reverted later anyway.
+
+Line:219, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/CTFTrace.java -> omg... you know what an API mess it causes to remove the autoCloseables? I tried for the module: if we want to deprecate cleanly, we need to create a new interface to remove the autocloseable. And then all the interfaces that returned the autoCloseable stuff also need to be updated, and then... :p
+
+Let's move to TraceCompass and break all APIs!
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-06-18 19:23:38.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/7429/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-06-18 20:07:42.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/7429/ : SUCCESS
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-06-18 20:32:46.000000000
+
+Patch Set 3: Code-Review+2
+
+-------------------------------------

@@ -1,0 +1,196 @@
+DESCRIPTION
+
+tmf : introducing the mipmap
+
+adding abstactTmfMipMapProvider class, CtfTmfMipMapProviderForTest and
+tests
+
+Change-Id: Idfde25a4cc622db35c5e9bb8a3f88bc89285a6b4
+Signed-off-by: Liana Berg xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Luciana Barry
+date: 2013-08-26 22:06:14.000000000
+
+Uploaded patch set 10.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-08-26 22:06:19.000000000
+
+Patch Set 10:
+
+Build Started https://hudson.eclipse.org/sandbox/job/linuxtools/3274/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-08-26 22:35:44.000000000
+
+Patch Set 10: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/linuxtools/3274/ : SUCCESS
+
+-------------------------------------
+author: Luciana Barry
+date: 2013-09-20 21:00:08.000000000
+
+Patch Set 10:
+
+(71 comments)
+
+While trying to correct the computation of the weighted average, I found problems with using the state system to store temporary values and reading them while building the mipmap.
+
+So I changed the way the mipmap is built by storing all ongoing mipmap level intervals in memory and writing to the state system only once the final value of a mipmap interval is known. The resulting code is much simplified.
+
+Line:34, lttng/org.eclipse.linuxtools.lttng2.kernel.core/src/org/eclipse/linuxtools/internal/lttng2/kernel/core/Attributes.java -> no longer used
+
+Line:70, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/mipmapFeature/AvgMipmapFeature.java -> This 'average' variable is used temporarily as a sum, a denominator, and finally an average. It is confusing to the reader trying to understand the calculations.
+
+Line:74, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/mipmapFeature/AvgMipmapFeature.java -> This is skipping a level at every iteration's update. The next level attribute should be the one immediately following the current level attribute.
+
+Line:82, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/mipmapFeature/AvgMipmapFeature.java -> The average stored in the state system mipmap level attributes is not considering the duration of each state, ie. it is not a weighted average.
+
+Line:83, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/mipmapFeature/AvgMipmapFeature.java -> Using BigInteger in the calculations does not prevent the temporary sum value to overflow in the state system. To implement this correctly, the state system might have to support BigInteger and/or floating point types.
+
+Line:85, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/mipmapFeature/AvgMipmapFeature.java -> should not silently catch exceptions
+
+Line:104, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/mipmapFeature/AvgMipmapFeature.java -> should not silently catch exceptions
+
+Line:134, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/mipmapFeature/AvgMipmapFeature.java -> should not silently catch exceptions
+
+Line:172, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/mipmapFeature/AvgMipmapFeature.java -> should not silently catch exceptions
+
+Line:10, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/AbstractTmfMipMapStateProvider.java -> encoding error
+
+Line:13, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/AbstractTmfMipMapStateProvider.java -> It is preferred by the team to add this class to the internal statesystem package.
+
+Line:44, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/AbstractTmfMipMapStateProvider.java -> This is not required, the mipmap attributes are now children of the main attribute
+
+Line:65, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/AbstractTmfMipMapStateProvider.java -> To simplify a lot of the code, I suggest to change the attribute paths from: <base>/xxxNbLevels/xxxN (where xxx is the mipmap feature string and N is the mipmap level) to <base>/xxx/N.
+
+Line:85, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/AbstractTmfMipMapStateProvider.java -> should be private
+
+Line:86, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/AbstractTmfMipMapStateProvider.java -> Doesn't seem to be a purpose for this. Let's make it automatic only.
+
+Line:114, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/AbstractTmfMipMapStateProvider.java -> this should be implemented by the concrete subclass
+
+Line:119, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/AbstractTmfMipMapStateProvider.java -> should close the mipmap for all attributes, not leave it to the subclass
+
+Line:138, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/AbstractTmfMipMapStateProvider.java -> I suggest to make the method receive a bitmap of mipmap features, to update all mipmaps at once and then modify the base attribute.
+
+Line:142, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/AbstractTmfMipMapStateProvider.java -> This does not work for int or long value -1 because TmfStateValue always uses the nullValue in the special case where the value is -1. Bug 416660 reported for this. Also, a legitimate nullValue should be handled to update the counter and the mipmap levels.
+
+Line:157, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/AbstractTmfMipMapStateProvider.java -> This is not needed if the attribute tree is changed as described in the constants section.
+
+Line:186, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/AbstractTmfMipMapStateProvider.java -> should not silently catch exceptions
+
+Line:252, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/AbstractTmfMipMapStateProvider.java -> the nbLevel attribute value should be an int and not dependent on the type of the mipmapped attribute
+
+Line:258, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/AbstractTmfMipMapStateProvider.java -> should not silently catch exceptions
+
+Line:267, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/AbstractTmfMipMapStateProvider.java -> Useless class, can just use a class variable directly...
+
+Line:10, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/ctfadaptor/CtfTmfMipMapStateProviderTest.java -> encoding error
+
+Line:37, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/ctfadaptor/CtfTmfMipMapStateProviderTest.java -> encoding error
+
+Line:42, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/ctfadaptor/CtfTmfMipMapStateProviderTest.java -> should be static final, and linked to the state provider's string
+
+Line:43, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/ctfadaptor/CtfTmfMipMapStateProviderTest.java -> should be static
+
+Line:47, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/ctfadaptor/CtfTmfMipMapStateProviderTest.java -> should be private
+
+Line:60, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/ctfadaptor/CtfTmfMipMapStateProviderTest.java -> should have attribute start later than state system start time to have better test coverage
+
+Line:78, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/ctfadaptor/CtfTmfMipMapStateProviderTest.java -> this is really just testing the test code...
+
+Line:195, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/ctfadaptor/CtfTmfMipMapStateProviderTest.java -> should test all levels, and check the interval range
+
+Line:231, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/ctfadaptor/CtfTmfMipMapStateProviderTest.java -> should test all levels, and check the interval range
+
+Line:267, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/ctfadaptor/CtfTmfMipMapStateProviderTest.java -> should test all levels, and check the interval range
+
+Line:290, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/ctfadaptor/CtfTmfMipMapStateProviderTest.java -> this is just retesting the results of the three tests above in a single test
+
+Line:474, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/ctfadaptor/CtfTmfMipMapStateProviderTest.java -> unnecessary assert
+
+Line:521, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/ctfadaptor/CtfTmfMipMapStateProviderTest.java -> Should have more tests for each feature:
+- Range that is larger than the attribute range
+- Range that does not fall on attribute state change boundaries
+- Range where start and end is the same
+
+Line:364, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/ITmfStateSystem.java -> It is preferred by the team to add these new methods to an internal interface.
+
+Line:402, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/ITmfStateSystem.java -> It would probably be more worthwhile to the potential users of this feature to implement the average return value as a floating point number.
+
+Line:78, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/mipmapFeature/MaxMipmapFeature.java -> should not silently catch exceptions
+
+Line:100, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/mipmapFeature/MaxMipmapFeature.java -> It is imperative that the modifyAttribute changes the current state start time, and this only happens if the value is different than the current value. An easy way to fix it would be to modify to nullValue just before modifying again to the desired value. However we must be careful because currently the state system considers nullValue equal to longValue(-1).
+
+Line:102, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/mipmapFeature/MaxMipmapFeature.java -> else we can break out. If not at a boundary for a lower level, it will not be a boundary for any upper level
+
+Line:104, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/mipmapFeature/MaxMipmapFeature.java -> should not silently catch exceptions
+
+Line:33, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/mipmapFeature/TmfMipmapFeature.java -> To simplify the code, the 'nbLevels' quark should also be stored.
+
+Line:71, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/mipmapFeature/TmfMipmapFeature.java -> Some would argue that it is not safe to return the list object as it could be modified. Perhaps it would be better to have a method to get the quark for a level, a method to get the number of levels, and a method to add a new level quark.
+
+Line:104, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/mipmapFeature/TmfMipmapFeature.java -> The method checks if the next level exists, not the specified level.
+
+Line:145, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/mipmapFeature/TmfMipmapFeature.java -> should not silently catch exceptions
+
+Line:172, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/mipmapFeature/TmfMipmapFeature.java -> we can get those two quark values from the featureQuarks array (if level exists)
+
+Line:174, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/mipmapFeature/TmfMipmapFeature.java -> If the method is fixed to check the specified level, we want to be checking for the next level here (level + 1).
+
+Line:189, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/mipmapFeature/TmfMipmapFeature.java -> should not silently catch exceptions
+
+Line:694, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/StateSystem.java -> this will fail if the attribute is an Int
+
+Line:696, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/StateSystem.java -> should not silently catch exceptions
+
+Line:707, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/StateSystem.java -> this will fail if the attribute is an Int
+
+Line:709, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/StateSystem.java -> should not silently catch exceptions
+
+Line:723, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/StateSystem.java -> this will fail if the attribute is an Int
+
+Line:725, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/StateSystem.java -> should not silently catch exceptions
+
+Line:727, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/StateSystem.java -> Should probably return Math.round but even better as a floating point number.
+
+Line:737, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/StateSystem.java -> int should be sufficient for the level (the maximum possible level should not exceed 64)
+
+Line:739, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/StateSystem.java -> should not silently catch exceptions
+
+Line:762, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/StateSystem.java -> unnecessary
+
+Line:770, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/StateSystem.java -> if the next level interval is OK to use (fully overlapped) then it was not necessary to query the current level
+
+Line:777, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/StateSystem.java -> could just pass the range and interval to the isFullyOverlapped() method
+
+Line:778, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/StateSystem.java -> if the nextLevelInterval value is null (e.g. beginning before the first mipmap update) then instead of going up the mipmap we should just update the range and continue at the same level
+
+Line:780, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/StateSystem.java -> The interval should not be added if it is a nullValue.
+
+Line:784, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/StateSystem.java -> The interval should not be added if it is a nullValue.
+
+Line:791, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/StateSystem.java -> should not silently catch exceptions
+
+Line:801, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/StateSystem.java -> this gives incorrect result (stops after the first interval) if the requested mipmap range does not start at the first interval's boundary.
+
+Line:78, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/mipmapFeature/MinMipmapFeature.java -> should not silently catch exceptions
+
+Line:104, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/mipmapFeature/MinMipmapFeature.java -> should not silently catch exceptions
+
+Line:12, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/mipmapFeature/ITmfMipmapFeature.java -> It is preferred by the team that this package should be internal.
+Name of package should be o.e.l.i.t.c.mipmap.
+Also the package should be exported.
+
+Line:68, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/mipmapFeature/ITmfMipmapFeature.java -> Unnecessary method, the resolution should not be changed.
+
+-------------------------------------

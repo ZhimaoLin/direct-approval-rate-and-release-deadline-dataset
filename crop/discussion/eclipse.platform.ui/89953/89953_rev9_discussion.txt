@@ -1,0 +1,81 @@
+DESCRIPTION
+
+Bug 8519 - keystroke macros recording and playing capability
+
+Change-Id: I3f548fc00d82a847a2591c06ff6387fa23204a76
+Signed-off-by: Sienna Tate xxx@xxx.xxx
+
+COMMENTS
+
+author: Sienna Tate
+date: 2017-02-16 18:44:16.000000000
+
+Uploaded patch set 9.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-02-16 19:04:24.000000000
+
+Patch Set 9:
+
+Build Started https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/12076/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-02-16 20:07:33.000000000
+
+Patch Set 9: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/12076/ : SUCCESS
+
+-------------------------------------
+author: Teagan Marsh
+date: 2017-02-17 17:47:38.000000000
+
+Patch Set 9:
+
+(5 comments)
+
+High-level concerns:
+
+*Naming:* Imagine you come back to this code in 3 months, or 6 months. Or more importantly, another developer — not even a committer — comes to this to understand why their code is breaking.  I'm reading through the code and *I'm* confused by the different terms.
+
+- Macro vs Macro Command.  The use of "Macro Command" is confusing with the existing Eclipse Commands. For example: does this 'org.eclipse.e4.ui.macros.acceptedCommands' extension point refer to Eclipse Commands or Macro Commands.
+
+- Macro Context: I kinda get this, but the EMacroContextService is puzzling
+
+I don't think the DIWrapper approach adds anything.  If you want to do DI, then add them as E4 Handlers on the model.
+
+I think you can turf the macroContextListeners extension point and instead use OSGi events via the EventAdmin.  You can register your KeyBindingDispatcherInterceptorInstaller using OSGi DS (see http://eclipsesource.com/blogs/2009/09/15/osgi-eventadmin/ for an example).
+
+
+
+And a few questions:
+
+- What happens if the user switches focus during a macro?  How do you replay the focus change?
+
+- your MacroManager implementation saves the last N macros. But there's no way to access them.  What if you allowed plugins to contribute named macros.  We don't need to add that now, but with something like that in mind, it might be better for the EMacro*Service to provide getLastRecordedMacro() and playbackMacro(IMacro).
+
+Line:55, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/internal/MacroManager.java -> setMax (capitalization)
+
+Line:37, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/EMacroContextService.java -> This should be EMacroService.  The context is to do with playback (and recording) of a macro.
+
+Ah, I think I see the tension here now.  This class does two things:
+  - it provides state info on macros and manages playback
+  - it records information about the current macro being recorded
+
+Perhaps we can separate this into:
+  - EMacroService
+  - IMacroContext: should be accessed xxx@xxx.xxx @Inject — will be set during macro recording or playback.  isPlayingBack, isRecording, and addMacroCommand, would be moved to that object.
+
+Line:92, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/EMacroContextService.java -> addMacroStateListener would seem more appropriate?
+
+Line:21, bundles/org.eclipse.e4.ui.macros/src/org/eclipse/e4/ui/macros/EAcceptedCommands.java -> I think this is best as part of EMacro*Service: the Core Commands are all in org.eclipse.core.*.
+
+It's not clear what "accepted" and "recorded" means.
+
+Line:58, bundles/org.eclipse.e4.ui.macros/src/org/eclipse/e4/ui/macros/EAcceptedCommands.java -> Odd name since the commands returned may not actually be accepted.  getCommands().
+
+-------------------------------------

@@ -1,0 +1,194 @@
+DESCRIPTION
+
+Update bitmap selection throttling to fully span active branches.
+
+Replace the “bitmapCommitRange” parameter that was recently introduced
+with two new parameters: “bitmapExcessiveBranchCount” and
+“bitmapInactiveBranchAgeInDays”. If the count of branches does not
+exceed “bitmapExcessiveBranchCount”, then the current algorithm is kept
+for all branches.
+
+If the branch count is excessive, then the commit time for the tip
+commit for each branch is used to determine if a branch is “inactive”.
+"Active" branches get full commit selection using the existing
+algorithm. "Inactive" branches get fewer bitmaps near the branch tips.
+
+Introduce a "contiguousCommitCount" parameter that always enforces that
+the N most recent commits in a branch are selected for bitmaps. The
+previous nextSelectionDistance() algorithm created anywhere from 1-100
+contiguous bitmaps at branch tips.
+
+For example, consider a branch with commits numbering 0-300, with 0
+being the most recent commit. If the most recent 200 commits are not
+merge commits and the 200th commit was the last one selected,
+nextSelectionDistance() returned 100, causing commits 200-101 to be
+ignored. Then a window of size 100 was evaluated, searching for merge
+commits. Since no merge commits are found, the next commit (commit 0)
+was selected, for a total of 1 commit in the topmost 100 commits.
+
+If instead the 250th commit was selected, then by the same logic
+commit 50 is selected. At that point nextSelectionDistance() switches to
+selecting consecutive commits, so commits 0-50 in the topmost 100
+commits are selected. The "contiguousCommitCount" parameter provides
+more determinism by always selecting a constant number or topmost
+commits.
+
+Add an optimization to break out of the inner loop of selectCommits() if
+all of the commits for the current branch have already been found.
+
+When reusing bitmaps from an existing pack, remove unnecessary
+populating and clearing of the writeBitmaps/PackBitmapIndexBuilder.
+
+Add comments to PackWriterBitmapPreparer, rename methods and variables
+for readability.
+
+Add tests for bitmap selection with and without merge commits and with
+excessive branch pruning triggered.
+
+Note: I will follow up with an additional change that exposes the new
+parameters through PackConfig.
+
+Change-Id: I5ccbb96c8849f331c302d9f7840e05f9650c4608
+Signed-off-by: Ariel Sawyer xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Ariel Sawyer
+date: 2015-10-21 21:54:29.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-10-21 21:54:36.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7279/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-10-21 21:59:19.000000000
+
+Patch Set 3: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7279/ : FAILURE
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-10-21 22:01:29.000000000
+
+Patch Set 3: -Verified
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7280/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-10-21 22:13:04.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7280/ : SUCCESS
+
+-------------------------------------
+author: Eden Lin
+date: 2015-10-21 22:19:16.000000000
+
+Patch Set 3: Code-Review+1
+
+(4 comments)
+
+Ok, now I've looked more closely. Still looks very good.
+
+Line:185, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> The code that implements this is a pretty small part of the patch. If doing it over, I'd suggest making that a separate CL from the cleanup --- that way, a reviewer only has to think about (1) does change A really make the code easier to work with and have no effect? and (2) does tiny change B really do what it says in the commit message and is that a good idea?
+
+That said, I don't think it's worth splitting out now that this is written.
+
+Line:339, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> neat
+
+Line:409, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> /**
+
+Line:497, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> (nit) this paren should probably be on the next line to avoid a stray space if this doc gets rendered
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2015-10-21 23:11:59.000000000
+
+Patch Set 3:
+
+(4 comments)
+
+Line:185, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> Noted. I got fairly deep in before realizing how bit a rewrite this became.
+
+Line:339, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> This was the only side effect of calling writeBitmaps.addBitmap(), so I expressed it this way.
+
+Line:409, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> This is intentional because the comment contains ASCII art. Without it, the auto-save action to reformat the file destroys the readability of the comment.
+
+That said, this function was simplified, so if this really rubs you the wrong way, I feel I can now live with dropping the graph and using a text description.
+
+Line:497, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> Eclipse's formatter, which by default is run on every save, reformats the text this way. Opened http://bugs.eclipse.org/480359. I also opened http://bugs.eclipse.org/480361 for the excessively long ORDER_BY_DESCENDING_CARDINALITY line at the top of the file.
+
+-------------------------------------
+author: Eden Lin
+date: 2015-10-21 23:33:21.000000000
+
+Patch Set 3:
+
+(2 comments)
+
+Line:409, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> Odd. Does <pre> help?
+
+Line:497, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> Ah. Ok. (My habit is to ctrl+z after every save because of things like this. Thanks for fighting the good fight.)
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2015-10-22 01:00:29.000000000
+
+Patch Set 3:
+
+(2 comments)
+
+Line:409, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> No.
+
+Line:497, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> The formatter is rewritten in Eclipse 4.5. The developer is now a JDT committer, so bugs will likely get addressed. 
+
+This was not the case with the previous formatter. No one working on the JDT had any experience with it, and bugs were very hard to fix.
+
+-------------------------------------
+author: Eden Lin
+date: 2015-10-22 01:29:30.000000000
+
+Patch Set 3: Code-Review+2
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-10-22 01:29:34.000000000
+
+Change has been successfully merged into the git repository by Eden Lin
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2015-10-22 01:37:58.000000000
+
+Patch Set 3:
+
+Thanks for the review Jonathan. If Shawn has any comments I'll address them in a follow up change.
+
+-------------------------------------
+author: Eden Lin
+date: 2015-11-04 01:48:44.000000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:339, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> Looking more closely, this looks wrong. Details at https://git.eclipse.org/r/59622.
+
+Thanks for clearing this code up.
+
+-------------------------------------

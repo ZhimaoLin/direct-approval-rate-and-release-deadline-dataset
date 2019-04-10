@@ -1,0 +1,85 @@
+DESCRIPTION
+
+Use virtual destructors
+
+This ensures that the memory is freed at the appropriate times.
+Without it I noticed a memory leak reported by mdb during
+bucket deletion:
+
+> ::findleaks
+BYTES             LEAKED         VMEM_SEG CALLER
+12288                  6 fffffd7ffc35f000 MMAP
+12288                  1 fffffd7ffcf6c000 MMAP
+12288                  1 fffffd7ffcd6d000 MMAP
+12288                  1 fffffd7ffc95c000 MMAP
+12288                  1 fffffd7ffc75d000 MMAP
+12288                  1 fffffd7ffc55e000 MMAP
+------------------------------------------------------------------------
+           Total       6 oversized leaks, 73728 bytes
+
+CACHE             LEAKED           BUFCTL CALLER
+0000000000485028       1 0000000008a26700
+ep.so`_ZN13MemoryTrackerC1Ev+0x6b
+00000000004a5028       2 0000000008db57e0
+ep.so`_ZN26EventuallyPersistentEngine16setClusterConfigEPKvP33protocol_binary_request_no_extrasPFbS1_tS1_hS1_jhtmS1_E+0x5f
+000000000048a028    1022 000000000ce429a0 libstdc++.so.6.0.17`_Znwm+0x1e
+------------------------------------------------------------------------
+           Total    1025 buffers, 81800 bytes
+> $G
+C++ symbol demangling enabled
+> 000000000ce429a0::bufctl -v
+            ADDR          BUFADDR        TIMESTAMP           THREAD
+                            CACHE          LASTLOG         CONTENTS
+         ce429a0          ce41a80    c3649354079fa                4
+                           48a028                0                0
+                 libumem.so.1`umem_cache_alloc_debug+0xfd
+                 libumem.so.1`umem_cache_alloc+0xb3
+                 libumem.so.1`umem_alloc+0x64
+                 libumem.so.1`malloc+0x3f
+                 libstdc++.so.6.0.17`operator new+0x1e
+                 ep.so`UprConsumer::snapshotMarker+0xc7
+                 ep.so`EvpUprSnapshotMarker+0x75
+                 bucket_engine.so`upr_snapshot_marker+0x8a
+                 upr_snapshot_marker_executor+0x100
+                 process_bin_packet+0xb8
+                 complete_nread+0x182
+                 conn_nread+0x48
+                 event_handler+0x1ce
+                 libevent_core-2.0.so.5.1.9`event_base_loop+0x436
+                 worker_libevent+0x56
+
+Change-Id: I98151498e6cf7ac74d7da6951676ddda76e3ba2f
+
+
+COMMENTS
+
+author: Asher Vang
+date: 2014-06-23 10:47:21.853000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Asher Vang
+date: 2014-06-23 11:01:37.927000000
+
+Patch Set 1:
+
+hmm... not sure this actually fixed the problem..
+
+-------------------------------------
+author: Ashlee Kent
+date: 2014-06-23 11:13:05.645000000
+
+Patch Set 1: Code-Review-1
+
+So the base class (Stream) already has a virtual distractor, so it shouldn't make a difference if these derived classes have one...
+
+-------------------------------------
+author: Asher Vang
+date: 2014-06-23 11:27:41.102000000
+
+Abandoned
+
+You're right and I'm wrong :-) Don't know why the I first noticed anything different from ::findleaks (and I couldn't reproduce that)
+
+-------------------------------------

@@ -1,0 +1,97 @@
+DESCRIPTION
+
+Support cutting existing delta chains longer than the max depth
+
+Some packs built by JGit have incredibly long delta chains due to a
+long standing bug in PackWriter. Google has packs created by JGit's
+DfsGarbageCollector with chains of 6000 objects long, or more.
+
+Inflating objects at the end of this 6000 long chain is impossible
+to complete within a reasonable time bound. It could take a beefy
+system hours to perform even using the heavily optimized native C
+implementation of Git, let alone with JGit.
+
+Enable pack.cutDeltaChains to be set in a configuration file to
+permit the PackWriter to determine the length of each delta chain
+and clip the chain at arbitrary points to fit within pack.depth.
+
+Delta chain cycles are still possible, but no attempt is made to
+detect them. A trivial chain of A->B->A will iterate for the full
+pack.depth configured limit (e.g. 50) and then pick an object to
+store as non-delta.
+
+When cutting chains the object list is walked in reverse to try
+and take advantage of existing chain computations. The assumption
+here is most deltas are near the end of the list, and their bases
+are near the front of the list. Going up from the tail attempts to
+reuse chainLength computations by relying on the memoized value in
+the delta base.
+
+The chainLength field in ObjectToPack is overloaded into the depth
+field normally used by DeltaWindow. This is acceptable because the
+chain cut happens before delta search, and the chainLength is reset
+to 0 if delta search will follow.
+
+Change-Id: Ida4fde9558f3abbbb77ade398d2af3941de9c812
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2013-04-05 17:18:48.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3306/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-04-05 17:25:21.000000000
+
+Patch Set 1: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3306/ : SUCCESS
+
+-------------------------------------
+author: Eden Lin
+date: 2013-04-05 17:28:28.000000000
+
+Patch Set 1: Looks good to me, but someone else must approve
+
+Very nice. This seems like a good way to go.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2013-04-05 17:32:43.000000000
+
+Patch Set 1:
+
+Colby and I think this is a hack to repair the existing damaged repositories we have. Once the chains are cut we can disable the chain cutter and instead look towards relying on something like change I5989d8de1849ebb85e64d7c24d7fca373f0f86ef where chains are never extended.
+
+Its still useful to have the chain cutter once its in, just in case you get a repository from someone with depth=250 and its really slow to work with, you can recut the chains at depth=50 and then maybe process it. Note that actually making those cuts is still going to be very expensive, but it will be much cheaper than trying to disable delta reuse and repack the entire repository in order to get shorter chains.
+
+-------------------------------------
+author: Warren Watkins
+date: 2013-04-05 17:35:38.000000000
+
+Patch Set 1: Looks good to me, approved
+
+
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2013-04-05 18:37:46.000000000
+
+Patch Set 1: IP review completed
+
+
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2013-04-05 18:37:47.000000000
+
+Change has been successfully merged into the git repository.
+
+-------------------------------------

@@ -1,0 +1,111 @@
+DESCRIPTION
+
+Added function to get number of vBuckets to MembaseClient
+
+This is needed by the Couchbase-Hadoop connector.
+
+Change-Id: Idca74e4ca51b99216779f1c3b8d6c5dc83feaea2
+
+
+COMMENTS
+
+author: Kenny Maynard
+date: 2011-09-12 23:43:39.735000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Andreas Short
+date: 2011-09-13 05:13:52.179000000
+
+Patch Set 2: Do not submit
+
+(2 inline comments)
+
+
+
+Line:276, src/main/java/net/spy/memcached/MembaseClient.java -> I'm not certain this is right.  It'll certainly give the current vbucket configuration count, but that's updated by another thread and allows observation of configuration changes, as things like this could change.  
+
+Before approving this change, I'd need to know more about what the other side of the interface is expecting to do with the vbucket count.  Generally speaking vbuckets are an abstraction the client shouldn't be aware of.  We're leaking that abstraction way too much already, and adding a public method to just give up more details on it doesn't sound good to me.
+
+There's quite possibly a rational explanation, I just can't see it from here.
+
+Line:65, src/test/java/net/spy/memcached/MembaseClientTest.java -> I think this runs against a real server, which in the world of Couchbase, isn't guaranteed to always be 1024.  I think there's instead a place that you can run this against a mock of the config, which would be a better place for the test.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2011-09-13 19:41:28.755000000
+
+Patch Set 2: (2 inline comments)
+
+
+
+Line:276, src/main/java/net/spy/memcached/MembaseClient.java -> Now that I think about it this should be moved to the TapClient class, but the reasoning is that I need to be able to split up the work between a given amount of hadoop mappers. The only way to do this is to start multiple tap streams and tell them to tap a given set of vBuckets. This is impossible to do without knowing how many vBuckets the server has. I'll update this patch set with a few changes, but this change in some form is mandatory for the hadoop connector too function usefully.
+
+Line:65, src/test/java/net/spy/memcached/MembaseClientTest.java -> I'll add an isMembase() above this. I thought this would only be run when testing against Membase, but looking at the build file I can see it is also run against Couchbase.
+
+-------------------------------------
+author: Andreas Short
+date: 2011-09-14 16:00:27.068000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:276, src/main/java/net/spy/memcached/MembaseClient.java -> Does there need to be a 1:1 between hadoop mappers and vbuckets, or is that just out of trying to get good throughput?  I'll look out for the change.  That make some sense now, but it may be better to tNathalie Landry about it in terms of int maxConcurrency or something like that from the TapClient class.
+
+TAP is, theoretically, not vbucket specific either.
+
+Sorry to be holding it up, but want it to be right.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2011-09-14 17:54:02.056000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:276, src/main/java/net/spy/memcached/MembaseClient.java -> I don't really like maxConcurrency because you can theoretically create as many tap streams as you want from the tap client. Eg.
+
+while (true) {
+  client.tapBackfill();
+}
+
+So having maxConcurrency here to me doesn't really make sense.
+
+Also, this is more important that throughput. Mappers also split things into different files in hdfs.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2011-09-14 19:11:42.691000000
+
+Patch Set 2:
+
+I tNathalie Landryed to Dustin today and he suggested that we clearly mark this function in as for internal use and to basically only use it if you really know what your doing.
+
+-------------------------------------
+author: Andreas Short
+date: 2011-09-14 23:57:47.798000000
+
+Patch Set 2:
+
+may make sense, but move it over to the TapClient, right?
+
+-------------------------------------
+author: Kenny Maynard
+date: 2011-09-15 00:04:59.262000000
+
+Patch Set 2:
+
+Yeah, I'll do that right now. Can you change your -2 to a -1 so I can have Dustin review this tomorrow. Then I can get the Hadoop stuff finished.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2011-09-15 00:14:41.234000000
+
+Patch Set 2:
+
+Actually, it turns out this can't go into the TapClient class since each tap connection creates it's own separate connections to Membase/Couchbase. I think this change will need to stay as is.
+
+-------------------------------------

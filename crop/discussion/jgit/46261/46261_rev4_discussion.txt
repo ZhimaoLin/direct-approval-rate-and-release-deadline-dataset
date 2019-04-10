@@ -1,0 +1,126 @@
+DESCRIPTION
+
+Add support to follow HTTP redirects
+
+git-core follows HTTP redirects so JGit should also provide this.
+
+Implement config setting http.followRedirects with possible values
+"false" (= never), "true" (= always), and "initial" (only on GET, but
+not on POST).[1]
+
+We must do our own redirect handling and cannot rely on the support
+that the underlying real connection may offer. At least the JDK's
+HttpURLConnection has two features that get in the way:
+
+* it does not allow cross-protocol redirects and thus fails on
+  http->https redirects (for instance, on Github).
+* it translates a redirect after a POST to a GET unless the system
+  property "http.strictPostRedirect" is set to true. We don't want
+  to manipulate that system setting nor require it.
+  
+Additionally, git has its own rules about what redirects it accepts;[2]
+for instance, it does not allow a redirect that adds query arguments.
+
+We handle response codes 301, 302, 303, and 307 as per RFC 2616.[3]
+On POST we do not handle 303, and we follow redirects only if
+http.followRedirects == true.
+
+Redirects are followed only a certain number of times. There are two
+ways to control that limit:
+
+* by default, the limit is given by the http.maxRedirects system
+  property that is also used by the JDK. If the system property is
+  not set, the default is 5. (This is much lower than the JDK default
+  of 20, but I don't see the value of following so many redirects.)
+* this can be overwritten by a http.maxRedirects git config setting.
+
+The JGit http.* git config settings are currently all global; JGit has
+no support yet for URI-specific settings "http.<pattern>.name". Adding
+support for that is well beyond the scope of this change.
+
+[1] https://git-scm.com/docs/git-config
+[2] https://kernel.googlesource.com/pub/scm/git/git/+/6628eb41db5189c0cdfdced6d8697e7c813c5f0f
+[3] https://www.w3.org/Protocols/rfc2616/rfc2616-sec10.html
+
+Bug: 465167
+Change-Id: I86518cb76842f7d326b51f8715e3bbf8ada89859
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+Signed-off-by: Alayna Houston xxx@xxx.xxx
+
+COMMENTS
+
+author: Alayna Houston
+date: 2017-08-06 22:27:43.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-08-06 22:27:53.000000000
+
+Patch Set 4:
+
+Build Started https://ci.eclipse.org/jgit/job/jgit.gerrit/10829/
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-08-06 22:37:16.000000000
+
+Patch Set 4:
+
+Oops, author got modified... sorry about that. But as a non-committer here I think Gerrit would have rejected a new patch set with Matthias' original author line anyway.
+
+I think that's pretty much it. Added more tests. The test from C git for stuff being added after /info/refs or added query parameters and then failing the request cannot be re-built in JGit since we only update the base URL and re-construct the full query, so we ignore anything the server might have tacked onto the end anyway.
+
+I don't know how to write a test for http->https redirection; I suspect that would need some more infrastructure (like a server certificate?). I notice that the AppServer does have some https
+config and listens on port 8443, but using that might be a different
+thing. I have tested this manually by cloning a Github repo with a http (instead of https) URL.
+
+Tests for redirects on POST are missing. It's not quite clear to me how I could configure this test server to issue a redirect on POST.
+The redirects on GET come from the filter on the /redirect context,
+and the tests all end up at the correct /git context already after
+the GET redirections.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-08-06 22:39:18.000000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+https://ci.eclipse.org/jgit/job/jgit.gerrit/10829/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-08-07 12:01:17.000000000
+
+Patch Set 4:
+
+> Oops, author got modified... sorry about that. But as a
+ > non-committer here I think Gerrit would have rejected a new patch
+ > set with Matthias' original author line anyway.
+ > 
+ > I think that's pretty much it. Added more tests. The test from C
+ > git for stuff being added after /info/refs or added query
+ > parameters and then failing the request cannot be re-built in JGit
+ > since we only update the base URL and re-construct the full query,
+ > so we ignore anything the server might have tacked onto the end
+ > anyway.
+ > 
+ > I don't know how to write a test for http->https redirection; I
+ > suspect that would need some more infrastructure (like a server
+ > certificate?). I notice that the AppServer does have some https
+ > config and listens on port 8443, but using that might be a
+ > different
+ > thing. I have tested this manually by cloning a Github repo with a
+ > http (instead of https) URL.
+ 
+looks like we only set schema and port but don't configure certificates. Maybe we can test redirect without configuring certificates, not sure if that would work. Otherwise we have to generate certificates and configure Jetty accordingly. For generating certificates we could either use keytool or Bouncycastle. The former approach is taken by Gerrit [1], the latter one is used by gitblit [2].
+
+[1] https://gerrit.googlesource.com/gerrit/+/master/gerrit-pgm/src/main/java/com/google/gerrit/pgm/init/InitHttpd.java#134
+
+[2] https://github.com/gitblit/gitblit/blob/master/src/main/java/com/gitblit/GitBlitServer.java#L237
+https://github.com/gitblit/gitblit/blob/master/src/main/java/com/gitblit/utils/X509Utils.java
+
+-------------------------------------

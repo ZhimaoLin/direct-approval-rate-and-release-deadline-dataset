@@ -1,0 +1,211 @@
+DESCRIPTION
+
+Introduce internal API to integrate Team merging
+
+Team provides a number of APIs to provide access to merge,
+comparison and synchronization features. This introduces a
+git-specific Subscriber implementation that can retrieve
+information from three different sources, along with
+implementations to use the index or a TreeWalk to populate
+these three 'sources'.
+
+Change-Id: Ieda23bb556d342f421f03b93c7faa160998598aa
+Signed-off-by: Gustavo Green xxx@xxx.xxx
+Signed-off-by: Karter Mora xxx@xxx.xxx
+Also-by: Karter Mora xxx@xxx.xxx
+
+
+
+COMMENTS
+
+author: Rylee Bush
+date: 2015-03-26 09:01:50.000000000
+
+Uploaded patch set 7.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-03-26 09:01:57.000000000
+
+Patch Set 7:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/6889/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-03-26 09:42:01.000000000
+
+Patch Set 7: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/6889/ : ABORTED
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2015-03-26 14:25:37.000000000
+
+Patch Set 7: Code-Review-1
+
+(16 comments)
+
+Line:26, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/storage/AbstractGitResourceVariant.java -> wouldn't it be safer to not store this redundantly as it's already part of the path ?
+
+Line:188, org.eclipse.egit.core.test/src/org/eclipse/egit/core/internal/merge/GitResourceVariantTreeSubscriberTest.java -> create this in a try-with-resource statement to ensure that the walk is closed when it's no longer needed
+
+Line:57, org.eclipse.egit.core.test/src/org/eclipse/egit/core/internal/merge/TreeWalkResourceVariantTreeProviderTest.java -> create this in a try-with-resource statement to ensure that the walk is closed when it's no longer needed
+
+Line:61, org.eclipse.egit.core.test/src/org/eclipse/egit/core/internal/merge/TreeWalkResourceVariantTreeProviderTest.java -> why a NameConflictTreeWalk which is more expensive than a plain TreeWalk ?
+
+Line:65, org.eclipse.egit.core.test/src/org/eclipse/egit/core/internal/merge/TreeWalkResourceVariantTreeProviderTest.java -> it looks like some of the code above could be moved into the TreeWalkResourceVariantTreeProvider, instead of passing a configured TreeWalk and 3 indices you could instead pass the repo and the 3 versions into the constructor. Then both the TreeWalk and the RevWalk would be internals of the provider's implementation.
+
+then the constructor's signature would look like
+
+ TreeWalkResourceVariantTreeProvider(Repository repo, AnyObjectId base, 
+       AnyObjectId ours, AnyObjectId theirs)
+
+
+Is the common base determined by the merge implementation ?
+
+Line:118, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/merge/GitSyncInfoToDiffConverter.java -> s/side a/side of a/
+
+Line:135, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/merge/GitSyncInfoToDiffConverter.java -> copied
+
+Line:164, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/merge/GitSyncInfoToDiffConverter.java -> copied
+
+Line:28, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/merge/TreeWalkResourceVariantTreeProvider.java -> do you want it to contain all resources or only those which differ between the different trees this TreeWalk is configured to walk, usually most of the trees/files are unchanged between versions involved in a merge so traversing also the unchanged resources implies a lot of overhead.
+
+If you are only interested in the resources which are different between the trees in the TreeWalk you should add an TreeFilter.ANY_DIFF filter to the TreeWalk. This will ensure that the walk skips all resources which don't have differences between the 3 trees.
+
+Line:68, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/merge/TreeWalkResourceVariantTreeProvider.java -> I think the signature should be changed to what I proposed in https://git.eclipse.org/r/#/c/42873/7/org.eclipse.egit.core.test/src/org/eclipse/egit/core/internal/merge/TreeWalkResourceVariantTreeProviderTest.java
+
+Line:75, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/merge/TreeWalkResourceVariantTreeProvider.java -> this array is unused, so why is it created ?
+
+Line:101, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/merge/TreeWalkResourceVariantTreeProvider.java -> I think this should read:
+
+ if (resource != null && resource.getProject().isAccessible())
+
+Line:159, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/coretext.properties -> s/Variant/Variant Tree/ ?
+
+Line:85, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/merge/DirCacheResourceVariantTreeProvider.java -> I'd write STAGE_0 here to make it explicit that we skip stage 0 (no conflict)
+
+Line:103, org.eclipse.egit.core.test/src/org/eclipse/egit/core/internal/merge/VariantsTestCase.java -> use try-with-resource instead:
+
+try (Scanner scanner = new Scanner() {
+
+}
+
+Line:19, /COMMIT_MSG -> Don't add an Also-by entry for the commit author, maybe you meant someone else
+
+-------------------------------------
+author: Maleah Marks
+date: 2015-03-27 17:29:58.000000000
+
+Patch Set 7:
+
+(19 comments)
+
+Matthias,
+
+I tried to take all your comments into account.
+I introduced new tests since during my analysis I detected a bug.
+
+I couldn't perform the refactoring you wanted because it doesn't match the way we want to use the class in the next reviews.
+I hope my comments are clear enough but please feel free to ask more questions and add comments.
+
+And a great thank you for the thorough review!
+
+Line:26, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/storage/AbstractGitResourceVariant.java -> Done
+
+Line:188, org.eclipse.egit.core.test/src/org/eclipse/egit/core/internal/merge/GitResourceVariantTreeSubscriberTest.java -> Done
+
+Line:57, org.eclipse.egit.core.test/src/org/eclipse/egit/core/internal/merge/TreeWalkResourceVariantTreeProviderTest.java -> Done
+
+Line:61, org.eclipse.egit.core.test/src/org/eclipse/egit/core/internal/merge/TreeWalkResourceVariantTreeProviderTest.java -> This is not useful in this test, so I'll use a plain TreeWalk.
+
+Line:65, org.eclipse.egit.core.test/src/org/eclipse/egit/core/internal/merge/TreeWalkResourceVariantTreeProviderTest.java -> I tried but it doesn't work out right.
+
+The TreeWalkResourceVariantTreeProvider is meant to be used by merger in a place where we already have a configured TreeWalk.
+
+Please see my other comment on the related class.
+
+Line:26, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/merge/GitResourceVariantFileRevision.java -> This doesn't look good since the variant is already stored in the parent. Plus, each method need to check the type of the variant.
+Let's use a more object-oriented approach.
+
+Line:118, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/merge/GitSyncInfoToDiffConverter.java -> Done
+
+Line:135, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/merge/GitSyncInfoToDiffConverter.java -> Done
+
+Line:164, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/merge/GitSyncInfoToDiffConverter.java -> Done
+
+Line:28, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/merge/TreeWalkResourceVariantTreeProvider.java -> I think we only want resources with actual changes, so adding TreeFilter.ANY_DIFF is probably a good idea.
+
+But since we receive a configures TreeWalk in the constructor, I don't think it's the responsibility of this class to set this filter.
+It's not done in ResolveMerger.mergeTrees(), maybe that's where it should be?
+
+Line:68, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/merge/TreeWalkResourceVariantTreeProvider.java -> I tried really hard to do that today.
+But this class is intended to be used in a sub-class or RecursiveMerger, in which we override mergeTreeWalk(), which receives an already configured TreeWalk in parameter.
+I haven't been able to obtain the Ids of the trees of the received TreeWalk.
+When using tw.getObjectId(0 or 1 or 2), I don't get the same results as before.
+
+The merger is also responsible for finding the common ancestor.
+
+Line:75, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/merge/TreeWalkResourceVariantTreeProvider.java -> It is used at line 120. If you have an idea on how to improve the reset, it would be very welcome by the way!
+
+Line:101, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/merge/TreeWalkResourceVariantTreeProvider.java -> Done.
+
+Line:159, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/coretext.properties -> Done
+
+Line:69, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/merge/DirCacheResourceVariantTreeProvider.java -> resource.getProject() can be null if the resource is the workspace root for instance => Add a check to avoid NPE.
+
+Line:85, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/merge/DirCacheResourceVariantTreeProvider.java -> Done
+
+Line:58, org.eclipse.egit.core.test/src/org/eclipse/egit/core/internal/merge/VariantsTestCase.java -> Also added a try with resources here.
+
+Line:103, org.eclipse.egit.core.test/src/org/eclipse/egit/core/internal/merge/VariantsTestCase.java -> Done
+
+Line:19, /COMMIT_MSG -> Done
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2015-03-28 00:39:47.000000000
+
+Patch Set 7:
+
+(4 comments)
+
+Line:26, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/merge/GitResourceVariantFileRevision.java -> +1
+
+Line:68, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/merge/TreeWalkResourceVariantTreeProvider.java -> which change is that ? can you rebase it on top of this change so that I can see how you intend to use this ?
+
+Line:122, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/merge/TreeWalkResourceVariantTreeProvider.java -> I don't understand why this is needed, you set these trees above in line 72-75 and here you reset them, but they are not used anywhere
+
+Looks like line 72-75 and 119-122 can be deleted without changing the observable behavior of this method
+
+Line:69, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/merge/DirCacheResourceVariantTreeProvider.java -> good catch
+
+-------------------------------------
+author: Maleah Marks
+date: 2015-03-30 07:51:44.000000000
+
+Patch Set 7:
+
+(2 comments)
+
+Line:68, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/merge/TreeWalkResourceVariantTreeProvider.java -> Sure! It's change #22674, I will rebase it and push it later today.
+
+Line:122, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/merge/TreeWalkResourceVariantTreeProvider.java -> I must have misunderstood the way TreeWalk works:
+
+I thought that iterating over the TreeWalk (lines 81 and 113-114) actually changes the state of its trees. Isn't it the case?
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2015-03-30 22:57:31.000000000
+
+Patch Set 7:
+
+(1 comment)
+
+Line:28, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/merge/TreeWalkResourceVariantTreeProvider.java -> using ANY_DIFF has a huge impact on performance, typically there are many thousands of unchanged objects and only a few changed, with ANY_DIFF filter you will only traverse the changed objects otherwise all of them
+
+-------------------------------------

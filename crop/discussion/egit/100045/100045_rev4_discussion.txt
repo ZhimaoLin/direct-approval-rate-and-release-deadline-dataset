@@ -1,0 +1,207 @@
+DESCRIPTION
+
+Toolbar button to switch repositories in git views
+
+Enable the user to quickly switch the staging view, the reflog
+view, the rebase interactive view, or the history view from one
+repository to another via a toolbar button with a drop-down menu
+listing all currently configured git repositories. Switching in
+one view makes all other EGit views that are linked to the current
+selection also switch.
+
+Use the "repository" image for the new button. Change the icon
+for "no filter" in history view to avoid a clash: instead of the
+repository icon, use a struck-out filter icon.
+
+Make sure all Git views provide selections that do adapt to
+Repository. This was already the case for the repositories view,
+the history view, and partly the staging view. For the reflog
+view, add an adaptable DTO wrapper around ReflogEntry for the tree.
+In staging view, add a MultiViewerSelectionProvider modeled after
+the JDT's SelectionProviderMediator that can provide the selection
+from whichever viewer has the focus. In the rebase interactive view,
+make PlanElement adapt to Repository, and fix some other minor bugs:
+don't clear when the linked selection is empty, don't show "No
+Repository Selected" briefly when a bare repo is selected, react on
+the initial selection in createControl() instead of remembering the
+selection when the view was created. (If the view is hidden, the
+selection may have changed by the time it is activated and its
+control is created.)
+
+Make the repositories view react on selection changes not only for
+IResource or File but also for Repository.
+
+Add special-purpose selection providers (RepositorySelectionProvider)
+to the staging view, the reflog view, the history view, and the
+rebase interactive view that provide a selection that identifies the
+current repository in those views if it is otherwise empty. Use a
+RepositoryNode for this to avoid multiple entries in the history
+view's navigation history. Since all views' selection listener
+mechanisms do handle a selection that adapts to Repository, this
+makes all EGit views nicely switch in sync when the "current"
+repository is changed in one of them.
+
+Includes initial UI tests. However, for some unknown reason I cannot
+get the test for the new button and the selection handling to work,
+so it is ignored. Somehow the selection in the other views does not
+get updated when run as a SWTBot test. Testing this is tricky anyway
+because most of our views load asynchronously one way or another. To
+be able to detect that for the staging view, I have made it use a
+WorkbenchJob instead of a plain Display.asyncExec(). Alas, that didn't
+help for that test.
+
+Bug: 518607
+Change-Id: I976df6e3bf0363c27b877d995344487bb622f037
+Signed-off-by: Alayna Houston xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Alayna Houston
+date: 2017-07-12 16:05:40.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-07-12 16:05:46.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/10024/
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-07-12 16:06:16.000000000
+
+Patch Set 4:
+
+Removed some left-overs from an earlier attempt.
+
+-------------------------------------
+author: Zaid Mosley
+date: 2017-07-12 16:23:46.000000000
+
+Patch Set 4: Code-Review+1
+
+Looks cool and is very useful.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-07-12 16:33:15.000000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/10024/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-07-12 22:08:13.000000000
+
+Patch Set 4: Code-Review-1
+
+(2 comments)
+
+very nice :-)
+
+File Comment: icons/org.eclipse.egit.ui/icons/elcl16/filter_none.svg -> I think this icon is too complex for a small icon, I suggest to simplify it in the following way:
+* don't strikethrough the icon
+* remove the vertical line to depict nothing is filtered
+* extend the horizontal arrows
+
+Line:531, org.eclipse.egit.core/src/org/eclipse/egit/core/RepositoryUtil.java -> how is this related to this change ?
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-07-12 22:49:05.000000000
+
+Patch Set 4:
+
+(2 comments)
+
+File Comment: icons/org.eclipse.egit.ui/icons/elcl16/filter_none.svg -> Looks good on my screen ;-)
+
+A faded struck-out "filter" icon seemed an obvious choice to mean "no filtering". With your proposed changes, I'm not sure the connection with the three other filter icons is still there. Also,I think I remember having seen somewhere in Eclipse an icon with several thin arrows pointing right, though I can't remember where. Maybe I'm imagining it... but if so,our icon should not be too similar unless the function associated with it was also similar.
+
+I could try to make the upper-left arrow even more faded, so that the diagonal is emphasized more.
+
+The strike-through is the same visual language as used in debug (enable/disable breakpoints), in the JDT outline, or in the Mylyn task view. In fact, the svg code for the diagonal was even taken from JDT.
+
+Line:531, org.eclipse.egit.core/src/org/eclipse/egit/core/RepositoryUtil.java -> Admittedly only tangentially. Try without this re-ordering the following:
+
+* Have git repo view open.
+* Create one local repository. It will be added to both PREFS_DIRECTORIES_REL and PREFS_DIRECTORIES.
+* Now remove the repository from the view.
+
+Expected: repo view is empty.
+Actual: the repo stays. You have to remove it a second time to get it to disappear.
+
+What happens:
+
+First remove:
+
+* It's removed from PREFS_DIRECTORIES_REL, which is then empty
+* Preference listener in repo view reacts on PREF_DIRECTORIES_REL having changed. That listener calls getRepositories again.
+* getRepositories reads PREFS_DIRECTORIES_REL. It's empty, and thus it reads PREFS_DIRECTORIES. That one has not yet been updated and still contains the repo.
+* repo view still has that repository
+* Finally, listener returns and we save PREF_DIRECTORIES here, which is now also empty.
+
+We end up with both preferences being empty, but the repo view still showing the repository!
+
+Second attempt:
+
+Same sequence, only since this time both preferences are already empty, the listener concludes that there are no more repositories.
+
+EGit listens always on PREF_DIRECTORIES_REL. So if we re-order the saving here, we can avoid this. Older EGit doesn't even know about the _REL preference and thus is unaffected by this change.
+
+Sorry about this having sneaked into this change. I fixed it very early to avoid spurious puzzlements when I tested this change, then forgot about it.
+
+-------------------------------------
+author: Jack Yu
+date: 2017-07-13 05:48:54.000000000
+
+Patch Set 4: Code-Review-1
+
+Why not using the prominent repository label in the upper left of the staging view to do the switching (instead of the new view menu)? That is where I looked first after checking out this change.
+
+Second comment: For the view menu itself I suggest to use radio button style for the items and to check the current repository. Right now, the menu itself does not help me to identify the current repository.
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-07-13 06:02:14.000000000
+
+Patch Set 4:
+
+> Why not using the prominent repository label in the upper left of
+ > the staging view to do the switching (instead of the new view
+ > menu)? That is where I looked first after checking out this change.
+
+That's what patch set 1 did (without the synchronized view switching, though). As mentioned in previous comments, I'm not going to do implement it that way because
+
+1. it's possibly only via hacks.
+2. we're thinking about replacing this form heading by something smaller (but still showing which repo is set), so adding more functionality to this heading is probably not a good idea.
+3. doing so would leave the history view out in the cold. It doesn't have a form heading and we can't add one since the view is managed by org.eclipse.team, so the only options for that view are a toolbar widget or putting the switcher in the view menu. Either way the switcher would be located elsewhere than in the other views if the other views showed the menu on the form heading.
+
+ > Second comment: For the view menu itself I suggest to use radio
+ > button style for the items and to check the current repository.
+ > Right now, the menu itself does not help me to identify the current
+ > repository.
+
+That's a good idea. I'll do that. Note that if the "current" repo is a bare repo, there will be no checkmark in the menu except in the history view. The history view is the only one that shows bare repos in that menu at all; in the other views, bare repos don't make sense.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-07-13 07:37:55.000000000
+
+Patch Set 4: -Code-Review
+
+> (2 comments)
+
+ok, I see
+* can you try to fade the upper arrow a bit more ?
+* what's the purpose of the yellow arrow which seems to be also striked through ?
+Maybe put the yellow arrow in the foreground on top of the strikethrough ?
+
+-------------------------------------

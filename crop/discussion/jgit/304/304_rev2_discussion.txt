@@ -1,0 +1,54 @@
+DESCRIPTION
+
+Fix smart HTTP client buffer alignment
+
+This proved to be a pretty difficult to find bug.  If we read exactly
+the number of response bytes from the UnionInputStream and didn't
+try to read beyond that length, the last connection's InputStream is
+still inside of the UnionInputStream, and UnionInputStream.isEmpty()
+returns false.  But there is no data present, so the next read
+request to our UnionInputStream returns EOF at a point where the
+HTTP client code should have started a new request in order to get
+more data.
+
+Instead of wrapping the UnionInputStream, push an dummy stream onto
+the end of it which when invoked always starts the next request and
+then returns EOF.  The UnionInputStream will automatically pop that
+dummy stream out, and then read the next request's stream.
+
+This way we never get into the state where we don't think we need
+to run another request in order to satisfy the current read request,
+but we really do.
+
+The bug was hidden for so long because BasePackConnection.init()
+was always wrapping the InputStream into a BufferedInputStream
+with an 8 KiB buffer.  This made the odds of us reading from the
+UnionInputStream the exact number of available bytes quite low, as
+the BufferedInputStream would always try to read a full buffer size.
+
+Change-Id: I02b5ec3ef6853688687d91de000a5fbe2354915d
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-03-13 00:57:54.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-13 00:59:06.000000000
+
+Patch Set 2:  Looks good to me, approved; IP review completed
+
+
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-13 01:04:23.000000000
+
+Change has been successfully pushed into branch stable-0.7.
+
+-------------------------------------

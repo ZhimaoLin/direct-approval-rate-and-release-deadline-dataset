@@ -1,0 +1,93 @@
+DESCRIPTION
+
+tmf: Improve synchronization in TmfRequestExecutor
+
+If the TmfRequestExecutor is overwhelmed by event requests, it can
+freeze the UI thread for long amounts of time and lead to a pretty
+bad user experience. (An easy way to test this is to select an entry
+with lots of state changes in the CFV, and hold down the right or left
+arrow key.)
+
+This patch:
+- Makes it use Queue.offer() instead of .add(). This avoids spewing
+  exceptions in the console once the queues are full.
+- Actually cancels the requests if the offer() fails. Before, even
+  though they would not be put in the queue, they would still exist
+  and still wait to execute.
+- Drastically reduces the size of the request queues. If we are in a
+  case where the handler receives requests faster than it can process
+  them, instead of giving the user false hope that we will process them
+  in a reasonable time, just cancel them so that the UI can go back to
+  being responsive faster (see bufferbloat).
+
+A more complete fix would be to implement a "request throttler", similar
+to the signal throttler, that views like the CFV can make use of to avoid
+sending too many requests in a short amount of time. But independently of
+such component, this patch makes the executor degrade more gracefully.
+
+Change-Id: I0072d54bb7a403773fd4288a42bfb73c4614189b
+Reported-by: Kason Bridges xxx@xxx.xxx
+Signed-off-by: Braxton Mccarthy xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Braxton Mccarthy
+date: 2014-08-21 22:50:22.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-08-22 00:53:24.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/8486/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-08-22 01:32:25.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/8486/ : SUCCESS
+
+-------------------------------------
+author: Ricky Reeves
+date: 2014-08-22 14:00:28.000000000
+
+Patch Set 1: Code-Review-1
+
+(3 comments)
+
+Line:59, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/request/TmfRequestExecutor.java -> 5 seems to be low. Request might be very long and they are being suspended and put back into the queue many times then.
+
+Line:92, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/request/TmfRequestExecutor.java -> synchronized is needed since stop will be called usually from the UI thread and isShutdown() from a different thread
+
+Line:99, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/request/TmfRequestExecutor.java -> same here
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-08-22 15:32:49.000000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:59, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/request/TmfRequestExecutor.java -> We could go up to 10 maybe? But even then, when do we have 10 concurrent *non-coalesced* requests going and we want for sure to run every one of them until the end?
+
+Line:92, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/request/TmfRequestExecutor.java -> I removed it because it was causing a deadlock with the schedule(Next) methods that are also synchronized (I think due to it now cancelling the request, which requires another lock).
+
+If we want to keep those 2 and the stop() method synchronized, they should use a different lock than "this".
+
+However, do we really need them synchronized? What's the difference between:
+
+* This method is synchronized, Thread A calls isShutdown() JUST before Thread B calls stop().
+* This method is not synchronized, Thread A calls isShutdown() while Thread is executing stop().
+
+In both cases, isShutdown() returns false but the executor is not useable moments later (possibly at the next call in Thread A).
+
+-------------------------------------

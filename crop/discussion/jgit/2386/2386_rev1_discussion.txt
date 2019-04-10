@@ -1,0 +1,59 @@
+DESCRIPTION
+
+PackWriter: Make thin packs more efficient
+
+There is no point in pushing all of the files within the edge
+commits into the delta search when making a thin pack.  This floods
+the delta search window with objects that are unlikely to be useful
+bases for the objects that will be written out, resulting in lower
+data compression and higher transfer sizes.
+
+Instead observe the path of a tree or blob that is being pushed
+into the outgoing set, and use that path to locate up to WINDOW
+ancestor versions from the edge commits.  Push only those objects
+into the edgeObjects set, reducing the number of objects seen by the
+search window.  This allows PackWriter to only look at ancestors
+for the modified files, rather than all files in the project.
+Limiting the search to WINDOW size makes sense, because more than
+WINDOW edge objects will just skip through the window search as
+none of them need to be delta compressed.
+
+To further improve compression, sort edge objects into the front
+of the window list, rather than randomly throughout.  This puts
+non-edges later in the window and gives them a better chance at
+finding their base, since they search backwards through the window.
+
+These changes make a significant difference in the thin-pack:
+
+  Before:
+    remote: Counting objects: 144190, done
+    remote: Finding sources: 100% (50275/50275)
+    remote: Getting sizes: 100% (101405/101405)
+    remote: Compressing objects: 100% (7587/7587)
+    Receiving objects: 100% (50275/50275), 24.67 MiB | 9.90 MiB/s, done.
+    Resolving deltas: 100% (40339/40339), completed with 2218 local objects.
+
+    real    0m30.267s
+
+  After:
+    remote: Counting objects: 61549, done
+    remote: Finding sources: 100% (50275/50275)
+    remote: Getting sizes: 100% (18862/18862)
+    remote: Compressing objects: 100% (7588/7588)
+    Receiving objects: 100% (50275/50275), 11.04 MiB | 3.51 MiB/s, done.
+    Resolving deltas: 100% (43160/43160), completed with 5014 local objects.
+
+    real    0m22.170s
+
+The resulting pack is 13.63 MiB smaller, even though it contains the
+same exact objects.  82,543 fewer objects had to have their sizes
+looked up, which saved about 8s of server CPU time.  2,796 more
+objects from the client were used as part of the base object set,
+which contributed to the smaller transfer size.
+
+Change-Id: Id01271950432c6960897495b09deab70e33993a9
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+

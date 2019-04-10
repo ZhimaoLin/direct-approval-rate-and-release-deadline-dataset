@@ -1,0 +1,139 @@
+DESCRIPTION
+
+Speed up walking on simple repositories without submodules
+
+Don't treat subdirectories containing .git files as FileMode.GITLINK if
+the repository does not have .git/modules storage at all.
+
+This is only solution for the case repository has no git modules - if
+the repository contains submodules, the FileEntry should check if the
+current file is known submodule root.
+
+Bug: 436200
+Change-Id: I2367dcc7e2007a20ba4fb2b57f6c17eeb63b3780
+Signed-off-by: Jayvion Booth xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Jayvion Booth
+date: 2015-08-10 21:36:17.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-08-10 21:36:23.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7000/
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-08-10 21:39:04.000000000
+
+Patch Set 2:
+
+Good point. What about patch 2? This doesn't care if there is .gitmodules file at all and checks .git/modules? If this directory is not there, git modules either not existing or aren't functional anymore.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-08-10 21:43:18.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7000/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-08-11 08:55:34.000000000
+
+Patch Set 2: Code-Review-1
+
+> Good point. What about patch 2? This doesn't care if there is
+ > .gitmodules file at all and checks .git/modules? If this directory
+ > is not there, git modules either not existing or aren't functional
+ > anymore.
+
+I fear this also doesn't work. When you clone a repo containing submodules
+(which --recursive) then "git submodule" will tell you about the contained
+modules but you don't have a .git/modules folder (see script below). 
+
+Additionally there may be also repos around with the old repository layout
+(see jgit commit 53ff052,4531259). In the old layout you had no
+$ROOT_GIT_DIR/modules but instead you had:
+
+  root_repo
+    .git/
+      ...
+      objects/
+      ...
+    plugins/
+      sub/
+        .git/
+          ...
+          objects
+          ..
+
+I understood you are solving performance issues where extra filesystem calls
+are decreasing performance. Why don't we rely more on the index where we are
+much faster when checking for the existance of files with specific modes. I
+know its more complicated than to work purely in the worktree --- but I hope
+it's faster and it is what native git is also doing with DIR_NO_GITLINKS. I
+guess you saw change https://git.eclipse.org/r/#/c/51906/. I'll give more
+comments on that one today.
+
+Check this out:
+
+  + git init sub
+  Initialized empty Git repository in /tmp/sub/.git/
+  + cd sub
+  + touch a
+  + git add a
+  + git commit -m addA
+  [master (root-commit) cfae0e8] addA
+   1 file changed, 0 insertions(+), 0 deletions(-)
+   create mode 100644 a
+  + cd ..
+  + git init container
+  Initialized empty Git repository in /tmp/container/.git/
+  + cd container
+  + touch b
+  + git add b
+  + git commit -m addB
+  [master (root-commit) a2b4cf6] addB
+   1 file changed, 0 insertions(+), 0 deletions(-)
+   create mode 100644 b
+  + git submodule add ../sub plugins/sub
+  Cloning into 'plugins/sub'...
+  done.
+  + git commit -m addSubmodule
+  [master 3695bae] addSubmodule
+   2 files changed, 4 insertions(+)
+   create mode 100644 .gitmodules
+   create mode 160000 plugins/sub
+  + git ls-files -s
+  100644 c16c5cbf89e80befa97ad60b5fd5dd3145751e4b 0	.gitmodules
+  100644 e69de29bb2d1d6434b8b29ae775ad8c2e48c5391 0	b
+  160000 cfae0e89b109b5e2f711a1da5d4a404ce69455f4 0	plugins/sub
+  + ls .git/modules
+  plugins
+  + cd ..
+  + git clone container container-clone
+  fatal: destination path 'container-clone' already exists and is not an empty directory.
+  + cd container-clone
+  + git submodule
+  -fc75c1395d79ce5cee1c47ee4d8c305260435def plugins/sub
+  + ls .git/modules
+  ls: cannot access .git/modules: No such file or directory
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-08-18 20:54:17.000000000
+
+Abandoned
+
+-------------------------------------

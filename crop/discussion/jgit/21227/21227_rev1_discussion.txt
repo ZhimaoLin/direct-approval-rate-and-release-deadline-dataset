@@ -1,0 +1,85 @@
+DESCRIPTION
+
+Fix serving fetch of existing shallow client
+
+In certain cases a JGit server updating an existing shallow client
+selected a common ancestor that was behind the shallow edge of
+the client. This allowed the server to assume the client had some
+objects it did not have and allowed creation of pack deltas the
+client could never inflate.
+
+Any commit the client has advertised as shallow must be treated
+by UploadPack server as though it has no parents. With no parents
+the walker cannot visit graph history the client does not have,
+and PackWriter cannot consider delta base candidates the client
+is lacking.
+
+Change-Id: I4922b9354df9f490966a586fb693762e897345a2
+
+
+COMMENTS
+
+author: Eden Lin
+date: 2014-01-29 00:47:10.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:1323, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/RevWalk.java -> I think handling fetches from a server that has its own shallow commits will take more work (see v1.9-rc0~3^2~17, "upload-pack: make sure deepening preserves shallow roots", 2013-12-05). Are the above two lines needed here?
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-01-29 00:48:00.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/egit/job/jgit.gerrit/4498/
+
+-------------------------------------
+author: Eden Lin
+date: 2014-01-29 00:50:37.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:688, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> What prevents finding a delta base the client doesn't have in the depth != 0 case?
+
+-------------------------------------
+author: Eden Lin
+date: 2014-01-29 00:57:46.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:1353, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> Is this safe when !clientShallowCommits.isEmpty()?
+
+The PackWriter knows not to use bitmaps in the shallowPack case, but up only calls setShallowPack for depth requests.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-01-29 01:05:29.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/jgit.gerrit/4498/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2014-01-29 01:07:53.000000000
+
+Patch Set 1: Code-Review-1
+
+(3 comments)
+
+Line:1323, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/RevWalk.java -> Right, I think we can drop these two lines.
+
+Line:1353, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> Argh, yes you are correct we cannot use bitmaps if the client is shallow. Its going to assume the client has things it does not have.
+
+Line:688, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> IIRC when depth != 0 this is passed into the PackWriter which builds its own list of of what to send using a DepthWalk instead of the classical algorithm. I should double check my assumptions but I don't think we need to pass in the shallow commit list.
+
+-------------------------------------

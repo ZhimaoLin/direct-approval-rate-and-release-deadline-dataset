@@ -1,0 +1,108 @@
+DESCRIPTION
+
+Deprecate BitmapBuilder.add and add simpler set method
+
+The BitmapIndex.BitmapBuilder.add API is subtle:
+
+	/**
+	 * Adds the id and the existing bitmap for the id, if one
+	 * exists, to the bitmap.
+	 *
+	 xxx@xxx.xxx true if the value was not contained or able to be
+	 * loaded.
+	 */
+	boolean add(AnyObjectId objectId, int type);
+
+Reading the name of the method does not make it obvious what it will
+do.  Does it add the named object to the bitmap, or all objects
+reachable from it?  It depends on whether the BitmapIndex owns an
+existing bitmap for that object.  I did not notice this subtlety when
+skimming the javadoc, either.  This resulted in enough confusion to
+subtly break the bitmap building code (see change
+I30844134bfde0cbabdfaab884c84b9809dd8bdb8 for details).
+
+So discourage use of the add() API by deprecating it.
+
+To replace it, provide a set() method that sets a single bit.  This
+way, callers can decide whether to use set() or or() based on the
+context.
+
+For example,
+
+	if (bitmap.add(c, OBJ_COMMIT)) {
+		for (RevCommit p : c.getParents()) {
+			rememberToAlsoHandle(p);
+		}
+	}
+
+can be replaced with
+
+	if (bitmap.contains(c)) {
+		// already included
+	} else if (index.getBitmap(c) != null) {
+		bitmap.or(index.getBitmap(c));
+	} else {
+		bitmap.set(c, OBJ_COMMIT);
+		for (RevCommit p : c.getParents()) {
+			rememberToAlsoHandle(p);
+		}
+	}
+
+which is more verbose but makes it clearer that the behavior
+depends on the content of index.getBitmaps().
+
+Change-Id: Ib745645f187e1b1483f8587e99501dfcb7b867a5
+
+
+COMMENTS
+
+author: Eden Lin
+date: 2015-11-04 03:08:00.000000000
+
+Uploaded patch set 3: Commit message was updated.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-11-04 03:28:40.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7393/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-11-04 03:36:39.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7393/ : SUCCESS
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2015-11-04 05:32:35.000000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:152, org.eclipse.jgit/src/org/eclipse/jgit/lib/BitmapIndex.java -> I like the symmetry of this function signature with remove(), but the pair should really be add/remove or set/unset.  I prefer add/remove. Maybe use "addObject" for now and migrate to where we want to be over the next couple of releases?
+
+-------------------------------------
+author: Eden Lin
+date: 2015-11-04 06:10:46.000000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:152, org.eclipse.jgit/src/org/eclipse/jgit/lib/BitmapIndex.java -> Sounds good. I'll go with addObject.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-11-05 22:08:26.000000000
+
+Change has been successfully merged into the git repository by Eden Lin
+
+-------------------------------------

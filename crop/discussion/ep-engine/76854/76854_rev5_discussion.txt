@@ -1,0 +1,122 @@
+DESCRIPTION
+
+MB-23936: Use Threadlocal variables to accumulate stats
+
+Currently when we allocate/deallocate memory, we update the per bucket
+variable `totalMemory`. Mutiple threads contend on this variable heavily
+as mem allocation/deallocation happen often. The primary idea of
+this commit is to maintain threadlocal mem counters for each bucket and
+merge it to the `totalMemory` once the local counter reaches a threshold
+either based on size or no.of times the local counter has been updated.
+This does show a notable increase in overall performance.
+
+Limitations:
+-----------
+- We create one thread local variable per bucket. Different OS'es seem
+  to enforce different limits on the no.of tlv. Although we have a hard
+  limit of 10 buckets, I'm noting this here for future reference.
+  -> [NetBSD:256 Linux:1024 OSX:512 Windows:1088]
+
+- Windows does not seem to provide an api for releasing the mem
+  allocated for a thread-local on thread exit in a way like pthreads do.
+  So there will be a small leak of about (3*long) on every bucket
+  unload.
+
+- Valgrind might say that the unit tests have leaks on the
+  threadlocals. This is because, in the tests, bucket init happens on
+  the main thread & when main thread exits the program it does not
+  call pthread_exit, so the dtors are not called.
+
+Change-Id: Id14ced2776a29afae18831b372140dd028136b32
+
+
+COMMENTS
+
+author: Trace Williamson
+date: 2017-04-20 20:47:19.469000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-04-20 21:14:55.013000000
+
+Patch Set 5: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4689/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/5909/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5392/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6158/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-21 08:16:37.374000000
+
+Patch Set 5: Code-Review-1
+
+(6 comments)
+
+Line:470, configuration.json -> The max still needs increasing as discussed.
+
+Line:481, configuration.json -> Same
+
+Line:6664, tests/ep_testsuite.cc -> whitespace
+
+Line:27, /COMMIT_MSG -> I think for this, we should see if Boost::thread_local solves this issue. If so I think we should migrate to Boost's implementation (in a follow-up patch) to address this. (The 3-word leak isn't /so/ bad, but it will potentially mask other issues if we have "known" memory leaks).
+
+Line:6377, src/ep_engine.cc -> braces
+
+Line:6395, src/ep_engine.cc -> braces
+
+-------------------------------------
+author: Trace Williamson
+date: 2017-04-21 17:30:13.929000000
+
+Patch Set 5:
+
+(3 comments)
+
+Line:6664, tests/ep_testsuite.cc -> Done - This is why automatic style fixes are better for us.
+
+Line:6377, src/ep_engine.cc -> Done - Note that this is being identified only in the 5th patch while the issue was there since the 1st patch. This is why automatic style fixes are better for us.
+
+Line:6395, src/ep_engine.cc -> Done - Note that this is being identified only in the 5th patch while the issue was there since the 1st patch. This is why automatic style fixes are better for us.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-24 09:28:54.923000000
+
+Patch Set 5:
+
+(3 comments)
+
+Line:6664, tests/ep_testsuite.cc -> Personally I have my editor setup to strip trailing whitespace.
+
+Line:6377, src/ep_engine.cc -> You'll find I added a comment on v2 (the first one I looked at) which you said you'd resolved ;)
+
+As I've said before, I'm all for automated checkers. Clang-format can't do this one (IIRC), a proposal to fix it welcome :)
+
+Line:6395, src/ep_engine.cc -> You'll find I added a comment on v2 (the first one I looked at) which you said you'd resolved ;)
+
+As I've said before, I'm all for automated checkers. Clang-format can't do this one (IIRC), a proposal to fix it welcome :)
+
+-------------------------------------
+author: Trace Williamson
+date: 2017-04-24 17:12:08.101000000
+
+MISMATCHED INLINE COMMENT
+Line:6377, src/ep_engine.cc -> ;) That was for different line . In any case once we get clang-format to do everything else for us, one of us can pick this one out :)
+
+-------------------------------------
+author: Trace Williamson
+date: 2017-04-24 17:12:08.101000000
+
+MISMATCHED INLINE COMMENT
+Line:6395, src/ep_engine.cc -> Ditto.
+
+-------------------------------------

@@ -1,0 +1,131 @@
+DESCRIPTION
+
+Fix for Bug 430403 - [Perspectives] Views without sash to resize and
+complete loss of views
+
+Change-Id: I778f9eb039e05e2ca8619552720bd8a604146f9f
+
+
+COMMENTS
+
+author: Jared Jackson
+date: 2014-08-20 18:57:52.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Amiyah Parrish
+date: 2014-08-22 14:09:36.000000000
+
+Patch Set 1: Verified-1 Code-Review-1
+
+Hi, the fix works fine with the application attached to the bug, but causes failures of the following tests in the org.eclipse.e4.ui.tests.application.EPartServiceTest :
+testShowPart_Bug329310_01
+testShowPart_Bug329310_02
+
+-------------------------------------
+author: Amiyah Parrish
+date: 2014-08-27 12:23:08.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Hi Eric,
+I reviewed the failing tests. In these tests an MPartSashContainer with only one child is being created. Is this a supported situation?
+If not, we need to simply correct the tests.
+Otherwise, the ModelServiceImpl.insert(*) should be modified to support such situation (i.e. add the new element to the existing sash instaed of creating a new one).
+I have also a question regarding the patch itself - please take a look at the inline comment.
+Thank you in advance!
+
+Line:1007, bundles/org.eclipse.e4.ui.workLeon Ochoach/src/org/eclipse/e4/ui/internal/workbench/PartServiceImpl.java -> Shouldn't it be:
+
+modelService.insert(stack,(MPartSashContainerElement) lastContainer.getChildren().get(0),
+					EModelService.RIGHT_OF, 0.5f);
+?
+Otherwise, the if - elseif blocks should be merged - they are identical.
+
+-------------------------------------
+author: Zaid Mosley
+date: 2014-08-27 12:35:49.000000000
+
+Patch Set 1:
+
+A PartSashContainer with only one child is a normal scenario. Just think of a PartSashContainer with two Stacks and one part in each stack. Now move one part to the first stack and the second stack is "destroyed" -> You end up with one PartSashContainer with only one element
+
+-------------------------------------
+author: Amiyah Parrish
+date: 2014-08-27 12:45:58.000000000
+
+Patch Set 1:
+
+Hi Lars,
+AFAIK (and confirmed by some quick tests I made earlier), in such situation the sash is "automatically" removed and the remaining stack is relocated to its "grandparent".
+
+-------------------------------------
+author: Zaid Mosley
+date: 2014-08-27 15:44:57.000000000
+
+Patch Set 1:
+
+OK. Still lots of my customers use this setup (sash + 1. stack with 1-x parts), so for my RCP cusotmers this is a "standard" scenario. Also our e4 tools wizard generates this setup (One windows with one perspective with one sash with one stack with one part). So we cannot disallow that anymore.
+
+-------------------------------------
+author: Jared Jackson
+date: 2014-08-27 16:06:41.000000000
+
+Patch Set 1:
+
+Lars, the CleanupAddon will 'unwrap' the sash container when it only has one child. This means that your starting scenario is unnecessarily complicated; you need only have the stack and if the user drag a part to create a new stack the sash container will be generated then. Your scenario is fine since it's directly defined in the model so it doesn't trigger the CleanupAddon.
+
+BTW, the real bug was that there were *two* direct children of the parent perspective (a hidden editor area's placeholder and then also a stack created by 'addPart'.
+
+-------------------------------------
+author: Amiyah Parrish
+date: 2014-08-27 18:16:13.000000000
+
+Patch Set 1:
+
+Eric,
+Thank you for explanation. I understand the real bug. What I meant was that the fix causes some problems when there is a sash with only one child in the model (as shown by failing tests). Strictly speaking, currently the ModelServiceImpl.insert(*) (which is used in the fix) creates a new sash instead of reusing existing one. And according to your explanation and Lars' comments it *is* allowed to have a sash with one child, so the patch need to be corrected - not tests.
+
+BTW. My inline question is still valid.
+
+Thank you!
+
+-------------------------------------
+author: Jared Jackson
+date: 2014-08-28 13:46:42.000000000
+
+Patch Set 1:
+
+not sure i understand this. Nowhere in the bug's scenario is there a sash with one child. The original issue is that there are two children of the perspective; the placehilder for the empt editor area and the stack created by 'addPart'. The bug was that there was *no* sash container containing them which is what the patch does...
+
+-------------------------------------
+author: Amiyah Parrish
+date: 2014-08-28 14:42:21.000000000
+
+Patch Set 1:
+
+Hi Eric, the patch *does* fix the reported bug. But it seems to also introduce a new bug, as shown by the failing tests. In this tests the initial model looks like this:
+  perspective > sash > part
+The test later calls partService.showPart(newPart, PartState.ACTIVATE);
+
+Expected result is:
+  perspective > sash > [ part | stack > newPart ]
+
+But after applying your patch the result is:
+  perspective > sash > [ sash > part | stack > newPart ]
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2014-09-01 12:06:33.000000000
+
+Change could not be merged because of a missing dependency.
+
+The following changes must also be submitted:
+
+* Id81dabc1f45e0ec13f95c219e76f45148cea2863
+
+
+-------------------------------------

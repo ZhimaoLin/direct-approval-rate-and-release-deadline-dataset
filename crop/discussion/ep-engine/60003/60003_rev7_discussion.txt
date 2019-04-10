@@ -1,0 +1,156 @@
+DESCRIPTION
+
+MB-18095: Support for testing multiple streams from single producer
+
+Expand dcp unit tests to support streaming from multiple vbuckets
+under the umbrella of a single producer.
++ Unit test demonstrating this capability
+
+Change-Id: Ib9a91af42a9667c145269165474ec0f78db8bda8
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2016-02-18 02:57:40.828000000
+
+Uploaded patch set 7.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-18 03:03:06.116000000
+
+Patch Set 7:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1815/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-18 03:13:09.078000000
+
+Patch Set 7: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1815/ : FAILURE
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2556/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-18 03:20:10.790000000
+
+Patch Set 7: -Verified
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1817/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-18 03:25:57.876000000
+
+Patch Set 7: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2556/ : SUCCESS
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1817/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-02-18 09:23:28.006000000
+
+Patch Set 7: Code-Review-1
+
+(16 comments)
+
+Line:1581, tests/ep_testsuite_dcp.cc -> This seems like a valid check - should it be re-added / moved elsewhere instead of deleting?
+
+Line:67, tests/ep_testsuite_dcp.cc -> Some of these arguments are not totally obvious to the reader - could you comment them (at least this new one as it wasn't obvious to me what it meant).
+
+Line:95, tests/ep_testsuite_dcp.cc -> Again, I assume this shouldn't be null, so make it take a reference.
+
+Line:103, tests/ep_testsuite_dcp.cc -> Given this is all test code, you might find it simpler to just expose the std::vector<> publically which gets rid of the need for an explicit addStreamCtx method.
+
+Line:103, tests/ep_testsuite_dcp.cc -> Make the vector be owning (i.e. templated on the concrete type) - that will avoid any memory leak issues. It's not like DcpStreamCtx is large or expensive to copy (and furthermore this is just test code, we're not exactly counting every cycle).
+
+Line:168, tests/ep_testsuite_dcp.cc -> This feels a bit complex - why don't you just have a single map of a stats struct?
+
+ struct VBucketStats {
+     int num_mutations;
+     ...
+ };
+
+ std::map<uint16_t, VBucketStats> vb_stats;
+
+Line:170, tests/ep_testsuite_dcp.cc -> No need to copy the context (I would have thought) - just iterate over a reference instead.
+
+Line:257, tests/ep_testsuite_dcp.cc -> Again, lots of duplication / verbosity here. If you make it it's own struct you could initialise it from the context in a separate helper method - this function is already very, very long :)
+
+Line:289, tests/ep_testsuite_dcp.cc -> Why this change? SHouldn't we be using the vbucket from one of the streams?
+
+Line:297, tests/ep_testsuite_dcp.cc -> Can this be made const?
+
+Line:445, tests/ep_testsuite_dcp.cc -> Again, make this a reference - and const (it doesn't look to be modified).
+
+Line:4620, tests/ep_testsuite_dcp.cc -> Could you add a brief description of what this test does?
+
+Line:4626, tests/ep_testsuite_dcp.cc -> s/1/2/
+
+Line:4629, tests/ep_testsuite_dcp.cc -> What are we testing here? Could we achieve the same thing with 1000 items? 100 items? 10 items? 1 item?
+
+(Our test runtimes are already too big; unless we are trying to measure performance we should try to use as few iterations as possible to demonstrate the functionality at hand. Larger iteration counts are also harder to debug / reason about. Aim to make a test as simple as possible, but no simpler ;)
+
+Line:4637, tests/ep_testsuite_dcp.cc -> Prefer nullptr in new code.
+
+Line:4638, tests/ep_testsuite_dcp.cc -> Nit: Probably simpler say `key = ...`
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-02-18 17:24:57.879000000
+
+Patch Set 7:
+
+(11 comments)
+
+Line:1581, tests/ep_testsuite_dcp.cc -> Valid but not necessary, with support for multiple streams, dcp_last_op had to overwritten to ZERO, whether the dcp_last_op was STREAM_END or not.
+
+Line:67, tests/ep_testsuite_dcp.cc -> Done
+
+Line:95, tests/ep_testsuite_dcp.cc -> Done
+
+Line:168, tests/ep_testsuite_dcp.cc -> Makes sense.
+
+Line:170, tests/ep_testsuite_dcp.cc -> Done
+
+Line:257, tests/ep_testsuite_dcp.cc -> Done
+
+Line:289, tests/ep_testsuite_dcp.cc -> vbucket is not used in bufferAcknowledgement. Not sure why the option was even provided.
+
+See: http://src.Piper Jefferson.org/source/xref/watson/ep-engine/src/dcp/producer.cc#495
+
+Line:297, tests/ep_testsuite_dcp.cc -> Done
+
+Line:4620, tests/ep_testsuite_dcp.cc -> Done
+
+Line:4629, tests/ep_testsuite_dcp.cc -> Yes it can be, the test is relatively fast with this number too, but I'm ok with bringing the count down.
+
+Line:4637, tests/ep_testsuite_dcp.cc -> Done
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-02-18 22:02:48.685000000
+
+Patch Set 7:
+
+(1 comment)
+
+Line:103, tests/ep_testsuite_dcp.cc -> Yes, but i'll leave the addStreamCtx as is for now, think it looks cleaner this way.
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-02-19 20:55:40.422000000
+
+Change has been successfully cherry-picked as 68e2d92a64425d53a3a659fbe8b8bbff886331e6
+
+-------------------------------------

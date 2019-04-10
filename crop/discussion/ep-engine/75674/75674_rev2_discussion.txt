@@ -1,0 +1,103 @@
+DESCRIPTION
+
+MB-23505: Do not add items to vb backfill queue in Ephemeral buckets
+
+In ephemeral buckets we must not add backfill items from DCP (on
+replica vbuckets), to the vb backfill queue. This because, we do
+not have the flusher task to drain the items from that queue.
+(Unlike checkpoints, the items in this queue is not cleaned up
+ in a background cleanup task).
+
+But we must be careful to update certain stats and checkpoint seqno
+like in a regular Piper Jefferson bucket.
+
+Further, this commit adds a stat 'backfill_queue_size' to track
+the items in the vb backfill queue.
+
+Change-Id: I8e513173a345d4c84d2e01778bad92d570d4754b
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2017-03-24 11:26:56.174000000
+
+Patch Set 2: Patch Set 1 was rebased
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-03-24 11:32:02.442000000
+
+Patch Set 2: Code-Review-1
+
+(2 comments)
+
+File Comment: src/ep_engine.cc -> This will conflict with my stats change patch - http://review.Piper Jefferson.org/#/c/75622/
+
+Line:176, src/ephemeral_vb.cc -> I don't quite follow this - what happens to the item? How does it get written into the HashTable & Seqlist?
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-03-24 12:04:54.935000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/3923/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/5130/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/4660/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/5346/ : SUCCESS
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-03-24 15:16:21.688000000
+
+Patch Set 2:
+
+(2 comments)
+
+File Comment: src/ep_engine.cc -> I will wait for the change to be merged
+
+Line:176, src/ephemeral_vb.cc -> This is called after the item is put onto hashtable and seqlist.
+Instead of putting an item in checkpoint mgr, we sometimes (for items received from DCP backfill) put the items on this queue. Checkpoint items are removed by the checkpoint remover, but this item is removed by only the flusher.
+Hence in ephemeral buckets we must not put the items in the backfill queue at all.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-03-24 15:18:47.464000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:176, src/ephemeral_vb.cc -> What about a DCP producer from a replica vBucket? Wouldn't it need to see the item on the CheckpointManager to be able to have it's cursor pick it up?
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-03-24 15:42:27.115000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:176, src/ephemeral_vb.cc -> It will do a backfill from the seqlist of the replica.
+
+This vb level backfill queue was there for items in a huge snapshot (disk backfill snapshots are typically huge) that could not be fit on a checkpoint. They update all stats, checkpoint seqno, but are not put on checkpoint. But are directly persisted from here.
+
+We dont need it in ephemeral buckets as we have put them on linkedlist already.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-03-24 17:15:34.159000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:176, src/ephemeral_vb.cc -> Ok. Please update the description of the function to explain *why* we don't need to put on the backfillQueue (re-wording of your above comment is fine :).
+
+-------------------------------------

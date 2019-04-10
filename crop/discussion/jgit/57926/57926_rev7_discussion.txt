@@ -1,0 +1,114 @@
+DESCRIPTION
+
+Do not decrement repository usage counter if it is already at zero
+
+If close() was executed more times as incrementOpen(), next pairs of
+calls to incrementOpen() and close() will not close repository as
+expected, leaving repository "closed" state undefined (below zero).
+
+To prevent this, do not further decrement usage counter if it is already
+at zero.
+
+Bug: 479253
+Change-Id: I66aadc971fb4b5c429326fe20754ba7ec784b7fb
+Signed-off-by: Jayvion Booth xxx@xxx.xxx
+
+COMMENTS
+
+author: Brenden Conley
+date: 2015-10-28 21:19:38.000000000
+
+Patch Set 7:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7326/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-10-28 21:28:42.000000000
+
+Patch Set 7: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7326/ : SUCCESS
+
+-------------------------------------
+author: Eden Lin
+date: 2015-10-28 21:32:20.000000000
+
+Patch Set 7: Code-Review-1
+
+This seems worrying to me --- if there are unbalanced calls to incrementOpen() and close(), isn't this hiding a more serious problem?
+
+e.g., if there are unbalanced calls to increment and decrement the use count, doesn't that lead to doClose being called too early?
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-10-28 22:49:58.000000000
+
+Patch Set 7:
+
+> This seems worrying to me --- if there are unbalanced calls to
+ > incrementOpen() and close(), isn't this hiding a more serious
+ > problem?
+
+The main problem is the API design which allows unmatched open/close calls.
+
+Since the code does not enforce specific repository usage pattern, the problem of unbalanced calls cannot be solved, this by design. The patch does not change the problem root cause (unbalanced API usage on client side), but tries to reduce the side effects of API misuse.
+
+ > e.g., if there are unbalanced calls to increment and decrement the
+ > use count, doesn't that lead to doClose being called too early?
+
+Before the patch "bad" part of client code could make lot of unmatched "close()" calls and the next "good" part of client code would leak files handles.
+
+After the patch, the "bad" client code could call as many close() as it will, the next "good" part of the client code would behave as expected.
+
+Before the patch:
+
+1) close() > incrementAndGet(), next incrementAndGet(): illegal system state,  next close() will left open file handles.
+2) close() < incrementAndGet(), next incrementAndGet(): open file handles.
+3) incrementAndGet() > close() + 1, next close(): open file handles.
+4) incrementAndGet() < close(), next close(): illegal system state, next incrementAndGet() will left open file handles.
+
+By correct API use after any points above we have unpredictable system behavior where the file handles could stay open unconditionally.
+
+After the patch:
+
+1) close() > incrementAndGet(), next incrementAndGet(): correct system state.
+2) close() < incrementAndGet(), next incrementAndGet(): open file handles.
+3) incrementAndGet() > close() + 1, next close(): open file handles.
+4) incrementAndGet() < close(), next close(): correct system state.
+
+By correct API use, only after points 2 and 3 above we have unpredictable system behavior where the file handles could stay open unconditionally.
+
+So after the patch we reduce the probability that system goes into the unpredictable state.
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-11-05 22:10:54.000000000
+
+Patch Set 7:
+
+Johnatan, could you please check the last comment? Thanks.
+
+-------------------------------------
+author: Eden Lin
+date: 2015-11-05 22:28:37.000000000
+
+Patch Set 7:
+
+> Johnatan, could you please check the last comment? Thanks.
+
+I still think this approach is sweeping the problem under the rug. I can say from experience that a reference counter that allows unbalanced increments and decrements is very very difficult to debug.
+
+That said, if this logged, threw an IllegalStateException, or had a boolean that requires the caller to explicitly request the more tolerant behavior then I'd be in favor of it.
+
+I'll try looking more closely at the examples you mentioned this weekend (e.g., if there are double-close scenarios, then the relevant classes should be fixed to keep enough state to only close once).
+
+-------------------------------------
+author: Jayvion Booth
+date: 2016-11-09 12:23:08.000000000
+
+Abandoned
+
+-------------------------------------

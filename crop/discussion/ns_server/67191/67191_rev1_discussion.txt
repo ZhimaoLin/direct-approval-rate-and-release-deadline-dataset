@@ -1,0 +1,58 @@
+DESCRIPTION
+
+MB-20682: Bad arity fix in the computed stat extractor routine.
+
+A user request for "show by server" stats page for DCP QUEUES |
+VIEWS/INDEXES would result in a badarity exception as the Views and
+Indexes stats tries to combine 3 different values. But the combiner
+callback only accepts 2 and hence the exception.
+
+The fix would be to change the combiner logic to recursively work
+with 2 stats at a time and return the accumulated result.
+
+Change-Id: Ie7905227e5b499defeea8e303a983276dab81eed
+
+
+COMMENTS
+
+author: Noe Perry
+date: 2016-08-31 00:28:22.887000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Noe Perry
+date: 2016-08-31 06:31:57.796000000
+
+Patch Set 1:
+
+As Poonam has pointed out the bug raised is because of the change made to include FTS stats to Views/Indexes stats. The number of stats extracted is 3 but the combiner callback function only accepts 2. The stats to be extracted and the corresponding callback function are defined in menelaus_stats:compute_stats_lazy_proplist function.
+
+There are 2 paths from which the above function gets called:
+[1] From menelaus_stats:serve_aggregate_ui_stats - This is called when the user selects to view the server stats (In the UI click on “Server Nodes -> [Node link]).
+
+[2] From menelaus_stats:serve_specific_ui_stats - This is called when the user opts for “show by server” for the DCP Queues - VIEWS/INDEXES.
+
+The bug is currently seen when called from the second path. In this path the callback function is called with all the 3 arguments passed and hence it fails. In the first case only 2 parameters are passed at a time and recursively the result is accumulated. The fix is to really make the second case behave like the first one and that’s what the current patch represents.
+
+I have uploaded this patch as a place holder for discussion. I think that this is a band-aid fix as the current approach taken in combining 3 stats works as long as the combining operation is associative in nature (summation) but will break badly if a more complicated combining operation is needed (average).
+
+One way to solve this would be pass the arguments as a list to the callback function instead of passing them individually. With this we will be able to add different stats-combining operations in the future. The list could be maintained as proplists for named retrieval. But this will be a bigger change.
+
+Could you guys please share your thoughts on this?
+
+-------------------------------------
+author: Ella Beltran
+date: 2016-08-31 21:43:05.800000000
+
+Patch Set 1:
+
+JFYI for others. I have provided suggestions/pointers to Ajit offline.
+
+-------------------------------------
+author: Roselyn Villegas Code Review
+date: 2016-09-08 17:33:03.228000000
+
+Change has been successfully cherry-picked as e8e1c7af6b6929c739b41df6e6ac13f57a6ca8d9 by Philip Lara
+
+-------------------------------------

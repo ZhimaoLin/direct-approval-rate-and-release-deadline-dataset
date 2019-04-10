@@ -1,0 +1,126 @@
+DESCRIPTION
+
+breakpad testing
+
+Change-Id: Ic61543af5f0ace69bdc6d71915f4003355374cca
+
+
+COMMENTS
+
+author: Titus Ho
+date: 2015-03-25 20:22:54.948000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-03-25 20:23:01.711000000
+
+Patch Set 5:
+
+Build Started http://factory.couchbase.com/job/testrunner-Jasmin Rangel-sherlock/4612/
+
+-------------------------------------
+author: Titus Ho
+date: 2015-03-25 20:26:42.848000000
+
+Patch Set 5:
+
+so this isn't yet platform agnostic - is windows breakpad supported? should I put it in this change too?
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-03-25 20:54:07.396000000
+
+Patch Set 5: Verified+1
+
+Build Successful 
+
+http://factory.couchbase.com/job/testrunner-Jasmin Rangel-sherlock/4612/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-03-26 09:08:44.873000000
+
+Patch Set 5: Code-Review-2
+
+(18 comments)
+
+The actual stuff tested looks good, but I feel there's far too many arbitrary sleeps in the test - see inline comments. Adding more tests is always good, but if they have a minimum 80-odd seconds runtime I fear they will not be run as often as they ideally should be.
+
+For reference here's the memcached unit test I wrote: http://src.couchbase.org/source/xref/sherlock/memcached/tests/breakpad_test.py - it obviously tests at a lower level and for less scenarios, but you'll see I didn't need any arbitrary sleeps in it.
+
+Line:21, pytests/breakpad/verifydumptests.py -> No!! More sleeps!! I think we're up to 22 seconds now!
+
+Line:44, pytests/breakpad/verifydumptests.py -> 24 seconds!
+
+Line:52, pytests/breakpad/verifydumptests.py -> 34 seconds!
+
+Line:55, pytests/breakpad/verifydumptests.py -> 44 seconds!
+
+Line:75, pytests/breakpad/verifydumptests.py -> 48 seconds!
+
+Line:104, pytests/breakpad/verifydumptests.py -> 58 seconds!!
+
+Line:112, pytests/breakpad/verifydumptests.py -> 59
+
+Line:145, pytests/breakpad/verifydumptests.py -> 60
+
+Line:163, pytests/breakpad/verifydumptests.py -> 62
+
+Line:232, pytests/breakpad/verifydumptests.py -> 82 seconds total *minimum* now!
+
+It may be even higher as the helper functions in the previous files are probably used multple times.
+
+Personally I think our tests already take too long, and adding nearly a minute and a half to their runtime *minimum* seems a very bad idea. 
+
+Please could you look through all the sleeps and see how we can remove them; I would have thought that most (if not all) can be replaced with checks for the actual condition we are waiting for.
+
+Line:42, pytests/breakpad/breakpadbase.py -> I'm not a fan of explicit sleep() calls in test code, for a couple of reasons:
+
+1. They can massively slow down tests; especially when you attempt to run them in parallel.
+
+2. What's the "correct" value to sleep for? maybe 5 seconds is good enough on your development system, or the first system you test on when not under load, but it might not be long enough on another system and hence the test could fail...
+.... which leads to people using much longer than the expected sleep time to attempt to avoid this problem.
+
+I would much prefer if we actually checked for whatever situation we expect to happen - memcached responding on port 11210, files existing on disk; memcached process showing in /proc - etc.
+
+Line:57, pytests/breakpad/breakpadbase.py -> similar here - we are now up to a minimum of 15 seconds to run this test!
+
+Line:72, pytests/breakpad/breakpadbase.py -> 1 second is an age for a computer - maybe 3billion instructions on a modern CPU - hey *I* as a human get bored waiting for that long!
+
+Any reason we don't retry after say 0.1s?
+
+Line:90, pytests/breakpad/breakpadbase.py -> Similar here - we can retry much quicker.
+
+Line:94, pytests/breakpad/breakpadbase.py -> More arbitrary waits (5 seconds by default) - can we not poll for whatever "ready" condition we have
+
+(Minimum test runtime now up to 20 seconds :)
+
+Line:102, pytests/breakpad/breakpadbase.py -> Given the context of this test (where I think we expect memcached to be alive before we abort it) shouldn't this be a test failure if the process doesn't exist at this point?
+
+Line:105, pytests/breakpad/breakpadbase.py -> Much simpler to use os.kill() - https://docs.python.org/2/library/os.html#os.kill
+
+Line:113, pytests/breakpad/breakpadbase.py -> Again, 10 seconds seems a really generous retry time - why not say 0.1?
+
+-------------------------------------
+author: Titus Ho
+date: 2015-03-26 20:20:25.584000000
+
+Patch Set 5:
+
+thanks Dave! agree the sleeps are excessive I'll rework this
+
+-------------------------------------
+author: Titus Ho
+date: 2016-01-22 15:54:54.927000000
+
+Patch Set 6: Patch Set 5 was rebased
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-01-28 18:53:58.588000000
+
+Change has been successfully cherry-picked as ffaaa7cb653ee2cd7e22601bd1dc9764b84d6021
+
+-------------------------------------

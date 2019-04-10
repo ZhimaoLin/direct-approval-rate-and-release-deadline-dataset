@@ -1,0 +1,145 @@
+DESCRIPTION
+
+Fix synchronize with deleted resources
+
+ResourceVariantTreeSubscriber.members() must return *all* resources
+known to the subscriber, whether they exist in the "workspace" or not.
+
+Otherwise resources that were deleted will be missed.
+
+Git is a bit special in that we don't want to report .gitignored
+resources, and untracked resources only if the user so wishes. Thus
+our logic is a bit different and governed basically by what our 3-way
+diff cache contains, but in any case we must include files
+that only exist in the remote (i.e., in those caches).
+
+Furthermore, isSupervised() must also work for IContainers, not just
+for files. That was limited in commit 3fa9329 [1] to files to prevent
+folders showing up with wrong markers. However, this kind of fix is
+just plain wrong -- the new test could never work with that. But if
+we re-consider folders as supervised, they'll show up as modified even
+when they have no changes below. Our cache should contain IN_SYNC
+entries for such folders. ThreeWayDifFEntry.scan() produces MODIFIED
+entries, though.
+
+Since I'm unsure about the interactions between scans with path
+filters to partially update the EGit synchronization caches, I have
+not touched that scan--it would be non-trivial to make it produce
+IN_SYNC entries anyway, and then the cache update logic would probably
+also have to be non-trivially adapted.
+
+Instead I've chosen to perform a top-down check in GitSyncInfo and
+return IN_SYNC for any folder that does not contain at least one file
+that is itself not IN_SYNC.
+
+[1] Ib25bf43721ef4cc87dba33aa01909e50a4cbef48; bug 324604
+
+Bug: 516426
+Change-Id: Ia12309f52e5140ff058b4fee17b9c7d48d435290
+Signed-off-by: Alayna Houston xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Alayna Houston
+date: 2017-05-12 11:06:03.000000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-05-12 11:06:08.000000000
+
+Patch Set 5:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/9839/
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-05-12 11:07:16.000000000
+
+Removed Code-Review-2 by Alayna Houston xxx@xxx.xxx
+
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-05-12 11:16:46.000000000
+
+Patch Set 5:
+
+Better now.
+
+@Laurent, could you please take a look and also check that this plays nicely with the model-based comparisons in EMF compare? Also, two notes about the GitLazyResourceVariantTreeSubscriber (untouched by this change):
+
+1. It always returns true from isSupervised(). Why? Is that still needed after this change?
+2. It's still not very "lazy". I see the git sync cache being loaded initially (subscriber.init()), and then again through SubscriberResourceMappingContext.fetchMembers(). And the initial load takes a long time in the reproducer Dani gave in bug 516426, and even longer in my own test case (synchronizing org.eclipse.egit.core.internal between workspace (master) and origin/stable-4.4 -- which showed the same symptoms as in the bug report, since the whole org.eclipse.egit.core.internal.merge package was removed).
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-05-12 11:29:23.000000000
+
+Patch Set 5: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/9839/ : SUCCESS
+
+-------------------------------------
+author: Sebastian Porter
+date: 2017-05-12 12:41:10.000000000
+
+Patch Set 5:
+
+I have verified that change 5 fixes the reported bug.
+
+-------------------------------------
+author: Sebastian Porter
+date: 2017-05-12 12:41:20.000000000
+
+Patch Set 5: Verified+1
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-05-13 17:58:25.000000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:98, org.eclipse.egit.core/src/org/eclipse/egit/core/synchronize/GitSyncInfo.java -> can't we do the recursion in the first loop without a second pass ?
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-05-13 18:41:18.000000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:98, org.eclipse.egit.core/src/org/eclipse/egit/core/synchronize/GitSyncInfo.java -> We can. I don't think it matters much, but somehow I had the feeling that doing it this way would traverse a less deep hierarchy than a pure depth-first search and thus be faster in cases where there are non-IN_SYNC files.
+
+Even better would be of course to either not have such folders in this GitSyncObjectTree, or have them have a ThreeWayDiffEntry that is already marked as IN_SYNC. But that would, as I mentioned in the commit comment, be a more adventurous undertaking. It's also one of those cases I mentioned in the comment in bugzilla: I haven't figured out yet why we have nodes/diffs for such trees at all. I see where they're coming from, but I don't know if that's intended or whether they do have some purpose somehow or could be safely eliminated.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-05-14 14:58:15.000000000
+
+Patch Set 5: Code-Review+2
+
+(1 comment)
+
+Line:98, org.eclipse.egit.core/src/org/eclipse/egit/core/synchronize/GitSyncInfo.java -> ok, I did some experiments and you are right it doesn't really matter.
+The method consumes only a small fraction of the overall runtime of the comparison.
+
+This method could be also implemented using streams :
+
+ private boolean hasNonSyncFile(GitSyncObjectCache obj) {
+    Optional<GitSyncObjectCache> found = obj.members().stream().filter(
+       child -> (!child.getDiffEntry().isTree() && child.getDiffEntry()
+          .getChangeType() != ThreeWayDiffEntry.ChangeType.IN_SYNC)
+          || (child.getDiffEntry().isTree() && hasNonSyncFile(child)))
+       .findFirst();
+    return found.isPresent();
+ }
+
+-------------------------------------

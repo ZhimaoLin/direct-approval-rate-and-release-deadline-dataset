@@ -1,0 +1,121 @@
+DESCRIPTION
+
+Detects background authentication, and force use of jgit authentication
+
+Sun HttpURLConnection is able to handle authentication like SPNEGO without
+caller intervention. However, there are some restrictions:
+- do not need user intervention (user,password for example)
+- it doesn't work when request body is chunked/streamed (because it cannot be
+replayed)
+
+Unfortunately there is no real way to leverage HttpURLConnection authentication
+work as the authentication header is stripped off the request before returning
+to the caller. There's also no way to disable explicitly authentication in
+HttpURLConnection (SPNEGO auth will always be attempted if a valid token can be
+created by GSSAPI).
+
+This is an issue for jgit since it is expected that the first request will be
+used to detect authentication method, and reuse for the subsequent requests.
+
+This patch modifies TransportHTTP to detect authentication done in the background
+by HttpURLConnection and sets the jgit authentication method accordingly so it will
+always work for future requests (assuming that the authentication method used by
+HttpURLConnection is also supported by jgit).
+
+Change-Id: I79f3b70ca2b8377e20da8e6a01914e43e96595ce
+Signed-off-by: xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2014-02-25 00:29:01.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/egit/job/jgit.gerrit/4734/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-02-25 00:59:07.000000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/egit/job/jgit.gerrit/4734/ : ABORTED
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-02-25 07:07:23.000000000
+
+Patch Set 1: -Verified
+
+Build Started https://hudson.eclipse.org/egit/job/jgit.gerrit/4738/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-02-25 07:19:34.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/jgit.gerrit/4738/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2014-02-28 15:32:01.000000000
+
+Patch Set 1:
+
+(4 comments)
+
+Looks quite good already. Minor comments, missing tests. I want tests because I am more interested to prove that you don't break existing authentications and not so much that  SPNEGO works.
+
+Line:464, org.eclipse.jgit/src/org/eclipse/jgit/transport/TransportHttp.java -> After reading the commit message I was expecting a much bigger implementation :-)
+
+Line:471, org.eclipse.jgit/src/org/eclipse/jgit/transport/TransportHttp.java -> I am wondering whether for this thing we could write tests. We do start in some of our unit tests our own git server, push/fetch to it, inspect the requests this server got, ... By that it should be possible to see/test this change in behaviour you introduce here.
+Look at SimpleHttpServer.java or in EGit in PushTest.java.
+
+Line:11, /COMMIT_MSG -> I don't understand this restriction "do not need user intervention". Do you mean that it will not work when user intervention is required? Please rephrase
+
+Line:17, /COMMIT_MSG -> I read this sentence multiple times before I think I understood. Maybe replacing "disable explicitly" by "explicitly disabling" would make it easier. Or "... no way to disable implicit authentication of HttpURLConnection ..." .
+
+-------------------------------------
+author: Olive Meyer
+date: 2014-03-13 06:28:29.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Trying to add tests but the way HTTP auth works make this code only useful for SPNego and has no effect on other auth methods.
+
+Open to suggestion
+
+Line:471, org.eclipse.jgit/src/org/eclipse/jgit/transport/TransportHttp.java -> Do you have any suggestion on how I could achieve this? I tried several approaches but it only works with SPNego which is not really easy to mock.
+
+I tried for example to check what happens if auth info is provided using Java Authenticator, but it won't work in this case because basic auth doesn't send again WWW-Authenticate header once authenticated. SPNego will send it as per http://www.ietf.org/rfc/rfc4559.txt
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2014-03-13 21:19:40.000000000
+
+Patch Set 1: Code-Review-1
+
+(3 comments)
+
+Line:507, org.eclipse.jgit/src/org/eclipse/jgit/transport/TransportHttp.java -> style nit: remove this unrelated change introducing a trailing whitespace
+
+Line:469, org.eclipse.jgit/src/org/eclipse/jgit/transport/TransportHttp.java -> style nit: we don't use braces around single line blocks
+
+Line:471, org.eclipse.jgit/src/org/eclipse/jgit/transport/TransportHttp.java -> Can you describe how to test this manually ?
+
+-------------------------------------
+author: Malia Sampson
+date: 2014-05-21 15:26:14.000000000
+
+Patch Set 2: Patch Set 1 was rebased
+
+-------------------------------------

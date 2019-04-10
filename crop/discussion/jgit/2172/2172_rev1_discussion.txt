@@ -1,0 +1,145 @@
+DESCRIPTION
+
+IndexPack: Use stack-based recursion for delta resolution
+
+Replace 'method' with 'stack' -based recursion for resolving deltas.
+Git packfile delta-chain depth can exceed 50 levels in certain files
+(the packfile of the JGit project itself has >800 objects with
+chain-length >50). Using method-based recursion on such packfiles
+will quickly throw a StackOverflowError on VMs with constrained
+stack.
+
+Benefits:
+* packfile delta-resolution no longer limited by the maximum number
+  of stack frames permitted on the heap
+* slight performance improvement
+  (2.4% speed increase on the packfile of the JGit project)
+
+I had to introduce a new DeltaVisit object to hold the state on the
+java.util.Stack, as obviously there's no appropriate tuple already
+available that corresponds to the args of the recursive resolveDelta
+methods. The DeltaVisit object is composed in part from new TypedData
+and DeltaIdentifier objects which are re-used as appropriate when
+following delta-chains, on the grounds that it's better to pass a
+single object reference than a pair of references to e.g. an 'int'
+and a 'long'. The additonal object allocation hasn't hurt
+performance, in fact perf-testing (https://gist.github.com/756740)
+shows a small performance improvement:
+
+https://spreadsheets.google.com/ccc?key=0AsR1d5Zpes8HdHFwY1FLOENqWUFDeDE3ZkVmSU11b3c
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-12-29 20:35:51.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(9 inline comments)
+
+I love the idea, but I think we can do even better.  See the inline comments.
+
+Line:498, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> Style-nit:  Method indentation is wrong.  The entire body needs to be shifted right one more level of indentation.  Gerrit will correctly see its a shift right and should display the change correctly with intraline difference enabled.
+
+Line:499, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> Instead of Stack (which uses synchronized), we would prefer to use ArrayList<DeltaVisit> with stack.remove(stack.size()-1) for the pop operation.  This way the JIT doesn't need to work to optimize out the locking.
+
+FWIW though, this is such a simple usage that I would make the stack myself and avoid all of the extra work that ArrayList (or Stack/Vector) impose on each operation:
+
+  private void resolveDeltas(DeltaVisit visit) ... {
+    while (visit != null) {
+      visit.data = ...;
+
+      visit.nextChild = firstChildOf(oe);
+      visit = nextVisit(visit);
+    }
+  }
+
+  private static DeltaVisit nextVisit(DeltaVisit visit) {
+    // If our parent has no more children, discard.
+    while (visit.parent != null && visit.parent.nextChild == null)
+      visit.parent = visit.parent.parent;
+
+    do {
+      UnresolvedDelta childId = visit.nextChild;
+
+      if (childId != null) {
+        visit.nextChild = childId.next;
+        return new DeltaVisit(childId, visit);
+      }
+
+      visit = visit.parent;
+    } while (visit != null);
+  }
+
+  private static class DeltaVisit {
+    final UnresolvedDelta id;
+    DeltaVisit parent;
+
+    byte[] data;
+    UnresolvedDelta nextChild;
+  }
+
+I like this solution because its still fairly short, but saves a lot of overhead.  It also give us a nice tail-recursion case to discard an object as soon as its last child is inflated, reducing the memory usage for long delta chains that have only 1 object at each level.
+
+Line:500, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> Since the initialDelta is only used to prime the stack, I would instead call the argument "dv" and reassign to it in the while loop.  That way we only have one type of DeltaVisit (the active object) in scope and its less likely we'll use the wrong one.
+
+Sometimes assigning to an argument is evil, and sometimes its good.  I think this sort of algorithm is one of those times where its good to reuse the argument variable.
+
+Line:502, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> Style-nit: Spaces around =.
+
+Line:591, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> Instead of allocating new chain objects, we could sort the two lists into a single linked list and return the UnresolvedDelta that is at the start of it.  Something like:
+
+  if (a == null)
+    return b;
+  if (b == null)
+    return a;
+
+  UnresolvedDelta first = null;
+  UnresolvedDelta last = null;
+
+  while (a != null || b != null) {
+    UnresolvedDelta n;
+    if (b == null || (a != null && a.position < b.position)) {
+      n = a;
+      a = a.next;
+    } else {
+      n = b;
+      b = b.next;
+    }
+
+    if (last != null) {
+      last.next = n;
+      last = n;
+    } else {
+      first = n;
+      last = n;
+    }
+    n.next = null;
+
+    return first;
+  }
+
+That gives us a smaller DeltaVisit object, and simplifies code elsewhere probably by not needing both "a" and "b" chains.
+
+For most packs we're using OFS_DELTA format these days, so most delta chains will be only of the "b" variant and take the fast path above anyway.  We should see only REF_DELTA on thin packs during fixThinPack(), and they won't have OFS_DELTA dependencies so they won't typically have a "b" variant, and use the fast path above anyway.  Basically its rather rare to have both chains, so the slow path to rebuild a single linked list isn't that common.
+
+Line:1087, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> Why bother with this type?  Just use UnresolvedDelta for the base case that bootstraps the resolveDeltas() method.
+
+Using this type inside of UnresolvedDelta increases the memory usage during the scanning of the pack by at least 12 bytes on 32 bit JVMs per object.  Scanning 1 million deltas costs us 12 more MB of memory.  On a 64 bit JVM we could be looking at more than 24 MB here.  I don't think that is a trivial change.
+
+I'm OK with the DeltaVisit type because its so transient, and you need it for the stack management.  But its not OK to make a massive increase to the relatively persistant unresolved delta chains.
+
+Line:1098, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> I don't think this class is necessary.  Within a single resolveDeltas() invocation there can be only one type.  So make type a local variable of resolveDeltas() which is assigned in the part of the switch that does the 4 base types (OBJ_COMMIT, OBJ_TREE, OBJ_BLOB, OBJ_TAG) and pass it to anyone who needs the type... which is only the digestUsing routine.  But that can be put back inline into the resolveDeltas() routine.
+
+That drops 1 object allocation per object processed during resolveDeltas(), which should help memory usage and decrease GC activity.  Its significant enough, and the code is probably actually shorter this way too, so I think it makes sense to drop this type.
+
+Line:1126, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> Since we bootstrap resolveDeltas() with no data (just a position) if you make this non-final we can assign it during the base case when the type is also discovered and stored into the local variable.
+
+Line:1128, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> If you do the list rebuild above like I suggest, this is only one list of UnresolvedDelta type.
+
+Change the field to be non-final, and update it when you pop the delta off.  I think you can find a way to leave the DeltaVisit on the stack during the loop and only pop it when the UnresolvedDelta variable goes null at the end.  If its still non-null (because there is another delta to process) you can just update the field and leave the stack alone.
+
+That should also further reduce memory allocations and GC activity, because we aren't re-creating the current DeltaVisit when we need to remember another delta that needs this base information.
+
+-------------------------------------

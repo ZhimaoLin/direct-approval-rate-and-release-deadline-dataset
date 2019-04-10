@@ -1,0 +1,91 @@
+DESCRIPTION
+
+Modified WindowCache to allow defaults to be set via System Properties
+
+* The following system properties are now available:
+org.eclipse.jgit.config.deltaBaseCacheLimit (in bytes)
+org.eclipse.jgit.config.packedGitLimit (in bytes)
+org.eclipse.jgit.config.gitOpenFiles (number of files)
+org.eclipse.jgit.config.gitWindowSize (in bytes)
+org.eclipse.jgit.config.streamFileThreshold (in bytes)
+
+In particular, streamFileThreshold should be set to be larger than the
+largest object in the repository (but small enough to fit in heap
+memory), otherwise checkouts will be very slow due to switching to the
+streaming implementation.  Clients of this library should either set
+these system properties, or call WindowCache.reconfigure with
+appropriate settings.
+
+Change-Id: I921c88c350d3849db9bdab25512f78e4030902d5
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2011-08-23 22:17:59.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/762/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-08-23 22:21:41.000000000
+
+Patch Set 1: Build Successful
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/762/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-08-23 22:48:46.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(5 inline comments)
+
+
+
+Line:145, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/WindowCache.java -> Style-nit: Trailing whitespace.
+
+Line:156, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/WindowCache.java -> I would prefer to put this into WindowCacheConfig. We have a fromConfig() method. Lets also add fromSystemProperties(). Then this code here becomes:
+
+  reconfigure(new WindowCacheConfig().fromSystemProperties());
+
+Line:173, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/WindowCache.java -> What if we named the system properties:
+
+  org.eclipse.jgit.config.core.streamFileThreshold
+
+? Then you can write the conversion code for fromSystemProperties() as:
+
+  Config cfg = new Config();
+  ... loop through system properties
+  ... if name starts with "org.eclipse.jgit.config."
+  ... split remainder on first dot, set string value
+  fromConfig(cfg);
+
+That way the user can set any property using the -Dorg.eclipse.jgit.config.section.name=value flag syntax. FWIW I have a special version of Config that parses JSON and converts it to a Config object so I can configure JGit via JSON. Works nicely. I'm thinking the same sort of idea here, construct a Config from a properties collection.
+
+Line:185, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/WindowCache.java -> If you use the Config approach I suggest above, users can say -Dorg.eclipse.jgit.config.core.streamFileThreshold=200m rather than 200000000. Its cleaner.
+
+Line:20, /COMMIT_MSG -> Did you consider adding a WindowCache.reconfigure() call in Main within the pgm package?
+
+You could add a new command line flag to Main called --config-file that points to a user configuration file, then callers can set these settings in ~/.jgitconfig (for example) and call `jgit --config-file=$HOME/.jgitconfig log ...`.
+
+We could also consider standardizing a ~/.jgitconfig file that is loaded by Main if present.
+
+FWIW, the reason Main doesn't support a config file is there is no way to have that config file also specify memory settings for the JVM. Setting too large of a value for core.packedGitLimit without also increasing the heap may cause performance problems in the application. Not entirely a problem you need to solve, but that's why I didn't added a reconfigure() call here.
+
+-------------------------------------
+author: Elise Key
+date: 2017-08-29 13:16:40.000000000
+
+Abandoned
+
+Abandoning after 1 year or more of inactivity.
+
+If this change is still needed, please restore it.
+
+-------------------------------------

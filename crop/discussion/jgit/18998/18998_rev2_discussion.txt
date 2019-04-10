@@ -1,0 +1,96 @@
+DESCRIPTION
+
+Update DfsRefUpdate reference to public API
+
+The DfsRefUpdate class is internal to the JGit DFS package,
+and so cannot be used/referred to outside this package. By
+using the standard JGit RefUpdate as a return type, the
+method can be updated/overridden by clients if needed.
+
+Bug: 237694
+Change-Id: Ie70c112af348fd378cf8a765f028080d0f9c25ab
+Signed-off-by: Blake Oneal xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Blake Oneal
+date: 2013-11-27 22:00:00.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-27 22:00:06.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/egit/job/jgit.gerrit/4249/
+
+-------------------------------------
+author: Blake Oneal
+date: 2013-11-27 22:01:39.000000000
+
+Patch Set 2:
+
+Would be worth having Shawn eyeball this too in case there's something explicit which expects these reference types.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-27 22:11:20.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/jgit.gerrit/4249/ : SUCCESS
+
+-------------------------------------
+author: Blake Oneal
+date: 2013-11-28 22:31:37.000000000
+
+Patch Set 2: Code-Review+1
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2013-11-28 22:42:16.000000000
+
+Patch Set 2: Code-Review-1
+
+(1 comment)
+
+Line:328, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsRefDatabase.java -> DfsRefUpdate is designed to ensure calls are made to this method. Why are you overriding the type with your own?
+
+And if that is necessary, maybe the better option is to make DfsRefUpdate non-final, and public?
+
+-------------------------------------
+author: Blake Oneal
+date: 2013-11-28 23:05:12.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:328, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsRefDatabase.java -> The BatchUpdate allows you to override the newBatchUpdate method, as does the newRename. It's only the newUpdate that stops you being updated here, and mainly seems designed to stop people overriding this method.
+
+BatchUpdate gets called from a bunch of places (including when you upload changes directly to a branch) but Update gets called when you perform a merge.
+
+By overriding this method, you get finer control over how the update happens, including inserting a wrapper class to permit you to delegate or override calls whilst at the same time performing additional logging. Amongst other things, the (Dfs)RefUpdate has knowledge of things that the compareAndPut doesn't in the refdb, including:
+
+* comment
+* if it was a force push or not
+* identity of submitter
+
+By the time you get to the compareAndPut all you know is that Ref A is now Ref B and you lose this contextual information. Were one to implement reflogs using Gerrit then hooking this in at the DFS RefDB implementation would make the most sense, but this isn't there in the API at the moment (you'd ideally like something along the lines of compareAndPut(Ref 1, Ref 2, PersonIdent, String message, boolean force) as the signature, which could delegate to the existing compareAndPut method) but the next best thing is to override the dfs implementation and inject wrappers around the update operations so you can get this context before it's lost.
+
+I don't really see the point in making this restrictive though; there isn't a DfsBatchUpdate or DfsBatchRename and this forces the implementor to not override this method. Having DfsRefUpdate public and non-final would permit this but were one to implement a generic ref database on top of something like Zookeeper the restriction that you have to override a named class may not be beneficial.
+
+-------------------------------------
+author: Blake Oneal
+date: 2013-12-08 17:26:29.000000000
+
+Patch Set 2:
+
+Since this approach isn't something you want to take, and the window for non-committers to push changes for the stable branch has passed, can you make DfsUpdate a public non-final class?
+
+-------------------------------------

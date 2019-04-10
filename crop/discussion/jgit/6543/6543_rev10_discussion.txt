@@ -1,0 +1,88 @@
+DESCRIPTION
+
+Add SubscribeConnection implementation
+
+Add the client-side subscribe implementation for sending subscribe
+commands and ref state to a Publisher, and receive packed updates
+into multiple repositories.
+
+Change-Id: I6c70f45160d0417f2973e13bb0b99d984dc02481
+
+
+COMMENTS
+
+author: Karlee Dorsey
+date: 2012-07-25 22:09:29.000000000
+
+Uploaded patch set 10.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2012-07-26 18:07:56.000000000
+
+Patch Set 10: (9 inline comments)
+
+
+
+Line:168, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> You call the string "sequence " in the loop below. i would prefer these to be similar. Maybe call this "last-sequence "?
+
+Line:170, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> This looks weird, starting a non-resumed connection with "0000".
+
+Move this into the if restart block.
+
+Line:222, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> "restart-token " is sufficient. I don't think you need to say "change-" prefix here.
+
+Line:264, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> seems odd to start a transaction with "0000".
+
+Line:269, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> i would prefer just "done" here.
+
+Those ends between each repository name are also a bit odd. Maybe rewrite this to be:
+
+  ....access foo/bar
+  ....access foo/thing
+  ....access foo/thatotherthing
+  0000
+
+So its clear to the server we are telling it we will access these repositories later, and it should let us know if authentication will be needed. It also doesn't have that ugly flush every other stuttering going on.
+
+Line:284, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> "ERR " is the existing convention within Git protocols.
+
+Line:286, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> This should be handled in the loop above, not here. The server can already change the token. It can change the token from "no token" to "token" in the loop.
+
+Line:294, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> This should be handled in the loop above, not here. I think its reasonable to hoist it up there, and thus also allow the server to modify the heartbeat-interval.
+
+Line:301, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> If we don't get reconnect or "ERR ", we basically get nothing if you make the changes I suggest above. So the server should send one of:
+
+  ACK
+  reconnect
+  ERR message explaining failure
+
+as a single message in reply to the request. No need for an END packet here. You get one of the above 3. ACK is fine, return true and the loop starts running to receive from the server. reconnect is return false, and you have to retry the whole thing. ERR is an exception and is obvious.
+
+-------------------------------------
+author: Karlee Dorsey
+date: 2012-07-26 22:34:21.000000000
+
+Patch Set 10: (9 inline comments)
+
+
+
+Line:168, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> These were changed from sequence -> pack-number many patches ago. I'm going to change "sequence" to "pack-number" below, and this to "last-pack-number".
+
+Line:170, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> This marks the end of the headers, and now there will be "advertisement" or "subscribe" at the beginning of each request.
+
+Line:222, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> Done
+
+Line:264, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> It's there because the advert code follows the same path as the subscribe request. Along with your "repositoryaccess ..." keyword change, I would have to introduce a constant at the beginning of each message (the "hello" I had there many changes back) to differentiate between the advertisement code path and the actual publish path.
+
+Line:269, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> Done
+
+Line:284, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> GitSmartHttpTools.java:writePacket uses "error: ", "ERR " is used when responding to InfoRefs. Since the advert code uses the publish codepath, it uses "error: ". If I make separate functions, I can send "ERR ".
+
+Line:286, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> Done
+
+Line:294, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> Done
+
+Line:301, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> Done
+
+-------------------------------------

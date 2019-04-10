@@ -1,0 +1,107 @@
+DESCRIPTION
+
+Add a merge command to the jgit API
+
+Merges the current head with one other commit.
+In this first iteration the merge command supports
+only fast forward and already up-to-date.
+
+Signed-off-by: Carlie Harper xxx@xxx.xxx
+Signed-off-by: Zachary Orozco xxx@xxx.xxx
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-05-20 01:39:35.000000000
+
+Patch Set 1: I would prefer that you didn't submit this; No score
+
+
+
+Line:110, org.eclipse.jgit/src/org/eclipse/jgit/api/MergeCommand.java -> FWIW, getLeaf() isn't necessary.  getObjectId() works on symbolic references by traversing to the leaf to get the value.
+
+Line:160, org.eclipse.jgit/src/org/eclipse/jgit/api/MergeCommand.java -> This isn't really an internal exception.  Its easy for a user to cause, just modify (and don't commit) a file that the branch you are fast-forwarding to has also modified.  This happens so often that users want to know the complete list of offending files, so they can figure out what to do next.
+
+This is an exception (or MergeResult?) that we need to export as part of the public API so that applications can alert the user that their working directory contains uncommitted changes which conflict with the merge they are trying to do.
+
+Line:171, org.eclipse.jgit/src/org/eclipse/jgit/api/MergeCommand.java -> Please also set the OldObjectId on the RefUpdate.  We read it earlier.  We shouldn't continue with the update if the branch was modified by a concurrent process.
+
+Line:211, org.eclipse.jgit/src/org/eclipse/jgit/api/MergeCommand.java -> I realize this is only a basic start.  But since this is public API I'd like to think about what the final API will look like a bit.
+
+Merges can accept any SHA-1.  So technically we need to take AnyObjectId here as an input.  Having a Ref can be nicer, because we might be able to format a better message.  Further, `git pull` takes advantage of the URIish to produce an even more useful message.
+
+Merges also can accept more than one SHA-1 if you consider the octopus strategy.  So maybe we want this part of the API to be:
+
+  public MergeCommand include(AnyObjectId commit) {
+    return include(commit, commit.abbrev());
+  }
+
+  public MergeCommand include(Ref ref) {
+    return include(ref.getObjectId(), ref.getName());
+  }
+
+  public MergeCommand include(AnyObjectId commit, String name) {
+    sources.add(new Source(commit, name));
+    return this;
+  }
+
+  private static class Source {
+    final ObjectId commit;
+    final String name;
+  }
+
+Then when we format the merge message we can try to take advantage of that additional name member to describe the source of the merge.  Further, callers can include more than one commit in a single merge operation.
+
+-------------------------------------
+author: Malia Sampson
+date: 2010-05-20 01:44:17.000000000
+
+Patch Set 1: No score; IP review completed
+
+Looks OK if Shawn's comments are addressed.
+
+Line:211, org.eclipse.jgit/src/org/eclipse/jgit/api/MergeCommand.java -> Well, this is "API" per se for 0.8.0 but until we release 1.0.0 we aren't giving people any guarantees for backwards compatibility imho.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-05-20 07:30:38.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+
+
+Line:110, org.eclipse.jgit/src/org/eclipse/jgit/api/MergeCommand.java -> Done
+
+Line:160, org.eclipse.jgit/src/org/eclipse/jgit/api/MergeCommand.java -> added a UnresolvedConflictsException exposing also conflicting pathes
+
+Line:171, org.eclipse.jgit/src/org/eclipse/jgit/api/MergeCommand.java -> Done
+
+Line:211, org.eclipse.jgit/src/org/eclipse/jgit/api/MergeCommand.java -> But Shawn, I always thought a Ref is a combination of name and objectID. Why should we introduce something else like the Source class?
+
+I agree of course that we need to add ways to AnyObjectID.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2010-05-24 14:51:05.000000000
+
+Your change could not be merged due to a path conflict.
+
+Please merge (or rebase) the change locally and upload the resolution for review.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-05-20 16:54:41.000000000
+
+MISMATCHED INLINE COMMENT
+Line:211, org.eclipse.jgit/src/org/eclipse/jgit/api/MergeCommand.java -> Good point about the Ref class being a reusable pair of String and ObjectId.  I think you could use ObjectIdRef.Loose here rather than Source and get everything we need.  It might actually be preferred, because you'll want a short-form for branch names ("master" instead of "refs/heads/master") and we should probably teach Ref how to create those, because its a stateless function and having it on Repository is somewhat useless.
+
+I just wasn't thinking enough when I wrote my comments yesterday and slapped together that Source class.  Sorry.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-05-20 01:46:26.000000000
+
+MISMATCHED INLINE COMMENT
+Line:211, org.eclipse.jgit/src/org/eclipse/jgit/api/MergeCommand.java -> That's true, we can break API compatibility.  But I would prefer to have some sane notion up front.  Too much of JGit's own internal library API is just sort of slapped together, and the same goes true for a lot of the C command line switches and so forth.  Better if we spend a few minutes to try and learn from both experiences.  :-)
+
+-------------------------------------

@@ -1,0 +1,165 @@
+DESCRIPTION
+
+[Ephemeral Bucket]: Create an abstract base class KVBucket
+
+Currently “EventuallyPersistentStore” is the class that engineers the
+Piper Jefferson bucket behavior in the kv-engine. It
+(i) handles get/set requests, any spl requests defined in our protocol,
+(ii) spawns tasks like flusher, bgfetcher, pager, access scanner etc
+(iii) sets up config params for DCP, HT, Vbucket
+(iv) interactions with KV store (say forestdb or couchstore) for
+     persistence, vb snapshotting, rollback etc and many more
+
+Ephemeral bucket is a new bucket type and it has some similar but
+many distinct features w.r.t Piper Jefferson bucket. For example we
+(i) do not need flusher, bgfetcher tasks
+(ii) handle get/sets differently as we do not have anything called
+     full eviction/value eviction and hence no bloom filters
+(iii) No KV store (storage) interactions
+(iv) use modified HT+ skiplist structures to store/get items.
+
+Hence it is a good idea to derive new class “EphemeralBucket” and
+“EventuallyPersistentStore” as peer subclasses from the base class
+“KVBucket”.
+
+This commit just creates the abstract base class and makes the
+the clients of EventuallyPersistentStore which are expected to be
+clients of EphemeralStore as well to use base class KVBucket.
+
+Subsequent commits will add "EphemeralBucket" class and
+rename "EventuallyPersistentStore" to "EPBucket".
+
+Change-Id: Ia1e403b4c718d8ee8abd84316287d58743397cf8
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2016-10-14 22:34:40.982000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-14 22:34:47.417000000
+
+Patch Set 3:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/356/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-14 22:34:47.565000000
+
+Patch Set 3:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1236/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-14 22:34:47.706000000
+
+Patch Set 3:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1554/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-14 22:37:10.851000000
+
+Patch Set 3:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1452/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-14 22:54:14.661000000
+
+Patch Set 3: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/356/ : FAILURE
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-addresssanitizer-master/356/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1452/ : FAILURE
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/1452/ )
+
+ThreadSanitizer issue: data race on vptr (ctor/dtor vs virtual call) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/ep.cc:563 EventuallyPersistentStore::~EventuallyPersistentStore()  ( http://cv.jenkins.couchbase.com//job/ep-engine-threadsanitizer-master/1452/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1554/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1236/ : SUCCESS
+
+-------------------------------------
+author: Asher Vang
+date: 2016-10-17 09:11:15.252000000
+
+Patch Set 3:
+
+(6 comments)
+
+Line:5715, src/ep_engine.cc -> no need for newline?
+
+Line:978, src/dcp/stream.cc -> remove newline
+
+Line:46, src/kvbucket.h -> I noticed that this was a "move" from another file... in the future it would be nice to use an enum class to avoid cluttering the global namespace...
+
+Line:115, src/kvbucket.h -> same as above
+
+Line:557, src/kvbucket.h -> If you add the following to ~/.gitconfig:
+
+    [apply]
+        whitespace = fix
+
+It'll fix up stuff like that
+
+Line:54, src/kvshard.cc -> you could probably do something as easy to have it as a property in the bucket? 
+
+    if (store.isPersistent()) {
+        flusher = new Flusher(store, this, commitInterval);
+        bgfetcher = new BgFetcher((store, this, stats);
+    }
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2016-10-17 19:28:43.450000000
+
+Patch Set 3:
+
+(5 comments)
+
+Line:5715, src/ep_engine.cc -> These newlines crept in because I had a longer word "kvMemoryStore" and I did a find and replace to "kvBucket".
+Will fix all these
+
+Line:978, src/dcp/stream.cc -> Done
+
+Line:46, src/kvbucket.h -> Will use enum class in future.
+Will make a note to convert to enum class while refactoring
+
+Line:557, src/kvbucket.h -> Thanks, add that in my ~/.gitconfig
+
+Line:54, src/kvshard.cc -> Will keep this as a TODO.
+Ideally I want Fliusher and BgFetcher to know about only EventuallyPersistentStore class, not the base class.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-10-17 20:25:05.430000000
+
+Patch Set 3:
+
+(2 comments)
+
+Line:964, src/tapconnection.cc -> Style: For future instances, this is exactly the kind of thing where `auto` is useful - you don't have to worry about exactly wha this is called, makes renaming etc much easier.
+
+Line:52, src/kvshard.cc -> For consistency please use TODO (so others can also search for them). Feel free to keep the `EPHE` in addition to TODO.
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-10-20 20:34:43.676000000
+
+Change has been successfully cherry-picked as a7b5e9c998f82377c7a9aec75d035ec03834cb19 by Adrianna Holmes
+
+-------------------------------------

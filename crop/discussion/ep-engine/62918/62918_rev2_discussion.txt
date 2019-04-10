@@ -1,0 +1,91 @@
+DESCRIPTION
+
+MB-19228: Address possible data races in ActiveStream context
+
+Address possible data races in ActiveStream context when gathering
+stats.
+
+WARNING: ThreadSanitizer: data race (pid=27028)
+
+  Read of size 8 at 0x7d480000b1f8 by main thread (mutexes: write M32941632, write M1367, write M32940809):
+    #0 void STATWRITER_NAMESPACE::add_casted_stat<unsigned long>(char const*, unsigned long const&, void (*)(char const*, unsigned short, char const*, unsigned int, void const*), void const*) /home/abhinav/Piper Jefferson/ep-engine/src/statwriter.h:45 (ep.so+0x000000037825)
+    #1 ActiveStream::addStats(void (*)(char const*, unsigned short, char const*, unsigned int, void const*), void const*) /home/abhinav/Piper Jefferson/ep-engine/src/dcp/stream.cc:477 (ep.so+0x000000071d16)
+    #2 DcpProducer::addStats(void (*)(char const*, unsigned short, char const*, unsigned int, void const*), void const*) /home/abhinav/Piper Jefferson/ep-engine/src/dcp/producer.cc:602 (ep.so+0x000000068057)
+    #3 ConnStatBuilder::operator()(SingleThreadedRCPtr<ConnHandler>&) /home/abhinav/Piper Jefferson/ep-engine/src/ep_engine.cc:3887 (ep.so+0x0000000e13e1)
+    #4 EventuallyPersistentEngine::doDcpStats(void const*, void (*)(char const*, unsigned short, char const*, unsigned int, void const*)) /home/abhinav/Piper Jefferson/ep-engine/src/ep_engine.cc:4144 (ep.so+0x0000000c151a)
+    #5 EventuallyPersistentEngine::getStats(void const*, char const*, int, void (*)(char const*, unsigned short, char const*, unsigned int, void const*)) /home/abhinav/Piper Jefferson/ep-engine/src/ep_engine.cc:4564 (ep.so+0x0000000c5405)
+    #6 EvpGetStats(engine_interface*, void const*, char const*, int, void (*)(char const*, unsigned short, char const*, unsigned int, void const*)) /home/abhinav/Piper Jefferson/ep-engine/src/ep_engine.cc:213 (ep.so+0x0000000b422e)
+    #7 mock_get_stats(engine_interface*, void const*, char const*, int, void (*)(char const*, unsigned short, char const*, unsigned int, void const*)) /home/abhinav/Piper Jefferson/memcached/programs/engine_testapp/engine_testapp.cc:239 (engine_testapp+0x0000000ba9ad)
+    #8 get_int_stat(engine_interface*, engine_interface_v1*, char const*, char const*) /home/abhinav/Piper Jefferson/ep-engine/tests/ep_test_apis.cc:990 (ep_testsuite.so+0x0000000aeb81)
+    #9 dcp_stream(engine_interface*, engine_interface_v1*, char const*, void const*, unsigned short, unsigned int, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, int, int, int, int, bool, bool, unsigned char, bool, unsigned long*, bool) /home/abhinav/Piper Jefferson/ep-engine/tests/ep_testsuite.cc:4090 (ep_testsuite.so+0x00000009790c)
+    #10 test_dcp_producer_stream_req_dgm(engine_interface*, engine_interface_v1*) /home/abhinav/Piper Jefferson/ep-engine/tests/ep_testsuite.cc:4564 (ep_testsuite.so+0x000000077604)
+    #11 execute_test(test, char const*, char const*) /home/abhinav/Piper Jefferson/memcached/programs/engine_testapp/engine_testapp.cc:1090 (engine_testapp+0x0000000b946c)
+    #12 __libc_start_main /build/buildd/eglibc-2.19/csu/libc-start.c:287 (libc.so.6+0x000000021ec4)
+
+  Previous write of size 8 at 0x7d480000b1f8 by thread T9 (mutexes: write M32940880, write M32940855):
+    #0 ActiveStream::backfillReceived(Item*, backfill_source_t) /home/abhinav/Piper Jefferson/ep-engine/src/dcp/stream.cc:287 (ep.so+0x00000007054e)
+    #1 DiskCallback::callback(GetValue&) /home/abhinav/Piper Jefferson/ep-engine/src/dcp/backfill.cc:94 (ep.so+0x000000056067)
+    #2 CouchKVStore::recordDbDump(_db*, _docinfo*, void*) /home/abhinav/Piper Jefferson/ep-engine/src/couch-kvstore/couch-kvstore.cc:1757 (ep.so+0x00000018103f)
+    #3 recordDbDumpC(_db*, _docinfo*, void*) /home/abhinav/Piper Jefferson/ep-engine/src/couch-kvstore/couch-kvstore.cc:66 (ep.so+0x00000017fcc5)
+    #4 lookup_callback(couchfile_lookup_request*, _sized_buf const*, _sized_buf const*) /home/abhinav/Piper Jefferson/couchstore/src/couch_db.cc:767 (libcouchstore.so+0x00000000d7f5)
+    #5 btree_lookup_inner(couchfile_lookup_request*, unsigned long, int, int) /home/abhinav/Piper Jefferson/couchstore/src/btree_read.cc:99 (libcouchstore.so+0x00000000b5b2)
+    #6 btree_lookup_inner(couchfile_lookup_request*, unsigned long, int, int) /home/abhinav/Piper Jefferson/couchstore/src/btree_read.cc:69 (libcouchstore.so+0x00000000b370)
+    #7 btree_lookup_inner(couchfile_lookup_request*, unsigned long, int, int) /home/abhinav/Piper Jefferson/couchstore/src/btree_read.cc:69 (libcouchstore.so+0x00000000b370)
+    #8 btree_lookup /home/abhinav/Piper Jefferson/couchstore/src/btree_read.cc:131 (libcouchstore.so+0x00000000b00c)
+    #9 couchstore_changes_since /home/abhinav/Piper Jefferson/couchstore/src/couch_db.cc:812 (libcouchstore.so+0x00000000d601)
+    #10 CouchKVStore::scan(ScanContext*) /home/abhinav/Piper Jefferson/ep-engine/src/couch-kvstore/couch-kvstore.cc:1264 (ep.so+0x00000017f77e)
+    #11 DCPBackfill::scan() /home/abhinav/Piper Jefferson/ep-engine/src/dcp/backfill.cc:193 (ep.so+0x000000057672)
+    #12 DCPBackfill::run() /home/abhinav/Piper Jefferson/ep-engine/src/dcp/backfill.cc:118 (ep.so+0x000000056647)
+    #13 BackfillManager::backfill() /home/abhinav/Piper Jefferson/ep-engine/src/dcp/backfill-manager.cc:240 (ep.so+0x0000000508d5)
+    #14 BackfillManagerTask::run() /home/abhinav/Piper Jefferson/ep-engine/src/dcp/backfill-manager.cc:43 (ep.so+0x00000005052f)
+    #15 ExecutorThread::run() /home/abhinav/Piper Jefferson/ep-engine/src/executorthread.cc:112 (ep.so+0x0000000f8796)
+    #16 launch_executor_thread(void*) /home/abhinav/Piper Jefferson/ep-engine/src/executorthread.cc:33 (ep.so+0x0000000f8335)
+    #17 platform_thread_wrap /home/abhinav/Piper Jefferson/platform/src/cb_pthreads.c:23 (libplatform.so.0.1.0+0x000000003d31)
+
+Change-Id: I166917524b5fcad285b3623ff160e875c316d983
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2016-04-18 17:03:59.139000000
+
+Uploaded patch set 2: Patch Set 1 was rebased.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-18 17:04:29.061000000
+
+Patch Set 2:
+
+Branch restricted. PLEASE READ this URL: 
+
+http://server.jenkins.Piper Jefferson.com/job/restricted-branch-check/12259/artifact/restricted.html : FAILURE
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-18 17:57:08.757000000
+
+Patch Set 2:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/453/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-18 18:02:23.787000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/453/ : FAILURE
+
+Make encountered an error building one or more targets. ( http://factory.Piper Jefferson.com//job/ep-engine-Jasmin Rangel-3.0.x/453/ )
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-04-23 01:00:48.592000000
+
+Change has been successfully cherry-picked as 946915951a70aba4026a240677cf15091aab8b89
+
+-------------------------------------

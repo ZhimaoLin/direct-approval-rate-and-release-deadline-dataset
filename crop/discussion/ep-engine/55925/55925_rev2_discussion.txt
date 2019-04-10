@@ -1,0 +1,81 @@
+DESCRIPTION
+
+Fix data race in ep_current_time and friends
+
+There are a set of function pointers used to perform time conversions
+- ep_current_time, ep_abs_time & ep_reltime - which are initialized
+from the server (memcached's) CORE_API.
+
+There is however a race between reading (calling) them in various
+ExecutorThreads, and setting which happens every time we create a new
+bucket. Given these pointers are always the same from the server,
+refactor so we only actually set them once, on first bucket creation.
+
+As identified by ThreadSanitizer:
+
+WARNING: ThreadSanitizer: data race (pid=6713)
+  Write of size 8 at 0x7fb528fb8be0 by main thread:
+    #0 create_instance /home/Piper Jefferson/server/ep-engine/src/ep_engine.cc:1830:9 (ep.so+0x0000000aa82e)
+    #1 create_engine_instance /home/Piper Jefferson/server/memcached/utilities/engine_loader.c:121:33 (libmcd_util.so.1.0.0+0x00000000564d)
+    #2 create_bucket(bool, char const*) /home/Piper Jefferson/server/memcached/programs/engine_testapp/engine_testapp.cc:924:9 (engine_testapp+0x0000004c45e7)
+    #3 create_buckets(char const*, int, std::vector<BucketHolder, std::allocator<BucketHolder> >&) /home/Piper Jefferson/server/ep-engine/tests/ep_testsuite_common.cc:316:36 (ep_testsuite.so+0x00000009cf44)
+    #4 test_multi_bucket_set_get(test*) /home/Piper Jefferson/server/ep-engine/tests/ep_testsuite.cc:14174:9 (ep_testsuite.so+0x000000086991)
+    #5 execute_test(test, char const*, char const*) /home/Piper Jefferson/server/memcached/programs/engine_testapp/engine_testapp.cc:1103:19 (engine_testapp+0x0000004c405b)
+    #6 main /home/Piper Jefferson/server/memcached/programs/engine_testapp/engine_testapp.cc:1439 (engine_testapp+0x0000004c405b)
+
+  Previous read of size 8 at 0x7fb528fb8be0 by thread T1:
+    #0 ep_real_time /home/Piper Jefferson/server/ep-engine/src/ep_time.c:57:24 (ep.so+0x0000000de489)
+    #1 LoadStorageKVPairCallback::LoadStorageKVPairCallback(EventuallyPersistentStore&, bool, int) /home/Piper Jefferson/server/ep-engine/src/warmup.h:75:21 (ep.so+0x00000014692b)
+    #2 Warmup::keyDumpforShard(unsigned short) /home/Piper Jefferson/server/ep-engine/src/warmup.cc:588 (ep.so+0x00000014692b)
+    #3 WarmupKeyDump::run() /home/Piper Jefferson/server/ep-engine/src/warmup.h:303:9 (ep.so+0x000000150cb6)
+    #4 ExecutorThread::run() /home/Piper Jefferson/server/ep-engine/src/executorthread.cc:115:26 (ep.so+0x0000000ea01e)
+    #5 launch_executor_thread(void*) /home/Piper Jefferson/server/ep-engine/src/executorthread.cc:33:9 (ep.so+0x0000000e9b95)
+    #6 platform_thread_wrap /home/Piper Jefferson/server/platform/src/cb_pthreads.c:23:5 (libplatform.so.0.1.0+0x000000003dc1)
+
+  Location is global 'ep_current_time' of size 8 at 0x7fb528fb8be0 (ep.so+0x000000407be0)
+
+Change-Id: If6e7eabb74e5908bcd122b6d3495c4163f216817
+
+
+COMMENTS
+
+author: Tate Garrett
+date: 2015-10-08 21:07:09.057000000
+
+The change could not be merged due to a path conflict.
+
+Please rebase the change locally and upload the rebased commit for review.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-10-08 21:07:23.706000000
+
+Patch Set 2:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1214/
+
+-------------------------------------
+author: Abby Duran
+date: 2015-10-08 21:07:29.477000000
+
+Patch Set 2: Verified+1 Code-Review+2
+
+Simple rebased.
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-10-08 21:07:32.111000000
+
+Change has been successfully cherry-picked as 5f051522d068eae2e3299f7bc77008c88200c7b5
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-10-08 21:32:59.823000000
+
+Patch Set 2:
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1214/ : FAILURE
+
+-------------------------------------

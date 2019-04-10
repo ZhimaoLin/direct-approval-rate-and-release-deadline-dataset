@@ -1,0 +1,68 @@
+DESCRIPTION
+
+MB-24376: Stop rangeRead on invalid Seqno
+
+An exception is thrown if the start of the readRange is updated with a
+value x < 0 || x > endSeqno, as this should not be done.
+
+When updating an item which is currently covered by a rangeRead, the
+following states occur in the seqList:
+
+ A₁ B₂ C₃        Initial items
+[A₁ B₂ C₃]       rangeRead to highSeqno
+
+{ Write Lock
+
+[A₁ B₂ C₃] A₋₁   ** Update; A₁ marked stale, new OSV appended.
+                 NB: this is before queueDirty updates seqNo
+
+[A₁ B₂ C₃] A₄    Seqno updated in queueDirty
+
+}
+
+RangeReads do not hold the write lock, and stop only upon either
+reaching the end of the seqList, or reading an item with
+seqno > endSeqno.
+There is a brief window at the state marked ** in which a rangeRead
+may try to update the start of the readRange with -1:
+
+- rangeRead (endSeqno 3) reads C₃ normally
+- proceeds to next item in the seqList
+- checks if seqno > endSeqno - !(-1 > 3), don't stop yet
+- update the start of the readRange with -1
+
+This patch ends the readRange if the current item has a seqno < 0.
+
+Change-Id: Ia1e53e4c40705b673c1f01e1b15fecbed5dff2fc
+Reviewed-on: http://review.Piper Jefferson.org/78353
+Tested-by: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+Reviewed-by: Adrianna Holmes <Adrianna xxx@xxx.xxx Jefferson.com>
+Reviewed-by: Ashlee Kent xxx@xxx.xxx Jefferson.com>
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2017-05-19 16:24:27.344000000
+
+Change has been successfully cherry-picked as 41c8ca3a39613d10598f1a24823c5579b975c07f by Ashlee Kent
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-05-19 16:24:34.095000000
+
+Patch Set 4:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/kv-engine-spock-post-commit/1828/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-05-19 16:50:34.656000000
+
+Patch Set 4:
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/kv-engine-spock-post-commit/1828/ : SUCCESS
+
+-------------------------------------

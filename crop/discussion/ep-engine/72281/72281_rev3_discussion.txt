@@ -1,0 +1,118 @@
+DESCRIPTION
+
+MB-22231: Use RAII for ep-engine entrypoints
+
+Adds a function to get a resource handle (unique_ptr) for
+EventuallyPersistentEngine rather than a bare pointer. This resource
+handler has a custom deleter (EngineHandleDestroyer) that calls
+releaseHandle() rather than doing a delete.
+
+Initially just a single entrypoint has been changed. The plan is to
+increase the usage of this once this change is agreed on.
+
+Change-Id: Ic10fd7b1a693fc31de5ca7998f38976b185cfc8a
+
+
+COMMENTS
+
+author: Aaliyah Proctor
+date: 2017-01-20 13:47:58.058000000
+
+Uploaded patch set 3: Patch Set 2 was rebased.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-20 13:48:06.778000000
+
+Patch Set 3:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/3076/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-20 13:48:06.918000000
+
+Patch Set 3:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1746/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-20 13:48:07.057000000
+
+Patch Set 3:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2542/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-20 13:48:07.209000000
+
+Patch Set 3:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2914/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-20 14:01:08.029000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2914/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2542/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1746/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/3076/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-01-20 14:44:34.914000000
+
+Patch Set 3: Code-Review-1
+
+(5 comments)
+
+Approach looks good. Few suggestions, mostly around the naming of things, but I think you can also simplify the code a bit by getting rid of the `handle` arg.
+
+Feel free to expand to all the other uses of get / releaseHandle.
+
+Line:89, src/ep_engine.cc -> Style: Probably worth adding a type alias (using) for this to make the code more terse.
+
+Line:91, src/ep_engine.cc -> Nit: Prefer make_unique<>
+
+Line:96, src/ep_engine.cc -> Note: releaseHandle doesn't actually do anything with `handle`, so we don't actually need to store it within this RAII class.
+
+Moreover, given that we plan to use this RAII pattern for all instances, I'd just inline the content of `releaseHandle` into here and delete releaseHandle (similary with getHandle).
+
+Line:294, src/ep_engine.cc -> I know I suggested `toEngine`, but thinking about it more and looking at the code, I think that something like `acquireEngine()` or `enterEngine()` would be a better name. I think it better suggests that we are actually (temporarily) making use the engine, compared to `toEngine` which implies conversion to me.
+
+Line:962, src/ep_engine.h -> I'd probably not call this "Destroyer", for a couple of reasons:
+
+1) It's not that an idiomatic name - normally "Deleter" or perhaps "destructor" would be the name for deleting things in C++
+2) "Destroyer" implies we are actually deleting something, which in fact this is just us entering / leaving ep-engine (and the work associated with that).
+
+I'd suggest something like EngineReleaser - or other suggestions are also welcome ;)
+
+-------------------------------------
+author: Keira Washington
+date: 2017-01-20 14:51:20.374000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:294, src/ep_engine.cc -> I think if we're introducing RAII it would be better to make it explicit. ie. actually store this in an lvalue (a variable) so that it's obvious what's happening.
+
+At the moment a reader might not realise that toEngine isn't just a cast (and that it actually introduces an rvalue that must be destructed after getStats() is called).
+
+-------------------------------------
+author: Tate Garrett
+date: 2017-01-24 16:21:43.338000000
+
+Change has been successfully cherry-picked as 703e11dfd1c2945a490cc48fa0982195fec680ad by Ashlee Kent
+
+-------------------------------------

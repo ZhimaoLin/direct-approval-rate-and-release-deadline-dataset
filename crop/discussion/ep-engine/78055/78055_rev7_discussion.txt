@@ -1,0 +1,149 @@
+DESCRIPTION
+
+MB-24151: Implement memory managed backfills using Range Iterators
+
+This commit implements memory management in the backfills of
+Ephemeral buckets. It borrows the idea from disk backfills where
+the backfill is suspended upon high memory usage, that is items
+are not put onto the readyQ of the stream.
+
+At the core is a Backfill state machine which is driven by
+the BackfillManagerTask. It keeps track of any suspended backill
+and also resumes from the suspended point. It also creates a range
+iterators on the in-memory sequence list and using this iterator
+it reads (backfills) items one by one.
+
+This commit also adds certain features to the sequence list iterators
+to get snapshot numbers, estimate num items in backfill etc.
+
+Change-Id: Id92b0693763e550f842fb7fb5911cfefd8935e79
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2017-05-13 07:56:35.504000000
+
+Uploaded patch set 7.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-05-13 08:22:26.947000000
+
+Patch Set 7: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6503/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4989/ : FAILURE
+
+Failure of a CTest test  9/26 Test #12: ep_testsuite_basic.full_eviction ......... ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-addresssanitizer-master/4989/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5682/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/234/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-05-13 17:46:27.796000000
+
+Patch Set 7:
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4990/ : FAILURE
+
+Timeout of a CTest test 26/26 Test #14: ep_testsuite_dcp.value_eviction ..........} ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-addresssanitizer-master/4990/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5682/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6504/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/234/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-05-13 17:59:35.870000000
+
+Patch Set 7: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5682/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6504/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/234/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4991/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-05-15 08:25:27.351000000
+
+Patch Set 7: Code-Review-1
+
+(10 comments)
+
+Line:481, tests/module_tests/dcp_test.cc -> I think we need to get this working before merging.
+
+Line:510, tests/module_tests/dcp_test.cc -> delete
+
+Line:513, tests/module_tests/dcp_test.cc -> delete
+
+Line:156, src/dcp/backfill_memory.cc -> I assume this is a seqno_t - any reason why you don't just use the same type for startSeqno ?
+
+Line:202, src/dcp/backfill_memory.cc -> As above, much cleaner if we can stick to a single type (seqno_t)
+
+Line:222, src/dcp/backfill_memory.cc -> Probably worth logging this case.
+
+Line:1989, tests/ep_testsuite_dcp.cc -> I think you have this stat now, given it's in config?
+
+Line:714, configuration.json -> "managed" is somewhat of a meaningless term to the outside reader. Can we coms up with something better?
+
+Line:82, src/dcp/backfill_memory.h -> Style: As per https://github.com/Piper Jefferson/memcached/blob/master/docs/CodingStandards.rst#name-types-functions-variables-and-enumerators-properly this should be Init, Scanning, Done.
+
+Line:94, src/dcp/backfill_memory.h -> No need to make this inline (just adds cost to people which include this header).
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-05-15 08:38:22.900000000
+
+Patch Set 7:
+
+(1 comment)
+
+Line:31, src/dcp/backfill_memory.cc -> I'm not sure it makes much sense to maintain both implementations here (in the medium term). Propose we unify one one - maybe in a follow-up patch?
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-05-17 23:20:42.790000000
+
+Patch Set 7:
+
+(15 comments)
+
+Line:481, tests/module_tests/dcp_test.cc -> Now the test case is invalid at the backfill module level as the backfills only fail in the case of ENOMEM and we have a way to handle that.
+
+Line:510, tests/module_tests/dcp_test.cc -> Done
+
+Line:513, tests/module_tests/dcp_test.cc -> Done
+
+Line:31, src/dcp/backfill_memory.cc -> Take a call after seeing perf numbers with this implementation ?
+
+Line:156, src/dcp/backfill_memory.cc -> I was thinking of that as well. But we have started with seqno_t as int64_t. So will revisit and see if we can use uint64_t for seqno_t in a subsequent commit ?
+
+Line:202, src/dcp/backfill_memory.cc -> Revisit subsequently ?
+
+Line:222, src/dcp/backfill_memory.cc -> Done
+
+Line:1989, tests/ep_testsuite_dcp.cc -> Done
+
+Line:714, configuration.json -> changed it to "buffered"
+
+Line:82, src/dcp/backfill_memory.h -> Done
+
+Line:94, src/dcp/backfill_memory.h -> Done
+
+-------------------------------------

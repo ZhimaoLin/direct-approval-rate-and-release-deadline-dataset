@@ -1,0 +1,71 @@
+DESCRIPTION
+
+TMF: Add base class and interface for state system analysis
+
+Also update the state system explorer to show state systems from modules
+instead.
+
+Change-Id: Iab6424be1a469c541d3e9b199d7377c8a4e70299
+Signed-off-by: Aryana Jones xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Annalise Jimenez
+date: 2013-11-18 01:37:31.000000000
+
+Uploaded patch set 10.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-18 01:37:38.000000000
+
+Patch Set 10:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/3998/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-18 02:08:25.000000000
+
+Patch Set 10: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/3998/ : SUCCESS
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-11-18 03:35:27.000000000
+
+Patch Set 10:
+
+Ok I debugged the issue a bit. Race condition causing a nice academic deadlock (that's why it doesn't happen every time):
+
+* Since we've called .openTrace(), the trace is now registered to the signal mananger.
+* A traceRangeUpdated signal is received, which launches getIndexer().buildIndex()
+* The signal is coming from TmfSignalManager.dispatchSignal, which is synchronized, so that thread has the lock on the signal manager.
+* The index builder then sends event requests on the trace.
+* That same thread then calls TmfEventProvider.newCoalescedDataRequest(), which is synchronized. (Hint: the TmfEventProvider is also the trace.)
+
+But since nothing waits for the index/analyses to be completed, the test ends and xxx@xxx.xxx is called. In the meantime, before the last step above happens:
+* The test runner thread calls .dispose(), which is synchronized in TmfTraceStub. It takes the lock on the trace object.
+* super.dispose(), super.dispose(), eventually TmfComponenent.dispose() calls  TmfSignalManager.deregister(). Which is of course synchronized on the signal manager too.
+
+So the second thread has the lock on the trace and waits on the lock on the signal manager, while the first one it's the opposite. This will not end well.
+
+I'll try to see what would be the best place to fix it... having to wait on the indexing would probably be best.
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2013-11-18 15:38:35.000000000
+
+Patch Set 10:
+
+Wow good find!  But isn't that something that can happen anywhere and anytime during the application?  
+
+It's the broadcast of rangeUpdatedsignal when the trace is opened that causes the indexing to occur then the deadlock.  But why is it indexing again?  In the setupTrace, the indexing was called and the whole trace was indexed.  Is there another more granular indexing for a time range?  
+
+Maybe TmfTraceStub could override those signal handlers and we add a method to disable some signal handling so that tests who don't need timeRangeUpdated, traceUpdated, etc can just ignore those signals?
+
+-------------------------------------

@@ -1,0 +1,61 @@
+DESCRIPTION
+
+MB-16596: Add menelaus_pluggable_ui.erl
+
+menelaus_pluggable_ui add suport for proxying requests to service
+nodes that support pluggable UI.
+
+Change-Id: If9581e9a94a21ecea211337390c402e979aba59c
+
+
+COMMENTS
+
+author: Leah Mcdaniel
+date: 2015-11-05 00:17:06.664000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Kian Santos
+date: 2015-11-05 07:06:33.088000000
+
+Patch Set 6:
+
+(4 comments)
+
+Line:26, src/menelaus_pluggable_ui.erl -> Changed my mind. I would like the extension to be .json -- much nicer for folks editing these files since with this extension you'll often get editor support for well-formattedness.
+
+Line:95, src/menelaus_pluggable_ui.erl -> Here what we actually need to do is to remove the service name from the beginning of the request path for the forwarded request.  E.g. 
+            Path = Req:get(raw_path),
+            PathToUse = string:right(Path, string:len(Path) - string:len(Service) - 1)
+
+And then pass PathToUse to proxy_req as a 3rd parameter. Reason is best given by example. Say we're proxying the n1ql service and we find a host:8093 to forward the request to. The request will come into us as:
+http://hosta:8091/n1ql/query/service
+and we will forward it as:
+http://hostb:8093/query/service
+
+i.e. we strip out the "/n1ql" from the path that we get. Actually I tested this with pluggable-ui-n1ql.json as follows and it worked well:
+{
+  "service": "n1ql",
+  "proxy-strategy": "any",
+  "rest-api-prefix": "query",
+  "doc-root": "."
+}
+
+Though of course you'll need to add a port_for() function as follows:
+
+port_for("n1ql", Node) ->
+   {value, Port} = ns_config:search(ns_config:latest(),
+                                     {node, Node, query_port}),
+
+Line:133, src/menelaus_pluggable_ui.erl -> You have a bug here that you'd have found with a type spec. :-) Just kidding. Anyway, Service comes in as a string but service_active_nodes() only works if Service is an atom. So you'll need a list_to_atom() in here.
+
+Line:200, src/menelaus_pluggable_ui.erl -> can you log the reason?
+
+-------------------------------------
+author: Roselyn Villegas Code Review
+date: 2015-11-18 01:20:39.595000000
+
+Change has been successfully cherry-picked as d974ffd661c5d1c8a73ffb3138f90a5ada0fece8
+
+-------------------------------------

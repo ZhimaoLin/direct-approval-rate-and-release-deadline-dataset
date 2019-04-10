@@ -1,0 +1,176 @@
+DESCRIPTION
+
+MB-100: shrink error msgs exposed to UI and logs
+
+Today when errors happened XDCR will dump errors to both xdcr log
+and ns_server logs. Some information we dump to these log files is
+redundant, causing bloated logs.
+
+Also, XDCR now overwhelms UI ("last 10 errors" on XDCR tab) by
+exposing too much info. The Erlang state from crash process is
+too big to show on UI and it is unnecessary to show the complete
+Erlang state to users.
+
+This commit will shrink xdcr logs and the error msg exposed to UI.
+
+Change-Id: I8863f20193794f52644bb09d804827ff454e3ede
+
+
+COMMENTS
+
+author: Macie Morton
+date: 2013-08-16 23:48:12.165000000
+
+Uploaded patch set 8.
+
+-------------------------------------
+author: Macie Morton
+date: 2013-08-19 19:13:52.984000000
+
+Patch Set 8: Verified+1
+
+-------------------------------------
+author: Philip Lara
+date: 2013-08-19 20:13:47.648000000
+
+Patch Set 8: Code-Review-1
+
+I cherry-picked the following commits:
+MB-8828: better error handling in XMem mode XDCR
+MB-100: shrink error msgs exposed to UI and logs
+
+Then I created a replication, stopped and started server again.
+
+Here are some search results in log files:
+grep -r -c -e "error reported to parent" .
+./xdcr.1:28
+./xdcr_errors.1:28
+
+grep -c -r -e "Please see logs for state dump" .
+./stats.1:30
+
+grep -c -r -e "Please see ns_server debug log" .
+./xdcr_errors.1:14
+
+plus I see 14 crashes of xdc_vbucket_rep_xmem_worker process in ns_server logs
+
+looks like way too much of log spamming for a normal server start
+
+-------------------------------------
+author: Macie Morton
+date: 2013-08-19 20:26:18.232000000
+
+Patch Set 8:
+
+It is expected to see CRASH when you stop and restart.  As I said, the retry on TMPFAIL will be handled in another commit. 
+
+This commit is to avoid dump redundant information in both debug and xdcr logs like erlang crash state. I have made the error msg on UI and logs much smaller than before. I believe it dump much smaller errors than ns_server logs (before the recent ns_server change). 
+
+Please compare xdcr logs before and after these two commits.
+
+-------------------------------------
+author: Macie Morton
+date: 2013-08-19 20:33:39.141000000
+
+Patch Set 8:
+
+BTW, we have 32 vb replicators by default, and each will crash if you stop and restart server during replication.  Thus  the results you see is totally expected. At least you wont see a lot of huge erlang process state dump in xdcr logs as before. Hope it helps.
+
+-------------------------------------
+author: Philip Lara
+date: 2013-08-19 20:40:53.767000000
+
+Patch Set 8:
+
+my point is that on normal server start we shouldn't see any errors. especially in UI. especially the messages that look like this:
+
+2013-08-19 12:52:53 [XMem Srv] Error replicating vbucket 816: "parent vb replicator: <0.24267.0>, xmem stats: [0,0,0,0,0,12]. Please see logs for state dump and complete list of error keys."
+
+this actually cries "Call the support!" IMHO
+
+-------------------------------------
+author: Macie Morton
+date: 2013-08-19 20:55:13.826000000
+
+Patch Set 8:
+
+Artnem, thanks for comments. But I am afraid this is not the point. It is NOT normal server startup, you stop/restart a Couchbase server during ongoing XDCR. After restart, the source will try to resume XDCR but if the destination is not ready to serve you at this time, you see such errors on source UI.  This is expected, and it is current behavior and not introduced in this commit.
+
+Similarly, if destination cluster crashed/restart in the middle of XDCR, you will see similar error msgs on source UI.  And today source cannot tell whether destination restart after normal shutdown (in warm-up), or just crashed abnormally. 
+
+To test normal server stop/restart, you can delete XDCR and then stop/restart CB server, you should not see XDCR errors on UI.
+
+If you have further questions, let's tNathalie Landry on Skype, which is much more efficient than kicking balls here.  My skype id is xie.Macie Morton
+
+Thanks.
+
+-------------------------------------
+author: Philip Lara
+date: 2013-08-19 21:01:37.091000000
+
+Patch Set 8:
+
+allright. can the message than be : "Replication destination is temporary down. Restarting in n seconds" ? Or something else that describes the situation and doesn't prompt the user to search through the log files. And one message per retry, not 14.
+
+-------------------------------------
+author: Macie Morton
+date: 2013-08-19 21:17:59.946000000
+
+Patch Set 8:
+
+That sounds very ad-hoc and you optimize your system for a very special case. 
+
+As I said, how do you know the "temporary down" is indeed temporary and it is because of regular server restart at destination, or something more serious happened?  You know that because you restart the server in your test. But
+in many cases it is necessary to look into logs to figure out what happened.
+
+Before the commit, we quite often dump the whole Erlang process state onto UI, which is not necessary and make error msg unreadable. This commit just fixes that part.
+
+Today crashed vb replicator restarts itself 30 seconds later.
+
+-------------------------------------
+author: Philip Lara
+date: 2013-08-20 00:36:10.204000000
+
+Patch Set 8:
+
+1. If TMPFAIL means "temporary failure" on the remote server, then the error message that we display to user should state exactly that. Not "[XMem Srv] Error replicating vbucket 816: "parent vb replicator: <0.24267.0>, xmem stats: [0,0,0,0,0,12].". This is probably somewhat useful for us, but not for the user. This is not ad-hoc. This is user friendliness.
+
+2. If 100500 workers fail due to the exactly same error on the remote side, why do we need to display 100500 (or even 10) identical messages to the user? One "Temporary failure on the remote server" will be enough. If that will repeat every 30sec - fine, but not swarm of unreadable messages with "xmem stats: [0,0,0,0,0,12]" in their text.
+
+I do agree that this commit somewhat improves things over the error dialog box that doesn't fit the computer screen, but the current way the error handling is done in xdcr doesn't look satisfactory to me.
+
+-------------------------------------
+author: Macie Morton
+date: 2013-08-20 01:20:01.490000000
+
+Patch Set 8:
+
+Seems it repeated the same thing over and over.  The goal of commit, is just to avoid dump the whole erlang crash process on UI, and dump redundant information in both ns_server and xdcr logs.
+
+1. As I said the retry on TMPFail optimization will be in another commit. This commit does NOT aim to do retry on TMPFail at all. Regarding retry on TMPFail, it is not clear to me what is the back-off strategy and it requires some thinking. Here you just focused the single user-case and try to optimize that case.
+
+2. Other than warm-up during restarting server, there could be other reasons that we see TMPFail and we can see other error msgs (e.g., ENOMEM), which is not temporary failure at all. Blindly putting "Temporary failure" on UI for ALL errors seems incorrect to me.
+
+In you test, you play with the server, you know that it is just temporary failure and destination will be online soon. In practice, crashed vb replicator is unable to know that.
+
+3. Today each vb replicator works on its own, and post its own error msg because different vb replicators can crash for different reasons. IMO this is OK to put per replicator error on UI (this is what how CAPI XDCR works, and I did not hear any complain about that). You see identical msg because in your very particular test case,  all replicators failed due to the same reason. I do not understand in which case we will see 10500 vb replicators.
+
+4. I think we can consolidate some errors from different vb replicators, but that is not urgent and we can do it later. 
+
+As I have already said, if you really want, we can discuss over Skype or phone, which is much more efficient.  It is really hard for me to explain every detail of XDCR in code review. I would like to stop here. Thanks for your comments.
+
+-------------------------------------
+author: Philip Lara
+date: 2013-08-20 01:33:41.507000000
+
+Patch Set 8: -Code-Review
+
+-------------------------------------
+author: Roselyn Villegas Code Review
+date: 2013-08-20 19:12:35.352000000
+
+The change could not be merged due to a path conflict.
+
+Please rebase the change locally and upload the rebased commit for review.
+
+-------------------------------------

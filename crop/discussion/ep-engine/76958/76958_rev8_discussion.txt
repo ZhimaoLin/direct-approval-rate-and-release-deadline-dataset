@@ -1,0 +1,73 @@
+DESCRIPTION
+
+MB-23263: Check refcount before reallocating
+
+This patch adds the facility to check the refcount value of a
+SingleThreadedRCPTR and uses this to ensure that the refcount of the
+blob is less than 2 before the defragmenter reallocates it. This is to
+ensure that we do not end up just creating a copy of the blob thus
+increasing memory usage which would be the opposite of what you would
+expect from the defragmenter.
+
+It's worth noting that it appears as though something could create
+another reference to the blob without holding the hashtable lock. This
+could lead to a soft data race on the refcount. This means that we
+cannot give a hard guarantee that the defragmenter doesn't duplicate the
+blob, just that it will in most cases. The case where it won't will be
+where the other thing creating the reference doesn't hold the hash
+bucket lock and happens to create a reference after refcount is read but
+before the blob is reallocated, which seems rare.
+
+Change-Id: I3a8b8812ac039445451952384cb5b40ce8b433cb
+
+
+COMMENTS
+
+author: Aaliyah Proctor
+date: 2017-04-19 13:02:29.528000000
+
+Uploaded patch set 8.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-19 13:10:03.530000000
+
+Patch Set 8: Code-Review-1
+
+(2 comments)
+
+Looks good. Couple of suggestions for extra things to check in the test.
+
+Line:310, tests/module_tests/defragmenter_test.cc -> Might be worth making explicit that the ref-counts of all Blobs should be (at least) 2 at this point as the CheckpointManager will be holding references to them.
+
+Line:314, tests/module_tests/defragmenter_test.cc -> Might be worth also asserting that the visited count is all items, and defrag count is zero (given those are pre-conditions for the test).
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-19 13:10:50.808000000
+
+Patch Set 8:
+
+(1 comment)
+
+Line:7, /COMMIT_MSG -> Maybe expand this to mention the task and class we're tNathalie Landrying about - e.g.
+
+ "Defragmenter: check StoredValue refcount before reallocating"
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-04-19 13:18:21.014000000
+
+Patch Set 8: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6108/ : ABORTED
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4647/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/5865/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5353/ : SUCCESS
+
+-------------------------------------

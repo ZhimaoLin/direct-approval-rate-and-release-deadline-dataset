@@ -1,0 +1,260 @@
+DESCRIPTION
+
+Added support for external diff and merge tools in EGit.
+
+* added support for git mergetool
+  * see: http://git-scm.com/docs/git-mergetool
+  * new Git-Preferences in merge-group:
+    * Merge tool to use:
+      * Use Eclipse compare editor
+      * Use default git merge tool
+      * Use custom git merge tool
+    * Custom merge tool: <toolname>
+  * supported user config settings
+    * merge.tool
+    * mergetool.<tool>.path
+    * mergetool.<tool>.cmd
+    * mergetool.prompt
+    * mergetool.trustExitCode
+    * mergetool.writeToTemp
+    * mergetool.keepTemporaries
+
+* added support for git difftool (from user config)
+  * see: http://git-scm.com/docs/git-difftool
+  * new Git-Preferences in diff-group:
+    * Diff tool to use:
+      * Use Eclipse compare editor
+      * Use default git diff tool
+      * Use custom git diff tool
+    * Custom diff tool: <toolname>
+    * Bash path: <the path to bash> [only for windows, to be discussed]
+  * supported user config settings
+    * diff.tool
+    * difftool.<tool>.path
+    * difftool.<tool>.cmd
+    * difftool.prompt
+    * difftool.trustExitCode
+    * difftool.writeToTemp [like mergetool, not seen in C-Git]
+    * difftool.keepTemporaries [like mergetool, not seen in C-Git]
+
+fixed too:
+  * Show message about failed tool execution to user
+  * Added embedded diff/merge tool definitions like known in C-Git
+  * Added support for tool option without $BASE file
+  * Add external merged file to the index (after a successful merge
+only)
+  * Added setting to Git preferences to enable or disable "Add external
+merged file to the index (after a successful merge only)"
+  * Added working directory for external tool call
+  * deletion of temp folder
+  * propagate environment for tool execution
+  * execute batch files in cmd for windows
+  * fixed FindBugs warnings
+  * added external tool handling for compareDialog (commit dialog) too
+  
+TODOs:
+  * merge.keepBackup
+  * [to be discussed]: i've added execution of external tools for bash
+(msys) for windows, to support execution of bash scripts under windows,
+may be it should be removed and/or enabled only for windows...
+  * move the whole external tools code to JGit
+    * see https://bugs.eclipse.org/bugs/show_bug.cgi?id=356832#c12
+
+Bug: 356832
+Change-Id: I2b49acba83ed6ea628dc07fe8e5dd3cff9c71fde
+Signed-off-by: Genevieve Hudson xxx@xxx.xxx
+
+
+
+
+COMMENTS
+
+author: Genevieve Hudson
+date: 2015-09-10 19:44:52.000000000
+
+Uploaded patch set 9.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-09-10 19:45:24.000000000
+
+Patch Set 9:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/7577/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-09-10 20:07:39.000000000
+
+Patch Set 9: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/7577/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2015-10-27 08:36:43.000000000
+
+Patch Set 9: Code-Review-1
+
+(23 comments)
+
+thanks for working on this :-)
+
+Wow this is a huge change, hence it took me a while to start reviewing it ...
+If you would split such a large feature into a series of multiple commits building on top of each other reviewing would be easier.
+
+- Could you provide instructions how to configure for a few cases, e.g. configure to use p4merge or kdiff3 as merge or diff tool ?
+- How to use pre-defined tools compared to how to use custom configuration ?
+
+Here the first round of comments which came to my mind while looking into this change, I didn't yet look into all details:
+
+- avoid unrelated formatting changes, this helps to keep changes smaller and reduces chances for conflicts with other changes
+- don't print to System.out for logging, use slf4j API in JGit and Eclipse logging API in EGit instead
+- externalize texts shown to the user (UI texts, error messages, log messages) and use MessageFormat to create texts containing parameters
+
+- I think reading of tool configuration from .gitconfig should be moved to JGit, I suggest to create dedicated config classes similar to RemoteConfig or DiffConfig, e.g. DiffToolConfig and MergeToolConfig (common parts could go in a common base class) this provides a typed API to access the configuration details
+- there is already some support for running external processes/commands in JGit, see how GitHook and its subclasses use FS. OS dependent handling of calling external processes is handled in subclasses of FS
+- ideally the code for exposing external merge and diff tools should be implemented in a way so that it could also be integrated with jgit command line (this is bundle org.eclipse.jgit.pgm), maybe it's even easier to first implement the basics in jgit and integrate them into jgit command line before integrating them with EGit's UI
+- I would consider to implement this in a more object-oriented way similar to what we did for GitHook and its subclasses, i.e. instantiate the tool classes based on and instance of the respective jgit config class (e.g. pass DiffToolConfig to constructor of DiffTool class) and implement execution of tools in a method of the respective tool class, common code could go in common superclass. I think this would be easier to understand and maintain than a util class with a ton of static methods
+
+- why do we need to show a modal dialog asking if the merge or diff tool should be opened when the user just said he wants to open a diff or merge tool ? I tried to configure p4merge as diff and merge tool (on Mac) and found that this modal dialog isn't closed when p4merge comes up, this modal dialog sits on top of p4merge and doesn't react on mouse or keyboard events (see http://imgur.com/phBCGtg). Maybe my difftool/mergetool configuration is wrong ...
+
+- add tests
+
+Line:89, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/revision/FileRevisionTypedElement.java -> revert this unrelated formatting change
+
+Line:13, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/externaltools/Attribute.java -> we don't use author tags, instead add javadoc for public classes/methods
+
+Line:32, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/externaltools/DiffToolManager.java -> what's the purpose of this comment ?
+
+Line:34, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/externaltools/DiffToolManager.java -> this is a pretty ancient git version, latest is 2.6.2 ...
+
+Line:41, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/externaltools/DiffToolManager.java -> you didn't copy any code from msysgit, right ?
+
+Line:43, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/externaltools/DiffToolManager.java -> what's this ?
+
+Line:41, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/externaltools/ToolsUtils.java -> weird method name
+
+Line:79, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/externaltools/ToolsUtils.java -> why does this need to be wrapped ?
+
+Line:110, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/externaltools/ToolsUtils.java -> why don't you use Files.createDirectory() ?
+
+Line:123, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/externaltools/ToolsUtils.java -> why is this wrapper needed ?
+
+Line:137, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/externaltools/ToolsUtils.java -> use FileUtils.delete() instead
+
+Line:481, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/externaltools/ToolsUtils.java -> ?
+
+Line:495, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/externaltools/ToolsUtils.java -> error handling in this method looks fishy
+
+why do we need so many try catch blocks ?
+don't use sysout instead use log for logging (in JGit we use slf4j, in EGit the Eclipse log API)
+
+Line:499, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/externaltools/ToolsUtils.java -> are you copying code here ?
+
+Line:299, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/CompareUtils.java -> avoid unrelated formatting changes
+
+Line:354, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/CompareUtils.java -> revert unrelated formatting change
+
+Line:369, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/CompareUtils.java -> avoid sysout, use log instead which can be configured
+
+Line:428, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/CompareUtils.java -> we try to avoid comments and instead try to make the code as readable as possible so that comments aren't needed (there are exceptions but in many cases this works)
+
+Line:482, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/CompareUtils.java -> log instead of sysout ?
+
+Line:205, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/actions/MergeToolActionHandler.java -> avoid dead commented out code
+
+Line:220, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/actions/MergeToolActionHandler.java -> externalize texts and use MessageFormat to format text with parameters, do this for all texts shown to users (UI, log, error messages), trace output doesn't need to be translatable
+
+Line:255, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/actions/MergeToolActionHandler.java -> use logging instead
+
+Line:25, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/externaltools/DiffConteinerJob.java -> s/Conteiner/Container/
+
+-------------------------------------
+author: Genevieve Hudson
+date: 2015-10-29 08:55:01.000000000
+
+Patch Set 9:
+
+(23 comments)
+
+Thanks for starting the review :)
+
+"If you would split such a large feature into a series of multiple commits building on top of each other reviewing would be easier."
+So i've to start from beginning and i will try do make small commits.
+
+"Could you provide instructions how to configure for a few cases, e.g. configure to use p4merge or kdiff3 as merge or diff tool ?
+How to use pre-defined tools compared to how to use custom configuration ?"
+
+"Here the first round of comments which came to my..."
+I agree with all of your comment, see my answers. I will try to follow the other code in EGit/JGit, it's big, but will see...
+
+"I think reading of tool configuration from .gitconfig should be moved to JGit"
+Yes, i know, see my comment in the issue/bug description. I will move it to JGit - It took me some time to understand how to get, modify and build EGit and i've no idea how i can do the same with JGit and how to deploy it together with EGit -> use the new API implemented in JGit from EGit... but i will search for more instructions...
+
+"I suggest to create dedicated config classes similar to..." 
+Thanks for showing the way i can go :)
+
+"why do we need to show a modal dialog asking if the merge or diff tool should be opened when the user just said he wants to open a diff or merge tool ?"
+I tried to implement the workflow like it's done in CGit, so if "difftool or mergetol.prompt = true" in your config i've to ask the user before starting etc. just set it to false and will start without asking, but it's then not possible to abort if there are lot of files... i've to think about how to made it usable and not block eclipse etc.
+
+"I tried to configure p4merge as diff and merge tool (on Mac) and found that this modal dialog isn't closed when p4merge comes up, this modal dialog sits on top of p4merge and doesn't react on mouse or keyboard events (see http://imgur.com/phBCGtg). Maybe my difftool/mergetool configuration is wrong ..."
+I'm working with Windows at work and with Windows and Linux at home, will try to reproduce. But anyway i've to change the way how the external tool is calling from Eclipse. I saw some examples in other Eclipse plugins. I know some way from my EasyShell plugin. Blocking of Eclipse is not good/right now and i know it should be fixed. My solution is very basic, it just had to work fro our migration from ClearCase to Git :(
+
+"add tests"
+yes sure, i want to add tests, but actually very difficult to understand the way to do it with such big plugin like JGit + EGit, i will investigate the test framework used...
+
+Thank you again for the review and very usable comments, i hope to start rewriting it soon...
+
+Line:89, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/revision/FileRevisionTypedElement.java -> ok
+
+Line:13, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/externaltools/Attribute.java -> ok
+
+Line:32, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/externaltools/DiffToolManager.java -> I want to have embedded support of same external tools that are defined in CGit (here: Git for Windows). So here in comment i've copied the output from the command:
+ git difftool --tool-help
+to show the suported tools that i want to support in JGit/ EGit.
+
+Line:34, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/externaltools/DiffToolManager.java -> yes, but during my implementation the version 1.9.5 was the last official preview version of Git for Windows. starting with Git 2.4.x Git for Windows is based at MSys2 and supported by Microsoft developers and is now official stable version. We have 2.6.2 here and i will check if there are more tools supported.
+
+Line:41, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/externaltools/DiffToolManager.java -> NO, just the otput from the command is copied here.
+
+Line:43, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/externaltools/DiffToolManager.java -> number of tools below, checked by my external script to avoid errors. I will delete it in future -> move to JGit.
+
+Line:41, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/externaltools/ToolsUtils.java -> yes but it describes for me what it does without comment ;)
+how to name it instead (for german speaker :) ?
+
+Line:79, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/externaltools/ToolsUtils.java -> hm, i've had some problems with creating temporary files with Java (Eclipse without admistartive priveleges) on Windows, but will check it again and replace.
+
+Line:110, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/externaltools/ToolsUtils.java -> I've had some problems with creating/deleting temporary files with Java (Eclipse without administrative privileges) on Windows, but will check it again and replace.
+
+Line:123, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/externaltools/ToolsUtils.java -> I've had some problems with creating/deleting temporary files with Java (Eclipse without administrative privileges) on Windows, but will check it again and replace.
+
+Line:137, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/externaltools/ToolsUtils.java -> I've had some problems with creating/deleting temporary files with Java (Eclipse without administrative privileges) on Windows, but will check it again and replace.
+
+Line:481, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/externaltools/ToolsUtils.java -> just some code that is located in other packages, not needed anymore and will be removed
+
+Line:495, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/externaltools/ToolsUtils.java -> just some code that is located in other packages, not needed anymore and will be removed
+
+Line:499, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/externaltools/ToolsUtils.java -> I'm writing my code by myself, but for learning i'm used some code from the given source link. This code shows how to use JGit and i've found nearly same usage in EGit, if you are using good APIs the solutions will be the same most time :) --> not needed anymore and will be removed
+
+Line:299, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/CompareUtils.java -> ok
+
+Line:354, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/CompareUtils.java -> ok
+
+Line:369, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/CompareUtils.java -> all sysouts will be replaced with log
+
+Line:428, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/CompareUtils.java -> ok
+
+Line:482, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/CompareUtils.java -> all sysouts will be replaced with log
+
+Line:205, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/actions/MergeToolActionHandler.java -> ok, this feature is not supported in CGit (request ongoing) and was uncommented here to have same level of implementation in JGit / EGit. The whole tool / property handling will be moved to JGit, so will handle it there.
+
+Line:220, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/actions/MergeToolActionHandler.java -> ok, i've to look over all strings showed to user
+
+Line:255, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/actions/MergeToolActionHandler.java -> all sysouts will be replaced with log
+
+Line:25, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/externaltools/DiffConteinerJob.java -> typo, ok
+
+-------------------------------------

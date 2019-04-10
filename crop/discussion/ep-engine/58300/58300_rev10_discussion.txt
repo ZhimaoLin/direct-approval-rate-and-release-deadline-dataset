@@ -1,0 +1,112 @@
+DESCRIPTION
+
+MB-16919: Process buffered items at consumer one vbucket at a time
+
+It is observed that the DcpConsumer's ProcesserTask takes too
+long in certain scenarios. This is because the processer task
+iterates over all vbuckets every time the task runs.
+
+To avoid long run times for the ProcesserTask, this change
+modifies the processing logic such that every time the task runs,
+the buffered items of only a single vbucket that was notified
+are processed.
+
+In a minimal test with a sample set of 1000, no apparent
+regressions were seen in Observe-REPLICATE_TO_ONE latencies:
+
+                    <---------- (Percentiles) ----------->
+(ms.)       MEAN    80th    85th    90th    95th    99th
+Before:     204.40  210.24  210.39  210.58  210.82  211.28
+After:      195.49  210.31  210.86  211.50  211.71  211.99
+
+Change-Id: I5ba74951e57d756efc1541193df87be300e2ca3e
+
+
+COMMENTS
+
+author: Hugo Blankenship
+date: 2016-01-29 02:54:43.258000000
+
+Patch Set 10:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2267/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-01-29 03:07:34.027000000
+
+Patch Set 10: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1485/ : SUCCESS
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2267/ : SUCCESS
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-02-01 14:42:07.392000000
+
+Patch Set 10: Code-Review-1
+
+(4 comments)
+
+Is it easy for you to add a test to ep_perfsuite that drives and measures the consumer performance?
+
+Line:53, src/dcp/dcp-types.h -> update comment now that this is shared for producer/consumer
+
+Line:129, src/dcp/dcp-types.h -> Now in master this should be an unordered_set for more efficiency (in 3.x we couldn't due to lack of c++11 on ubuntu12)
+
+Line:783, src/dcp/consumer.cc -> Isn't this always going to be true as line 782 pushed vbucket. Would be cleaner to compare explictly rather than rely on C !=0.  if(size() > 0) is a little clearer
+
+Line:796, src/dcp/consumer.cc -> I think there are races here where the consumer may go to sleep with work todo. E.g. line 755 and 776 return from the main processing loop and vbucket x may be in the queue so a pushUnique(x) returns false and we never trigger the wake up.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-02-01 17:31:09.159000000
+
+Patch Set 10:
+
+(3 comments)
+
+Line:53, src/dcp/dcp-types.h -> Done
+
+Line:129, src/dcp/dcp-types.h -> Done
+
+Line:783, src/dcp/consumer.cc -> Ah, my mistake.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-02-01 17:32:28.986000000
+
+Patch Set 10:
+
+@Jim, it'd be slightly difficult compared to producer tests, but i'll look in to try and add a unit test into perfsuite for this.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-02-01 20:56:53.205000000
+
+Patch Set 10:
+
+(1 comment)
+
+Line:783, src/dcp/consumer.cc -> This logic here is to ensure that the processer task doesn't sleep for long, if one of the vbucket's operations returned a failure, and if there are other vbuckets in queue.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-02-01 22:00:08.381000000
+
+Patch Set 10:
+
+(1 comment)
+
+Line:796, src/dcp/consumer.cc -> You're right, i'll try addressing this in the next patch.
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-02-09 19:41:30.850000000
+
+Change has been successfully cherry-picked as b8053b25b2c21a3ba216e1fccbbdbcaefad66b73
+
+-------------------------------------

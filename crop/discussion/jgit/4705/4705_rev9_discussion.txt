@@ -1,0 +1,158 @@
+DESCRIPTION
+
+Garbage collector for FileRepositories
+
+Implements a garbage collector for FileRepositories. Main ideas are
+copied from the garbage collector for DFS based repos
+(DfsGarbageCollector). Added functionalities are
+- pruning loose objects
+- handling of the index
+
+TODO: we are still missing reflog handling, packing of refs, good
+progress monitoring, support for pack.packSizeLimit, unpacking packed
+objects into loose objects (to support that pruning packed objects
+doesn't delete them until they are older than two weeks)
+
+Change-Id: I14ea5cb7e0fd1b5c50b994fd77f4e05bfbb9d911
+Signed-off-by: Zachary Orozco xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Zachary Orozco
+date: 2012-02-13 00:05:00.000000000
+
+Uploaded patch set 9.
+
+-------------------------------------
+author: Dillon Cross
+date: 2012-02-13 13:28:18.000000000
+
+Patch Set 9: (1 inline comment)
+
+
+
+Line:95, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> why is day the smallest unit when specifying the expire parameter?
+
+The --expire option in the native Git understands also options like:
+
+ --expire=1.minute
+ --expire=10.seconds
+ --expire=2.hours
+ ...
+
+This makes hard writing automated tests where I would like to create two non-reachable objects:
+
+ object creation-time
+ A      T1
+ B      T2
+
+and specify the --expire to be between the T1 and T2 and check  that A is pruned and B is not pruned.
+
+If you don't want to deal with the time-unit strings (like "1.minute", ...) then I would propose to use:
+
+ long expire
+
+or:
+
+ java.util.Date expire
+
+where is the number of milliseconds since Jan 1st 1970 UTC.
+
+All objects older, non-reachable objects older than 'expire' timestamp are candidates for pruning.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2012-02-13 16:23:48.000000000
+
+Patch Set 9: (1 inline comment)
+
+
+
+Line:95, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> ok, good point. I'll go for 'long expire' expressing the number of milliseconds which have to be elapsed since the file has been modified. I don't like Date because this refers to a certain point in time - but native git only accepts timespans which have to be elapsed before we consider files for pruning
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2012-02-14 03:28:02.000000000
+
+Patch Set 9: I would prefer that you didn't submit this
+
+(11 inline comments)
+
+Incomplete review, but here are some comments.
+
+Line:80, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> I'm not convinced this code is cleaner by having everything be static methods and passing around the FileRepository.
+
+Line:84, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> why two packfiles? If there is a size parameter, it can be more than two packs if they go over the size limit. I wouldn't say how many is created here.
+
+Line:95, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Yes, this should be long expireMillis. :-)
+
+We should also be able to disable the prune, aka --expire=never.
+
+Line:169, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> I am unclear as to why we need objectsToKeep here. If the object is in a pack file that is available to the repository, why are we also keeping it loose?
+
+Line:178, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> translate this string :-)
+
+Line:317, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> This can be relaxed, we should permit creating version 1 indexes if that is what the user has asked us to do explicitly in the configuration. But the default should be version 2.
+
+Line:391, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> We don't use parens on return statements.
+
+Line:407, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> I think we have a subtle bug here. The TREE extension in the DirCache doesn't have its tree SHA-1s included in the result here. If they aren't in HEAD (e.g. due to the user force updating the reference without updating the index to match) and then we gc and prune these objects away the DirCache is corrupt to git-core.
+
+IIRC the TREE extension needs to also be considered here for objects the index uses.
+
+Line:411, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Please don't rely on reference equality with zeroId(). ObjectId.from* can create a new ObjectId that is 0{40} without using the singleton zeroId().
+
+Line:436, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> These have to write to temporary files, otherwise you trash the current file if its the same object set.
+
+Line:16, /COMMIT_MSG -> packSizeLimit has to be handled inside of PackWriter. Its a nontrivial change and should be done independently of this change.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2012-02-14 16:22:04.000000000
+
+Patch Set 9: (11 inline comments)
+
+
+
+Line:80, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done. The more this class grew the greater was the need to have non-static methods.
+
+Line:84, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> I wrote "two" because it's currently the truth since we don't have a size parameter. But it's right: it's not GC's business to know about how man packfiles PackWriter will write. I'll remove "two ".
+
+Line:95, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> it's called expireAgeMillis now. Sasa requested to add the term "age" know they have to specify a timespan and not what System.currentTimeMillis() returns
+
+Line:169, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done
+
+Line:178, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done
+
+Line:258, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Currently this doesn't work reliable. This method prunes too many objects because it asks objectwalk with lookupOrNull() whether he knows a certain objects and if null is returned we assume the object is unreferenced. I has been shown that this assumption is wrong. I keep working on it.
+
+Line:317, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> If I understand correctly I should not check at all, right. I'll simply remove this check and expect lower layers to determine the requested index version.
+
+Line:391, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done
+
+Line:411, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done
+
+Line:436, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> If I call File.createNewFile() for pack and index I know that a packfile with that name already exists and I directly leave this method with creating a new files. That check was already proposed but by mistake it went to the follow-up change 5055. I reorganized the two changes.
+
+Line:16, /COMMIT_MSG -> Done
+
+-------------------------------------
+author: Zachary Orozco
+date: 2012-02-14 23:15:18.000000000
+
+Patch Set 9: (1 inline comment)
+
+
+
+Line:258, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Ok, I found the problem on my own. Calling ObjectWalk.checkConnectivity() solved the problem.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2012-07-29 13:39:12.000000000
+
+Your change could not be merged due to a path conflict.
+
+Please merge (or rebase) the change locally and upload the resolution for review.
+
+-------------------------------------

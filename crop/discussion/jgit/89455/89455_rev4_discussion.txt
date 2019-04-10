@@ -1,0 +1,282 @@
+DESCRIPTION
+
+gc: loosen unreferenced objects
+
+An unreferenced object might appear in a pack.  This could only happen
+because it was previously referenced, and then later that reference
+was removed.  When we gc, we copy the referenced objects into a new
+pack, and delete the old pack.  This would remove the unreferenced
+object.  Now we first create a loose object from any unreferenced
+object in the doomed pack.  This kicks off the two-week grace period
+for that object, after which it will be collected if it's not
+referenced.
+
+This matches the behavior of regular git.
+
+Change-Id: I59539aca1d0d83622c41aa9bfbdd72fa868ee9fb
+Signed-off-by: Carissa Dunn xxx@xxx.xxx
+Signed-off-by: Eden Lin xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Eden Lin
+date: 2017-01-24 22:23:08.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Eden Lin
+date: 2017-01-24 22:37:17.000000000
+
+Patch Set 4: Code-Review+2 Verified+1
+
+"buck test" passes.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2017-01-24 22:38:08.000000000
+
+Change has been successfully merged into the git repository by Eden Lin
+
+-------------------------------------
+author: Zane Norton
+date: 2017-02-13 16:32:28.000000000
+
+Patch Set 4:
+
+I don't understand why this change was needed?  I know that regular git does this, but I thought that jgit did not need this since it put unreferenced objects in its own pack?
+
+-------------------------------------
+author: Carissa Dunn
+date: 2017-02-13 16:47:41.000000000
+
+Patch Set 4:
+
+> I don't understand why this change was needed?  I know that regular
+ > git does this, but I thought that jgit did not need this since it
+ > put unreferenced objects in its own pack?
+
+Putting unreferenced objects in their own pack is wrong.  Only loose objects can be deleted.  And we need a per-object two-week timer so that objects that stay unreferenced for a long time can be deleted (while deleting objects that might be only transiently unreferenced is not safe).
+
+-------------------------------------
+author: Zane Norton
+date: 2017-02-13 17:41:03.000000000
+
+Patch Set 4:
+
+> Putting unreferenced objects in their own pack is wrong.  
+
+Are you saying that jgit no longer does this?
+
+> Only loose objects can be deleted.
+
+How so?  I thought that Jgit had a provision to expire packs with unreferenced objects, why would such an approach not work?
+
+Can you point me to any discussions about why unreferenced objects in their own how pack is/was problematic so that I can better understand your point?
+
+-------------------------------------
+author: Carissa Dunn
+date: 2017-02-13 18:30:45.000000000
+
+Patch Set 4:
+
+> > Putting unreferenced objects in their own pack is wrong.
+ > 
+ > Are you saying that jgit no longer does this?
+ 
+Yes, 
+
+ > > Only loose objects can be deleted.
+ > 
+ > How so?  I thought that Jgit had a provision to expire packs with
+ > unreferenced objects, why would such an approach not work?
+ > 
+ > Can you point me to any discussions about why unreferenced objects
+ > in their own how pack is/was problematic so that I can better
+ > understand your point?
+
+ > > Putting unreferenced objects in their own pack is wrong.
+ > 
+ > Are you saying that jgit no longer does this?
+ 
+I believe that it did not do this as of 4.6.  I wrote this patch because we were losing recent objects.  Whether jgit ever did this, I don't know. 
+
+ > > Only loose objects can be deleted.
+ > 
+ > How so?  I thought that Jgit had a provision to expire packs with
+ > unreferenced objects, why would such an approach not work?
+ 
+How would it know when to expire them?  Two weeks after their creation?  But a gc during those two weeks would likely delete/recreate those packs, restarting the timer.  I guess gc could notice that a certain pack contains only unreferenced objects, and not delete it, but then every gc would have to create a new unreferenced pack for new unreferenced objects.  More packs means more lookup time.  Also, what if one object within an unreferenced pack becomes referenced?  Do you duplicate it?
+
+ > Can you point me to any discussions about why unreferenced objects
+ > in their own how pack is/was problematic so that I can better
+ > understand your point?
+
+I don't know of any discussion other than the comments on this ticket.
+
+-------------------------------------
+author: Carissa Dunn
+date: 2017-02-13 18:51:36.000000000
+
+Patch Set 4:
+
+> > > Putting unreferenced objects in their own pack is wrong.
+ > >
+ > > Are you saying that jgit no longer does this?
+ > 
+ > Yes,
+ > 
+ > > > Only loose objects can be deleted.
+ > >
+ > > How so?  I thought that Jgit had a provision to expire packs with
+ > > unreferenced objects, why would such an approach not work?
+ > >
+ > > Can you point me to any discussions about why unreferenced
+ > objects
+ > > in their own how pack is/was problematic so that I can better
+ > > understand your point?
+ > 
+ > > > Putting unreferenced objects in their own pack is wrong.
+ > >
+ > > Are you saying that jgit no longer does this?
+ > 
+ > I believe that it did not do this as of 4.6.  I wrote this patch
+ > because we were losing recent objects.  Whether jgit ever did this,
+ > I don't know.
+ 
+Oh, of course I'm only talking about FileRepository; I have no idea what the other repository types do, and I don't think it affects GC (which is only for FileRepository).
+
+-------------------------------------
+author: Zane Norton
+date: 2017-02-13 19:13:08.000000000
+
+Patch Set 4:
+
+It sounds like there may have been a problem, a gap perhaps, somewhere with the current jgit repacking logic that was leading to some object loss, but it does not sound like an exact reason for this loss was understood?  I am concerned that this change attempts to "fix" the problem by just doing what git does without considering how jgit specifically was designed to be different from git with respect to unreferenced objects.  
+
+I myself only have peripheral knowledge of what jgit is supposed to do, just from various discussions with people, and it sounds like you are coming at this with knowledge from a git perspective?  Can we get someone with more jgit specific knowledge, someone who was involved with the design of putting unreferenced objects into packfiles, to join this conversation to ensure that this is the direction we want to go?
+
+I believe that this unloosening of unreferenced objects may be disastrous for Gerrit servers (some of the primary users of jgit gc).  When people push changes for review to a Gerrit server, they sometimes push to the wrong project.  Gerrit does an ancestry check for changes, and will reject such pushes leaving a giant packfile (giant because there was no common ancestry, perhaps an entire copy of the linux kernel) on disk.  On our servers, I believe this happens probably monthly, if not weekly.  Since this packfile has no common ancestry, and the push was rejected, almost the entire pack file is unreferenced (maybe some license files are shared).  A loosening of these objects will render the project inoperable, and it may take hours/days to recover from.
+
+-------------------------------------
+author: Carissa Dunn
+date: 2017-02-13 19:21:33.000000000
+
+Patch Set 4:
+
+> It sounds like there may have been a problem, a gap perhaps,
+ > somewhere with the current jgit repacking logic that was leading to
+ > some object loss, but it does not sound like an exact reason for
+ > this loss was understood?  I am concerned that this change attempts
+ > to "fix" the problem by just doing what git does without
+ > considering how jgit specifically was designed to be different from
+ > git with respect to unreferenced objects.
+ > 
+ > I myself only have peripheral knowledge of what jgit is supposed to
+ > do, just from various discussions with people, and it sounds like
+ > you are coming at this with knowledge from a git perspective?  Can
+ > we get someone with more jgit specific knowledge, someone who was
+ > involved with the design of putting unreferenced objects into
+ > packfiles, to join this conversation to ensure that this is the
+ > direction we want to go?
+ > 
+ > I believe that this unloosening of unreferenced objects may be
+ > disastrous for Gerrit servers (some of the primary users of jgit
+ > gc).  When people push changes for review to a Gerrit server, they
+ > sometimes push to the wrong project.  Gerrit does an ancestry check
+ > for changes, and will reject such pushes leaving a giant packfile
+ > (giant because there was no common ancestry, perhaps an entire copy
+ > of the linux kernel) on disk.  On our servers, I believe this
+ > happens probably monthly, if not weekly.  Since this packfile has
+ > no common ancestry, and the push was rejected, almost the entire
+ > pack file is unreferenced (maybe some license files are shared).  A
+ > loosening of these objects will render the project inoperable, and
+ > it may take hours/days to recover from.
+
+I can see how this would be painful.  
+
+I think git handles this case with a "quarantine" for incoming objects.  Incoming packs that fail the hook (or contain corrupt objects) never make it into .git/objects/pack.  Here's the relevant test case:
+
+https://github.com/git/git/blob/master/t/t5547-push-quarantine.sh
+
+Grepping the source code, jgit doesn't mention "quarantine", but maybe it does (or could do) something similar?  The quarantine is a pretty good idea anyway.
+
+Also, as a quick workaround, we could skip (that is, delete rather than loosen) objects if gc.pruneExpire is set to "now".  I guess that means that a gc during a push might lose objects, but that's no worse than the situation prior to this patch.
+
+-------------------------------------
+author: Zane Norton
+date: 2017-02-15 16:18:11.000000000
+
+Patch Set 4: Reverted
+
+This patchset was reverted in change: I511ee1c1d2d512d06e4181b191ee2b51a0995470
+
+-------------------------------------
+author: Zachary Orozco
+date: 2017-02-16 16:20:24.000000000
+
+Patch Set 4:
+
+I was doing the initial implementation of jgit's file storage gc. The commit message (4c3f017a) states that not unpacking objects when they got unreferenced is a missing feature which should come in subsequent commits. 
+
+There was even a discussion between me and Shawn at [1] where I stated that had 
+not yet implementing unpacking und Shawn agreed on that we could accept a GC. Shawn wanted to make sure that we don't forget about this feature. Then it took 5 years that this feature was brought by David and I liked it. I always felt it's a bug that we don't support the retention time for unreferenced objects. When you put all unreferenced objects in a packfile then you cannot easily implement this.
+
+But I see the problems you detected with the unpacking of unreferenced objects. We should find a solution for that, but I don't think completely reverting this commit is not optimal. JGit is not only used in Gerrit and there may be users expecting JGit to behave like native git regarding pruning objects.
+
+  
+
+[1] xxx@xxx.xxx
+
+-------------------------------------
+author: Carissa Dunn
+date: 2017-02-16 16:39:58.000000000
+
+Patch Set 4:
+
+> JGit
+ > is not only used in Gerrit and there may be users expecting JGit to
+ > behave like native git regarding pruning objects.
+ 
+Yep, that's my use-case.
+
+-------------------------------------
+author: Zane Norton
+date: 2017-02-16 17:24:07.000000000
+
+Patch Set 4:
+
+Do you have a test case that shows the buggy behavior that you were trying to fix with this change?
+
+-------------------------------------
+author: Eden Lin
+date: 2017-02-16 17:35:17.000000000
+
+Patch Set 4:
+
+> It sounds like there may have been a problem, a gap perhaps,
+ > somewhere with the current jgit repacking logic that was leading to
+ > some object loss, but it does not sound like an exact reason for
+ > this loss was understood?  I am concerned that this change attempts
+ > to "fix" the problem by just doing what git does without
+ > considering how jgit specifically was designed to be different from
+ > git with respect to unreferenced objects.
+
+Longer term, I think the Right Thing to do is to make both git and jgit behave something like https://git.eclipse.org/r/76018.
+
+But that will take some time. In the meantime it's valuable to at least be compatible.
+
+ >                                           Since this packfile has
+ > no common ancestry, and the push was rejected, almost the entire
+ > pack file is unreferenced (maybe some license files are shared).  A
+ > loosening of these objects will render the project inoperable, and
+ > it may take hours/days to recover from.
+
+The same thing happened in Git until 722ff7f8 (receive-pack: quarantine objects until pre-receive accepts, 2016-10-03). It can also happen in similar circumstances involving a mistaken fetch or a forced push.
+
+Loosening unreferenced objects has a negative impact on performance. It uses more disk space. It causes "git gc --auto" to trip unnecessarily. It doesn't even succeed at what it is trying to do, which is to stop "git prune" from being racy.
+
+Maybe we can guard this with a config variable in the short term? Longer term I think git and JGit's FileRepository need to learn about "unreachable garbage" packs, to avoid creating references to them when writing new objects, to prune them without loosening objects, etc.
+
+-------------------------------------

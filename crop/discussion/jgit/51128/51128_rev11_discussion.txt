@@ -1,0 +1,142 @@
+DESCRIPTION
+
+Store push certificates in refs/push-certs
+
+Inspired by a proposal from gitolite[1], where we store a file in
+a tree for each ref name, and the contents of the file is the latest
+push cert to affect that ref.
+
+The main modification from that proposal (other than lacking the
+out-of-git batching) is to append xxx@xxx.xxx to filenames, which allows
+storing certificates for both refs/foo and refs/foo/bar. Those
+refnames cannot coexist at the same time in a repository, but we do
+not want to discard the push certificate responsible for deleting the
+ref, which we would have to do if refs/foo in the push cert tree
+changed from a tree to a blob.
+
+The xxx@xxx.xxx syntax is at least somewhat consistent with
+gitrevisions(7) xxx@xxx.xxx describe operators on ref names.
+
+As we cannot (currently) atomically update the push cert ref with the
+refs that were updated, this operation is inherently racy. Kick the can
+down the road by pushing this burden on callers.
+
+[1] https://github.com/sitaramc/gitolite/blob/cf062b8bb6b21a52f7c5002d33fbc950762c1aa7/contrib/hooks/repo-specific/save-push-signatures
+
+Change-Id: Id3eb32416f969fba4b5e4d9c4b47053c564b0ccd
+
+
+COMMENTS
+
+author: Santos Moore
+date: 2015-07-10 00:06:13.000000000
+
+Uploaded patch set 11.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-07-10 00:12:23.000000000
+
+Patch Set 11:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/6894/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-07-10 00:19:31.000000000
+
+Patch Set 11: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/6894/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-07-10 19:02:09.000000000
+
+Patch Set 11: Code-Review-1
+
+(13 comments)
+
+Line:102, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateStore.java -> R_REFS + "meta/push-certs"?
+
+Line:125, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateStore.java -> spaces are used here, but style prefers tabs
+
+Line:128, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateStore.java -> spaces are used here, but style prefers tabs
+
+Line:150, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateStore.java -> Missing leading space before * on 3 out of 5 lines.
+
+Line:246, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateStore.java -> and also rw = null?
+
+Line:296, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateStore.java -> This test is wrong. If the tree entry is a gitlink its non-zero and you fall through to read the commit that doesn't exist as though it is a blob.
+Safer test is:
+
+  (rawMode & TYPE_FILE) != TYPE_FILE
+
+Line:302, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateStore.java -> Specify the character encoding. Don't rely on platform default.
+
+A push cert is basically US-ASCII. You can probably use ISO-8859-1 or UTF-8.
+
+Line:317, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateStore.java -> Add a remark about timestamp being used to sort certs.
+
+Yet in getPending() you rely on the first match. So should the caller add them in reverse order if it wants to use getPending before save? Or should the caller just not add multiple certs affecting the same ref? Or call save first?
+
+Its a bit unclear from the API and the implementation what you want.
+
+Maybe teach getPending to find the highest dated PersonIdent before returning, instead of the first match?
+
+Line:377, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateStore.java -> I see no rationale reason to sort on time zone offset.
+
+Line:383, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateStore.java -> return Long.signum(c);
+
+Line:411, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateStore.java -> Interesting. So we never prune deleted refs out of the tree? They just stick around forever?
+
+It makes sense we have to commit them at least once. Maybe we do a periodic "garbage collection" commit in isolation during a cert store that loops through all refs in the tree and if the current cert is a delete of that ref, delete the tree entry.
+
+Line:433, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateStore.java -> ETOOMANYTABS
+
+Line:7, /COMMIT_MSG -> refs/meta/push-certs
+
+-------------------------------------
+author: Santos Moore
+date: 2015-07-10 20:00:53.000000000
+
+Patch Set 11:
+
+(13 comments)
+
+Line:102, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateStore.java -> Done
+
+Line:125, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateStore.java -> Done
+
+Line:128, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateStore.java -> Done
+
+Line:150, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateStore.java -> The Eclipse formatter is really losing today.
+
+Line:246, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateStore.java -> I don't think it actually matters because rw.next() should still continue returning null after closing. But agreed that this makes the intention clearer, done.
+
+Line:296, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateStore.java -> Done
+
+Line:302, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateStore.java -> Well a cert is UTF-8 because the pusher is an RFC4880 User ID which is UTF-8, but yeah, done.
+
+Line:317, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateStore.java -> Comment added. Intention was for getPending to sort.
+
+But now I'm rethinking this whole get-before-save thing. It's  code complexity and I don't think there's an actual use case. (It was broken in this PS as we were only getting the first pending cert in getAll.)
+
+Line:377, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateStore.java -> Ok, no tiebreaker then, we'll just depend on Collections.sort being stable.
+
+Line:383, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateStore.java -> Done
+
+Line:411, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateStore.java -> Yes, there are indefinite tombstones. It is significant information about the state of repository to distinguish between these cases:
+
+* refs/heads/foo doesn't exist because it never existed
+* refs/heads/foo doesn't exist because this user deleted it, using this push cert.
+
+We can add a prune step later if this becomes unwieldy.
+
+Line:433, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateStore.java -> Done
+
+Line:7, /COMMIT_MSG -> Done
+
+-------------------------------------

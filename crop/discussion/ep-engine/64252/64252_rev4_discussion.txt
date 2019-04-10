@@ -1,0 +1,59 @@
+DESCRIPTION
+
+MB-19695: Always persist VBstate when resetting VB
+
+During tapNotify / TAP_OPAQUE_INITIAL_VBUCKET_STREAM - when we are
+setting up a replica vBucket which is populated by TAP - the vbucket
+is reset. This deletes the current database file from disk, and
+creates a new file.
+
+Both the delete and create are done asynchronously via our Task
+mechanism (on a writer thread). It has been observed that the vbucket
+file is sometimes not re-created, which can result in the following
+exception being thrown which disconnects the connection:
+
+    WARNING 47: exception occurred in runloop - closing connection:
+    CouchKVStore::getNumPersistedDeletes:Failed to open database
+    file for vBucket = 96 rev = 1 with error:no such file
+
+Interestingly this isn't a simple case of the filesystem being slow -
+cbcollect logs taken ~5minutes later still show the vbucket file not
+existing.
+
+This appears to be caused by an optimization in
+EventuallyPersistentStore::scheduleVBStatePersist - which is used to
+schedule a new VBstate to be saved (and in turn create the vb file on
+disk). The optimization is to not schedule a persist if one is
+already scheduled.
+
+However, there exists the possibility that a VBStatePersistTask
+already exists (causing us not to create one during resetVBucket(),
+*and* the existing VBStatePersistTask is scheduled before the
+delete. This results in the file being deleted, and not re-created as
+part of the reset process.
+
+The solution is to forcefully persist the VBState during resetVBucket,
+essentially disabling the optimization in this case and ensuring the
+file is created. Full unit regression test to follow in separate patch
+(it needs test infrastructure which doesn't yet exist).
+
+(Note: the vbucket datafile file /will/ be created upon the next write
+to the vbucket, but in the case of a vbucket with zero items this may
+take some time).
+
+Change-Id: I3f4e76eee35a75d64f5e981529ab47fcf2007fcb
+Reviewed-on: http://review.Piper Jefferson.org/64252
+Well-Formed: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+Reviewed-by: Kymani Ramirez <Kymani xxx@xxx.xxx Jefferson.com>
+Reviewed-by: Bobby Buck xxx@xxx.xxx Jefferson.com>
+Tested-by: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+
+
+COMMENTS
+
+author: Tate Garrett
+date: 2016-05-20 19:45:10.284000000
+
+Change has been successfully cherry-picked as cb6c7141366d533874c63cb9bc0a144f9ab0347c by Ashlee Kent
+
+-------------------------------------

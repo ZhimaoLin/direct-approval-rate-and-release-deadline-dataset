@@ -1,0 +1,134 @@
+DESCRIPTION
+
+Obey hyperlink preferences in SpellcheckableMessageArea
+
+and in CommitMessageViewer in git history.
+
+1. Only open hyperlinks on direct click in read-only views; in
+   editable views, this is too confusing and too often opens the
+   hyperlink when the user just wants to set the caret.
+2. Make the viewer react on changes in the general hyperlinking
+   preferences. Both for the master switch and for individual
+   contributed hyperlink detectors.
+3. Don't even syntax-color hyperlinks detected by a disabled
+   hyperlink detector.
+4. Always keep the special git history navigation links enabled in
+   the CommitMessageViewer (KnownHyperlinksDetector).
+
+Bug: 411809
+Change-Id: Icfcfe62b127370be36bced8b1430b764d31b75a6
+Signed-off-by: Alayna Houston xxx@xxx.xxx
+
+COMMENTS
+
+author: Alayna Houston
+date: 2015-09-17 18:38:04.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-09-17 18:38:10.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/7633/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-09-17 19:00:24.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/7633/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2015-09-17 20:33:55.000000000
+
+Patch Set 3: Code-Review-1
+
+looks like now the effect of the modifier key is inverted compared to the effect of the modifier key on hyperlinks in editors: 
+
+with this change hyperlinks are inactive when the modifier key is pressed and active when the modifier key is not pressed
+
+this seems wrong
+
+the other difference is that we always show hyperlinks whereas editors only show them when moving the mouse over the link while pressing the modifier, is this difference intended ?
+
+-------------------------------------
+author: Alayna Houston
+date: 2015-09-17 20:48:42.000000000
+
+Patch Set 3:
+
+> looks like now the effect of the modifier key is inverted
+
+That's in the commit viewer in the git history, where we still use SWT.NONE as the activator. I had understood the discussion on bug 411809 such that that was the desired behavior? Read-only views should be more like web pages and open hyperlinks on direct click?
+
+But I agree it may be confusing. We can just forego that and always obey the configured modifier key. Would be more uniform and Eclipse-like. Would be simple to change.
+
+ > the other difference is that we always show hyperlinks whereas
+ > editors only show them when moving the mouse over the link while
+ > pressing the modifier, is this difference intended ?
+
+Yes. We use syntax-coloring to highlight the places where there is a clickable hyperlink. That's what EGit always has tried to do. It also makes sense. Otherwise it's a bit obscure to figure out that you can click on some words in free text.
+
+The maven POM editor, for instance, also syntax color hyperlinks.
+
+-------------------------------------
+author: Alayna Houston
+date: 2015-09-18 10:34:27.000000000
+
+Patch Set 3:
+
+Did some more investigation on this apparent inversion that occurs if the viewer has
+SWT.NONE as its hyperlink state mask. Apparently this is a limitation of the
+hyperlinking framework of JFace. The state mask set on a viewer overrides the
+default mask configured in preferences, and moreover a hyperlink detector is active
+only for one mask. Two issues here:
+
+1. HyperlinkDetectorDelegate just has fStateMask == -1 if set to "default", which
+   means HyperlinkManager.isRegisteredStateMask will ignore all those individual
+   settings in its loop. Effectively isRegisteredStateMask() interprets -1 as
+   meaning "default as configured for the viewer", not as "default as configured
+   in the global preferences".
+
+2. HyperlinkManager.findHyperlinks(IRegion) only does something if the currently
+   pressed keys:
+   - if the detector's mask is -1 (default): equal to the mask configured on the
+     viewer
+   - otherwise: equal to the detector's mask.
+
+Which effectively means it's impossible to have a combination where the configured
+default is SWT.MOD1 and the viewer's mask is something else and have hyperlinks be
+active when either MOD1 or the viewer's key is pressed: it will in this case always
+only be the viewer's key. (And for hyperlink detectors that have been explicitly
+configured to some non-default key, only that key.)
+
+Therefore, I think it's really better to leave the viewer's key mask at the globally
+configured default. In other words: never set SWT.NONE as key mask for our viewers, whether read-only or not.
+
+We'll still syntax-color hyperlinks so that users see where they are; to open them, the configured key (combination) must be pressed. Unless the user configures explicitly SWT.NONE in the global preferences, no links will open on direct click. (Including the special git history navigation links for SHA1s, branches and tags in the CommitMessageViewer.)
+
+Does that sound good?
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2015-09-18 12:08:37.000000000
+
+Patch Set 3:
+
+sounds good to me considering the limitations of the hyperlink framework, we should mention this behavioral change in the release notes in order to inform our users
+
+thanks for investigating this
+
+-------------------------------------
+author: Gerrit Johnathan Pham
+date: 2015-09-20 23:13:30.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

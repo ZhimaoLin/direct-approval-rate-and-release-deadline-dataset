@@ -1,0 +1,75 @@
+DESCRIPTION
+
+MB-11401: Implement a registration API in the token server.
+
+The following are the changes:
+[1] Added a new 'register' API in the ns_memcached_token module.
+    This new API is used to track the registered caller processes
+    so that when they restart we can make sure that the actions
+    done by the older incarnations can take effect before the
+    operations issued by newer incarnations are processed.
+
+    The caller will have to pass in a RegistrationName which is
+    unique and the API implementation makes use of the caller's
+    PID to distinguish between multiple instances. The caller
+    is also expected to pass the registered caller's Pid while
+    calling the get_token API.
+
+    The token service maintains 2 dicts, one mapping RegName to
+    RegPid and the other mapping Pid to {RegName, Status, RefCnt}
+    tuple. The register API implementation will add the details
+    of the caller process in both these maps.
+
+    It maintains an additional dictionary to store the 'From'
+    details of the process that has called 'register' API but
+    a previous incarnation is still lurking around. This dict
+    will consulted later to register the pending request.
+
+[2] The wrapper function 'cmd_with_token' has been modified to
+    accept RegPid as a parameter which will then passed on to
+    the get_token API. All the callers of this API have been
+    modified to pass in the RegPid if they have or undefined.
+
+[3] The get_token API has been modified to accept RegPid as a
+    parameter. This RegPid is then added into the mc_caller_refs
+    dict along with MonRef. The get_token also increments a reference
+    counter that is maintained against the RegPid. This reference
+    counter is used during the unregistration process to determine if
+    it's safe to unregister the caller.
+
+[4] The release_token API has been modified to accept RegPid as a
+    a parameter. It then decrements the ref count for that RegPid.
+
+[5] The 'DOWN' message handler has been modified to clear the ref
+    count for the RegPid (fetched from mc_caller_refs) as the caller
+    would not have gotten the chance to release the token. It then
+    checks if the PID is a registered caller and if so it sets the
+    Status field to 'inactive'. If the ref count for the RegName has
+    dropped to zero and if the Status of the registered process is
+    'inactive' then the corresponding entries are removed from both
+    the dictionaries (registered_names & registered_pids).
+
+[6] A wrapper API called 'register' in ns_memcached module has been
+    added. This in-turn calls the ns_memcached_token's register API.
+
+[7] Harley Martinitor_agent module has been modified to call ns_memcached's
+    register API in its init callback and pass the Pid of the
+    respective process to all control commands.
+
+[8] Move the check to see if session token feature is enabled to the
+    APIs and rename the is_disabled function to is_enabled.
+
+[9] Re-arrange the functions to adhere to the standard practice in
+    ns_memcached_token module.
+
+Change-Id: Iaa3d8c1ba52593c2f00a653a361e03a4cbb1751a
+
+
+COMMENTS
+
+author: Noe Perry
+date: 2016-10-07 07:40:36.603000000
+
+Uploaded patch set 10.
+
+-------------------------------------

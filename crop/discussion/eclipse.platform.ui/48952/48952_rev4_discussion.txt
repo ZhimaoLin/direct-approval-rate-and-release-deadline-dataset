@@ -1,0 +1,111 @@
+DESCRIPTION
+
+Bug 468796 - ClassCastException in Theme$1.propertyChange (127)
+
+Theme Property Change Listener is made to process values of FontData[] and RGB types instead of String as
+Event must contain real data values, not their string representations.
+
+Change-Id: I4c99f66fded977d3489c16a1164c25673efe3ec2
+Signed-off-by: vrubezhny xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Sebastian Porter
+date: 2015-06-05 11:59:32.000000000
+
+Patch Set 4:
+
+Did you try to reproduce the problem by switching themes?
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-06-05 12:13:20.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/5850/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-06-05 12:30:13.000000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/5850/ : SUCCESS
+
+-------------------------------------
+author: Sebastian Porter
+date: 2015-06-05 12:57:11.000000000
+
+Patch Set 4:
+
+Victor, the values in the event can either be the real type or a string. This is defined in
+
+IPreferenceStore.addPropertyChangeListener(IPropertyChangeListener)
+
+     * <b>Note</b> The types of the oldValue and newValue of the
+     * generated PropertyChangeEvent are determined by whether
+     * or not the typed API in IPreferenceStore was called.
+     * If values are changed via setValue(name,type) the
+     * values in the PropertyChangedEvent will be of that type.
+     * If they are set using a non typed API (i.e. #setToDefault
+     * or using the OSGI Preferences) the values will be unconverted
+     * Strings.
+
+
+==> the listener needs to cover both cases if it uses the values.
+
+
+Test Case:
+1. Add an action that executes this code which sends a typed event:
+PreferenceConverter.putValue(store, JFaceResources.TEXT_FONT, JFaceResources.getFontRegistry().getFontData(PreferenceConstants.EDITOR_TEXT_FONT));
+
+2. Change a font via Colors and Fonts preference page to send s String event
+
+HTH
+
+-------------------------------------
+author: Sawyer Richmond
+date: 2015-06-05 13:23:33.000000000
+
+Patch Set 4:
+
+> Victor, the values in the event can either be the real type or a
+ > string. 
+
+Got it. Thanks again.
+
+ > Test Case:
+ > 1. Add an action that executes this code which sends a typed event:
+ > PreferenceConverter.putValue(store, JFaceResources.TEXT_FONT,
+ > JFaceResources.getFontRegistry().getFontData(PreferenceConstants.EDITOR_TEXT_FONT));
+ > 
+ > 2. Change a font via Colors and Fonts preference page to send s
+ > String event
+ > 
+
+It doesn't look like Theme's listener is called when I'm changing the colours and/or fonts in Preference page. At least I'm still cannot catch it in debugger. 
+Initial stacktrace is not from the user's changing the preferences, but from Navigator trying to get the JS Label Provider (and this causes JavaScriptPlugin to start and call ensurePreferenceStoreBackwardsCompatibility() which makes those preference changes). So it looks like Test Case is a bit more complex... Like changing the color/font preferences by preference page and then restarting eclipse due to invoke ensurePreferenceStoreBackwardsCompatibility() that is to read and set new preference values.
+
+-------------------------------------
+author: Sawyer Richmond
+date: 2015-06-05 13:44:06.000000000
+
+Patch Set 4:
+
+> Test Case:
+ > 1. Add an action that executes this code which sends a typed event:
+ > PreferenceConverter.putValue(store, JFaceResources.TEXT_FONT,
+ 
+PreferenceConverter.putValue() doesn't send any events. More over, it doesn't set typed value: it calls PrererenceConverter.getStoredRepresentation() to get a String value from FontData[] and saves that String representation to the store. So, I don't see how this could help to reproduce and test the issue.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-10-12 08:30:58.000000000
+
+Change has been successfully merged into the git repository by Sebastian Porter
+
+-------------------------------------

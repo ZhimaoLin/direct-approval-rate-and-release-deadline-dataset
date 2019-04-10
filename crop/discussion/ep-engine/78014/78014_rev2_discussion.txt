@@ -1,0 +1,80 @@
+DESCRIPTION
+
+MB-24244: Prevent duplicate items in an inMemoryBackfill
+
+Have rangeRead ignore stale items if their replacement also appears in
+the requested range, for example
+
+ A₁  B₂  C₃           Initial items
+[A₁  B₂  C₃]          rangeRead 1-3
+[A₁  B₂  C₃] B₄       Update B
+ A₁  B₂  C₃  B₄       RR ends
+[A₁  B₂  C₃  B₄]      new RR 1-4, B₂ should be ignored because B₄ is
+also in the snapshot
+[A₁  B₂  C₃  B₄] B₅   Another update, but B₄ must still be sent as B₅ is
+not in the range
+ A₁  B₂  C₃  B₄  B₅   RR ends
+
+This is a basic solution. It would be better to not have to take the
+writeLock, but improvements of that form will be done in a separate
+patch.
+
+Change-Id: Id743da606e009d17f5e5af6f9344223a95aa4a38
+
+
+COMMENTS
+
+author: Jace Townsend
+date: 2017-05-11 13:30:19.085000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-05-11 13:39:33.939000000
+
+Patch Set 2: Code-Review-1
+
+(3 comments)
+
+Would still like to see some more complex tests - for example where there's additional keys between the ones which are duplicated/stale.
+
+Line:20, /COMMIT_MSG -> Nice description of the problem, however you still don't describe what the solution is - e.g. "To ensure we only send stale items if not later in the range, we record the successor item in stale objects by ..."
+
+Line:813, src/stored-value.h -> Nit: More idiomatic to put constructors / destructors as the first methods in a class.
+
+Line:654, src/hash_table.h -> I might have been a bit unclear here - suggest we add accessor methods (getNext(), setNext() for manipulating the underlying member; and they can check any necessary preconditions (that stale is false?) before succeeding.
+
+(Otherwise using the raw `chain_next_or_replacement` gets pretty verbose / ugly - which is actually by design as it makes you to think "hmm, should I be using this directly?")
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-05-11 14:10:55.753000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6441/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5631/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4937/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/182/ : SUCCESS
+
+-------------------------------------
+author: Jace Townsend
+date: 2017-05-11 15:45:58.328000000
+
+MISMATCHED INLINE COMMENT
+Line:813, src/stored-value.h -> Done
+
+-------------------------------------
+author: Jace Townsend
+date: 2017-05-11 15:45:58.328000000
+
+MISMATCHED INLINE COMMENT
+Line:654, src/hash_table.h -> That makes sense - don't think I'd fully engaged my brain there :P Done
+
+-------------------------------------

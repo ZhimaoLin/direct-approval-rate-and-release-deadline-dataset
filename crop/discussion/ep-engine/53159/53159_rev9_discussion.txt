@@ -1,0 +1,107 @@
+DESCRIPTION
+
+Moving Snappy (un)compress logic to seperate file
+
+Also consolidate the length calculations into
+snappy_compress and snappy_uncompress functions.
+
+Change-Id: I0b40bfca7ab10ea6eebb71282f205bda251fc853
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2015-07-15 23:25:54.718000000
+
+Uploaded patch set 9.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-07-15 23:26:02.764000000
+
+Patch Set 9:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/506/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-07-15 23:35:32.478000000
+
+Patch Set 9: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/506/ : SUCCESS
+
+-------------------------------------
+author: Asher Vang
+date: 2015-07-16 08:24:04.527000000
+
+Patch Set 9: Code-Review+2
+
+(3 comments)
+
+Line:119, src/item.cc -> nit, its better to use a std::vector or something here so that we're sure that data is released when we get out of scope. Right now everything is correct, but imagine someone later on adding another test and return somewhere introducing a memory leak...
+
+Line:128, src/item.cc -> Another thing is: do we want the frontend threads to do the compression of the objects? or do we want to have that performed by eiter a dedicated thread or as part of persistence/dcp?
+
+Line:246, src/item.cc -> at some point we could probably just refactor this into just calling append by flipping the order of the arguments instead of duplicating the implementation (prepend a to b is the same as appending b to a)
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-07-16 08:42:27.328000000
+
+Patch Set 9: Code-Review-1
+
+(2 comments)
+
+Line:29, src/compress.cc -> While generally I'm in favour of STL containers, my only concern here is that vector::resize() is required to initialize the new elements, which has a nontrivial cost. Here's some quick numbers from a test program I knocked up[1] comparing malloc, new and std::vector:
+
+
+ $ /usr/bin/time ./a.out malloc 1000000000
+        0.00 real         0.00 user         0.00 sys
+ $ /usr/bin/time ./a.out new    1000000000
+        0.00 real         0.00 user         0.00 sys
+ $ /usr/bin/time ./a.out vector 1000000000
+        2.98 real         2.59 user         0.36 sys
+
+
+Given this is performance-sensitive code, I'd suggest something like a std::unique_ptr<> which has essentially the same cost as malloc/new but guaranteed to not leak the buffer:
+
+
+ std::unique_ptr<char[]> buffer(new char[buffer_size]);
+
+
+[1]: https://gist.github.com/daverigby/7b672f0d05aa1f6d823e
+
+Line:119, src/item.cc -> We my earlier suggestion, I'd probably go with std::unique_ptr<char[]>
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-07-16 19:06:32.204000000
+
+Patch Set 9:
+
+(3 comments)
+
+Line:29, src/compress.cc -> Interesting observations. Thank you Dave.
+
+Line:119, src/item.cc -> Done
+
+Line:246, src/item.cc -> Separate change : )
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-07-17 17:20:12.751000000
+
+The change could not be merged due to a path conflict.
+
+Please rebase the change locally and upload the rebased commit for review.
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-07-17 17:20:23.414000000
+
+Change has been successfully cherry-picked as 32fda12f88c0632a4ff9089c0804d7c94609293f
+
+-------------------------------------

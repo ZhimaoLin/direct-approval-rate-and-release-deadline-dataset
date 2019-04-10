@@ -1,0 +1,185 @@
+DESCRIPTION
+
+Don't remove pack from pack list for problems which could be transient
+
+If we hit a corrupt object or invalid pack remove the pack from the pack
+list. Other IOException could be transient hence we should not remove
+the pack from the list to avoid the problem reported on the Gerrit list
+[1]. It looks like in the reported case the pack was removed from the
+pack list causing MissingObjectExceptions which disappear when the
+server is restarted.
+
+[1] https://groups.google.com/forum/#!topic/repo-discuss/Qdmbl-YZ4NU
+
+Change-Id: I331626110d54b190e46cddc2c40f29ddeb9613cd
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+
+COMMENTS
+
+author: Douglas Trujillo
+date: 2015-01-21 00:36:50.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-01-21 00:36:56.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/5924/
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2015-01-21 00:43:55.000000000
+
+Patch Set 3:
+
+I did a couple of experiments manipulating pack files and checked how JGit behaves with this patch when accessing affected packs.
+
+manually truncated pack file:
+
+Pack file /Users/d029788/tmp/jgit4/.git/objects/pack/pack-ee197cd9ab8256d59d7147f3c0bd5949283c97ba.pack is corrupt
+org.eclipse.jgit.errors.PackInvalidException: Pack file invalid: /Users/d029788/tmp/jgit4/.git/objects/pack/pack-ee197cd9ab8256d59d7147f3c0bd5949283c97ba.pack
+  at org.eclipse.jgit.internal.storage.file.PackFile.doOpen(PackFile.java:599)
+  at org.eclipse.jgit.internal.storage.file.PackFile.beginWindowCache(PackFile.java:583)
+  at org.eclipse.jgit.internal.storage.file.WindowCache.load(WindowCache.java:284)
+  at org.eclipse.jgit.internal.storage.file.WindowCache.getOrLoad(WindowCache.java:368)
+  at org.eclipse.jgit.internal.storage.file.WindowCache.get(WindowCache.java:179)
+  at org.eclipse.jgit.internal.storage.file.WindowCursor.pin(WindowCursor.java:354)
+  at org.eclipse.jgit.internal.storage.file.WindowCursor.copy(WindowCursor.java:226)
+  at org.eclipse.jgit.internal.storage.file.PackFile.readFully(PackFile.java:556)
+  at org.eclipse.jgit.internal.storage.file.PackFile.load(PackFile.java:714)
+  at org.eclipse.jgit.internal.storage.file.PackFile.get(PackFile.java:257)
+  at org.eclipse.jgit.internal.storage.file.ObjectDirectory.openPackedObject(ObjectDirectory.java:423)
+  at org.eclipse.jgit.internal.storage.file.ObjectDirectory.openPackedFromSelfOrAlternate(ObjectDirectory.java:392)
+  at org.eclipse.jgit.internal.storage.file.ObjectDirectory.openObject(ObjectDirectory.java:384)
+  at org.eclipse.jgit.internal.storage.file.WindowCursor.open(WindowCursor.java:145)
+  at org.eclipse.jgit.lib.ObjectReader.open(ObjectReader.java:229)
+  at org.eclipse.jgit.revwalk.RevWalk.parseAny(RevWalk.java:840)
+  at org.eclipse.jgit.revwalk.RevWalk.parseCommit(RevWalk.java:753)
+  at org.eclipse.jgit.lib.BranchTrackingStatus.of(BranchTrackingStatus.java:93)
+  at org.eclipse.egit.ui.internal.GitLabels.getStyledLabel(GitLabels.java:107)
+  at org.eclipse.egit.ui.internal.GitLabels.getStyledLabelExtendedSafe(GitLabels.java:172)
+  at org.eclipse.egit.ui.internal.repository.RepositoriesViewLabelProvider.getStyledText(RepositoriesViewLabelProvider.java:351)
+  ...
+  
+removed pack file at runtime:
+
+ERROR: Exception caught while accessing pack file /Users/d029788/tmp/jgit4/.git/objects/pack/pack-7c55a08a6e437c10ec50169b4b841a175d457ca0.pack, the pack file might be corrupt
+java.io.EOFException
+  at java.io.RandomAccessFile.readFully(RandomAccessFile.java:421)
+  at org.eclipse.jgit.internal.storage.file.PackFile.onOpenPack(PackFile.java:679)
+  at org.eclipse.jgit.internal.storage.file.PackFile.doOpen(PackFile.java:603)
+  at org.eclipse.jgit.internal.storage.file.PackFile.beginWindowCache(PackFile.java:583)
+  at org.eclipse.jgit.internal.storage.file.WindowCache.load(WindowCache.java:284)
+  at org.eclipse.jgit.internal.storage.file.WindowCache.getOrLoad(WindowCache.java:368)
+  at org.eclipse.jgit.internal.storage.file.WindowCache.get(WindowCache.java:179)
+  at org.eclipse.jgit.internal.storage.file.WindowCursor.pin(WindowCursor.java:354)
+  at org.eclipse.jgit.internal.storage.file.WindowCursor.copy(WindowCursor.java:226)
+  at org.eclipse.jgit.internal.storage.file.PackFile.readFully(PackFile.java:556)
+  at org.eclipse.jgit.internal.storage.file.PackFile.load(PackFile.java:714)
+  at org.eclipse.jgit.internal.storage.file.PackFile.get(PackFile.java:257)
+  at org.eclipse.jgit.internal.storage.file.ObjectDirectory.openPackedObject(ObjectDirectory.java:423)
+  at org.eclipse.jgit.internal.storage.file.ObjectDirectory.openPackedFromSelfOrAlternate(ObjectDirectory.java:392)
+  at org.eclipse.jgit.internal.storage.file.ObjectDirectory.openObject(ObjectDirectory.java:384)
+  at org.eclipse.jgit.internal.storage.file.WindowCursor.open(WindowCursor.java:145)
+  at org.eclipse.jgit.lib.ObjectReader.open(ObjectReader.java:229)
+  at org.eclipse.jgit.revwalk.RevWalk.parseAny(RevWalk.java:840)
+  at org.eclipse.jgit.internal.storage.file.RefDirectory.doPeel(RefDirectory.java:482)
+  at org.eclipse.jgit.internal.storage.file.RefDirectory.peel(RefDirectory.java:461)
+  at org.eclipse.jgit.lib.Repository.peel(Repository.java:953)
+  at org.eclipse.jgit.lib.Repository.getAllRefsByPeeledObjectId(Repository.java:969)
+  at org.eclipse.jgit.revplot.PlotWalk.<init>(PlotWalk.java:93)
+  at org.eclipse.egit.ui.internal.history.SWTWalk.<init>(SWTWalk.java:18)
+
+add some random characters to 2 places in a pack file using a text editor, have a redundant pack which contains all the objects of this repository, then run jgit GC:
+
+ERROR: Exception caught while accessing pack file /Users/d029788/tmp/jgit3/.git/objects/pack/pack-04ed5033284af9c3fa04e9687ef0488e4d58b9d1.pack, the pack file might be corrupt
+java.io.IOException: Unknown object type 0.
+  at org.eclipse.jgit.internal.storage.file.PackFile.getObjectSize(PackFile.java:981)
+  at org.eclipse.jgit.internal.storage.file.PackFile.getObjectSize(PackFile.java:943)
+  at org.eclipse.jgit.internal.storage.file.ObjectDirectory.getPackedObjectSize(ObjectDirectory.java:512)
+  at org.eclipse.jgit.internal.storage.file.ObjectDirectory.getPackedSizeFromSelfOrAlternate(ObjectDirectory.java:481)
+  at org.eclipse.jgit.internal.storage.file.ObjectDirectory.getObjectSize(ObjectDirectory.java:473)
+  at org.eclipse.jgit.internal.storage.file.WindowCursor.getObjectSize(WindowCursor.java:164)
+  at org.eclipse.jgit.lib.ObjectReader$2.next(ObjectReader.java:371)
+  at org.eclipse.jgit.internal.storage.pack.PackWriter.searchForDeltas(PackWriter.java:1212)
+  at org.eclipse.jgit.internal.storage.pack.PackWriter.writePack(PackWriter.java:1018)
+  at org.eclipse.jgit.internal.storage.file.GC.writePack(GC.java:724)
+  at org.eclipse.jgit.internal.storage.file.GC.repack(GC.java:550)
+  at org.eclipse.jgit.internal.storage.file.GC.gc(GC.java:169)
+  at org.eclipse.jgit.api.GarbageCollectCommand.call(GarbageCollectCommand.java:175)
+  at org.eclipse.egit.core.op.GarbageCollectOperation.execute(GarbageCollectOperation.java:45)
+  at org.eclipse.egit.ui.internal.repository.tree.command.GarbageCollectCommand$1.run(GarbageCollectCommand.java:72)
+  at org.eclipse.core.internal.jobs.Worker.run(Worker.java:54)
+
+=> should we throw CorruptObjectExcpeption instead of IOException here
+
+Pack file /Users/d029788/tmp/jgit3/.git/objects/pack/pack-04ed5033284af9c3fa04e9687ef0488e4d58b9d1.pack is corrupt
+org.eclipse.jgit.errors.CorruptObjectException: Object at 317,182 in /Users/d029788/tmp/jgit3/.git/objects/pack/pack-04ed5033284af9c3fa04e9687ef0488e4d58b9d1.pack has bad zlib stream
+  at org.eclipse.jgit.internal.storage.file.PackFile.getObjectSize(PackFile.java:988)
+  at org.eclipse.jgit.internal.storage.file.PackFile.getObjectSize(PackFile.java:943)
+  at org.eclipse.jgit.internal.storage.file.ObjectDirectory.getPackedObjectSize(ObjectDirectory.java:512)
+  at org.eclipse.jgit.internal.storage.file.ObjectDirectory.getPackedSizeFromSelfOrAlternate(ObjectDirectory.java:481)
+  at org.eclipse.jgit.internal.storage.file.ObjectDirectory.getObjectSize(ObjectDirectory.java:473)
+  at org.eclipse.jgit.internal.storage.file.WindowCursor.getObjectSize(WindowCursor.java:164)
+  at org.eclipse.jgit.lib.ObjectReader$2.next(ObjectReader.java:371)
+  at org.eclipse.jgit.internal.storage.pack.PackWriter.searchForDeltas(PackWriter.java:1212)
+  at org.eclipse.jgit.internal.storage.pack.PackWriter.writePack(PackWriter.java:1018)
+  at org.eclipse.jgit.internal.storage.file.GC.writePack(GC.java:724)
+  at org.eclipse.jgit.internal.storage.file.GC.repack(GC.java:550)
+  at org.eclipse.jgit.internal.storage.file.GC.gc(GC.java:169)
+  at org.eclipse.jgit.api.GarbageCollectCommand.call(GarbageCollectCommand.java:175)
+  at org.eclipse.egit.core.op.GarbageCollectOperation.execute(GarbageCollectOperation.java:45)
+  at org.eclipse.egit.ui.internal.repository.tree.command.GarbageCollectCommand$1.run(GarbageCollectCommand.java:72)
+  at org.eclipse.core.internal.jobs.Worker.run(Worker.java:54)
+
+JGit's gc currently chokes on corrupt pack files and doesn't clean them up. We should fix this.
+
+I also tried with git-core's gc and this doesn't raise an error and removes the corrupt pack file.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-01-21 00:44:53.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/5924/ : SUCCESS
+
+-------------------------------------
+author: Santos Moore
+date: 2015-01-21 00:55:07.000000000
+
+Patch Set 3: Code-Review-1
+
+(1 comment)
+
+Thanks for checking on that. If GC can't currently cope with these packs, that's a separate problem worth fixing, but I don't think this will be a regression.
+
+Line:569, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/ObjectDirectory.java -> You could factor this out. Arguably uglier because you'd have to use instanceof instead of separate catch blocks, but I think the reduced code duplication would be an overall win.
+
+   } catch (IOException e) {
+     handlePackError(e, p);
+   }
+ ...
+ 
+ private void handlePackError(IOexception e, PackFile p) {
+   String tmpl;
+   if ((e instanceof CorruptObjectException)
+       || (e instanceof PackInvalidException)) {
+     tmpl = JGitText.get().corruptPack;
+     // Assume the pack is corrupted, and remove it from the list.
+     removePack(p);
+   } else {
+     tmpl = JGitText.get().exceptionWhileReadingPack;
+     // Don't remove the pack from the list, as the error may be transient.
+   }
+   StringBuilder buf = new StringBuilder(
+       MessageFormat.format(tmpl, p.getPackFile.getAbsolutePath()));
+   ...
+ }
+
+-------------------------------------

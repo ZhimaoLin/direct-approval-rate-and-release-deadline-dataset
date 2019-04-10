@@ -1,0 +1,94 @@
+DESCRIPTION
+
+CBQE-0: Support LWWXDCR Tests.
+       1. added tests skeleton for lwwXDCR test
+       2. Changed KVStore to have timestamp for each key to compare it during merging keys.
+
+Change-Id: I1dc0d7b943a48d82e4d0d0cae2d090cc2597802d
+
+
+COMMENTS
+
+author: Fisher Vargas
+date: 2015-01-29 10:37:05.251000000
+
+Uploaded patch set 10.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-01-29 10:37:08.947000000
+
+Patch Set 10:
+
+Build Started http://factory.couchbase.com/job/testrunner-Jasmin Rangel-master/3975/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-01-29 10:52:27.233000000
+
+Patch Set 10: Verified+1
+
+Build Successful 
+
+http://factory.couchbase.com/job/testrunner-Jasmin Rangel-master/3975/ : SUCCESS
+
+-------------------------------------
+author: Angelina Mayer
+date: 2015-01-29 21:27:23.195000000
+
+Patch Set 10:
+
+(4 comments)
+
+Line:105, lib/memcached/helper/kvstore.py -> looks good.
+
+Line:2385, pytests/xdcr/xdcrnewbasetests.py -> Sangharsh, correct me if Im wrong.
+the control reaching this part would mean the key is not present at destination bucket right? (if key not in valid_keys_dest and key not in deleted_keys_dest) if so, partition2.get_timestamp(key) will always return 0. partition1.get_timestamp will have to be negative for continue to be executed right?
+
+I think we must move to the code under a new condition like -
+for key in valid_keys_src:
+   if key in valid_keys_dest or key in deleted_keys_dest:
+        <new code>
+
+Line:2403, pytests/xdcr/xdcrnewbasetests.py -> same here, the key should be present in deleted_keys_dest or valid _keys_dest to be able to compare timestamp.
+
+What do you think of - 
+if lww:
+    for key in valid_keys_src:
+         if key in valid_keys_dest or key in deleted_keys_dest:
+              if partition1.get_timestamp(key) <                partition2.get_timestamp(key):	
+                    ignore_merge_on_keys.append(key) #put the keys in a list)
+
+    # same for deleted_keys_src
+    for key in deleted_keys_src:
+         if key in valid_keys_dest or key in deleted_keys_dest:
+              <new code>
+
+Then later where we are merging keys we can check if it is present in the above list and ignore.
+
+Line:130, pytests/xdcr/lwwXDCR.py -> In some uni-xdcr cases, we make a load at the destination too to demonstrate a case where the key is already present. So we may want to break this down to setup_xdcr and how we load could be customized in every testcase.
+
+-------------------------------------
+author: Fisher Vargas
+date: 2015-01-30 09:05:13.009000000
+
+Patch Set 10:
+
+(4 comments)
+
+Line:105, lib/memcached/helper/kvstore.py -> Cool.
+
+Line:2385, pytests/xdcr/xdcrnewbasetests.py -> If key present in any of the partition then partition.get_timestamp() will return positive value i.e. > 0 else it will return 0.
+
+So, if key is not present in destination then partition2.get_timestamp() will return 0 and since for loop is running for source then partition1.get_timestamp() will always be > 0 ofcourse. So in case of lww, this if condition will not be passed for uni-directional xdcr (where no key present on destination) and so on.
+
+Original problem statement was, "In case of LWW, we need to compare timestamp of the key at both side and most recent should be merged and if key not present on destination it should be merged as it is". 
+
+
+Any use-case you think may create problem?
+
+Line:2403, pytests/xdcr/xdcrnewbasetests.py -> same as above.
+
+Line:130, pytests/xdcr/lwwXDCR.py -> No issues, in case of load on C2 will be needed, it will be done in next line.
+
+-------------------------------------

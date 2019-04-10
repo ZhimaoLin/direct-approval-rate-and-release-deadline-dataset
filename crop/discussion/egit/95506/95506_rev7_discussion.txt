@@ -1,0 +1,136 @@
+DESCRIPTION
+
+Add the smartimport fragment to the org.eclipse.egit feature
+
+Remove the smartimport from the EGit experimental features category of
+the EGit p2 repository since it's now included in the egit feature.
+
+Declare dependency in p2.inf following [1] and uncategorize the
+smartimport fragment in category.xml. Use JBoss tool's repository facade
+[2] to hide the "uncategorized" category.
+
+[1] https://www.eclipse.org/forums/index.php/t/1077942/
+[2]
+https://github.com/jbosstools/jbosstools-maven-plugins/blob/master/tycho-plugins/repository-utils/src/main/java/org/jboss/tools/tycho/sitegenerator/GenerateRepositoryFacadeMojo.java#L190
+
+Bug: 512633
+Change-Id: I0bb949728195bb19ff4302340a4995b3331a5237
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+
+COMMENTS
+
+author: Douglas Trujillo
+date: 2017-05-26 21:07:11.000000000
+
+Uploaded patch set 7.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-05-26 21:07:16.000000000
+
+Patch Set 7:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/9888/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-05-26 21:08:07.000000000
+
+Patch Set 7: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/9888/ : FAILURE
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-05-26 21:10:46.000000000
+
+Removed reviewer Brenden Conley with the following votes:
+
+* Verified-1 by Brenden Conley (442)
+
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-05-26 21:24:29.000000000
+
+Patch Set 7:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/9889/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-05-26 21:47:36.000000000
+
+Patch Set 7: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/9889/ : SUCCESS
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-05-30 09:31:48.000000000
+
+Patch Set 7: Code-Review-1
+
+Still doesn't update the smartimport bundle. It is present in the update site, but installing on Neon (with org.eclipse.ui.ide 3.12.2)
+only updates the rest of EGit, but not the smartimport bundle.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-05-30 09:43:52.000000000
+
+Patch Set 7:
+
+> Still doesn't update the smartimport bundle. It is present in the
+ > update site, but installing on Neon (with org.eclipse.ui.ide
+ > 3.12.2)
+ > only updates the rest of EGit, but not the smartimport bundle.
+
+I tried on Oxygen (I think it was M7) and that worked for me
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-05-30 11:01:20.000000000
+
+Patch Set 7:
+
+> > Still doesn't update the smartimport bundle. It is present in the
+ > > update site, but installing on Neon (with org.eclipse.ui.ide
+ > > 3.12.2)
+ > > only updates the rest of EGit, but not the smartimport bundle.
+ > 
+ > I tried on Oxygen (I think it was M7) and that worked for me
+
+I'm getting inconsistent behavior:
+
+* Neon.2 (my dev Eclipse instance, has the smartimport bundle already installed (an earlier 4.8.0 version, different qualifier), so an update should occur; org.eclipse.ui.ide 3.12.2): "Install New Software...", select local update site constructed by maven, check "Git integration for Eclipse", "Next" etc.: everything OK, EGit & JGit core do get updated; smartimport does _not_ get updated.
+* Luna: same procedure as above: works and does not install smartimport. (Also doesn't complain about anything, plain clean successful upgrade.)
+* Neon.3 Java EPP (fresh download, comes with EGit 4.6.1, no smartimport bundle,org.eclipse.ui.ide 3.12.3): same procedure as above: claims it cannot install; somehow it doesn't see that EGit 4.8.0 would override 4.6.1 (complains that only one of the two can be installed). Turns out it does _not_ include JGit. Manually also checking the "Java implementation of Git" feature resolves that, installation then can proceed. _Does_ install the smartimport bundle.
+* Oxygen RC1 Java EPP (started via the Neon.3 launcher; see bug 517336 :-( ): comes without the smartimport bundle, org.eclipse.ui.ide 3.13.0. Lacks the "Help->Installation Details..." menu entry; have to go through "About Eclipse" again :-( . (Don't know if that's a side-effect of my special way of launching it.) Same procedure as above: install successful, _does_install smartimport.
+
+So it looks like:
+
+* Unless a matching JGit is already installed, the JGit feature must be selected by hand. That's a bit unfortunate. Perhaps the JGit feature should not be a dependency in the Egit feature but be included? (This is what happened on Neon.3.)
+* The smartimport bundle is installed if not present, but not updated if an older 4.8.0 version is already installed.
+
+To test the latter, I did the following:
+
+* Neon.3 (again, fresh copy with EGit 4.6.1); install smartimport from the EGit 4.6.1 update site (no problems). Then same procedure as above. Still needs the JGit feature to be checked manually. But even then the install claims it cannot proceed: p2 doesn't auto-update the smartimport bundle and then gets a conflict between the to-be-installed EGit 4.8.0 and the still present smartimport 4.6.1, which requires EGit [4.6.1, 4.7.0). The request has to be manually modified ("Show original error and build my own solution", then "Update items already installed", or just "Update my installation to be compatible with the items being installed"). Then the installation can proceed and does perform the update, also of the smartimport bundle.
+* Oxygen-RC1 (fresh copy): install smartimport from EGit nightly. No problems. Then same procedure as above (upgrade from local maven-created update site): works, but does _not_update the smartimport bundle.
+
+So indeed there is a problem with auto-updating. I guess what we'd need is a kind of "semi-optional" dependency: if there is no smartimport bundle, it's OK. But if there is an older one, then our dependency must not be optional since we then must update the older bundle. And I don't even want to think about the case where somebody still has the old org.eclipse.egit.ui.importer bundle installed...
+
+Not sure if we want to go ahead with this in the current state. With the update site as is, people may run into the same problems, but at least they'll have a chance of understanding why: "oh, I didn't check that auto-import feature". If we hide it from the user, then installation/upgrading should work without the hassles I encountered.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-06-11 19:41:32.000000000
+
+Abandoned
+
+I agree to your conclusion, let's stick to what we have
+
+-------------------------------------

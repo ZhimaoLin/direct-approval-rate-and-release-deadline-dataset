@@ -1,0 +1,176 @@
+DESCRIPTION
+
+MB-24817: During takeover, hold stream lock until vb is set to dead
+
+During DCP takeover, when we decide to set the vbucket to dead state
+on the producer side, we also transition the stream state from
+STREAM_TAKEOVER_WAIT to STREAM_TAKEOVER_SEND state to send out any
+remaining items that were received before the vbucket was set to
+dead state.
+
+The stream lock must be held until the vbucket is set to the dead
+state, so that we do not prematurely finish sending out the last
+items when the vbucket is not dead yet (that is if the vbucket
+is not dead, it could get some more items).
+
+This commit addresses the issue and also handles the ordering of
+locks involved at stream level, ep store level and vbucket level
+in the scenario.
+
+Change-Id: I89bb42edec4f3765c8a9c67e6e89e9680eb40875
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2017-06-15 00:56:30.336000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-06-15 00:56:37.436000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-watson/581/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-06-15 00:56:37.498000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/1768/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-06-15 00:56:37.554000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/1545/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-06-15 00:56:37.603000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/2006/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-06-15 00:56:41.281000000
+
+Patch Set 1: Well-Formed+1
+
+Permission granted to commit: 
+
+http://server.jenkins.Piper Jefferson.com/job/restricted-branch-check/53358/artifact/restricted.html : SUCCESS
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-06-15 00:58:34.148000000
+
+Patch Set 1:
+
+Adding a test case seemed not possible because it involves ordering the execution of 2 threads at the code line level
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-06-15 01:14:08.814000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/2006/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-watson/581/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/1545/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/1768/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-06-15 03:18:13.687000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/2007/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-06-15 03:39:25.719000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-watson/581/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/1545/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/1768/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/2007/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-06-15 08:05:06.007000000
+
+Patch Set 1: Code-Review-1
+
+(3 comments)
+
+Fix looks good. What's our test coverage like in this area - do we have a test for this?
+
+Line:528, src/ep.h -> Nit: not applicable here (c/p bug from the unlocked variant?)
+
+Line:558, src/ep.h -> I think this is potentially confusing - I'd be tempted to just pass in a reference and have the caller always lock it.
+
+Line:296, src/vbucket.h -> For consistency I'd name this setState_UNLOCKED().
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-06-15 15:40:40.075000000
+
+Patch Set 1:
+
+(3 comments)
+
+We have tests covering the takeover, including the modified function setVBucketStateAckRecieved(). But we do not have a test for this specific race condition.
+
+Line:528, src/ep.h -> Done
+
+Line:558, src/ep.h -> setVBucketState_UNLOCKED() is called from other places as well.
+In those places, enforcing vbStateLock to be acquired before hand has 2 problems
+1. Increased scope of vbStateLock
+2. We enforce, that vb should be present when setVBucketState_UNLOCKED() is called. Currently we also create a vb in the setVBucketState_UNLOCKED() call.
+
+If I have to pass vbStateLock as a reference, then I will have to use separate function instead, which does similar stuff as setVBucketState_UNLOCKED().
+
+Line:296, src/vbucket.h -> Done
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-06-15 17:05:16.093000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:558, src/ep.h -> Ok
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-06-15 16:50:45.676000000
+
+MISMATCHED INLINE COMMENT
+Line:558, src/ep.h -> Hmm, I'm not a big fan of this but I think for watson it's probably reasonable to keep as-is.
+
+Maybe we can simplify in master.
+
+-------------------------------------

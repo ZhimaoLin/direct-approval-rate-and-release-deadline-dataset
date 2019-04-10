@@ -1,0 +1,199 @@
+DESCRIPTION
+
+Set "potentialNullReference" to "error" level and fixed all issues
+
+There should be no functional change, the logic updated only to make
+code simple so that compiler can understand what is going for. Removed
+xxx@xxx.xxx annotations since they cannot be used if
+"org.eclipse.jdt.core.compiler.problem.potentialNullReference" option is
+set to the "error" level.
+
+Bug: 470647
+Change-Id: Ie93c249fa46e792198d362e531d5cbabaf41fdc4
+Signed-off-by: Jayvion Booth xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2015-08-14 19:43:35.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7015/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-08-14 19:50:49.000000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7015/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2015-08-20 19:51:25.000000000
+
+Patch Set 4: Code-Review-1
+
+(10 comments)
+
+Line:539, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsPackFile.java -> moving this code to the callers is ugly since it's violating DRY principle
+
+Line:1042, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> this seems unrelated to this change
+
+Line:1071, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> this seems unrelated to this change
+
+Line:1090, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> this seems unrelated to this change
+
+Line:1114, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> this seems unrelated to this change
+
+Line:374, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackFile.java -> moving this code to the callers is ugly since it's violating DRY principle
+
+Line:811, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackFile.java -> why is the in memory buffer limit exceeded if delta is null ?
+
+Line:11, /COMMIT_MSG -> why can't @SuppressWarnings("null") be used if this option is set to "error" ? I tried to set this option without xxx@xxx.xxx and couldn't see what this breaks
+
+Line:463, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheTree.java -> why is cc = -1 in this case ?
+
+Line:483, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheTree.java -> If
+ stIdx < childCnt
+this is true, but why if cc>= 0 ?
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-08-20 21:17:13.000000000
+
+Patch Set 4:
+
+(10 comments)
+
+Line:539, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsPackFile.java -> I partly agree (the change on the client side isn't really bad), but I see no other way to make compiler happy, because it cannot understand that validate == true automatically means crc1 != null and crc2 != null (the ternary operator makes compiler unhappy).
+
+Another option would be to duplicate the entire body of this method by creating a second one (so to have copyAsIs() and copyWithValidation()), but this will produce lot of duplicated, very complicated code.
+
+Line:1042, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> This is required to let compiler know that getSnapshot() never returns null. Otherwise compiler produces errors at lines 923 and 937 in the old code.
+
+Line:1071, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> This is to make sure the caller will not violate the NonNull contract of the getSnapshot().
+
+Line:1090, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> This is to make sure the caller will not violate the NonNull contract of the getSnapshot().
+
+Line:1114, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> This is to make sure the caller will not violate the NonNull contract of the getSnapshot().
+
+Line:374, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackFile.java -> I partly agree (the change on the client side isn't really bad), but I see no other way to make compiler happy, because it cannot understand that validate == true automatically means crc1 != null and crc2 != null (the ternary operator makes compiler unhappy).
+
+Another option would be to duplicate the entire body of this method by creating a second one (so to have copyAsIs() and copyWithValidation()), but this will produce lot of duplicated, very complicated code.
+
+Line:811, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackFile.java -> Actually delta == null can never happen at this location, but for whatever reason compiler can't see it.
+
+So the extra condition is for compiler only.
+
+Instead we could just add 
+assert(delta != null); before if condition, which also would make compiler happy.
+
+Line:11, /COMMIT_MSG -> You have to clean build the jgit project after applying the compiler option change. 
+
+*All* 5 occurencies of @SuppressWarnings("null") are flagged as xxx@xxx.xxx warnings by the compiler. This annotation works for "warnings" level only, but if the compiler option is set to produce errors, annotation will be not considered at all and so it is flagged as useless.
+
+Line:463, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheTree.java -> if stIdx >= childCnt, "st" was null in the original version.
+If st == null, cc = namecmp() always produced -1.
+
+So one can write that if (stIdx >= childCnt) { cc = -1 }
+
+Line:483, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheTree.java -> Original code didn't reach this line if cc > 0, see "continue" at line 459 in the old code, and also would not reach this line if st == null because this would mean cc == -1 (cc = namecmp() always produced -1 if st == null).
+
+So we are here only if cc <= 0 or if st == children[stIdx] in the old code. However, old code always assigned st to new DirCacheTree if cc < 0. Therefore the only choice here is children[stIdx].
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2015-08-21 07:27:10.000000000
+
+Patch Set 4:
+
+(13 comments)
+
+Line:539, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsPackFile.java -> I would prefer to add assertions to this method to assist the compiler's null analysis instead of changing internal API and duplicating code. We know whenever validate is true crc1 and crc2 are non-null so we could add the assertion
+
+ assert(crc1 != null && crc2 != null);
+
+to the branches where validate is true
+
+Line:931, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsPackFile.java -> instead add an assertion before this condition to assist null analysis
+
+ assert(delta != null);
+
+Line:936, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsPackFile.java -> unrelated formatting changes
+
+Line:921, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> instead add an assertion before this line ?
+
+ assert(currentSnapshot != null);
+
+Line:935, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> instead add an assertion before this line ?
+
+ assert(currentSnapshot != null);
+
+Line:1042, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> ok
+
+Line:1071, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> ok
+
+Line:1090, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> ok
+
+Line:1114, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> ok
+
+Line:374, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackFile.java -> instead use assertions to assist the compiler's null analysis
+
+Line:811, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackFile.java -> then I would prefer the latter: assert(delta!=null) before if condition since this avoids the confusion about throwing an exception which seems inappropriate for delta == null
+
+Line:11, /COMMIT_MSG -> ok
+
+Line:488, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheTree.java -> instead of these changes I would prefer to help the compiler's null analysis by adding an assertion here:
+
+ assert(st != null);
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-08-22 11:54:56.000000000
+
+Patch Set 4:
+
+(8 comments)
+
+Last patch set basically reverts all the logic changes in favor of using assert(NP condition) statements.
+
+Line:539, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsPackFile.java -> OK.
+
+Line:931, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsPackFile.java -> OK.
+
+Line:936, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsPackFile.java -> OK.
+
+Line:921, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> I personally don't like to use assert() because it changes your runtime behavior and violates Java principle "you get what you see". In worst case we will get a NPE if we run without assertions, or AssertionError otherwise. Not nice.
+
+So if there is a way to avoid using "assert" effect at compile time, I would prefer it.
+
+Line:935, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> Same as above.
+
+Line:374, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackFile.java -> OK.
+
+Line:811, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackFile.java -> OK.
+
+Line:488, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheTree.java -> OK.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2015-08-22 21:22:32.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:921, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> ok
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-08-25 13:45:51.000000000
+
+Change has been successfully merged into the git repository by Zachary Orozco
+
+-------------------------------------

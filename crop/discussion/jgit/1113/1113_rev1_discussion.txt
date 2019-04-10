@@ -1,0 +1,77 @@
+DESCRIPTION
+
+Implement delta generation during packing
+
+PackWriter now produces new deltas if there is not a suitable delta
+available for reuse from an existing pack file.  This permits JGit to
+send less data on the wire by sending a delta relative to an object
+the other side already has, instead of sending the whole object.
+
+The delta searching algorithm is similar in style to what C Git
+uses, but apparently has some differences (see below for more on).
+Briefly, objects that should be considered for delta compression are
+pushed onto a list.  This list is then sorted by a rough similarity
+score, which is derived from the path name the object was discovered
+at in the repository during object counting.  The list is then
+walked in order.
+
+At each position in the list, up to $WINDOW objects prior to it
+are attempted as delta bases.  Each object in the window is tried,
+and the shortest delta instruction sequence selects the base object.
+Some rough rules are used to prevent pathological behavior during
+this matching phase, like skipping pairings of objects that are
+not similar enough in size.
+
+PackWriter intentionally excludes commits and annotated tags from
+this new delta search phase.  In the JGit repository only 28 out
+of 2600+ commits can be delta compressed by C Git.  As the commit
+count tends to be a fair percentage of the total number of objects
+in the repository, and they generally do not delta compress well,
+skipping over them can improve performance with little increase in
+the output pack size.
+
+Because this implementation was rebuilt from scratch based on my own
+memory of how the packing algorithm has evolved over the years in
+C Git, PackWriter, DeltaWindow, and DeltaEncoder don't use exactly
+the same rules everywhere, and that leads JGit to produce different
+(but logically equivalent) pack files.
+
+  Repository | Pack Size (bytes)                | Packing Time
+             | JGit     - CGit     = Difference | JGit / CGit
+  -----------+----------------------------------+-----------------
+   git       | 25094348 - 24322890 = +771458    | 59.434s / 59.133s
+   jgit      |  5669515 -  5709046 = - 39531    |  6.654s /  6.806s
+   linux-2.6 |     389M -     386M = +3M        |  20m02s / 18m01s
+
+For the above tests pack.threads was set to 1, window size=10,
+delta depth=50, and delta and object reuse was disabled for both
+implementations.  Both implementations were reading from an already
+fully packed repository on local disk.  The running time reported
+is after 1 warm-up run of the tested implementation.
+
+PackWriter is writing 771 KiB more data on git.git, 3M more on
+linux-2.6, but is actually 39.5 KiB smaller on jgit.git.  Being
+larger by less than 0.7% on linux-2.6 isn't bad, nor is taking an
+extra 2 minutes to pack.  On the running time side, JGit is at a
+major disadvantage because linux-2.6 doesn't fit into the default
+WindowCache of 20M, while C Git is able to mmap the entire pack and
+have it available instantly in physical memory (assuming hot cache).
+
+CGit also has a feature where it caches deltas that were created
+during the compression phase, and uses those cached deltas during
+the writing phase.  PackWriter does not implement this (yet),
+and therefore must create every delta twice.  This could easily
+account for the increased running time we are seeing.
+
+Change-Id: I6292edc66c2e95fbe45b519b65fdb3918068889c
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-07-27 16:11:38.000000000
+
+Change has been successfully pushed.
+
+-------------------------------------

@@ -1,0 +1,83 @@
+DESCRIPTION
+
+Blame correctly in the presence of conflicting merges
+
+Problem:
+The BlameGenerator used the RevFlag SEEN to mark commits it had already
+looked at (but not necessarily processed), to prevent processing a
+commit multiple times. If a commit is a conflicting merge that
+contains lines of the merge base, that have been deleted in its first
+parent, either these lines or the lines untouched since the merge base
+would not be blamed properly.
+
+Consider the following commit graph for a sole file in a repository:
+
+ X (main)
+ | \
+ |  S (side)
+ M  |
+ | /
+ B
+
+The problem occurs e.g. if a file is modified on a main branch in an
+earlier commit M and on a side branch in a later commit S. For this
+example, M deletes some lines relative to the common base commit B, and
+S modifies a subset of these lines, leaving some other of these lines
+untouched.
+
+Then side is merged into main, creating a conflict for these lines. The
+merge resolution shall carry over some unmodified lines from B that
+would otherwise be deleted by M. The route to blame these lines is via S
+to B. They can't be blamed via M, as they don't exist there anymore.
+
+Blaming the merged file first blames via S, because that is the most
+recent commit. Doing so, it also looks at B to blame the unmodified
+lines of B carried over by S into the merge result X. In the course of
+this, B is submitted for later processing and marked SEEN.
+
+Later M is blamed. It notices that its parent commit B has been SEEN and
+aborts processing for M. B is blamed after that, but only for the lines
+that survived via S.
+
+As a result, only the lines contributed by S or by B via S are
+blamed. All the other lines that were unchanges by both M and S, which
+should have been blamed to B via M, are not blamed.
+
+Solution:
+Don't abort processing when encountering a SEEN commit. Rather add the
+new region list of lines to be blamed to those of the already SEEN and
+enqueued commit's region list. This way when the B commit of the
+above example is processed, it will blame both the lines of M and S,
+yielding a complete blame result.
+
+Bug: 374382
+Change-Id: I369059597608022948009ea7708cc8190f05a8d3
+Signed-off-by: Kaden Henson xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Kaden Henson
+date: 2014-04-17 19:53:42.000000000
+
+Patch Set 3: Commit message was updated
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-04-17 20:06:25.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/egit/job/jgit.gerrit/4978/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-04-17 20:23:52.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/jgit.gerrit/4978/ : SUCCESS
+
+-------------------------------------

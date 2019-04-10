@@ -1,0 +1,81 @@
+DESCRIPTION
+
+Add support for git-cat-file (for blob, tree, commit and tag) with associated tests.
+
+Command line is similar to git-cat-file.
+
+This currently only provides the content of the object_id supplied via the command line.
+
+
+COMMENTS
+
+author: Zachary Orozco
+date: 2010-08-19 06:00:46.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+I would suggest to do the real work in a command in org.eclipse.jgit/src/org/eclipse/jgit/api. Your implementation in pgm should just reuse that command.
+
+Problem is that your "git cat-file" functionality is not reuseable from other parts (jgit-test, egit, ...) because it's hardcoded command-line. And I can imagine a lot of use-cases for cat-file in e.g. our tests.
+
+You can just look at http://egit.eclipse.org/w/?p=jgit.git;a=blob;f=org.eclipse.jgit/src/org/eclipse/jgit/api/LogCommand.java or ask me for questions about our commands.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-08-19 17:44:36.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(3 inline comments)
+
+I disagree with Zachary Orozco here.  CatFile isn't magically special.  There is *no* value in providing a "command" for it in the API.  If an application needs to read an object, it should be using ObjectReader.open(), or Repository.open().  After that its just copying one stream to another.  Totally not worth having a whole "command" in our API.
+
+IMHO, stick to what you have here, aside from my review comments.
+
+Line:61, org.eclipse.jgit.pgm/src/org/eclipse/jgit/pgm/CatFile.java -> Since we're mucking about with this, lets just define:
+
+  public enum ObjectType {
+    COMMIT(Constants.OBJ_COMMIT, Constants.TYPE_COMMIT),
+    TREE(...),
+    BLOB(...),
+    TAG(...)
+
+    public int getPackType() {
+      return packType;
+    }
+
+    public String getTypeString() {
+      return typeName;
+    }
+
+    public static ObjectType forPackType(int type) {...}
+    public static ObjectType forTypeString(String type) {...}
+  }
+
+and declare this as part of our public API.  While we are at it we can add getObjectType() to ObjectLoader, ObjectStream, and RevObject should an application prefer to use the type-safe enum variant.  We should also implement overload forms of the open(ObjectId,int) method to be open(ObjectId,ObjectType).  Our current typing code was before we supported Java 5 and had  access to enums.  The enums are a bit cleaner to work with, so we might as well just start supporting it.  IMHO that should all be in its own change, before you add CatFile.
+
+Then you can just use ObjectType here for your parameter.
+
+Line:79, org.eclipse.jgit.pgm/src/org/eclipse/jgit/pgm/CatFile.java -> Use db.open(objectId, typeCode) instead.
+
+Line:82, org.eclipse.jgit.pgm/src/org/eclipse/jgit/pgm/CatFile.java -> Do not do single byte IO.  Most of our ObjectStream implementations perform very poorly.  Allocate a new byte[4096] or new byte[8192] and do IO in larger units.
+
+Also the size is well known (outputStream.getSize()).  It is good to be paranoid, so double check that the total number of bytes output matches the size of the stream.  If they differ, complain, loudly with a die.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-08-25 12:09:38.000000000
+
+Patch Set 1: No score
+
+I agree that we don't have to have this as a command in our API because the API should concentrate on porcelain commands. And cat-file is plumbing. So, also from my point of view, continue on this.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-09-08 05:25:06.000000000
+
+Patch Set 1: Abandoned
+
+I think what we really want for pgm is show, which is in change I4dea84428d48b3de0e187c510b766f965323b21b.
+
+-------------------------------------

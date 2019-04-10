@@ -1,0 +1,93 @@
+DESCRIPTION
+
+Fix corrupted pack file on diff
+
+This fixes the issue found in Gerrit where a diff timeout caused an
+entire repo to be unusable[1].  The diff is run in multiple threads with
+a timeout[2] which calls into zlib inflate.  It looks like zlib is not
+thread safe when the stream is operated on from multiple threads[3].
+Synchronizing on jgit inflater seems to fix the problem.
+
+[1] https://code.google.com/p/gerrit/issues/detail?id=3424
+[2] https://gerrit.googlesource.com/gerrit/+/master/gerrit-server/src/main
+        /java/com/google/gerrit/server/patch/PatchListLoader.java (line 210)
+[3] http://www.zlib.net/zlib_faq.html#faq21
+
+Bug: 467467
+Change-Id: If577fc54c3b2f6f9c2152432360f61e50b3de8cf
+Signed-off-by: Heidi Ruiz xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Heidi Ruiz
+date: 2015-09-15 19:03:38.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-09-15 19:03:44.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7096/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-09-15 19:11:50.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7096/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-09-16 02:24:17.000000000
+
+Patch Set 1:
+
+This is voodoo. WindowCursor is not thread safe either. We should only be using it on a single thread at any time. When a thread is murdered through the timeout process in Gerrit *all* of its resources including its thread-private WindowCursor and Inflater are discarded as garbage and must not be reused. NONE of those resources are in a known state. This is the nature of forced thread death in Java.
+
+I have to wonder if there is a bigger problem in Gerrit about this WindowCursor (ObjectReader) instance being recycled/reused where it should not be.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-09-16 02:25:46.000000000
+
+Patch Set 1:
+
+Since WindowCursor isn't thread safe and should be accessed from a single thread only, adding a synchronized keyword here doesn't hurt that badly. It will be an uncontested acquire/release during method enter/exit. This is pretty cheap in Java compared to the cost of the inflation itself.
+
+I just am worried this is hiding a bigger problem.
+
+-------------------------------------
+author: Dillon Cross
+date: 2015-09-24 11:27:29.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:12, /COMMIT_MSG -> The question is if the same WindowCursor instance is used concurrently from multiple threads?
+
+Of course, we have a thread pool in Gerrit which computes the diff (which we see at [2]) but I guess that we don't share the WindowCursor instances between them. Or, have you proved the opposite?
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2015-10-12 20:24:03.000000000
+
+Patch Set 1: Code-Review-1
+
+it was proved that Gerrit used the same WindowCursor from 2 thread, the fix is here https://gerrit-review.googlesource.com/#/c/71381
+so this change shouldn't be necessary
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-12-31 04:21:12.000000000
+
+Abandoned
+
+-------------------------------------

@@ -1,0 +1,193 @@
+DESCRIPTION
+
+Bug 500332 - Dispatch progress manager notifications in the UI thread
+
+There is no more need for synchronization in listeners as they are all
+executed in the same thread (aka thread safety via thread confinement). 
+
+Listeners have been changed accordingly by: 
+- removing thread safe data structures
+- removing unnecessary synchronized blocks 
+- removing WorkLeon OchoachJobs to run task in the UI thread. The concept of
+infrastructure job disappears at the same time.
+
+Change-Id: Ie4aa98b29c7272c22dccc3fcc84d29b78e7448bf
+Signed-off-by: Cash Galloway xxx@xxx.xxx
+
+COMMENTS
+
+author: Rayan Moreno
+date: 2016-10-13 14:07:09.000000000
+
+Uploaded patch set 7.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-10-13 14:07:16.000000000
+
+Patch Set 7:
+
+Build Started https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/10923/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-10-13 14:36:59.000000000
+
+Patch Set 7: Code-Review-1
+
+Build Unstable 
+
+https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/10923/ : UNSTABLE
+
+-------------------------------------
+author: Kelly Potter
+date: 2016-10-13 15:11:21.000000000
+
+Patch Set 7:
+
+(2 comments)
+
+> From my testing, the performance level is approximately the same
+> as with the scheduledExecutor. Thoughts?
+
+It would help if you could attach actual numbers here or to the bug report... but if the Throttler is slowing things down rather than speeding them up, we shouldn't be using it - at least not in its current form.
+
+What if the Throttler omitted the timerExec (and the time delay) and just used an asyncExec on its own? Maybe the more efficient asyncExec calls would make up for the more frequent execution?
+
+If not, we could also use other techniques for introducing delays if timerExec is causing problems.
+
+I'm not sure what would perform better, but we should go with whatever the profiler and test cases thinks is fastest.
+
+Line:66, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/ProgressViewerContentProvider.java -> What is this change for? The previous version looked simpler and more efficient to me. Also, it's potentially dangerous to have the progress view schedule a job as part of a content provider that displays the state of jobs. It could easily enter an infinite cycle.
+
+Line:91, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/ProgressViewerContentProvider.java -> Again, this looks potentially dangerous. What is this change here fore?
+
+-------------------------------------
+author: Kelly Potter
+date: 2016-10-13 15:21:21.000000000
+
+Patch Set 7:
+
+(2 comments)
+
+Line:145, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/ProgressManager.java -> Rather than using a concurrent set, it *might* be more efficient to use a normal non-final HashSet protected by an external mutex. When the Throttler wakes up, it could do this:
+
+Set<JobInfo> localPendingUpdates;
+Set<GroupInfo> pendingGroupUpdates;
+synchronized (mutex) {
+  localPendingUpdates = pendingJobUpdates;
+  pendingJobUpdates = new HashSet<>();
+
+  localGroupUpdates = pendingGroupUpdates;
+  pendingGroupUpdates = new HashSet<>();
+}
+
+// use localPendingUpdates and pendingGroupUpdates from now on...
+
+...that way the UI only needs to synchronize once and doesn't need to synchronize every time it accesses pendingJobUpdates. It would also protect against the possibility of ConcurrentModificationExceptions.
+
+Of course, don't do this if your profiler says it's actually slower.
+
+Line:371, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/ProgressManager.java -> One throttler could probably do the job of both refreshGroups and refreshJobs.
+
+-------------------------------------
+author: Rayan Moreno
+date: 2016-10-18 14:04:35.000000000
+
+Patch Set 7:
+
+(4 comments)
+
+Sorry for the earlier confusing comment about the performance. The introduction of the throttler does not degrade performance: I was comparing numbers from this change + the next one (store jobInfo in the jobMonitor) to just this one + throttler. Everything is fine when comparing what should be compared.
+
+Line:145, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/ProgressManager.java -> Interesting idea, but both sets are updated from multiple worker threads.
+
+Regarding the ConcurrentModificationExceptions, the ConcurrentHashMap.KeySetView iterators are weakly consistent, so they never throw ConcurrentModificationExceptions.
+
+Line:371, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/ProgressManager.java -> Done
+
+Line:66, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/ProgressViewerContentProvider.java -> I've reverted this method and the other below to what the state on master. I've seen in unit test that some invalid thread access error were logged from the following call chain:
+
+ProgressManager.JobMonitor.done()
+JobInfo.clearTaskInfo()
+FinishedJobs.getInstance().remove(TaskInfo)
+KeptJobsListener.removed(JobTreeElement)
+
+This call chain is obviously executed in worker thread, while the ProgressViewerContentProvider.remove / ProgressViewerContentProvider.refresh must be called from the UI thread.
+
+Line:91, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/ProgressViewerContentProvider.java -> see comments above
+
+-------------------------------------
+author: Kelly Potter
+date: 2016-10-18 14:26:26.000000000
+
+Patch Set 7:
+
+(1 comment)
+
+Line:145, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/ProgressManager.java -> > Interesting idea, but both sets are updated from
+> multiple worker threads.
+
+Yes, I was aware of this. That's the reason for having a mutex. Modifications would look like this:
+
+synchronized (mutex) {
+  pendingJobUpdates.put(foo);
+}
+
+-------------------------------------
+author: Rayan Moreno
+date: 2016-10-18 14:28:47.000000000
+
+Patch Set 7:
+
+(1 comment)
+
+Line:145, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/ProgressManager.java -> Ok, I though you were suggesting that the synchronization was only needed in the throttler. I will run some bench with this.
+
+-------------------------------------
+author: Kelly Potter
+date: 2016-10-18 14:42:09.000000000
+
+Patch Set 7:
+
+(1 comment)
+
+Line:66, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/ProgressViewerContentProvider.java -> Okay, seems reasonable... but IMO we should fix this in a follow-up. KeptJobsListener.remove probably shouldn't be invoked outside the UI thread... and we should be using an asyncExec rather than a WorkbenchJob in order to get onto the UI thread.
+
+-------------------------------------
+author: Kelly Potter
+date: 2016-10-18 14:44:14.000000000
+
+Patch Set 7:
+
+(1 comment)
+
+Line:145, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/ProgressManager.java -> My bad. I drew attention to the change in the throttler because that's where the savings would occur (by having only one synchronized block rather than many). Insertion times would be pretty much unchanged.
+
+-------------------------------------
+author: Rayan Moreno
+date: 2016-10-24 13:53:46.000000000
+
+Patch Set 7:
+
+(2 comments)
+
+Line:145, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/ProgressManager.java -> It helps. The profiler says about 4% imp. (in the UI thread) with this. Not bad but I must say that I'm impressed by how well the ConcurrentHashMap.newKeySet() was actually well behaving.
+
+Line:66, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/ProgressViewerContentProvider.java -> Agreed. I'm also willing to investigate changing FinishedJob from a singleton to a normal object to better control from where it is called. That's a different bug though.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-11-13 23:54:41.000000000
+
+Project policy requires all submissions to be a fast-forward.
+
+Please rebase the change locally and upload again for review.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-11-13 23:54:57.000000000
+
+Change has been successfully merged into the git repository by Kelly Potter
+
+-------------------------------------

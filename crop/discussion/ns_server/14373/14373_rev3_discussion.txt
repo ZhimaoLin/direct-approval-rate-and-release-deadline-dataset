@@ -1,0 +1,116 @@
+DESCRIPTION
+
+Handle noproc while monitoring couch replications
+
+There is a small delay between when we spawn a new Couch replication
+and when we start monitoring it. If there is nothing to replicate,
+the Couch replication process may finish before we even start
+monitoring it and we will get the noproc error. This change set adds
+explicit handling for this case by considering such a replication as
+"completed".
+
+Change-Id: I5f9235ea671f53ce9351cf8d0bc864ce1ad129f0
+
+
+COMMENTS
+
+author: Tatiana Sheppard
+date: 2012-04-11 15:35:24.314000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Porter Oconnor
+date: 2012-04-11 15:35:40.343000000
+
+Patch Set 3: Looks good to me, approved
+
+Automatically re-added by Roselyn Villegas trivial rebase detection script.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-04-11 15:35:41.723000000
+
+Patch Set 3: Looks good to me, approved
+
+Automatically re-added by Roselyn Villegas trivial rebase detection script.
+
+-------------------------------------
+author: Tatiana Sheppard
+date: 2012-04-11 15:38:40.907000000
+
+Patch Set 3: Verified
+
+
+
+-------------------------------------
+author: Tatiana Sheppard
+date: 2012-04-11 15:38:41.381000000
+
+Change has been successfully cherry-picked as 4cb0fbd49b27d50ba90f1d69e6ef8ddbcbe04aef.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-04-11 15:42:08.642000000
+
+Patch Set 3:
+
+ofcourse it's possible to return pid and monitor when starting gen_server
+
+And I noted about why monitoring late and relying on it's Reason is questionable design. It is raceful in other words
+
+-------------------------------------
+author: Porter Oconnor
+date: 2012-04-11 15:44:31.910000000
+
+Patch Set 3:
+
+Ok, I'm not aware of that possibility.
+Can you point to me how to do it?
+
+OTP's R14B04 and older, say the following in gen_server's man page:
+
+"Using the spawn option monitor is currently not allowed, but will cause the function to fail with reason badarg."
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-04-11 15:45:55.872000000
+
+Patch Set 3:
+
+how about this http://www.erlang.org/doc/man/proc_lib.html#init_ack-1
+
+and this
+http://www.erlang.org/doc/man/gen_server.html#enter_loop-3
+
+-------------------------------------
+author: Porter Oconnor
+date: 2012-04-11 15:48:22.446000000
+
+Patch Set 3:
+
+I don't it will work. Both init_ack and enter_loop are called inside the child (gen_server). erlang:monitor(process, Pid) can not be done on behalf of other processes (always the caller who monitors).
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-04-11 18:17:37.799000000
+
+Patch Set 3:
+
+I was surprised that even proc_lib:spawn_opt doesn't support it. But it would be still possible to do by doing same stuff as proc_lib, and waiting child's ack ourselves.
+
+But I don't think it'll help much because parent will have link to new process and monitor won't help much.
+
+My point is of API design here. If plain PID is returned from couch_replicator:async_replicate, then there's seemingly no reliable way to know death reason of this process (except possible gen_event thing you mentioned but I don't know if it'll handle any death reason).
+
+-------------------------------------
+author: Porter Oconnor
+date: 2012-04-11 18:21:28.288000000
+
+Patch Set 3:
+
+That's part of the reason why there is an event for replications which tells if they were successful or not (and why).
+
+Almost 2 years ago at least, OTP source's showed that gen_server's terminate callback is always invoked, so the event is emitted there. Maybe not bullet proof, but there seems to be no more reliable way.
+
+-------------------------------------

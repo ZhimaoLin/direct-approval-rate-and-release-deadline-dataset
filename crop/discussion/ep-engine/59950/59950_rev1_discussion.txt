@@ -1,0 +1,133 @@
+DESCRIPTION
+
+MB-18120: Fix data race in ExecutorPool::numReadyTasks
+
+As identified by ThreadSantizer:
+
+    WARNING: ThreadSanitizer: data race (pid=28530)
+    Write of size 8 at 0x7d08000356f8 by main thread:
+    #0 operator delete[](void*) <null> (ep-engine_stream_test+0x0000004b849b)
+    #1 ExecutorPool::~ExecutorPool() ep-engine/src/executorpool.cc:183 (ep-engine_stream_test+0x00000073245d)
+    #2 ExecutorPool::shutdown() ep-engine/src/executorpool.cc:151 (ep-engine_stream_test+0x000000731a34)
+    #3 destroy_engine ep-engine/src/ep_engine.cc:1845 (ep-engine_stream_test+0x0000006b8a11)
+    #4 test_mb17766(std::string const&) ep-engine/tests/module_tests/stream_test.cc:151 (ep-engine_stream_test+0x00000051ec3f)
+    #5 main ep-engine/tests/module_tests/stream_test.cc:162 (ep-engine_stream_test+0x00000051d613)
+
+    Previous atomic read of size 8 at 0x7d08000356f8 by thread T10 (mutexes: write M11239):
+    #0 __tsan_atomic64_load <null> (ep-engine_stream_test+0x0000005002d4)
+    #1 std::__atomic_base<unsigned long>::operator unsigned long() const /usr/bin/../lib/gcc/x86_64-linux-gnu/5.1.0/../../../../include/c++/5.1.0/bits/atomic_base.h:396 (ep-engine_stream_test+0x00000053102b)
+    #2 ExecutorPool::trySleep(task_type_t) ep-engine/src/executorpool.h:50 (ep-engine_stream_test+0x0000007ef533)
+    #3 TaskQueue::_doSleep(ExecutorThread&, std::unique_lock<std::mutex>&) ep-engine/src/taskqueue.cc:80 (ep-engine_stream_test+0x0000007ec31a)
+    #4 TaskQueue::_fetchNextTask(ExecutorThread&, bool) ep-engine/src/taskqueue.cc:118 (ep-engine_stream_test+0x0000007ec6e9)
+    #5 TaskQueue::fetchNextTask(ExecutorThread&, bool) ep-engine/src/taskqueue.cc:161 (ep-engine_stream_test+0x0000007ed4af)
+    #6 ExecutorPool::_nextTask(ExecutorThread&, unsigned char) ep-engine/src/executorpool.cc:228 (ep-engine_stream_test+0x000000733387)
+    #7 ExecutorPool::nextTask(ExecutorThread&, unsigned char) ep-engine/src/executorpool.cc:243 (ep-engine_stream_test+0x00000073355f)
+    #8 ExecutorThread::run() ep-engine/src/executorthread.cc:81 (ep-engine_stream_test+0x0000007528fe)
+    #9 launch_executor_thread(void*) ep-engine/src/executorthread.cc:33 (ep-engine_stream_test+0x000000752608)
+    #10 CouchbaseThread::run() platform/src/cb_pthreads.cc:54 (libplatform.so.0.1.0+0x00000000c546)
+    #11 platform_thread_wrap(void*) platform/src/cb_pthreads.cc:66 (libplatform.so.0.1.0+0x00000000997d)
+
+    Mutex M11239 (0x7d4400008fc0) created at:
+    #0 pthread_mutex_lock <null> (ep-engine_stream_test+0x0000004da060)
+    #1 __gthread_mutex_lock(pthread_mutex_t*) /usr/bin/../lib/gcc/x86_64-linux-gnu/5.1.0/../../../../include/x86_64-linux-gnu/c++/5.1.0/bits/gthr-default.h:748 (ep-engine_stream_test+0x0000005383f0)
+    #2 std::mutex::lock() /usr/bin/../lib/gcc/x86_64-linux-gnu/5.1.0/../../../../include/c++/5.1.0/mutex:135 (ep-engine_stream_test+0x00000053ce33)
+    #3 std::unique_lock<std::mutex>::lock() /usr/bin/../lib/gcc/x86_64-linux-gnu/5.1.0/../../../../include/c++/5.1.0/mutex:476 (ep-engine_stream_test+0x00000068a784)
+    #4 std::unique_lock<std::mutex>::unique_lock(std::mutex&) /usr/bin/../lib/gcc/x86_64-linux-gnu/5.1.0/../../../../include/c++/5.1.0/mutex:406 (ep-engine_stream_test+0x00000068a475)
+    #5 TaskQueue::_fetchNextTask(ExecutorThread&, bool) ep-engine/src/taskqueue.cc:116 (ep-engine_stream_test+0x0000007ec6b9)
+    #6 TaskQueue::fetchNextTask(ExecutorThread&, bool) ep-engine/src/taskqueue.cc:161 (ep-engine_stream_test+0x0000007ed4af)
+    #7 ExecutorPool::_nextTask(ExecutorThread&, unsigned char) ep-engine/src/executorpool.cc:223 (ep-engine_stream_test+0x00000073328e)
+    #8 ExecutorPool::nextTask(ExecutorThread&, unsigned char) ep-engine/src/executorpool.cc:243 (ep-engine_stream_test+0x00000073355f)
+    #9 ExecutorThread::run() ep-engine/src/executorthread.cc:81 (ep-engine_stream_test+0x0000007528fe)
+    #10 launch_executor_thread(void*) ep-engine/src/executorthread.cc:33 (ep-engine_stream_test+0x000000752608)
+    #11 CouchbaseThread::run() platform/src/cb_pthreads.cc:54 (libplatform.so.0.1.0+0x00000000c546)
+    #12 platform_thread_wrap(void*) platform/src/cb_pthreads.cc:66 (libplatform.so.0.1.0+0x00000000997d)
+
+    Thread T10 'mc:nonio_9' (tid=28543, running) created by main thread at:
+    #0 pthread_create <null> (ep-engine_stream_test+0x0000004bb211)
+    #1 cb_create_named_thread platform/src/cb_pthreads.cc:104 (libplatform.so.0.1.0+0x000000009812)
+    #2 ExecutorThread::start() ep-engine/src/executorthread.cc:46 (ep-engine_stream_test+0x0000007522da)
+    #3 ExecutorPool::_startWorkers() ep-engine/src/executorpool.cc:530 (ep-engine_stream_test+0x0000007389e5)
+    #4 ExecutorPool::_registerTaskable(Taskable&) ep-engine/src/executorpool.cc:480 (ep-engine_stream_test+0x000000737937)
+    #5 ExecutorPool::registerTaskable(Taskable&) ep-engine/src/executorpool.cc:485 (ep-engine_stream_test+0x000000738e53)
+    #6 EventuallyPersistentStore::EventuallyPersistentStore(EventuallyPersistentEngine&) ep-engine/src/ep.cc:301 (ep-engine_stream_test+0x00000064b39a)
+    #7 EventuallyPersistentEngine::initialize(char const*) ep-engine/src/ep_engine.cc:2132 (ep-engine_stream_test+0x0000006c016b)
+    #8 test_mb17766(std::string const&) ep-engine/tests/module_tests/stream_test.cc:81 (ep-engine_stream_test+0x00000051daed)
+    #9 main ep-engine/tests/module_tests/stream_test.cc:162 (ep-engine_stream_test+0x00000051d613)
+
+SUMMARY: ThreadSanitizer: data race ??:0 operator delete[](void*)
+
+Change-Id: Ie06a5cf0267748abc5a51a9051d2398564bff32f
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2016-02-15 10:05:41.580000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-15 10:05:48.112000000
+
+Patch Set 1:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2444/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-15 10:13:08.847000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1709/ : FAILURE
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2444/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-15 10:27:09.522000000
+
+Patch Set 1: -Verified
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1710/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-15 10:32:49.743000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2444/ : SUCCESS
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1710/ : SUCCESS
+
+-------------------------------------
+author: Kymani Ramirez
+date: 2016-02-15 14:22:42.171000000
+
+Patch Set 1: Code-Review+2
+
+-------------------------------------
+author: Asher Vang
+date: 2016-02-15 16:31:44.104000000
+
+Patch Set 1: Code-Review+2
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-02-15 17:03:47.874000000
+
+Patch Set 1: Code-Review+2
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-02-15 17:38:49.488000000
+
+Change has been successfully cherry-picked as 2db3059d445e5547a8a3d0a94a2687b4377813ab
+
+-------------------------------------

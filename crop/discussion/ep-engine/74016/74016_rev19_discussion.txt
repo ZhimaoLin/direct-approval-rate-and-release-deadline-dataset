@@ -1,0 +1,87 @@
+DESCRIPTION
+
+MB-22013: Port access scanner to PauseResume model
+
+ItemAccessVisitor currently visits all StoredValues in a hashtable
+bucket before releasing the lock and writing down to disk. This commit
+changes ItemAccessVisitor to a PauseResumeHashTableVisitor allows us to
+pause after some number of items in a hashtable bucket which frees up
+the corresponding lock for other tasks/operations. It also means that we
+write the information down to disk more often, reducing the memory
+overhead required.
+
+A new configuration option has been added specifying the maximum number
+of StoredValues to visit before pausing and writing to disk.
+
+Under conditions where the access scanner is running constantly we see
+some performance improvement in the benchmark below where we vary
+whether the access scanner is running and the number of bucket locks:
+
+Before:
+
+Benchmark                                                                Time           CPU Iterations
+------------------------------------------------------------------------------------------------------
+VariableLockEngineFixture/AccessScannerVaryLocks/0/2/real_time   259213845 ns  258305333 ns          3    18.837k items/s Control
+VariableLockEngineFixture/AccessScannerVaryLocks/1/2/real_time   494826794 ns  712463500 ns          2   9.86772k items/s AccessScanner
+VariableLockEngineFixture/AccessScannerVaryLocks/0/4/real_time   244995117 ns  244407667 ns          3   19.9302k items/s Control
+VariableLockEngineFixture/AccessScannerVaryLocks/1/4/real_time   437257051 ns  661884500 ns          2   11.1669k items/s AccessScanner
+VariableLockEngineFixture/AccessScannerVaryLocks/0/8/real_time   260694345 ns  259454667 ns          3     18.73k items/s Control
+VariableLockEngineFixture/AccessScannerVaryLocks/1/8/real_time   345757961 ns  573038000 ns          2   14.1221k items/s AccessScanner
+VariableLockEngineFixture/AccessScannerVaryLocks/0/16/real_time  246684233 ns  246066333 ns          3   19.7938k items/s Control
+VariableLockEngineFixture/AccessScannerVaryLocks/1/16/real_time  310731888 ns  542844000 ns          2   15.7139k items/s AccessScanner
+
+After:
+
+Maxmimum of 16 items read before pause.
+
+Benchmark                                                                Time           CPU Iterations
+------------------------------------------------------------------------------------------------------
+VariableLockEngineFixture/AccessScannerVaryLocks/0/2/real_time   254992008 ns  254433333 ns          3   19.1489k items/s Control
+VariableLockEngineFixture/AccessScannerVaryLocks/1/2/real_time   374610901 ns  553562000 ns          2   13.0344k items/s AccessScanner
+VariableLockEngineFixture/AccessScannerVaryLocks/0/4/real_time   258882523 ns  258252000 ns          2   18.8611k items/s Control
+VariableLockEngineFixture/AccessScannerVaryLocks/1/4/real_time   311063528 ns  488934000 ns          2   15.6972k items/s AccessScanner
+VariableLockEngineFixture/AccessScannerVaryLocks/0/8/real_time   250471592 ns  249997333 ns          3   19.4945k items/s Control
+VariableLockEngineFixture/AccessScannerVaryLocks/1/8/real_time   281916380 ns  453035500 ns          2   17.3201k items/s AccessScanner
+VariableLockEngineFixture/AccessScannerVaryLocks/0/16/real_time  248978535 ns  248527333 ns          3   19.6114k items/s Control
+VariableLockEngineFixture/AccessScannerVaryLocks/1/16/real_time  281220436 ns  454410000 ns          2   17.3629k items/s AccessScanner
+
+From the above we can see a clear improvement, most notably at 2 and 4
+locks, where the improvement is 30% and 40% respectively.
+
+Change-Id: If258a2272b014ce73e0948aee5ba71940415a718
+
+
+COMMENTS
+
+author: Aaliyah Proctor
+date: 2017-03-06 09:51:02.063000000
+
+Uploaded patch set 19.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-03-06 10:02:19.971000000
+
+Patch Set 19: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/3160/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/4334/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/3903/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/4557/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-03-06 10:22:34.950000000
+
+Patch Set 19: Code-Review-1
+
+(1 comment)
+
+Line:28, /COMMIT_MSG -> Not sure how accurate Google Benchmark will be with only 2-3 iterations - does increasing the iteration count (say reducing the item count in the loop?) make any difference in the numbers?
+
+-------------------------------------

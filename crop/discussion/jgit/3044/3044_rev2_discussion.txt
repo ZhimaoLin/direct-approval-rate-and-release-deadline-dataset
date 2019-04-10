@@ -1,0 +1,97 @@
+DESCRIPTION
+
+Fixed handling latin-1 encoding string
+
+Bug: 342259
+Change-Id: Ie285b8819b5ea6f9892ebafc4ebbd9c6d091d1fe
+Signed-off-by: Malia Sampson xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Malia Sampson
+date: 2011-04-10 19:21:38.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-04-10 19:21:42.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/249/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-04-10 19:24:11.000000000
+
+Patch Set 2: Build Successful
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/249/ : SUCCESS
+
+-------------------------------------
+author: Juliet Cantu
+date: 2011-04-10 20:55:18.000000000
+
+Patch Set 2: I would prefer that you didn't submit this
+
+1) Can we ban the word "fix" and its inclinations from commit messages?
+
+2) C Git does not understand the name iso-latin-1, so why should JGit?
+
+-------------------------------------
+author: Juliet Cantu
+date: 2011-04-10 20:57:54.000000000
+
+Patch Set 2:
+
+C Git does not support any (iso-)?latin-\d+ header.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-04-11 00:25:17.000000000
+
+Patch Set 2: I would prefer that you didn't submit this
+
+(3 inline comments)
+
+C Git permits the user to set any string they want into the i18n.commitencoding variable in the config file. If this isn't UTF-8 or utf-8, then the string is stored as-is into the "encoding" header of a commit object.
+
+I suspect the bug reporter had some user enter "latin-1" into this variable and create a ton of commits with it. C Git when reading commits tries to honor the encoding header, and then falls back when it doesn't understand it. That fallback is probably working here to allow the latin-1 encoding header.
+
+IMHO, JGit will need to support this header, just like we need to support that damn leading '0' in the mode field of tree objects, thanks to GitHub's online web editor.
+
+Of course, according to http://www.iana.org/assignments/character-sets the correct alias is 'latin1', not 'latin-1'. *sigh*
+
+Line:655, org.eclipse.jgit/src/org/eclipse/jgit/util/RawParseUtils.java -> I suspect we will need other translations here. Lets instead set up a map that we can easily add other entries into:
+
+  private static final Map<String, Charset> encodingAliases;
+
+  static {
+    encodingAliases = new HashMap<String, String>();
+    encodingAliases.put("latin-1", Charset.forName("ISO-8859-1"));
+  }
+
+  String decoded = decode(...);
+  try {
+    return Charset.forName(decoded);
+  } catch (IllegalCharsetNameException badName) {
+    Charset aliased = encodingAliases.get(StringUtils.toLowerCase(decoded));
+    if (aliased != null)
+      return aliased;
+    throw badName;
+  } catch (UnsupportedCharsetException badName) {
+    Charset aliased = encodingAliases.get(StringUtils.toLowerCase(decoded));
+    if (aliased != null)
+      return aliased;
+    throw badName;
+  }
+
+Line:45, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/RawParseUtilsTest.java -> Please don't import *, instead import the methods used
+
+Line:64, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/RawParseUtilsTest.java -> Please assert the Charset is the ISO-8859-1 charset.
+
+-------------------------------------

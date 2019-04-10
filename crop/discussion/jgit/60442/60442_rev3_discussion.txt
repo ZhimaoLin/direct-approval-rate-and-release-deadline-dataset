@@ -1,0 +1,211 @@
+DESCRIPTION
+
+Null-annotated Repository class and fixed related compiler errors
+
+org.eclipse.jgit.lib.Repository class is an example of the API which
+should be written with Java 8 java.util.Optional<T> type. Unfortunately
+this API is already released and widely used. The good clients are
+currently doing their best with checking return values for null and bad
+clients do not know how bad their code is.
+
+I've tried not to change any logic and to be as less intrusive as
+possible. Most of the JGit code was well prepared to this, only few
+classes needed some smaller fixes. That's not the case for EGit - we
+will have 63 compiler errors there after this change, a patch follows.
+
+This change fixes all compiler errors in JGit and replaces possible
+NPE's with either appropriate exceptions, avoiding multiple "Nullable
+return" method calls or early returning from the method.
+
+Change-Id: Ie8369d2c9c5fac5ce83b3b1b9bc217d7b55502a3
+Signed-off-by: Jayvion Booth xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Jayvion Booth
+date: 2015-11-17 17:29:14.000000000
+
+Uploaded patch set 3: Patch Set 2 was rebased.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-11-17 17:46:23.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7518/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-11-17 17:54:33.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7518/ : SUCCESS
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2015-11-17 18:04:12.000000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:419, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> For all @return on Javadoc that is @Nullable, please append ",or xxx@xxx.xxx null} if <condition>"
+
+-------------------------------------
+author: Eden Lin
+date: 2015-11-17 18:15:16.000000000
+
+Patch Set 3: Code-Review-1
+
+(3 comments)
+
+Some initial thoughts. I'm half-way through.
+
+Line:165, org.eclipse.jgit.pgm/src/org/eclipse/jgit/pgm/Branch.java -> Can decrease nesting using 'else if':
+
+  if (startRef != null) {
+    startBranch = startRef.getName();
+  } else if (startAt != null) {
+    startBranch = startAt.name();
+  } else {
+    throw die(...);
+  }
+
+Confusingly, the startBranch doesn't have to be a ref name. So a clearer message would be something like
+
+    throw die(format("Not a valid commit name: ''{0}''", startBranch));
+
+Line:228, org.eclipse.jgit/src/org/eclipse/jgit/api/CheckoutCommand.java -> Git allows checkout from an unborn branch. Worth a TODO to support that here, too?
+
+Line:152, org.eclipse.jgit.pgm/src/org/eclipse/jgit/pgm/Merge.java -> Git has a special case for this case (merge from an unborn branch merges the named commits and resets to the result) but that would be outside the scope of this change.
+
+Should this check happen earlier on, when oldHead is read?
+
+-------------------------------------
+author: Eden Lin
+date: 2015-11-17 19:26:53.000000000
+
+Patch Set 3:
+
+(14 comments)
+
+Line:597, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> This can only happen if the ref disappeared after the caller resolved it.
+
+I think it is okay to return Collections.emptySet() in that case.
+
+Line:194, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> I think this should be nullable.
+
+If that's inconvenient to callers, it's worth introducing a variant that throws an exception instead of returning null in the no-File-available case.
+
+Line:217, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java xxx@xxx.xxx
+
+Line:222, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java xxx@xxx.xxx
+
+Line:227, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java xxx@xxx.xxx --- e.g., InMemoryRepository leaves this null.
+
+Line:855, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java xxx@xxx.xxx
+
+Line:984, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java xxx@xxx.xxx
+
+Line:1028, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java xxx@xxx.xxx
+
+Line:1247, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java xxx@xxx.xxx
+
+Line:1305, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java xxx@xxx.xxx
+
+Line:679, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> The only caller is processStep. In call():
+
+- ABORT doesn't call processStep
+- BEGIN reads HEAD and throws an exception if it's absent in initFilesAndRewind.
+- CONTINUE reads HEAD and throws an exception if it's absent in continueRebase.
+- SKIP reads HEAD and throws an exception if it's absent in checkoutCurrentHead.
+- PROCESS_STEPS doesn't check HEAD
+
+So this looks like a behavior change in the PROCESS_STEPS case. Should it just throw an exception when HEAD doesn't resolve (e.g., by calling getHead)?
+
+Line:753, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> This is about ORIG_HEAD, not HEAD. And it's about preserving the old value for it --- we don't care what value it had.
+
+Would something like this work?
+
+  Ref ref = repo.getRef(ORIG_HEAD);
+  ObjectId oldOrigId = ref == null ? null : ref.getObjectId();
+  try {
+    ...
+  } finally {
+    repo.writeOrigHead(oldOrigId);
+  }
+
+Line:173, org.eclipse.jgit/src/org/eclipse/jgit/lib/RefRename.java -> Make sense. If head == null then the repository is corrupt but we can handle it gracefully.
+
+Line:127, org.eclipse.jgit/src/org/eclipse/jgit/api/RenameBranchCommand.java -> Getting null here indicates repository corruption --- HEAD is always supposed to be either pointing to a (possibly unborn) branch or a specific commit id (the detached head case). I suspect the right long-term fix would be to deprecate getFullBranch and encourage use of a different method that throws an exception in the corrupt case.
+
+C Git prints "fatal: Not a git repository (or any of the parent directories): .git" in this case. So how about something like
+
+  throw new NoHeadException("Invalid repository --- cannot read HEAD");
+
+? (Even better would be a new InvalidRepositoryException.)
+
+-------------------------------------
+author: Eden Lin
+date: 2015-11-17 19:33:50.000000000
+
+Patch Set 3:
+
+(the rest looks good)
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-11-18 21:32:36.000000000
+
+Patch Set 3:
+
+(17 comments)
+
+Next patch should address all review comments. Thanks for reviewing this huge change!
+
+Line:165, org.eclipse.jgit.pgm/src/org/eclipse/jgit/pgm/Branch.java -> Done
+
+Line:597, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> Done
+
+Line:194, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> Can we postpone this to the next change and replace with TODO? There are few cases in JGit and ~50 errors in JGit where this shows new compile errors...
+
+Line:217, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> Done
+
+Line:222, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> Done
+
+Line:227, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> Good catch. Can we postpone this to the next change and replace with TODO? There are 32 new compile errors in JGit...
+
+Line:855, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> Done
+
+Line:984, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> Done
+
+Line:1028, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> This is not true for InMemoryRepository
+
+Line:1247, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> Done
+
+Line:1305, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> Done
+
+Line:679, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Done
+
+Line:753, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Done
+
+Line:228, org.eclipse.jgit/src/org/eclipse/jgit/api/CheckoutCommand.java -> Done
+
+Line:173, org.eclipse.jgit/src/org/eclipse/jgit/lib/RefRename.java -> OK.
+
+Line:152, org.eclipse.jgit.pgm/src/org/eclipse/jgit/pgm/Merge.java -> Code wise, the oldHead is only needed here and in the MERGED case below. Moving the check to the place where it was read would change the command behavior. I've changed the way the ref was acquired and moved it (together with NP check to a method).
+
+Line:127, org.eclipse.jgit/src/org/eclipse/jgit/api/RenameBranchCommand.java -> I would like to keep the changes at minimum in this review. NoHeadException would be also do the job here.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-11-25 20:05:11.000000000
+
+Change has been successfully merged into the git repository by Jayvion Booth
+
+-------------------------------------

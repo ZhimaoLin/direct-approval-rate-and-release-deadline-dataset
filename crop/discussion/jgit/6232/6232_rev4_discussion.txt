@@ -1,0 +1,101 @@
+DESCRIPTION
+
+Make DirCacheCheckout update timestamps in the index.
+
+This updates the timestamp of files that are not touched during
+checkout. Otherwise the timestamp will always be zero, causing the
+IndexDiffFilter to always calculate the checksum of file contents.
+
+Change-Id: I18047f5725f22811bb4194ca1d3a3cac56074183
+
+
+COMMENTS
+
+author: Bryanna Douglas
+date: 2012-06-06 05:58:23.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-06-06 05:58:27.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1965/ 
+
+-------------------------------------
+author: Bryanna Douglas
+date: 2012-06-06 05:58:52.000000000
+
+Patch Set 4:
+
+my bad - i tested wrong - now it's working with and without my code.
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-06-06 06:04:12.000000000
+
+Patch Set 4: Verified
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1965/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2012-06-06 08:54:13.000000000
+
+Patch Set 4: (3 inline comments)
+
+
+
+Line:30, org.eclipse.jgit.test/tst/org/eclipse/jgit/lib/IndexModificationTimesTest.java -> That's not ok: having an index entry with a modification time of 0 is a feature - nut a bug :-) . Such entries are called smudged and we do that to mark that we can't trust the modification timestamp anymore to detect dirtyness of the file. Imagine you create a file, add it to the index and modify it again all between two ticks  of the filesystem timer. The file, the index entry and the index file (.git/index) all have the same lastmodifed date. How do you handle this? How can you tell the file is modified although index entry and local file have same timestamp. Git's solution as described in [1] is to set the modification timestamp to 0 (to smduge it) to force a content check next time check the file for dirtyness (e.g. during checkout, reset, status). If this content check happens at a time where the filesystem timer has finally poceeded and we find out that the content is not modified ... then we should unsmduge the entry. The last part is something I gues we don't do correctly.
+
+I'll copy this to mailing list (you're thread about speeding up reindexing) - let's furhter discuss there.
+
+Line:650, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> It's sematically wrong to copy the files modification time to the index entry. The file may be dirty (updated since you last added it to the index) and therefore file and index entry modification time have to have different timestamps.
+
+Line:786, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> wrong, the index entry and the filesystem may differ from content and modification time. It's not ok to blindly copy the filesystem modification time to the index entry. Let's dicuss further on ML.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2012-06-06 08:54:30.000000000
+
+Patch Set 4: I would prefer that you didn't submit this
+
+
+
+-------------------------------------
+author: Zachary Orozco
+date: 2012-06-06 09:17:55.000000000
+
+Patch Set 4: (1 inline comment)
+
+
+
+Line:30, org.eclipse.jgit.test/tst/org/eclipse/jgit/lib/IndexModificationTimesTest.java -> oops, sorry, forget what I said. I mixed some things together wrongly. 
+
+Indeed we smudge entries (mark that we cant trust the timestamps) by setting the length to 0 (and not the modification timestamp). That means: your test is ok. Sorry for that.
+
+-------------------------------------
+author: Bryanna Douglas
+date: 2012-06-06 09:19:46.000000000
+
+Patch Set 4: (1 inline comment)
+
+
+
+Line:30, org.eclipse.jgit.test/tst/org/eclipse/jgit/lib/IndexModificationTimesTest.java -> hah, just wanted to reply, but you where faster :)
+
+-------------------------------------
+author: Bryanna Douglas
+date: 2012-06-06 09:30:05.000000000
+
+Patch Set 4: (1 inline comment)
+
+
+
+Line:650, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> ah, i think i see. during checkout with two trees i now totally skip all this. only in the case with one tree (plain checkout), i update the stamp on files that i keep. that should be sufficient to keep most timestamps up to date. of course there still may be cases where i don't want to do that.
+
+-------------------------------------

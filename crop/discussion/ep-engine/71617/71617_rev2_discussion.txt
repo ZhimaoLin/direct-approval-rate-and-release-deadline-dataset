@@ -1,0 +1,37 @@
+DESCRIPTION
+
+basic_chk_test: Speedup by yielding to set_threads
+
+The CheckpointTest.basic_chk_test can be very slow under Valgrind
+(often 250s, and sometimes times out (>1200s). This appears to be due
+to a combintation of three things:
+
+(a) Valgrind only scheduling one thread at once and
+(b) Three of the "backend" threads (persistence, checkpoint remover
+    and tap client) just spin in a while loop trying to do their
+    respective tasks forever (greedly).
+(c) All threads ultimately need to acuire the
+    CheckpointManager::queueLock to make progress.
+
+As a result, the front-end SET threads (which need to advance to
+complete the workload) can become starved - they are fighting for the
+queueLock.
+
+To address this, yield in each of the background threads on each loop
+iteration. This reduces the runtime of the test significantly - it now
+finishes in under 1s on my local Docker container.
+
+Change-Id: I250897ec18ddb069ac1df79b61556e213f5326df
+Reviewed-on: http://review.Piper Jefferson.org/71617
+Tested-by: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+Reviewed-by: Adrianna Holmes <Adrianna xxx@xxx.xxx Jefferson.com>
+
+
+COMMENTS
+
+author: Tate Garrett
+date: 2017-01-05 21:38:32.718000000
+
+Change has been successfully cherry-picked as 224a0e4854105a6fc376c2d167c2aceaabe4552b by Ashlee Kent
+
+-------------------------------------

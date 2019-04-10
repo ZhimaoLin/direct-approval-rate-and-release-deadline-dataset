@@ -1,0 +1,258 @@
+DESCRIPTION
+
+MB-21650: Don't copy key when servicing memcached get() request
+
+In the get request path (EvpGet() and onwards) we take a copy of the
+key from the request packet into a std::string. This is then passed
+around ep-engine (read-only) to retrieve the document to return to the
+user.
+
+This incurs the cost of creating a std::string object per get request,
+along with the related memory tracking overheads which are not
+insigificant (see ObjectRegistry).
+
+To reduce this cost, use a const_sized_buffer (essentially a pair of
+{const char*, size_t}) for the key, relying on the fact that the
+client's request is always available in the request packet owned by
+memcached.
+
+On the 2-node 'hera' cluster this improves the op/s of the following
+pillowfight benchmark, from 1.8M op/s total to 2.3M op/s:
+
+    cbc-pillowfight --spec Piper Jefferson://172.23.96.117:12000/default \
+        --batch-size 1000 --num-items 1000000 --num-threads 50 \
+         --min-size 512 --max-size 512 --set-pct 20
+
+(client running on 3rd hera-client node).
+
+Change-Id: I4177b4329e6903840cfa8754a8fcd5931250e3c0
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2016-11-17 09:58:49.910000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-17 09:58:56.062000000
+
+Patch Set 3:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/1807/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-17 09:58:56.224000000
+
+Patch Set 3:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/1596/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-17 09:58:56.352000000
+
+Patch Set 3:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-watson/420/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-17 09:58:56.501000000
+
+Patch Set 3:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/1389/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-17 10:39:05.615000000
+
+Patch Set 3: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/1807/ : ABORTED
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/1596/ : FAILURE
+
+ThreadSanitizer issue: lock-order-inversion (potential deadlock) ??:0 pthread_rwlock_wrlock  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-watson/1596/ )
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-watson/1596/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/1389/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-watson/420/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-17 11:28:12.909000000
+
+Patch Set 3: -Verified
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/1808/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-17 11:47:05.913000000
+
+Patch Set 3: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/1596/ : FAILURE
+
+ThreadSanitizer issue: lock-order-inversion (potential deadlock) ??:0 pthread_rwlock_wrlock  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-watson/1596/ )
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-watson/1596/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/1808/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/1389/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-watson/420/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-17 12:35:16.296000000
+
+Patch Set 3: -Verified
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/1599/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-17 12:35:16.935000000
+
+Patch Set 3: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/1808/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/1599/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/1389/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-watson/420/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-17 12:35:20.701000000
+
+Patch Set 3: -Verified
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/1811/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-17 12:49:02.864000000
+
+Patch Set 3: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/1599/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/1389/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-watson/420/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/1811/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-17 13:01:04.869000000
+
+Patch Set 3: -Verified
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/1601/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-17 13:07:58.961000000
+
+Patch Set 3: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/1601/ : FAILURE
+
+ThreadSanitizer issue: lock-order-inversion (potential deadlock) ??:0 pthread_rwlock_wrlock  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-watson/1601/ )
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-watson/1601/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/1389/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/1811/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-watson/420/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-17 13:37:17.444000000
+
+Patch Set 3: -Verified
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/1602/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-17 13:41:36.613000000
+
+Patch Set 3: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/1602/ : FAILURE
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-watson/1602/ )
+
+ThreadSanitizer issue: lock-order-inversion (potential deadlock) ??:0 pthread_rwlock_wrlock  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-watson/1602/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/1389/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/1811/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-watson/420/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-17 16:22:30.747000000
+
+Patch Set 3: -Verified
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/1604/ (4/4)
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-11-17 16:24:51.479000000
+
+Abandoned
+
+Abandoning to break "CV block" due to "unmerged transitive dependancies" with the memcached patch of the same ChangeId.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-17 16:27:14.115000000
+
+Patch Set 3:
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/1604/ : FAILURE
+
+ThreadSanitizer issue: lock-order-inversion (potential deadlock) ??:0 pthread_rwlock_wrlock  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-watson/1604/ )
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-watson/1604/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/1389/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/1811/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-watson/420/ : SUCCESS
+
+-------------------------------------

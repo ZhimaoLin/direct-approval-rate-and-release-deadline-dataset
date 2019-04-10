@@ -1,0 +1,163 @@
+DESCRIPTION
+
+TMF: Introduce a framework to hook trace analysis modules/plugins
+
+* Add a new extension point to define trace analysis modules
+* Add new interface IAnalysisModule and abstract class
+  TmfAbstractAnalysisModule to implement the analysis itself
+* TmfAnalysisManager is the main class to obtain which analysis are available
+  to a trace.
+* On the UI side, analysis and their provided views (if any) are now children
+  of the trace and can be directly opened.
+* Unit tests in tmf.core and tmf.ui provide stub analysis
+
+Change-Id: Ie0d0fa9b726555b6416829c1c49e44301297d11b
+Signed-off-by: Aryana Jones xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Annalise Jimenez
+date: 2013-07-30 20:14:53.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-07-30 20:14:59.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/sandbox/job/linuxtools/3027/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-07-30 20:32:53.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/linuxtools/3027/ : SUCCESS
+
+-------------------------------------
+author: Ricky Reeves
+date: 2013-08-01 18:22:35.000000000
+
+Patch Set 2: Code-Review-1
+
+(7 comments)
+
+First round of review:
+
+- I tried it to add a simple analysis module and it was straight forward. It becomes clearer. Code talks :-)
+
+- The biggest issue I had that the trace has to be a directory. For traces being just a file doesn't work and the analysis modules don't show up in the Project Explorer.
+
+- There is no way of adding a view of a new plug-in to an existing analysis. I think, this should be possible, e.g. by registering a view to an analysis
+
+Line:72, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/IAnalysisModule.java -> I don't see an action on top for the analysis itself to run the analysis. If it returns false, who is responsible for running the analysis?
+
+Line:149, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/IAnalysisModule.java -> Why is appliesToTraceType() and canExecute() necessary? It seems that you want support the case that a analysis can be applied to a trace type but it cannot be executed for some reason. Any example?
+
+Line:170, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/IAnalysisModule.java -> The help text provide here should the same help that is part of the eclipse help plug-in. Maybe instead of returning a help text string it should return an ID which can be used to open the Eclipse Help. Here is the corresponding code:
+PlatformUI.getWorkbench().getHelpSystem().displayHelp(getId());
+Additonally the analysis providing plug-in has to provide the help context in the plugin.xml
+
+<extension point="org.eclipse.help.contexts">
+      <contexts file="contexts.xml" />
+   </extension>.
+
+If we don't have single place for help, then it's quite possible that both help texts are not the same and one of them get's easily outdated.
+
+Line:30, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/views/analysis/ITmfAnalysisViewable.java -> Add a register view to this interface.
+
+Line:12, lttng/org.eclipse.linuxtools.tmf.core/schema/org.eclipse.linuxtools.tmf.core.analysis.exsd -> eventually, when the extension point definition is stable, the documentation fields below need to be filled.
+
+Line:616, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfTraceElement.java -> This only applies for traces that are folders (e.g. LTTng CTF). This doesn't work for traces that are files.
+
+Line:23, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfAnalysisView.java -> Rename it to TmfAnalysisViewElement. Otherwise people think this is an Eclipse view implementation, I did at least
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2013-08-02 13:30:42.000000000
+
+Patch Set 2:
+
+(5 comments)
+
+Thanks for the comments Meredith Scott.
+
+I'll test it with traces that are files only, I hadn't done that.
+
+As for having views from other plugins register, this is the point of disagreement Alex and I have been discussing on the mailing list.  I suggested an extension point, Alex prefers to create a new analysis extending the first, but with the view.  What is your opinion on this?
+
+Line:72, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/IAnalysisModule.java -> It would be executed on request, by 1- The command line when requested by user, 2- Other analysis requiring the output, 3- When a view is opened and needs the output of the analysis to display
+
+Line:149, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/IAnalysisModule.java -> For instance, the lttng kernel execution graph applies to lttng kernel traces and so will appear under any lttng kernel trace as a possible analysis.  But if events sched_switch, sched_wakeup, etc are not enabled in the trace, it cannot be executed.  Some help message will tell the user why it cannot be executed and what to do if he wants it.
+
+Line:170, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/IAnalysisModule.java -> Yes I eventually meant something like that.  Thanks for the tip.  Can this help file also be displayed as text output, like for the command line?
+
+Line:30, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/views/analysis/ITmfAnalysisViewable.java -> Do you have a suggestions as to how and where the view should register?  In the plugin activator?
+
+Line:616, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfTraceElement.java -> Good point, I only tested with lttng kernel and ctf traces ;-)
+
+-------------------------------------
+author: Ricky Reeves
+date: 2013-08-02 17:22:01.000000000
+
+Patch Set 2:
+
+(4 comments)
+
+> As for having views from other plugins register, this is the
+> point of disagreement Alex and I have been discussing on 
+> the mailing list. I suggested an extension point, Alex 
+> prefers to create a new analysis extending the first, but 
+> with the view. What is your opinion on this?
+
+I think, we get away with no additional extension point. If it is possible that a view can register to a analysis module then new views can easily be added to existing analysis modules without having to extend an analysis module just to add a view and without an additional extension point.
+
+I think, we should start with that approach and then we can see. If it turns out that an additional extension point for views is beneficial we can add it later on.
+
+On questions though comes up, what if analysis type doesn't have views (i.e. doesn't implement ITmfAnalysisViewable then a new plug-in cannot register to it. Shouldn't the getViews() and registerView() be part of the AnalysisType extension point?
+
+Line:72, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/IAnalysisModule.java -> ok
+
+Line:149, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/IAnalysisModule.java -> Ok, I understand. But don't have to run the analysis first to know that certain events are missing? Just a question
+
+Line:170, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/IAnalysisModule.java -> I don't know if it can be displayed from command line. Needs to be investigated. 
+
+BTW, PlatformUI.getWorkbench().getHelpSystem().displayHelp(getId()) it will open a view with the help file displayed (if I remember correctly).
+
+Line:30, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/views/analysis/ITmfAnalysisViewable.java -> It would register to the analysis module that implements this interface. By doing that the registered view can be returned with getViews().
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2013-08-05 13:03:58.000000000
+
+Patch Set 2:
+
+(2 comments)
+
+A view could register to the analysis module in the plugin activator?  Would that be a good place for it?
+
+And indeed, we want all analysis module to have the possibility to have a view register to it, not just those implementing IAnalysisViewable.  Maybe that could go with the concept of "output".  Views are a way to "output" the analysis, just like... whatever else may register as output...  This way, not only views could be listed under the analysis in the project explorer, but also all analysis outputs (files, text messages, etc)
+
+Line:149, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/IAnalysisModule.java -> Just looking at the metadata is enough.  For example, the function hasAllEvents(...) of TmfCtfTrace would be called before the analysis and we would know if we run it or not.
+
+Line:170, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/IAnalysisModule.java -> I'd leave it like this for now, with a TODO comment to come back to it later.  The ideal solution would be same text for both eclipse UI / RCP / command line.
+
+-------------------------------------
+author: Ricky Reeves
+date: 2013-08-05 15:07:39.000000000
+
+Patch Set 2:
+
+It's a good question, when to register? At plug-in activation time is probably a good time to do so. However, you have to make sure that all Analysis modules are created. I guess the manager of the analysis extension point will take care of that. 
+
+Something like:
+IAnalysisModule analysis TmfAnalysisManager.getInstance().getAnalysisType(nameOfAnalysis);
+analysis.register(nameOfView);
+
+-------------------------------------

@@ -1,0 +1,129 @@
+DESCRIPTION
+
+Bitmap builder: avoid synthetic accessors
+
+I ran JProfiler on the pack bitmap index code. I observed that ~64% of the
+time spent in PackWriterBitmapPreparer.selectCommits() was spent in
+BitmapIndexImpl$CompressedBitmapBuilder.contains(), and that method showed
+multiple hotspots in .access$N synthetic functions for nested classes.
+
+By removing the "private" visibility modifiers in nested classes, the time in
+CompressedBitmapBuilder.contains() went from ~64% to ~24%. Over five runs,
+the total time for "selecting bitmaps" for the msm-3.10 Linux repository went
+from 441.0 to 429.2 seconds. That isn't huge, but it is a fairly cheap win.
+
+Remove getter accessors for several of these nested classes. Currently some
+nested classes provide getters on private members while others allow direct
+access of members by outer classes. Since these are primarily value types
+used in computationally intenstive parts of code, I propose migrating to
+a style of preferring direct access for members of these nested value types.
+
+Change-Id: Idfbdecd63f12936f74637a2d57e117ec095c8a37
+Signed-off-by: Ariel Sawyer xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Ariel Sawyer
+date: 2015-10-27 16:31:30.000000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-10-27 16:31:36.000000000
+
+Patch Set 5:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7303/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-10-27 16:40:38.000000000
+
+Patch Set 5: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7303/ : SUCCESS
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-10-27 19:06:37.000000000
+
+Patch Set 5: Code-Review-1
+
+Terry, can we please separate performance related issues from style related?
+It is really hard to understand which change was because of the performance and which not. 
+
+Beside this, the *if* the performance problem was inside CompressedBitmapBuilder.contains(), the method *still* uses syntetic access method after your changes.
+
+You can see it in the bytecode:
+INVOKESTATIC BitmapIndexImpl.access$3 (BitmapIndexImpl, AnyObjectId).
+
+This synthetic access method will disappear if you remove "private" access modifier from BitmapIndexImpl.findPosition(AnyObjectId) method.
+
+Additionally some "optimizations" are questionable: replacing a call to selectionHelper.getCommitCount() with
+selectionHelper.commitsByOldest.length - selectionHelper.commitStartPos
+in PackWriterBitmapPreparer is neither faster (there is no syntethic method call created) nor better style.
+
+So it would be really nice to separate real fixes from style related things.
+
+-------------------------------------
+author: Eden Lin
+date: 2015-10-27 19:33:50.000000000
+
+Patch Set 5: Code-Review-1
+
+(1 comment)
+
+LGTM except for elimination of the getCommitCount() helper
+
+Line:164, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> Agreed with Andrey that having a getCommitCount() helper made this easier to read
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-10-27 19:49:51.000000000
+
+Patch Set 5:
+
+BTW FindBugs can report all this synthetic methods generated for inner classes if one enables reporting for IMA_INEFFICIENT_MEMBER_ACCESS, just apply patch https://git.eclipse.org/r/59054 to jgit and run FB analysis on jgit.
+
+You will see 211 new warnings...
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-10-27 22:32:18.000000000
+
+Patch Set 5:
+
+> BTW FindBugs can report all this synthetic methods generated for
+ > inner classes if one enables reporting for IMA_INEFFICIENT_MEMBER_ACCESS,
+ > just apply patch https://git.eclipse.org/r/59054 to jgit and run FB
+ > analysis on jgit.
+ > 
+ > You will see 211 new warnings...
+
+Correction: this will find/report all synthetic accessor methods generated to access private *fields*, but it will not find synthetic accessors generated to access private *methods*.
+
+I will push a patch shortly with all fixes for org.eclipse.jgit.internal.storage.file and org.eclipse.jgit.internal.storage.pack packages, which only changes access modifiers on *affected* methods/fields only, and without any style related changes.
+
+It would be nice if you could provide some steps to reproduce your performance measurements, so that one can verify if there is any effect in such changes or not.
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-10-27 22:52:52.000000000
+
+Patch Set 5:
+
+I've pushed  https://git.eclipse.org/r/59073.
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2015-10-28 00:04:59.000000000
+
+Abandoned
+
+Andrey provided a more systemic patch in https://git.eclipse.org/r/#/c/59073/. I'll redo this patch as a style-only update separately.
+
+-------------------------------------

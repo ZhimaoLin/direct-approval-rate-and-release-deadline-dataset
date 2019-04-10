@@ -1,0 +1,157 @@
+DESCRIPTION
+
+[rfc] tmf/ctf: lower memory usage of events with fixed length strings
+
+Change-Id: I87149b8cb1c94e8fea8a90801cd254d9c3dc02ea
+Signed-off-by: Ivy Mitchell xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Ivy Mitchell
+date: 2014-08-21 14:55:01.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2014-08-21 14:56:04.000000000
+
+Patch Set 1:
+
+Francis, does this help?
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-08-21 15:11:50.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/8466/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-08-21 15:53:24.000000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/8466/ : FAILURE
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-08-21 18:40:00.000000000
+
+Patch Set 1: -Verified
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/8472/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-08-21 19:16:55.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/8472/ : SUCCESS
+
+-------------------------------------
+author: Adonis Kirk
+date: 2014-08-22 18:40:11.000000000
+
+Patch Set 1:
+
+I tried to measure the memory reduction of using this patch. However, each method to failed. 
+
+* Using java.lang.instrument.Instrumentation.getObjectSize(): the instrumentation object set from the javaagent is never registered [1]
+* Using ObjectGraphMeasurer, it reports 300k object references, which is probably caused by a backreference from the event to the trace, and finally to the whole Eclipse object tree. [2]
+
+So, how do we actually measure the size of each objects? I did it the very crude way, by reading all events from a trace and keeping them in memory. Here are the results:
+
+        baseline       modif     diff    rel
+time        3519        2394	-1125   -32%
+mem    921334158   921334056	 -102     0%
+
+The data shows that the patch produces a speed-up of 32%, but does not have effect on the memory usage. From this benchmark, the average event size is 2627 bytes.
+
+[1] http://docs.oracle.com/javase/7/docs/api/java/lang/instrument/Instrumentation.html
+[2] https://code.google.com/p/memory-measurer/
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2014-08-23 02:43:55.000000000
+
+Patch Set 1:
+
+Thanks for the inspection. 
+My trick for measuring memory was to make a stub program that reads 1000 events and puts them in an array, then I heap dumped, and read the memory usage of the array.
+
+I will look into more stuff later as I am now on review duty.
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2014-08-28 15:20:23.000000000
+
+Patch Set 1:
+
+Ok, just getting that patch up so I don't forget to look at it later.
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2014-08-28 22:04:23.000000000
+
+Patch Set 1:
+
+You know what, I was using the same test (event matching) for benchmarking this as when we first noticed the dimension of the events. I saw no difference, because there are no strings on those events, so this patch will not solve the memory usage of CtfTmfEvent in the case originally discussed.
+
+But I'll make some benchmarks with events like sched_switches to see what MemoryAnalyzer says.
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2014-08-28 22:29:56.000000000
+
+Patch Set 1:
+
+Ok, so I did a unit test who does an event request on a trace and keeps all sched_switches events. After the trace is read, I dump the heap and analyze it with memory analyzer.
+
+So I have a bunch of CtfTmfEvent (and yes, I did a getContent() on them). I see no difference at all in memory usage (bytes maybe). When I dig into the CtfTmfEvent.fContent.fFields, I have, before AND after, 2 string fields and 5 integer fields. Maybe what you are trying to do is already taken care of somewhere else?
+
+What events exactly did you observe lower memory usage with?
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2014-09-04 15:12:16.000000000
+
+Patch Set 1:
+
+fyi, this works with byte arrays. IsString checks if a character has encoding.
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2014-09-08 21:48:50.000000000
+
+Topic set to CTF Performance
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2014-09-11 20:56:43.000000000
+
+Topic changed from CTF Performance to CTF performance
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-09-11 23:29:29.000000000
+
+Patch Set 1: Code-Review-1
+
+(2 comments)
+
+Seems to make sense. Needs moar comments though, this part of the file is easy to get lost in. Consider that I put +1 once you add those.
+
+Line:135, lttng/org.eclipse.linuxtools.tmf.ctf.core/src/org/eclipse/linuxtools/tmf/ctf/core/CtfTmfEventField.java -> This comment doesn't apply to the whole clause anymore, on the new "else {}" part.
+
+Line:137, lttng/org.eclipse.linuxtools.tmf.ctf.core/src/org/eclipse/linuxtools/tmf/ctf/core/CtfTmfEventField.java -> Add a comment here, like the other clauses do. This is similar to the "instanceof ByteArrayDefinition" condition below, I guess?
+
+-------------------------------------

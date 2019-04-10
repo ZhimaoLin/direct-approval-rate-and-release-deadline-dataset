@@ -1,0 +1,65 @@
+DESCRIPTION
+
+MB-16684: DCP Producer could miss fetching items from a stream
+
+Here's the scenario:
+- Stream currently in backfill phase
+- When backfill is received, 1 item added to readyQ
+    - itemsReady of stream set to true (Producer notified)
+- Front end op comes in
+    - item added to checkpoint queue
+    - itemsReady not set to true, as it already is (Producer not
+      notified)
+- Producer calls stream::next()
+    - stream in backfillPhase(): 1 item popped from readyQ
+    - backfill task still running => no state transition to IN_MEMORY
+    - 1 op returned to producer, producer re-adds vbucket to ready list
+- Backfill completes
+- Producer calls stream::next()
+    - stream in backfillPhase(): no items in readyQ
+    - As backfill task has completed, state transitions to IN_MEMORY
+    - no items in readyQ => NULL returned
+    - As no op obtained, producer doesn't re-add vbucket to ready list
+
+=> Front end item remains stuck in checkpoint queue, until more front
+end ops come in - which would notify the producer
+
+Change-Id: I3403d3926f97788074990ef0e4c69cac902b2a93
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2015-12-08 03:02:13.887000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-12-08 03:02:22.633000000
+
+Patch Set 3:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/967/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-12-08 03:03:58.057000000
+
+Patch Set 3: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1725/ : ABORTED
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/967/ : ABORTED
+
+Make encountered an error building one or more targets. ( http://factory.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/967/ )
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-12-09 05:17:10.989000000
+
+Change has been successfully cherry-picked as a095083ed0bec34f0ade7131e5e2afe1b0ab6efe
+
+-------------------------------------

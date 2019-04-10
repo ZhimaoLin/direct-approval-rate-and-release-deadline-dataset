@@ -1,0 +1,336 @@
+DESCRIPTION
+
+ctf: Make events immutable
+
+This patch does some major changes to the ctf parser
+
+The event definitions are now immutable and can no longer be modified.
+The declarations will read the bitbuffer and then create event
+definitions. The event definitions are going to have fields. Initial
+tests show a 1.5x speedup but the parser is 50% slower without eclipse.
+
+Change-Id: I52b8c0de9776fa7cd2b333628c2bb6d3dd2c86ac
+Signed-off-by: Ivy Mitchell xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Ivy Mitchell
+date: 2014-04-29 22:41:31.000000000
+
+Uploaded patch set 19.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-04-30 01:06:34.000000000
+
+Patch Set 19:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/6745/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-04-30 01:50:08.000000000
+
+Patch Set 19: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/6745/ : SUCCESS
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-04-30 20:42:01.000000000
+
+Patch Set 19: Code-Review-1
+
+(12 comments)
+
+Reviewed up to ArrayDeclaration (again!)
+
+Line:49, lttng/org.eclipse.linuxtools.ctf.core.tests/src/org/eclipse/linuxtools/ctf/core/tests/event/CTFEventFieldTest.java -> No need for a separate method, you can use
+
+  Collections.singletonList(s);
+
+or if you want to return an ImmutableList specifically:
+
+  ImmutableList.of(s);
+
+Line:165, lttng/org.eclipse.linuxtools.ctf.core.tests/src/org/eclipse/linuxtools/ctf/core/tests/types/VariantDefinitionTest.java -> builder is only needed if you do logic between each .add() (like in a for loop or things like that).
+
+For static definitions you can use .of(elem1, element2, ...)
+
+Line:250, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/scope/LexicalScope.java -> nononono
+
+Line:267, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/scope/LexicalScope.java -> nonono
+
+Line:25, lttng/org.eclipse.linuxtools.ctf.core/META-INF/MANIFEST.MF -> Don't specify Guava versions
+
+Line:48, lttng/org.eclipse.linuxtools.ctf.core.tests/src/org/eclipse/linuxtools/ctf/core/tests/types/SequenceDeclarationTest.java -> field should be private
+
+Line:54, lttng/org.eclipse.linuxtools.ctf.core.tests/src/org/eclipse/linuxtools/ctf/core/tests/types/SequenceDeclarationTest.java -> Immutable.of(s) or Collections.singletonList(s)
+
+Line:137, lttng/org.eclipse.linuxtools.ctf.core.tests/src/org/eclipse/linuxtools/ctf/core/tests/types/FloatDefinitionTest.java -> for methods, xxx@xxx.xxx on the line above.
+
+Line:24, lttng/org.eclipse.linuxtools.ctf.core.tests/META-INF/MANIFEST.MF -> Don't specify a version number for Guava. We'll update in the future, and we don't want to have to fix all the plugins. And their API stays backwards-compatible, usually.
+
+Line:25, lttng/org.eclipse.linuxtools.ctf.core.tests/META-INF/MANIFEST.MF -> Leave it for Antlr though, because we depend on a specific version.
+
+Line:56, lttng/org.eclipse.linuxtools.ctf.core.tests/src/org/eclipse/linuxtools/ctf/core/tests/types/VariantDeclarationTest.java -> ImmutableList.of(string1, string2), no need for the method
+
+Line:194, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/EventDefinition.java -> why do this? You add things to 'builder' below, then reassign fieldNames
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-05-01 05:07:11.000000000
+
+Patch Set 19:
+
+(28 comments)
+
+Ok enough for tonight. (up to StructDeclaration)
+
+Line:48, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/Definition.java -> no need xxx@xxx.xxx on private declarations
+
+Line:170, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/FloatDeclaration.java -> Sorry to be that autismal, but you have
+
+  read
+  read64
+  create
+  read32
+
+how about ordering the methods like this:
+
+  read
+  read32
+  read64
+  create
+
+Line:42, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/SimpleDatatypeDefinition.java -> make those two methods (this and the one below we don't see) abstract maybe?
+
+Line:42, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/SequenceDeclaration.java -> Would moultimap work? (there's a ArrayListMultimap for example)
+
+Line:94, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/SequenceDeclaration.java -> add empty line xxx@xxx.xxx
+
+Line:147, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/SequenceDeclaration.java -> you can use '[' and ']' and avoid the NON-NLS (and supposedly a small run-time perf improvement)
+
+Line:149, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/SequenceDeclaration.java -> same as with ArrayDeclaration, if you create an ImmutableList here, and pass it to SequenceDefinition's constructor, it would avoid an extra copy.
+
+Line:52, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/ArrayDeclaration.java -> Mixing Collection-based and array-based is bad. Moulti-map?
+
+Line:140, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/ArrayDeclaration.java -> This could return a List<Definition> (and create an ImmutableList inside), see the comment in ArrayDefinition.
+
+Line:118, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/SequenceDefinition.java -> b.append(joiner.join(...));
+
+Perhaps adding some unit test for the toString() would be desirable? (other patch though)
+
+Line:165, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/scope/LexicalScope.java -> Can more than one thread call addChild/getChild at the same time? If so, wrap it in a Collections.synchronizedMap
+
+Line:227, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/scope/LexicalScope.java -> If it can be null, mark the return value @Nullable (and you'd have to if you mark the xxx@xxx.xxx
+
+Line:241, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/scope/LexicalScope.java -> -0 ?
+
+Is this some arcane bitshift magic I do not understand?
+
+Line:253, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/scope/LexicalScope.java -> add synchronized (or other thing to lock "hash"), the end result should be the same, but it could avoid unnecessary work by other threads.
+
+Line:281, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/scope/LexicalScope.java xxx@xxx.xxx would be nice on this class.
+
+First, all the public static definitions would xxx@xxx.xxx obligations.
+
+Then, it seems only fParent can be null, so some of these checks could be avoided.
+
+Line:34, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/EnumDefinition.java -> Do you need to save the whole IntegerDefinition here? You could store just the Long, so you wouldn't need to call Long.valueOf() in getIntegerValue() below.
+
+Line:62, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/ArrayDefinition.java -> You should not use [] arrays in APIs. It forces a specific implementation. If specific positions are important use List, if not use Set/Iterable or such.
+
+For instance, if you use List in the API, and in ArrayDeclaration.read() you generate an ImmutableList instead, the ImmutableList.copyOf below won't actually do a copy!
+
+Line:90, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/ArrayDefinition.java -> i == size() would throw an ArrayOutOfBoundsException. Should it be ">=" ?
+
+Line:123, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/ArrayDefinition.java -> b.append(joiner.join(fDefinitions)); ?
+
+Line:68, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/StringDeclaration.java -> Only the test calls this.
+
+Couldn't the field be final (and NonNull!), with no setter?
+
+Line:109, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/StringDeclaration.java -> Isn't there a limit to the size, or at least Integer.MAX_VALUE? A "malicious" trace could cause the sb to read fooooorrrrreeeeevvvveeerrrrr.
+
+Line:141, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/IntegerDeclaration.java -> Why is ByteOrder nullable? What does a null byteOrder even means?
+
+ * tries to remove it... *
+
+... hmm ok I see (ByteOrder.* are not null-annotated, so they are xxx@xxx.xxx by the analysis).
+
+For convenience, you could leave xxx@xxx.xxx in this public method here and in the constructors, but remove it from the field. And in here do a null check that throws a IAE if it's really null (or use a default byte order?). And make sure to document all this in the Javadoc!
+
+Line:216, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/IntegerDeclaration.java -> As a one-liner:
+
+  this(len, signed, 10, byteOrder, Encoding.NONE, "", 8);
+
+Line:246, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/IntegerDeclaration.java -> can be removed if the field is not nullable
+
+Line:341, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/IntegerDeclaration.java -> That's sending mixed signals.
+
+Instead you can replace the return clause with:
+
+ xxx@xxx.xxx
+ xxx@xxx.xxx BigInteger ret = BigInteger.ONE.shiftLeft(significantBits).subtract(BigInteger.ONE);
+  return ret;
+
+That's a bit more verbose/ugly, but at least we don't leak xxx@xxx.xxx settings. If/when BigInteger supports null annotations, we will get a warning "unnecessary SuppressWarnings" here. (Which is why it's important to apply the SuppressWarnings to single variables, not whole methods, as much as possible).
+
+This would apply to any other place where you want return xxx@xxx.xxx but are returning something "base Java" directly (like List.get(). Although Java 8 will help with that last example, with type annotations.)
+
+Line:28, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/IDeclaration.java -> For a future patch: make xxx@xxx.xxx It exposes a bunch of inconsistencies. That sounds like something I'd like doing ;)
+
+Line:74, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/IDeclaration.java -> add an empty line xxx@xxx.xxx
+
+Line:26, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/Encoding.java -> put the class NNBD instead
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-05-01 20:08:41.000000000
+
+Patch Set 19:
+
+(14 comments)
+
+(up to CtfTmfEvent)
+
+Line:49, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/StructDeclaration.java -> Why do you use one List and one [] ? It should be consistent.
+
+Line:66, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/StructDeclaration.java -> Specify in the comment it's for ImmutableList.of()
+
+Line:81, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/StructDeclaration.java -> Specify in the comment it's for ImmutableList.of()
+
+Line:190, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/StreamInputReader.java -> add empty line
+
+Line:24, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/Utils.java -> add final
+
+Line:326, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/StreamInputPacketReader.java -> These suppress warnings should be added to the variable declaration above instead:
+
+ xxx@xxx.xxx
+ xxx@xxx.xxx IntegerDeclaration lostEventsDurationDecl = (IntegerDeclaration) lostFields.getFields().get(...)
+
+However, this not the case of a toString() method etc. where we know for sure it cannot be null. Here a Map.get() can actually return null, there is no compile-time guarantee that it won't. In that case it should be a null check that throws a IllegalStateException or something:
+
+  IntegerDeclaration lostEventsDurationDecl = (IntegerDeclaration) lostFields.getFields().get(...)
+  if (lostEventsDurationDecl == null) {
+    throw new BlehException();
+  }
+
+then afterwards lostEventsDurationDecl will be considered non-null
+
+Line:41, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/StreamInput.java -> whitespace! a bunch in this file
+
+Line:36, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/VariantDeclaration.java -> put static variables first, with name in ALL_CAPS
+
+Line:42, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/VariantDeclaration.java -> synchronizedMap, especially since it's exposed publicly (IOStructGen does a .get(...).put(...), yuck!)
+
+Line:179, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/VariantDeclaration.java -> return fFields.values().stream().map(IDeclaration::getMaximumSize).max();  (or something like that)
+
+Oh wait, not yet!
+
+Line:46, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/StructDefinition.java -> The map doesn't change once it gets populated, no? ImmutableMap? ;)
+
+Line:68, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/StructDefinition.java -> Don't use ImmutableList in APIs!! This  would force users to use Guava, we don't want to force this dependency. It should be only used internally.
+
+Make sure to check for this if it's done in other places, I tried to look for it but may have missed some.
+
+As with other places, see if the Definition[] should not be replaced with a List<Definition>. And if it's a ImmutableList  then the copyOf() doesn't do a copy.
+
+Line:43, lttng/org.eclipse.linuxtools.tmf.ctf.core.tests/src/org/eclipse/linuxtools/tmf/ctf/core/tests/CtfTmfEventFieldTest.java -> remove adding whitespace
+
+Line:221, lttng/org.eclipse.linuxtools.tmf.ctf.core.tests/src/org/eclipse/linuxtools/tmf/ctf/core/tests/CtfTmfEventTest.java -> assertNull
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-05-01 20:10:22.000000000
+
+Patch Set 19:
+
+Forgot to mention, the git auto-merge seems to add an unneeded import in StreamInputPacketReader
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-05-01 20:16:08.000000000
+
+Patch Set 19:
+
+(2 comments)
+
+Line:113, lttng/org.eclipse.linuxtools.tmf.ctf.core/src/org/eclipse/linuxtools/tmf/ctf/core/CtfTmfEventField.java -> extra space at the start
+
+Line:225, lttng/org.eclipse.linuxtools.tmf.ctf.core/src/org/eclipse/linuxtools/tmf/ctf/core/CtfTmfEvent.java -> synchronize this block
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2014-05-01 20:43:24.000000000
+
+Patch Set 19:
+
+(30 comments)
+
+Line:48, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/Definition.java -> Done
+
+Line:49, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/StructDeclaration.java -> Another patch
+
+Line:170, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/FloatDeclaration.java -> Done
+
+Line:42, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/SimpleDatatypeDefinition.java -> I prefer this, that way, we don't have to implement the methods unless we need to. 
+String/enum/integer. They all have a different permutation of these functions
+
+Line:49, lttng/org.eclipse.linuxtools.ctf.core.tests/src/org/eclipse/linuxtools/ctf/core/tests/event/CTFEventFieldTest.java -> Done
+
+Line:147, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/SequenceDeclaration.java -> Done
+
+Line:149, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/SequenceDeclaration.java -> Done
+
+Line:165, lttng/org.eclipse.linuxtools.ctf.core.tests/src/org/eclipse/linuxtools/ctf/core/tests/types/VariantDefinitionTest.java -> Done
+
+Line:52, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/ArrayDeclaration.java -> Done
+
+Line:140, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/ArrayDeclaration.java -> Done, performance regression, not happy
+
+Line:118, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/SequenceDefinition.java -> another patch, at this point we need to get this one in and I am getting major major scope creep.
+
+Line:163, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/scope/LexicalScope.java -> gone
+
+Line:241, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/scope/LexicalScope.java -> Done
+
+Line:34, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/EnumDefinition.java -> Done
+
+Line:123, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/ArrayDefinition.java -> oops
+
+Line:41, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/StreamInput.java -> Done
+
+Line:36, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/VariantDeclaration.java -> Done
+
+Line:42, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/VariantDeclaration.java -> Done
+
+Line:68, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/StructDefinition.java -> Done
+
+Line:68, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/StringDeclaration.java -> Done, but not in the scope really
+
+Line:109, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/StringDeclaration.java -> another patch
+
+Line:216, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/IntegerDeclaration.java -> Done
+
+Line:48, lttng/org.eclipse.linuxtools.ctf.core.tests/src/org/eclipse/linuxtools/ctf/core/tests/types/SequenceDeclarationTest.java -> Done
+
+Line:54, lttng/org.eclipse.linuxtools.ctf.core.tests/src/org/eclipse/linuxtools/ctf/core/tests/types/SequenceDeclarationTest.java -> Done
+
+Line:137, lttng/org.eclipse.linuxtools.ctf.core.tests/src/org/eclipse/linuxtools/ctf/core/tests/types/FloatDefinitionTest.java -> Done
+
+Line:74, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/IDeclaration.java -> Done
+
+Line:24, lttng/org.eclipse.linuxtools.ctf.core.tests/META-INF/MANIFEST.MF -> this means 12.0 +, isn't that better?
+
+Line:26, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/Encoding.java -> Done
+
+Line:56, lttng/org.eclipse.linuxtools.ctf.core.tests/src/org/eclipse/linuxtools/ctf/core/tests/types/VariantDeclarationTest.java -> Done
+
+Line:194, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/EventDefinition.java -> answered in the comments below.
+
+-------------------------------------

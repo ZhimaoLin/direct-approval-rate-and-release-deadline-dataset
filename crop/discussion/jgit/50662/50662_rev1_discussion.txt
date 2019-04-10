@@ -1,0 +1,245 @@
+DESCRIPTION
+
+Optionally require signed push
+
+As there is no corresponding C git option for us to emulate, the only
+way to enable this currently is to call a method on SignedPushConfig.
+
+Change-Id: Ie856a58a0171c12e839521c5d49141b9f2fe5515
+
+
+COMMENTS
+
+author: Santos Moore
+date: 2015-06-22 18:44:51.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-06-22 18:44:57.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/6784/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-06-22 18:51:50.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/6784/ : SUCCESS
+
+-------------------------------------
+author: Santos Moore
+date: 2015-06-22 18:52:54.000000000
+
+Patch Set 1: Code-Review-2
+
+Don't submit until writing some Gerrit code that exercises this.
+
+-------------------------------------
+author: Eden Lin
+date: 2015-06-22 18:56:44.000000000
+
+Patch Set 1:
+
+The C git way to do this is to check the signature for whatever qualities are desired in a pre-receive hook.
+
+Is there a corresponding hook that can be used here? Otherwise this would end up requiring a signature but not requiring that the signature belong to some appropriate person, which doesn't sound useful.
+
+-------------------------------------
+author: Santos Moore
+date: 2015-06-22 19:02:20.000000000
+
+Patch Set 1:
+
+If you do a signed push to a server that doesn't support it, you get:
+
+ fatal: the receiving end does not support --signed push
+
+I was hoping to get a similarly terse message in the opposite case, where the server requires it but the client doesn't support it. If we defer it to a prereceive hook, then it's much more verbose (e.g. includes a status for each ref) and requires pushing the pack first.
+
+Of course we get the verbose error message anyway if the signature is rejected by a prereceive hook for any other reason other than simply not being present. So maybe it's not worth worrying about.
+
+-------------------------------------
+author: Eden Lin
+date: 2015-06-22 19:10:31.000000000
+
+Patch Set 1:
+
+> I was hoping to get a similarly terse message in the opposite case,
+ > where the server requires it but the client doesn't support it. If
+ > we defer it to a prereceive hook, then it's much more verbose (e.g.
+ > includes a status for each ref) and requires pushing the pack
+ > first.
+
+That sounds like two bugs in the hook interface:
+
+* hooks can't throw an exception to reject the entire push instead of rejecting one ref update at a time (C git doesn't have this bug)
+
+* there's no hook that runs after reading the command-list but before the packfile (C git does have this bug)
+
+-------------------------------------
+author: Santos Moore
+date: 2015-06-22 19:11:33.000000000
+
+Patch Set 1:
+
+> hooks can't throw an exception to reject the entire push instead of rejecting one ref update at a time (C git doesn't have this bug)
+
+IIRC this is actually an issue in the protocol. Once you reach a certain point, the client will choke unpleasantly if you don't send a result for each ref.
+
+-------------------------------------
+author: Eden Lin
+date: 2015-06-22 19:25:59.000000000
+
+Patch Set 1:
+
+> IIRC this is actually an issue in the protocol. Once you reach a
+ > certain point, the client will choke unpleasantly if you don't send
+ > a result for each ref.
+
+*nod* Git uses the status "pre-receive hook declined" for this case.
+
+ $ git push file:///tmp/test HEAD:refs/heads/master
+ Counting objects: 178629, done.
+ Delta compression using up to 12 threads.
+ Compressing objects: 100% (46042/46042), done.
+ Writing objects: 100% (178629/178629), 44.12 MiB | 20.96 MiB/s, done.
+ Total 178629 (delta 133359), reused 175442 (delta 130692)
+ remote: I don't like ref updates.
+ To file:///tmp/test
+  ! [remote rejected] HEAD -> master (pre-receive hook declined)
+ error: failed to push some refs to 'file:///tmp/test'
+
+Is at the end of commands and before the packfile is sent a better
+time to send errors?
+
+-------------------------------------
+author: Santos Moore
+date: 2015-06-22 19:28:26.000000000
+
+Patch Set 1:
+
+> Is at the end of commands and before the packfile is sent a better time to send errors?
+
+Actually I don't think there is a way to avoid sending the pack because HTTP :(
+
+-------------------------------------
+author: Eden Lin
+date: 2015-06-22 19:39:13.000000000
+
+Patch Set 1:
+
+Implied feature requests:
+
+* method for modifying the "unpack ok" status and replacing it with another error message, which the client will show prefixed with "unpack failed: ". E.g. a "pre-unpack hook". That's what this patch does (but it's less general).
+
+* protocol extension to say "Unpacking went fine, but I'm rejecting all the ref updates, and please just say so once with the following reason."
+
+In the absence of the first of those things, I think what this patch is trying to do is sane but the documentation makes it sound like it's for something else. I'll comment on the javadoc with specifics.
+
+-------------------------------------
+author: Santos Moore
+date: 2015-06-22 19:42:24.000000000
+
+Patch Set 1:
+
+I agree with your feature requests, but I think at this point given that it's going to have to return statuses for each ref, I'll just put it in the same hook that does the verification.
+
+Thanks.
+
+-------------------------------------
+author: Santos Moore
+date: 2015-06-22 19:42:26.000000000
+
+Abandoned
+
+-------------------------------------
+author: Santos Moore
+date: 2015-06-22 19:45:33.000000000
+
+Restored
+
+Still want the configuration option. Hooks will be able to inspect it.
+
+-------------------------------------
+author: Eden Lin
+date: 2015-06-22 19:45:55.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Thanks. Yeah, I agree that treating this as an unpack failure is confusing and that the "Unpacking went fine, but I don't like the operation anyway" protocol extension would be nicer (i.e., I agree with abandoning this for now).
+
+Sorry to take so long to get there.
+
+Line:149, org.eclipse.jgit/src/org/eclipse/jgit/transport/SignedPushConfig.java -> This could say something like:
+
+ Set whether signed push is required.
+ <p>
+ If signed push is required, pushes without an attached
+ signature will fail with "unpack failed: push certificate
+ required" instead of a long list of individual rejected
+ ref updates.
+ <p>
+ The caller still also needs to set a pre-receive hook to
+ ensure that the signatures are valid and signed by someone
+ appropriate for the receiving repository.
+
+-------------------------------------
+author: Eden Lin
+date: 2015-06-22 19:46:23.000000000
+
+Patch Set 1:
+
+And a configuration for hooks to read sounds fine to me, too. :)
+
+-------------------------------------
+author: Santos Moore
+date: 2015-06-22 19:47:05.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:149, org.eclipse.jgit/src/org/eclipse/jgit/transport/SignedPushConfig.java -> > instead of a long list of individual rejected ref updates.
+
+But this part isn't true, is why I gave up.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-06-23 16:47:13.000000000
+
+Patch Set 1: Code-Review+2
+
+(1 comment)
+
+Line:1520, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> Sadly the best you can do for error reporting to the client to abort all refs is to go through this code path. :(
+
+Which is kind of similar to falling through and just reporting "unpack ok" followed by rejecting every ref.
+
+-------------------------------------
+author: Santos Moore
+date: 2015-06-23 17:25:43.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+I think I don't even need the config option or the copy constructor at this point to allow Gerrit to require a cert. I will abandon this whole series once I get that worked out downstream.
+
+Line:1520, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> Yeah, for this reason I think I'm going to just abandon it.
+
+-------------------------------------
+author: Santos Moore
+date: 2015-06-29 18:39:27.000000000
+
+Abandoned
+
+-------------------------------------

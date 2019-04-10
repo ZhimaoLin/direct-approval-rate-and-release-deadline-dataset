@@ -1,0 +1,90 @@
+DESCRIPTION
+
+Runtime configurable timing logs.
+
+Usage:
+
+  # Set an initial timing log
+  mbflushctl localhost:11211 set timing_log /tmp/timinglog
+  # Move to a new timing log location.
+  mbflushctl localhost:11211 set timing_log /tmp/timinglog2
+  # Disable timing log.
+  mbflushctl localhost:11211 set timing_log off
+
+Change-Id: If351770b5b73b2a0dd15d240703054b4280efd2a
+
+
+COMMENTS
+
+author: Noah Dean
+date: 2011-08-25 18:26:52.737000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Abby Duran
+date: 2011-08-26 03:44:09.491000000
+
+Patch Set 3: (3 inline comments)
+
+
+
+Line:2132, ep.cc -> This timing stat for disk insert might not be useful for couchdb backend because the RW dispatcher simply pushes each item to the mc-kvstore outgoing queue and then returns immediately. It will be the same for disk_delete.
+
+Line:284, ep_engine.cc -> I think we should check if stream pointer is NULL or not before freeing it. I remembered that some platform complains this.
+
+Line:381, histo.hh -> As you know, this will cause some overhead in disk IO. Probably, instead of writing every timing value, we can do the N random samplings with the equal probability. For example, we can create an array with N entries, and push the first N timings values into the array. From (N+1)th timing value, we can randomly pick one element in the array and replace it with the incoming value. When the timing log turns off, we can write the array content into the log file.
+
+-------------------------------------
+author: Noah Dean
+date: 2011-08-26 04:11:30.602000000
+
+Patch Set 3: (3 inline comments)
+
+
+
+Line:2132, ep.cc -> That's true, but there's still time spent there.  We see similar things for leveldb where the timing here is *tiny*, but still important to consider because if we only look at commit time, it would appear that leveldb is slightly slower than sqlite, even though inserts and updates complete 10x faster in some cases.
+
+Line:284, ep_engine.cc -> This works the same way free() works such that it's explicitly handled:
+
+http://www.parashift.com/c++-faq-lite/freestore-mgmt.html#faq-16.8
+
+Line:381, histo.hh -> Yeah, sampling would be good.  I've thought about it a bit, but haven't put it together.  I do want the timings to be in order, and I'd like some control over that.  We can do equal sampling pretty easily, but it'd require a bit more overhead to track the number of times we've moved a particular counter forward.
+
+I'd say in the meantime, unless there's a problem with this, it's OK because it'll have fairly even impact and we will still be able to get detailed measurements from runs we can use for comparisons.
+
+-------------------------------------
+author: Abby Duran
+date: 2011-08-26 04:28:48.246000000
+
+Patch Set 3: Looks good to me, approved
+
+Thanks for your clarification. Sorry for the false alarm regarding delete operation (I got some issues on Windows long time ago :)).
+
+-------------------------------------
+author: Asher Vang
+date: 2011-08-27 09:50:56.480000000
+
+Patch Set 3: Looks good to me, but someone else must approve
+
+(2 inline comments)
+
+
+
+Line:284, ep_engine.cc -> If delete NULL fails it is a bug in the compiler. THe standard explicitly say that delete NULL is allowed...
+
+Line:285, ep_engine.cc -> Shouldn't this just be an empty string??? If you're going to do a comparison like that it would be better to have the if (foo == 0) { do the stuff } then the else branch...
+
+-------------------------------------
+author: Noah Dean
+date: 2011-08-27 18:35:59.174000000
+
+Patch Set 3: (1 inline comment)
+
+
+
+Line:285, ep_engine.cc -> There wasn't an else when I wrote that.  :)  I'll switch it around, though.
+
+"off" made more sense to me when I was supplying it via the flushctl tool.  It's kind of debuggery, so it doesn't need too much polish. It might be good to just reject anything that doesn't start with a / as well.
+
+-------------------------------------

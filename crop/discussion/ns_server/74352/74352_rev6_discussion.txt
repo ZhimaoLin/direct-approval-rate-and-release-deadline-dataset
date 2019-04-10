@@ -1,0 +1,87 @@
+DESCRIPTION
+
+MB-22909: Support XATTR replication.
+
+In order to support replication of XATTRs we need to negotiate
+the XATTR feature on the target node when we are setting up the
+DCP proxy. If the XATTR feature is enabled on the target node
+then we need to set the XATTR bit while issuing an open conn
+DCP command.
+
+During upgrade the replications will be setup without XATTRs
+and when the cluster becomes Spock then we need to reset the
+connections in order to enable XATTRs on all the replications.
+
+In the mixed mode, the expectation is that a client is not
+allowed to set XATTRs and any attempt to do so will result in
+a failure.
+
+Change-Id: Ibd9aacedd6028516eafa5d76edf5a26bd635a013
+
+
+COMMENTS
+
+author: Noe Perry
+date: 2017-03-02 20:19:11.239000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Noe Perry
+date: 2017-03-02 21:14:42.718000000
+
+Patch Set 6: Verified+1
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2017-03-03 00:14:11.740000000
+
+Patch Set 6:
+
+(3 comments)
+
+Line:228, src/dcp_proxy.erl -> There doesn't seem to be any need to return the socket. Also, this will badmatch.
+
+Line:125, src/replication_manager.erl -> This is unsafe. It's possible that while recreating replications something goes wrong and and that crashes the replication manager. But that may leave some replications non-converted (dcp_sup is not restarted when replication_manager crashes). So when replication manager restarts, it will assume that all replications are xattrs aware, which is not the.
+
+I think you should just have xattr be either true or false, and dcp_sup needs to keep track of what value the actual replicators use.
+
+Line:28, src/dcp_sup.erl -> Please don't use ?user_log. These constants are totally useless. Just use ale:debug(?USER_LOGGER, Fmt, Args)
+
+-------------------------------------
+author: Noe Perry
+date: 2017-03-03 01:30:31.169000000
+
+Patch Set 6:
+
+(3 comments)
+
+Line:228, src/dcp_proxy.erl -> Oh! Yes, you are right about the socket too. Will correct it.
+
+I wonder why the dialyzer didn't catch it. Probably because it's ok to return different values from a function but the caller was expecting a tuple.
+
+Line:125, src/replication_manager.erl -> Ok. Will work on it. Since dcp_sup is supervisor, what is the best way to store some state in a supervisor. ETS tables?
+
+Line:28, src/dcp_sup.erl -> Sure!
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2017-03-03 01:42:07.779000000
+
+Patch Set 6:
+
+(1 comment)
+
+Line:125, src/replication_manager.erl -> Make it part of the child id.
+
+-------------------------------------
+author: Noe Perry
+date: 2017-03-03 03:22:04.139000000
+
+Patch Set 6: -Verified
+
+(1 comment)
+
+Line:125, src/replication_manager.erl -> Oh neat! Thanks!
+
+-------------------------------------

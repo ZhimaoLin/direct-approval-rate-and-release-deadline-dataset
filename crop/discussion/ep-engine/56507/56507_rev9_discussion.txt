@@ -1,0 +1,87 @@
+DESCRIPTION
+
+MB-14192: Implement compactDB for ForestKVStore
+
+Change-Id: Idc131c835159726cbcdd69ead4c54f81ab89653d
+
+
+COMMENTS
+
+author: Hugo Blankenship
+date: 2015-11-03 03:28:57.767000000
+
+Patch Set 9:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1490/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-11-03 03:38:32.122000000
+
+Patch Set 9: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1490/ : FAILURE
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/732/ : FAILURE
+
+Make encountered an error building one or more targets. ( http://factory.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/732/ )
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-11-03 08:59:04.101000000
+
+Patch Set 9: Code-Review-1
+
+(1 comment)
+
+Line:1664, src/ep.cc -> This structure looks wrong to me - EPStore itself shouldn't know / care what the underlying storage layer is - that's the whole point of the KVStore base class and CouchKVStore / ForestKVStore derived classes.
+
+Can you not just create a "compact" virtual method on KVStore and call that, then implement the storage-specific stuff there?
+
+Additionally, it appears (I could be wrong) that with this change, the additional functionality in compactVB (bloom filter update / expiry callback) isn't handled anymore. What's the plan for this with forestdb?
+
+-------------------------------------
+author: Bobby Buck
+date: 2015-11-03 16:38:29.103000000
+
+Patch Set 9:
+
+(1 comment)
+
+Line:1664, src/ep.cc -> bloom filer and expiry callback will be handled in a separate patch.
+
+-------------------------------------
+author: Bobby Buck
+date: 2015-11-04 21:58:57.242000000
+
+Patch Set 9:
+
+(1 comment)
+
+Line:1664, src/ep.cc -> The expiry callback can be made generic enough to be used for both vbucket level and shard level compactions. The issue comes with respect to initializing and swapping bloom filters before and after compaction. Bloom Filters will still be handled at the vbucket level. For vbucket level compaction, initializing temporary filter can be done for just that vbucket but for a shard level, all vbuckets for that shard need to be initialized and cleared. Hence the separate handling.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-11-05 09:06:57.798000000
+
+Patch Set 9:
+
+(1 comment)
+
+Line:1664, src/ep.cc -> The whole point of an abstract interface (i.e. class KVStore) is that the users of that interfece (i.e. EPStore) shouldn't care about the particular concrete class currently in use - they simply call (virtual) methods on the interface.
+
+The fact you're having to check which subclass is instantiated indicates something is wrong with the design here.
+
+From what you say about bloom filters, it sounds like they need to be refactored in light of the whole shard vs vBucket thing. I'm no expert on them, but from what I recall the only reason there's bloom filter code in the compactVB method it is was a convenient point to regenerate the bloom filter.
+
+Basically in summary there should just be one single compactXXX method in EPStore - either at the vBucket level, or at the shard level (or some third abstract "storage chunk" level. The concrete KVStore (Couch/Forest) itself should then be responsible for doing whatever is appropriate.
+
+-------------------------------------
+author: Bobby Buck
+date: 2015-11-05 18:34:10.231000000
+
+Abandoned
+
+-------------------------------------

@@ -1,0 +1,167 @@
+DESCRIPTION
+
+Bug 486644 - Automatic save of dirty editors
+
+-Creates model fragment to save dirty editors
+-Registers to the Event system for the dirty event and in case an editor
+is dirty it saves every 60 s (the value is modifiable in preferences).
+-Add a new Auto-save preference page (under Editors) that allows to
+enable/disable the auto-save and change the interval of auto-save.
+-Add PreferencePage tests
+-Add new IAutoSaveableEditorPart interface that allows to not be part of
+the auto-save mechanism
+
+Change-Id: I9bb0319faa344ed185b32dc3442d1e618b86a682
+Also-by: Zaid Mosley xxx@xxx.xxx
+Signed-off-by: Karter Mora xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Rylee Bush
+date: 2016-03-07 14:21:35.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-03-07 14:21:46.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/8479/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-03-07 15:48:32.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/8479/ : SUCCESS
+
+-------------------------------------
+author: Rylee Bush
+date: 2016-03-14 08:02:53.000000000
+
+Patch Set 3:
+
+Hi,
+
+This last version of the contribution that takes into account the last comments from our discussions.
+Do not hesitate to review and comment it.
+Thanks in advance.
+
+-------------------------------------
+author: Rayan Moreno
+date: 2016-03-15 11:46:45.000000000
+
+Patch Set 3: Code-Review-1
+
+(19 comments)
+
+See my comments inline about the code and in the bug about the feature itself.
+
+Line:47, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/addons/SaveAllDirtyPartsAddon.java -> I don't understand what is the purpose of keeping the active page at the time a dirty event is sent. Moreover, it prevents your code from working with multiple windows (see https://bugs.eclipse.org/bugs/show_bug.cgi?id=486644#c62)
+
+Line:49, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/addons/SaveAllDirtyPartsAddon.java -> Why does it have the default visibility? Should better be private final
+
+Line:70, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/addons/SaveAllDirtyPartsAddon.java -> do you really need event filter? From what I see, a listener would be enough. Event filters are too dangerous.
+
+Line:85, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/addons/SaveAllDirtyPartsAddon.java -> make it final
+
+Line:87, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/addons/SaveAllDirtyPartsAddon.java -> - make it final
+- what about a meaningful name? saveJobScheduler?
+
+Line:89, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/addons/SaveAllDirtyPartsAddon.java -> Why do you keep a reference to the display? To avoid adding idleListener twice to the display? Then make it happen in setAutoSave method (this where you remove the listener, why could not it be the place where you add them?)
+
+Line:93, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/addons/SaveAllDirtyPartsAddon.java xxx@xxx.xxx + private forces the DI framework to use reflection. Make it public.
+
+Line:96, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/addons/SaveAllDirtyPartsAddon.java -> Please remove debug sysout
+
+Line:97, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/addons/SaveAllDirtyPartsAddon.java -> what is the problem of saving during initialization? please describe why it is important to avoid saving all editors of all workLeon Ochoach windows during the first call to auto save.
+
+Line:113, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/addons/SaveAllDirtyPartsAddon.java -> Please remove debug sysout
+
+Line:121, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/addons/SaveAllDirtyPartsAddon.java -> why are saveJob, runnable and idleListener initialized in the constructor while dirtyHandler is initialized with a initial value? Please provide consistency.
+
+Line:126, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/addons/SaveAllDirtyPartsAddon.java -> You should not schedule the job if it is currently running.
+
+Line:127, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/addons/SaveAllDirtyPartsAddon.java -> display could have become null or disposed, guard against it
+
+(actually from comments above, display should not be kept in a field, sot retrieve it through PlatformUI.getWorkLeon Ochoach().getDisplay() - and test for getWorkbench to be != null)
+
+Line:142, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/addons/SaveAllDirtyPartsAddon.java -> What is the use case covered by the fact that this method is protected? Make it private if you keep (depending which solution you goes for to provide consistency in your field initialization).
+
+Line:172, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/addons/SaveAllDirtyPartsAddon.java -> useless (If milliseconds is less than zero, the runnable is not executed.)
+
+Line:192, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/addons/SaveAllDirtyPartsAddon.java -> retrieve the workLeon Ochoach display, not the current SWT display. I suggest you make the display a parameter of the method to better document that this method will check for the activeShell of the given Display.
+
+Line:121, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/WorkbenchPreferenceInitializer.java -> Seems a bit high regarding the way the timer is reset. 15 or 20 seems more reasonable.
+
+File Comment: bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/IAutoSaveableEditorPart.java -> Remove it. See my comment on WorkbenchPage
+
+Line:3629, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/WorkbenchPage.java -> The usage of the java inheritance to add the ability to editors of giving an auto save policy is not very flexible. A better solution would be to let user see the list of editors which follow autosave and those which do not. The default policy could be provided by the editor provider, but user should be able to override it. I suggest you remove this code and open a new bug to talk about this topic once this patch is accepted.
+
+-------------------------------------
+author: Rylee Bush
+date: 2016-03-15 11:55:52.000000000
+
+Patch Set 3:
+
+Thank you Mikaël for your review, I will take a look as soon as possible.
+
+-------------------------------------
+author: Rylee Bush
+date: 2016-03-17 10:20:29.000000000
+
+Patch Set 3:
+
+(19 comments)
+
+Line:47, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/addons/SaveAllDirtyPartsAddon.java -> Done
+
+Line:49, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/addons/SaveAllDirtyPartsAddon.java -> Done
+
+Line:70, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/addons/SaveAllDirtyPartsAddon.java -> I mimic the behavior of IDEIdleHelper, and I tried with addListener instead of addFilter and it doesn't work at all anymore
+
+Line:85, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/addons/SaveAllDirtyPartsAddon.java -> Done
+
+Line:87, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/addons/SaveAllDirtyPartsAddon.java -> Done
+
+Line:89, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/addons/SaveAllDirtyPartsAddon.java -> Done
+
+Line:93, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/addons/SaveAllDirtyPartsAddon.java -> Done
+
+Line:96, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/addons/SaveAllDirtyPartsAddon.java -> Done
+
+Line:97, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/addons/SaveAllDirtyPartsAddon.java -> This part comes from the https://git.eclipse.org/r/#/c/40794/ review. I started my work upon it. I admit that I didn't search to check if this part was useful or not. With all modifications I've done, It seems this part is useless now. So I remove it.
+
+Line:113, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/addons/SaveAllDirtyPartsAddon.java -> Done
+
+Line:121, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/addons/SaveAllDirtyPartsAddon.java -> Done
+
+Line:126, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/addons/SaveAllDirtyPartsAddon.java -> Done
+
+Line:127, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/addons/SaveAllDirtyPartsAddon.java -> Done
+
+Line:142, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/addons/SaveAllDirtyPartsAddon.java -> Done
+
+Line:172, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/addons/SaveAllDirtyPartsAddon.java -> Done
+
+Line:192, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/addons/SaveAllDirtyPartsAddon.java -> Done
+
+Line:121, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/WorkbenchPreferenceInitializer.java -> I set the value to 20.
+
+File Comment: bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/IAutoSaveableEditorPart.java -> Done
+
+Line:3629, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/WorkbenchPage.java -> Done
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-04-25 20:30:16.000000000
+
+Change has been successfully merged into the git repository by Sebastian Porter
+
+-------------------------------------

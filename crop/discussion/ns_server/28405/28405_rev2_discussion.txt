@@ -1,0 +1,108 @@
+DESCRIPTION
+
+MB-8905: modify resolution algorithm for deletion
+
+The fix of MB-8825 at ep_engine side modified the resolution
+algorithm for deletion, that is, we only compare Seqno and CAS
+for del mutation in delWithMeta(). Because XDCR provides an
+option to do local conflict resolution for backward compati-
+bility, we also need to change the XDCR side conflict resolution
+algorithm accordingly, to be consistent with ep_engine side
+change.  The bottom line is, resolution algorithm should be the
+same regardless of the location where we do conflict resolution.
+
+Change-Id: I0a107b743b3b5b4f0ed9889c279ab0ebe1fa9c23
+
+
+COMMENTS
+
+author: Macie Morton
+date: 2013-08-20 22:49:17.002000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Macie Morton
+date: 2013-08-20 22:51:28.048000000
+
+Patch Set 2: Verified+1
+
+-------------------------------------
+author: Abby Duran
+date: 2013-08-20 23:04:04.117000000
+
+Patch Set 2: Code-Review+2
+
+Looks correct and consistent with the conflict resolution at the ep-engine side for deleted items.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2013-08-21 06:43:46.981000000
+
+Patch Set 2: Code-Review-1
+
+Looks like we have larger issue here.
+
+The issue is that capi layer was always using conflict resolution that you're about to change.
+
+So your change will make xmem replication conflict-compatible with ep-engine's conflict resolution but _incompatible_ with capi conflict resolution. Unless I'm missing something of course.
+
+So adapting ep-engine to match what capi does seems like better option.
+
+_But_ larger issue is that customer A might be already using set_with_meta directly in which case we have backwards compatibility problem with both capi and ep-engine conflict resolution.
+
+-------------------------------------
+author: Abby Duran
+date: 2013-08-21 07:34:16.942000000
+
+Patch Set 2:
+
+What is the difference in conflict resolution between xmem and capi?
+
+Does the capi use seq num, cas, expiration, and flag for conflict resolution for deleted items?
+
+Btw, I don't understand why we initially used expiration and flag for this seq number based conflict resolution. Those two fields are meaningless for this type of conflict resolution.
+
+What do you mean by adapting the ep-engine to match the capi's conflict resolution? If the capi uses the above four fields for conflict resolution for deleted items, we will still have MB-8825 issue.
+
+I'm not sure if anyone directly uses SET_WITH_META from their applications. If so and critical, we should NOT use the expiration field for tombstone purging in couchstore. Instead, we should add a new meta field to couchstore.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2013-08-21 08:09:40.112000000
+
+Patch Set 2:
+
+>> What is the difference in conflict resolution between xmem and capi?
+
+It's exactly this commit. capi was always comparing full revids. And changing that has backwards compatibility implications.
+
+>> Does the capi use seq num, cas, expiration, and flag for conflict resolution for deleted items?
+
+Yes. Indirectly. See above.
+
+
+>> Btw, I don't understand why we initially used expiration and flag for this seq number based conflict resolution. Those two fields are meaningless for this type of conflict resolution.
+
+Valid point. But that's another matter.
+
+>> What do you mean by adapting the ep-engine to match the capi's conflict resolution? If the capi uses the above four fields for conflict resolution for deleted items, we will still have MB-8825 issue.
+
+I wasn't aware that ep-engine used to do old-style conflict resolution but is changing it too. I'm simply pointing out that this change has severe backwards compatibility implications.
+
+And perhaps we need to do something else to resolve MB-8825 if it's indeed caused by use of expiration time for purpose of tombstone purger. I'm not exactly sure I'm seeing how this could happen. If it's due to expiration bg job than it doesn't seem to matter much.
+
+
+>> I'm not sure if anyone directly uses SET_WITH_META from their applications. 
+
+Customer A (recall that whole story about set-returning-meta command) was going to do that to avoid latency of XDCR. As far as I know they changed their mind, but I cannot be sure of their latest thinking.
+
+-------------------------------------
+author: Macie Morton
+date: 2013-08-21 16:29:32.676000000
+
+Patch Set 2:
+
+Please see my email.
+
+-------------------------------------

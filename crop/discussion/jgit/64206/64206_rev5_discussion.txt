@@ -1,0 +1,148 @@
+DESCRIPTION
+
+Ketch: Basic replication system
+
+Git Ketch is a multi-master Git repository management system.  Writes
+are successful only if a majority of participant servers agree.  Acked
+writes are durable against server failures as a majority of the
+participants store all required objects.
+
+Git Ketch is modeled on the Raft Consensus Algorithm[1].  A ketch
+sailing vessel is faster and more nimble than a raft.  It can also
+carry more source codes.
+
+Git Ketch front-loads replication costs, which vaguely resembles a
+ketch sailing vessel's distinguishing feature of the main mast on the
+front of the ship.
+
+[1] https://raft.github.io/
+Change-Id: Ib378dab068961fc7de624cd96030266660b64fb4
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2016-01-19 06:49:05.000000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-01-19 07:06:42.000000000
+
+Patch Set 5:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7896/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-01-19 07:11:33.000000000
+
+Patch Set 5: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7896/ : FAILURE
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2016-01-19 18:28:24.000000000
+
+Patch Set 5: Code-Review-1
+
+(10 comments)
+
+Line:87, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/StageBuilder.java -> TEMP_PARENT_BATCH_SIZE? This isn't an upper limit on the number of temp commits to create.
+
+Line:65, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/LagCheck.java -> nit: s/if KetchReplica /if a KetchReplica
+s/behind leader/behind the leader/
+
+Line:180, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchLeader.java -> End the sentence with a period.
+
+Line:349, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchLeader.java -> Should notification be issued while holding the lock? All of the listeners should be aware that they are holding the lock, to prevent accidental deadlocks. Either update the documentation in Proposal or invoke this after releasing the lock.
+
+Line:112, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/ReplicaPushRequest.java -> From you comments on ps3,  afterPush() is the method that may take significant time. This one should be documented as always holding the leader lock.
+
+Line:226, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/Proposal.java -> s/is finished/changes state/
+
+Line:234, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/Proposal.java -> Will this always be invoked while holding a leader lock?
+
+Line:166, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/RemoteGitReplica.java -> s/tn/transport
+
+I see "tn" and think "txn".
+
+Line:79, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/Round.java -> s/commit/a commit/
+
+Line:416, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> This name reads like it unconditionally pushes the commit state, but only does so when not batching with another proposal.
+
+I can't think of a good name so maybe pull the conditionals out of pushCommitAsync() and create a new boolean shouldPushUnbatchedCommit() that combines them with the 2 terms here?
+
+-------------------------------------
+author: Elise Key
+date: 2016-01-20 03:15:04.000000000
+
+Patch Set 5:
+
+(3 comments)
+
+Line:2, org.eclipse.jgit/resources/org/eclipse/jgit/internal/ketch/KetchText.properties -> "leaderFailedToStore" for consistency with the actual message, and with the other definition at line 6?
+
+Line:7, org.eclipse.jgit/resources/org/eclipse/jgit/internal/ketch/KetchText.properties -> The value passed to {1} is an array of integers as defined in KetchLeader.java:
+
+  Integer[] valid = {1, 3, 5, 7, 9};
+
+so would it be better to say "expected one of" here?
+
+Then the message will be something like:
+
+ unsupported voter count 4, expected one of 1, 3, 5, 7, 9
+
+Line:2, /COMMIT_MSG -> Just out of curiosity: is there are reason to sometimes commit as @google.com and sometimes xxx@xxx.xxx
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2016-01-20 07:07:55.000000000
+
+Patch Set 5:
+
+(13 comments)
+
+Line:87, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/StageBuilder.java -> Done
+
+Line:2, org.eclipse.jgit/resources/org/eclipse/jgit/internal/ketch/KetchText.properties -> Done
+
+Line:7, org.eclipse.jgit/resources/org/eclipse/jgit/internal/ketch/KetchText.properties -> Done
+
+Line:65, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/LagCheck.java -> Done
+
+Line:180, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchLeader.java -> Done
+
+Line:349, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchLeader.java -> Oy vey. I notify while holding the lock here to prevent a race with the background thread picked by scheduleLeader(). It also grabs the lock. If it grabbed the lock and set the proposal state to RUNNING before we set it to QUEUED that would be an incorrect state change.
+
+QUEUED is not a done state for Proposal so no user listeners run here. Its a fast operation inside of Proposal to set the state field to QUEUED and returns immediately.
+
+So I don't think we need to do anything here.
+
+Line:112, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/ReplicaPushRequest.java -> Added JavaDoc to afterPush().
+
+Line:226, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/Proposal.java -> No, when its done. The runnables only get invoked when the Proposal enters into either state EXECUTED or ABORTED. The intermediate states like QUEUED do not trigger the runnable.
+
+Line:234, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/Proposal.java -> Oy vey, yes. I reworked KetchLeader slightly so it can drop the leader lock while running notifyState(EXECUTED) so that the listeners are run without the leader lock held.
+
+Line:166, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/RemoteGitReplica.java -> Done
+
+Line:79, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/Round.java -> Done
+
+Line:2, /COMMIT_MSG -> I try to use spearce.org with JGit since I got involved there before I joined Google, and google.com in Gerrit since its after I joined Google.
+
+Truth is I do a lot of my work on my Google laptop and forget to configure my JGit repository to have user.email = spearce@spearce.org so I've sometimes committed to JGit as xxx@xxx.xxx Eh.
+
+Line:416, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> Done
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-01-21 04:15:10.000000000
+
+Change has been successfully merged into the git repository by Yoselin Hanna
+
+-------------------------------------

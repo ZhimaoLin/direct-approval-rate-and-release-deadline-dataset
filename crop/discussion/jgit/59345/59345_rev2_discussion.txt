@@ -1,0 +1,216 @@
+DESCRIPTION
+
+bug 342372 - Patch adding end-of-line-conversion using .gitattributes,
+core.eol,
+core.autocrlf
+
+Change-Id: I2627921b0d89fd54e8f0a2a4ad541c2d5379751f
+Signed-off-by: Nicolas Patterson xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Nicolas Patterson
+date: 2015-10-30 14:08:05.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-10-30 14:15:07.000000000
+
+Patch Set 2: Code-Review-2
+
+The patch doubles "jgit status" execution time on a huge (~8 GB) repository, from ~6 to ~12 seconds.
+
+I haven't checked why but I saw some changes in the gitignore handling and this is probably the root cause.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-10-30 14:57:56.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7353/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-10-30 15:07:22.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7353/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-11-02 14:03:59.000000000
+
+Patch Set 2:
+
+I looked at the performance and especially the number of
+filesystem calls of your proposal. On my platform I can
+use strace to find out how often we touch the filesystem
+and that is normally dominating JGits performance.
+
+I know that this is not a fair comparision because I guess
+that Ivans change is simply implementing more functionality.
+But maybe this numbers help us where to improve
+
+What I did: prepared a linux kernel repository and added two
+.gitattributes file to the working tree. Then measured
+the number of filesystem calls for
+- our latest release
+- ivans change 59345
+- change 59319 which is based on 35377
+
+Results:
+In a repo with 50000 files Ivans change 59345 raises the
+number of filesystemcalls for a git status from 61000
+to 90000. That's a lot for 157 .gitignores and 2 .gitattributes
+
+
+Here is what I did:
+
+  > # we are working against linux repo (50000 versioned files), measure time of native git status
+  > cd ../linux:
+  > git checkout v4.2
+  HEAD is now at 64291f7... Linux 4.2
+  > git ls-files | wc -l
+  50795
+  > git remote -v
+  origin	https://github.com/torvalds/linux.git (fetch)
+  origin	https://github.com/torvalds/linux.git (push)
+  > echo "*.txt text" >.gitattributes
+  > echo "*.sh text" >arch/.gitattributes
+  > time git status
+  HEAD detached at v4.2
+  nothing to commit, working directory clean
+  
+  real	0m0.195s
+  user	0m0.075s
+  sys	0m0.114s
+  > 
+  > # checkout latest jgit release and build it. Measure time of jgit status and which system calls we do
+  > cd ../jgit
+  > git fetch https://git.eclipse.org/r/jgit/jgit
+  From https://git.eclipse.org/r/jgit/jgit
+   * branch            HEAD       -> FETCH_HEAD
+  > git checkout v4.1.0.201509280440-r
+  Previous HEAD position was d83b5bc... Adds the git attributes computation on the treewalk
+  HEAD is now at fdfd6e2... JGit v4.1.0.201509280440-r
+  > mvn -q clean install -DskipTests
+  > cd ../linux
+  > time java -jar ../jgit/org.eclipse.jgit.pgm/target/jgit-cli.jar status
+  Not currently on any branch.
+  
+  real	0m3.501s
+  user	0m4.768s
+  sys	0m0.346s
+  > strace -qq -f -e trace=file -c java -jar ../jgit/org.eclipse.jgit.pgm/target/jgit-cli.jar status
+  Not currently on any branch.
+  % time     seconds  usecs/call     calls    errors syscall
+  ------ ----------- ----------- --------- --------- ----------------
+   83.15    0.310949           6     54317         2 lstat
+    9.04    0.033814          10      3384         2 openat
+    6.21    0.023238           7      3555      3441 stat
+    0.92    0.003431          14       249        85 open
+    0.38    0.001431          30        47        44 access
+    0.16    0.000591          42        14        11 execve
+    0.08    0.000287          48         6           chdir
+    0.05    0.000179          36         5           getcwd
+    0.01    0.000050          25         2           readlink
+    0.00    0.000008           8         1         1 mkdir
+    0.00    0.000000           0         1           unlink
+    0.00    0.000000           0         2         2 statfs
+  ------ ----------- ----------- --------- --------- ----------------
+  100.00    0.373978                 61583      3588 total
+  > 
+  > # checkout ivans proposal. Measure time of jgit status and which system calls we do
+  > cd ../jgit
+  > git fetch https://git.eclipse.org/r/a/jgit/jgit refs/changes/45/59345/2 && git checkout FETCH_HEAD
+  From https://git.eclipse.org/r/a/jgit/jgit
+   * branch            refs/changes/45/59345/2 -> FETCH_HEAD
+  Previous HEAD position was fdfd6e2... JGit v4.1.0.201509280440-r
+  HEAD is now at 9a8e9cd... bug 342372 - Patch adding end-of-line-conversion using .gitattributes, core.eol, core.autocrlf
+  > git revert -n 8a53d7e
+  > mvn -q clean install -DskipTests
+  Warning:  org.apache.xerces.jaxp.SAXParserImpl$JAXPSAXParser: Property 'http://www.oracle.com/xml/jaxp/properties/entityExpansionLimit' is not recognized.
+  ...
+  Warning:  org.apache.xerces.parsers.SAXParser: Property 'http://www.oracle.com/xml/jaxp/properties/entityExpansionLimit' is not recognized.
+  > git reset --hard
+  HEAD is now at 9a8e9cd bug 342372 - Patch adding end-of-line-conversion using .gitattributes,
+  > cd ../linux
+  > time java -jar ../jgit/org.eclipse.jgit.pgm/target/jgit-cli.jar status
+  Not currently on any branch.
+  
+  real	0m4.368s
+  user	0m5.721s
+  sys	0m0.454s
+  > strace -qq -f -e trace=file -c java -jar ../jgit/org.eclipse.jgit.pgm/target/jgit-cli.jar status
+  Not currently on any branch.
+  % time     seconds  usecs/call     calls    errors syscall
+  ------ ----------- ----------- --------- --------- ----------------
+   70.94    0.389881           6     64733     10319 lstat
+   23.75    0.130515           6     22098      6817 stat
+    4.26    0.023412           7      3384         2 openat
+    0.80    0.004396          13       348        85 open
+    0.14    0.000746          16        47        44 access
+    0.08    0.000438          31        14        11 execve
+    0.02    0.000091          46         2           readlink
+    0.02    0.000086          14         6           chdir
+    0.00    0.000020           4         5           getcwd
+    0.00    0.000007           7         1         1 mkdir
+    0.00    0.000000           0         1           unlink
+    0.00    0.000000           0         2         2 statfs
+  ------ ----------- ----------- --------- --------- ----------------
+  100.00    0.549592                 90641     17281 total
+  > 
+  > # checkout 59319 Measure time of jgit status and which system calls we do
+  > cd ../jgit
+  > git fetch https://git.eclipse.org/r/a/jgit/jgit refs/changes/19/59319/2 && git checkout FETCH_HEAD
+  From https://git.eclipse.org/r/a/jgit/jgit
+   * branch            refs/changes/19/59319/2 -> FETCH_HEAD
+  Previous HEAD position was 9a8e9cd... bug 342372 - Patch adding end-of-line-conversion using .gitattributes, core.eol, core.autocrlf
+  HEAD is now at edad6d7... WIP: Add support for smudge filters
+  > mvn -q clean install -DskipTests
+  Warning:  org.apache.xerces.jaxp.SAXParserImpl$JAXPSAXParser: Property 'http://www.oracle.com/xml/jaxp/properties/entityExpansionLimit' is not recognized.
+  ...
+  Warning:  org.apache.xerces.parsers.SAXParser: Property 'http://www.oracle.com/xml/jaxp/properties/entityExpansionLimit' is not recognized.
+  > cd ../linux
+  > time java -jar ../jgit/org.eclipse.jgit.pgm/target/jgit-cli.jar status
+  Not currently on any branch.
+  
+  real	0m3.284s
+  user	0m4.253s
+  sys	0m0.450s
+  > strace -qq -f -e trace=file -c java -jar ../jgit/org.eclipse.jgit.pgm/target/jgit-cli.jar status
+  Not currently on any branch.
+  % time     seconds  usecs/call     calls    errors syscall
+  ------ ----------- ----------- --------- --------- ----------------
+   85.36    0.316842           6     54317         2 lstat
+    6.77    0.025141           7      3561      3443 stat
+    6.49    0.024074           7      3385         2 openat
+    0.79    0.002921          11       257        85 open
+    0.37    0.001372          25        54        51 access
+    0.12    0.000440          23        19        15 execve
+    0.05    0.000202          29         7           chdir
+    0.04    0.000138          28         5           getcwd
+    0.01    0.000047          24         2           readlink
+    0.00    0.000010          10         1         1 mkdir
+    0.00    0.000000           0         1           unlink
+    0.00    0.000000           0         2         2 statfs
+  ------ ----------- ----------- --------- --------- ----------------
+  100.00    0.371187                 61611      3601 total
+  >
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-11-02 14:09:41.000000000
+
+Patch Set 2:
+
+Find the latest version of my script at https://gist.github.com/b2f67f9ee921bb5e31bc.git
+
+-------------------------------------

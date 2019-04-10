@@ -1,0 +1,169 @@
+DESCRIPTION
+
+Speed up the IgnoreOperation
+
+Adding files to .gitignore would take a lot of time if many files were
+selected. Improve this by:
+
+* grouping paths by folder,
+* not checking each file individually for eligibility via
+  RepositoryUtil.canBeAutoIgnored() but doing a batch check in a
+  single tree walk for all files in a folder,
+* not adding them one by one to the .gitignore file(s) but batch adding
+  per folder.
+* running the modifications in a WorkspaceJob to batch resource update
+  events for .gitignore files in the workspace.
+
+This makes it possible to even use the "Ignore" action in the staging
+view on a (non-expanded) folder containing 50000 unstaged files. This
+is now snappy.
+
+The following IndexDiff recomputation is very slow, though. On my Mac
+it takes about 40 seconds until the staging view and the decorations in
+the package explorer update. This is not fixed by this change, and it's
+unclear to me how this could be fixed. A .gitignore file with 50000
+single-file entries slows down JGit tremendously because it will
+process all those match rules for all files in that directory, which
+gives quadratic behavior.
+
+This change therefore also adds two measures to mitigate this:
+
+* a warning dialog explaining this, giving the user a chance to back
+  out. The threshold for this warning dialog to appear has been set
+  somewhat arbitrarily at 500 files to be ignored.
+* a new menu action "Ignore Folders" to ignore folders instead of the
+  files contained in those folders. This action is only available if
+  only folders are selected in the staging view.
+  
+With this new action, it's possible to ignore that huge folder also from
+the staging view. Before, it could be ignored only via the Team->Ignore
+context menu action in the package explorer.
+
+Bug: 500106
+Change-Id: Icf2c9021dd20ec1372489cfe2f4f0da446a6a78c
+Signed-off-by: Alayna Houston xxx@xxx.xxx
+
+COMMENTS
+
+author: Alayna Houston
+date: 2016-09-07 07:05:55.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-09-07 08:46:55.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/9036/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-09-07 09:16:06.000000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/9036/ : FAILURE
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-09-07 10:30:20.000000000
+
+Patch Set 1: -Verified
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/9039/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-09-07 10:54:36.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/9039/ : SUCCESS
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-09-07 11:42:11.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:9, /COMMIT_MSG -> On my test directory with 50k files, I aborted the Eclipse after a few minutes. By then it had created a .gitignore with roughly 1000 lines.
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-09-07 19:01:53.000000000
+
+Patch Set 1:
+
+The new "Ignore Folder" operation could be considered to resolve bug 424031.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2016-09-08 21:32:10.000000000
+
+Patch Set 1:
+
+nice performance improvement 
+
+Though I don't know why we need to differentiate between "Ignore" and "Ignore folder". If the user selected a folder I would only offer "Ignore Folder" but still name it "Ignore". Ignoring a folder by adding individual entries for each files/folders contained in the selected folder seems insane overhead.
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-09-11 18:37:36.000000000
+
+Patch Set 1:
+
+> nice performance improvement
+ > 
+ > Though I don't know why we need to differentiate between "Ignore"
+ > and "Ignore folder". If the user selected a folder I would only
+ > offer "Ignore Folder" but still name it "Ignore". Ignoring a folder
+ > by adding individual entries for each files/folders contained in
+ > the selected folder seems insane overhead.
+
+Depends. Until now all operations in the staging view operated on files. People might have accustomed to that, and when they have a folder with, say, 3 unstaged files, actually might expect these three files to be ignored when the folder is selected, but not future additions in that folder.
+
+To keep surprises for the user at a minimum, I opted for an extra "Ignore Folder" action instead.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2016-09-11 20:26:48.000000000
+
+Patch Set 1:
+
+> > nice performance improvement
+ > >
+ > > Though I don't know why we need to differentiate between "Ignore"
+ > > and "Ignore folder". If the user selected a folder I would only
+ > > offer "Ignore Folder" but still name it "Ignore". Ignoring a
+ > folder
+ > > by adding individual entries for each files/folders contained in
+ > > the selected folder seems insane overhead.
+ > 
+ > Depends. Until now all operations in the staging view operated on
+ > files. People might have accustomed to that, and when they have a
+ > folder with, say, 3 unstaged files, actually might expect these
+ > three files to be ignored when the folder is selected, but not
+ > future additions in that folder.
+ > 
+ > To keep surprises for the user at a minimum, I opted for an extra
+ > "Ignore Folder" action instead.
+
+ok, could we move up "Ignore Folder" above "Ignore" ? I guess "Ignore Folder" is more likely what a user wants on a folder.
+
+I noticed that when ignoring multiple entries on the same level of the hierarchy the new ignore entries are inserted into .gitignore in random order, would be nicer if new .gitignore entries would be sorted
+
+-------------------------------------
+author: Gerrit Johnathan Pham
+date: 2016-09-12 20:02:39.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

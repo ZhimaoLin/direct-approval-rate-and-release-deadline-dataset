@@ -1,0 +1,197 @@
+DESCRIPTION
+
+MB-21568: Reconcile hashtable with disk following rollback
+
+After rolling back the disk store to the requested seqno a scan of the
+vbucket's checkpoint must occur. Any item in the checkpoint with
+a seqno > than the rollback must be dropped or rolled back.
+
++ A missing close is addressed by using a wrapper class that will
+  RAII close each file opened in the rollback code.
+
+Change-Id: Iabe43f59ed40931c1c97b65147b7a414d4ff7cc5
+
+
+COMMENTS
+
+author: Tate Garrett
+date: 2016-11-14 10:18:55.152000000
+
+Change could not be merged due to a path conflict.
+
+Please rebase the change locally and upload the rebased commit for review.
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-11-14 14:34:57.329000000
+
+Uploaded patch set 10.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-14 14:35:07.505000000
+
+Patch Set 10:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-watson/386/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-14 14:35:07.644000000
+
+Patch Set 10:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/1358/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-14 14:35:07.786000000
+
+Patch Set 10:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/1771/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-14 14:35:07.922000000
+
+Patch Set 10:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/1562/ (4/4)
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-11-14 14:46:21.553000000
+
+Patch Set 10: Code-Review+2
+
+Probably worth getting Manu's eyes on this given he's worked on DCP rollback recently.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-14 15:04:37.707000000
+
+Patch Set 10: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/1771/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/1358/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/1562/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-watson/386/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-14 16:47:18.238000000
+
+Patch Set 10: -Verified
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/1772/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-14 17:35:02.942000000
+
+Patch Set 10:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/1359/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-14 17:35:03.423000000
+
+Patch Set 10:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/1563/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-14 17:40:45.368000000
+
+Patch Set 10:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-watson/387/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-14 18:11:16.562000000
+
+Patch Set 10: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/1772/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/1563/ : FAILURE
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-watson/1563/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/1359/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-watson/387/ : SUCCESS
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2016-11-15 01:13:18.288000000
+
+Patch Set 10: Code-Review-1
+
+(2 comments)
+
+Line:4006, src/ep.cc -> Isn't there a race condition still ?
+
+What if the flusher runs between lines 4003 and 4006 ?
+So I think we must
+Stop Flusher ==> DoRollback ==> Fix Hash Table ==> Start Flusher
+
+Line:4008, src/ep.cc -> Say we Fix Hash Table in line 4006 correctly.
+What about new writes to the checkpoint that arrive between execution of lines 4006 and 4008 ?
+I know this will not happen with correct working scenarios of the ns-server, but in some erroneous case this could happen.
+
+In short, this assumes that during rollback there are no writes to the checkpoint. This maybe ok in only 99.999% of cases in our model.
+I am ok to live with this for now, but just bringing it to the notice.
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-11-15 10:12:51.794000000
+
+Patch Set 10:
+
+(2 comments)
+
+Line:4006, src/ep.cc -> The flusher can't run against this VB as we're holding vb_mutexes[vbid] and the flusher needs that lock.
+
+Line:4008, src/ep.cc -> Replica writes would make life more difficult... There's possibly some cases difficult to catch, perhaps a write to the HT whilst VB active, then the VB flips to replica but the writing thread happens to call queueDirty at line 4007, then we'd have an item in the HT with a seqno above the rollback. We kinda need to block queueDirty as part of the rollback
+
+One thing I note, and have chatted to Dave about is there's no vbucket state check here?! I know the only place to call EP::rollback is DcpConsumer, but it seems we should add a ReaderLock check here to block state changes and only rollback replicas.
+
+I'll upload a new patch with the state lock, but we can think some more about the issue above?
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-11-15 10:57:44.654000000
+
+Patch Set 10:
+
+(1 comment)
+
+Line:4008, src/ep.cc -> Actually, set etc... are grabbing the VB state (read lock), so only replica writes would be a problem (which don't occur anyway).
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-11-16 16:57:14.775000000
+
+Change could not be merged due to a path conflict.
+
+Please rebase the change locally and upload the rebased commit for review.
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-11-16 18:02:44.693000000
+
+Change has been successfully cherry-picked as b20aeb6170dd9092e97c5e9346125747f3312a39 by Ashlee Kent
+
+-------------------------------------

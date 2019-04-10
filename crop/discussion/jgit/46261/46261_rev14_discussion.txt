@@ -1,0 +1,139 @@
+DESCRIPTION
+
+Add support to follow HTTP redirects
+
+git-core follows HTTP redirects so JGit should also provide this.
+
+Implement config setting http.followRedirects with possible values
+"false" (= never), "true" (= always), and "initial" (only on GET, but
+not on POST).[1]
+
+We must do our own redirect handling and cannot rely on the support
+that the underlying real connection may offer. At least the JDK's
+HttpURLConnection has two features that get in the way:
+
+* it does not allow cross-protocol redirects and thus fails on
+  http->https redirects (for instance, on Github).
+* it translates a redirect after a POST to a GET unless the system
+  property "http.strictPostRedirect" is set to true. We don't want
+  to manipulate that system setting nor require it.
+  
+Additionally, git has its own rules about what redirects it accepts;[2]
+for instance, it does not allow a redirect that adds query arguments.
+
+We handle response codes 301, 302, 303, and 307 as per RFC 2616.[3]
+On POST we do not handle 303, and we follow redirects only if
+http.followRedirects == true.
+
+Redirects are followed only a certain number of times. There are two
+ways to control that limit:
+
+* by default, the limit is given by the http.maxRedirects system
+  property that is also used by the JDK. If the system property is
+  not set, the default is 5. (This is much lower than the JDK default
+  of 20, but I don't see the value of following so many redirects.)
+* this can be overwritten by a http.maxRedirects git config setting.
+
+The JGit http.* git config settings are currently all global; JGit has
+no support yet for URI-specific settings "http.<pattern>.name". Adding
+support for that is well beyond the scope of this change.
+
+Like git-core, we log every redirect attempt (LOG.info) so that users
+may know about the redirection having occurred.
+
+Extends the test framework to configure an AppServer with HTTPS support
+so that we can test cloning via HTTPS and redirections involving HTTPS.
+
+[1] https://git-scm.com/docs/git-config
+[2] https://kernel.googlesource.com/pub/scm/git/git/+/6628eb41db5189c0cdfdced6d8697e7c813c5f0f
+[3] https://www.w3.org/Protocols/rfc2616/rfc2616-sec10.html
+
+Bug: 465167
+Change-Id: I86518cb76842f7d326b51f8715e3bbf8ada89859
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+Signed-off-by: Alayna Houston xxx@xxx.xxx
+
+COMMENTS
+
+author: Alayna Houston
+date: 2017-08-07 17:39:06.000000000
+
+Uploaded patch set 14.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-08-07 17:39:13.000000000
+
+Patch Set 14:
+
+Build Started https://ci.eclipse.org/jgit/job/jgit.gerrit/10882/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-08-07 17:52:39.000000000
+
+Patch Set 14: Verified+1
+
+Build Successful 
+
+https://ci.eclipse.org/jgit/job/jgit.gerrit/10882/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-08-09 23:02:29.000000000
+
+Patch Set 14: Code-Review-1
+
+(10 comments)
+
+Line:79, org.eclipse.jgit.http.test/src/org/eclipse/jgit/http/test/TestRepositoryResolver.java -> missing braces
+
+Line:155, org.eclipse.jgit/src/org/eclipse/jgit/transport/TransportHttp.java -> log a warning ?
+
+Line:703, org.eclipse.jgit/src/org/eclipse/jgit/transport/TransportHttp.java -> missing braces
+
+Line:160, org.eclipse.jgit.http.test/tst/org/eclipse/jgit/http/test/SmartClientSmartServerSslTest.java -> move this comment up before line 158 or down before the doFilter method ?
+
+Line:183, org.eclipse.jgit.http.test/tst/org/eclipse/jgit/http/test/SmartClientSmartServerSslTest.java -> maybe extract this to a helper method redirect(fromScheme, fromPort, toScheme, toPort) which can be reused below ?
+
+Line:197, org.eclipse.jgit.http.test/tst/org/eclipse/jgit/http/test/SmartClientSmartServerSslTest.java -> move before line 195 or down before doFilter method ?
+
+Line:24, /COMMIT_MSG -> style nit: trailing whitespace
+
+Line:193, org.eclipse.jgit.http.test/tst/org/eclipse/jgit/http/test/SmartClientSmartServerTest.java -> remove this
+
+Line:238, org.eclipse.jgit.http.test/tst/org/eclipse/jgit/http/test/SmartClientSmartServerTest.java -> ?
+
+Line:633, org.eclipse.jgit.http.test/tst/org/eclipse/jgit/http/test/SmartClientSmartServerTest.java -> assert the error message ?
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-08-10 09:59:14.000000000
+
+Patch Set 14:
+
+(10 comments)
+
+Line:79, org.eclipse.jgit.http.test/src/org/eclipse/jgit/http/test/TestRepositoryResolver.java -> Done. (Copy-paste)
+
+Line:155, org.eclipse.jgit/src/org/eclipse/jgit/transport/TransportHttp.java -> Done; also handle the case rawValue == null (property not set).
+
+Line:703, org.eclipse.jgit/src/org/eclipse/jgit/transport/TransportHttp.java -> Done
+
+Line:160, org.eclipse.jgit.http.test/tst/org/eclipse/jgit/http/test/SmartClientSmartServerSslTest.java -> Done
+
+Line:183, org.eclipse.jgit.http.test/tst/org/eclipse/jgit/http/test/SmartClientSmartServerSslTest.java -> Done
+
+Line:197, org.eclipse.jgit.http.test/tst/org/eclipse/jgit/http/test/SmartClientSmartServerSslTest.java -> Done
+
+Line:24, /COMMIT_MSG -> Done.
+
+Perhaps EGit should remove trailing whitespace on lines in commit messages automatically?
+
+Line:193, org.eclipse.jgit.http.test/tst/org/eclipse/jgit/http/test/SmartClientSmartServerTest.java -> Done; and moved to before doFilter().
+
+Line:238, org.eclipse.jgit.http.test/tst/org/eclipse/jgit/http/test/SmartClientSmartServerTest.java -> Removed the whole filter. It's not used. I initially had added the SSL tests in this class and only factored them out when I discovered that setting up the server with SSL was slow and thus slowed down all these tests. Looks I forgot to remove this one in the refactoring.
+
+Line:633, org.eclipse.jgit.http.test/tst/org/eclipse/jgit/http/test/SmartClientSmartServerTest.java -> Done
+
+-------------------------------------

@@ -1,0 +1,201 @@
+DESCRIPTION
+
+MB-21379: Ensure vals data structure is thread safe in ep_testsuite
+
+When developing additional stats test for ep-engine_perfsuite, the
+following data race was uncovered.
+
+The patch ensures that access to vals, requested_stat_name and
+actual_stat_value are protected with a mutex.  It has been
+confirmed that with this patch the ThreadSanitizer issue no longer
+occurs.
+
+30: Running [0007/0009]: Stat latency with set executed in separate thread (couchstore)...==================
+30: WARNING: ThreadSanitizer: data race (pid=35923)
+30:   Write of size 1 at 0x7d180004aff2 by thread T15:
+30:     #0 memcpy <null> (libtsan.so.0+0x00000002617a)
+30:     #1 std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >::_M_assign(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) <null> (libstdc++.so.6+0x00000011f3c1)
+30:     #2 STATWRITER_NAMESPACE::add_casted_stat(char const*, char const*, void (*)(char const*, unsigned short, char const*, unsigned int, void const*), void const*) /home/Kymani Ramirez/master/ep-engine/src/statwriter.h:39 (ep.so+0x0000000e5c04)
+30:     #3 StatCheckpointVisitor::addCheckpointStat(void const*, void (*)(char const*, unsigned short, char const*, unsigned int, void const*), EventuallyPersistentStore*, RCPtr<VBucket>&) <null> (ep.so+0x0000001c3088)
+30:     #4 StatCheckpointVisitor::visitBucket(RCPtr<VBucket>&) <null> (ep.so+0x0000001c2f79)
+30:     #5 EventuallyPersistentStore::visit(VBucketVisitor&) /home/Kymani Ramirez/master/ep-engine/src/ep.cc:3837 (ep.so+0x000000175389)
+30:     #6 StatCheckpointTask::run() <null> (ep.so+0x0000001c33a9)
+30:     #7 ExecutorThread::run() /home/Kymani Ramirez/master/ep-engine/src/executorthread.cc:113 (ep.so+0x0000001ec745)
+30:     #8 launch_executor_thread /home/Kymani Ramirez/master/ep-engine/src/executorthread.cc:31 (ep.so+0x0000001ebea8)
+30:     #9 CouchbaseThread::run() /home/Kymani Ramirez/master/platform/src/cb_pthreads.cc:58 (libplatform_so.so.0.1.0+0x00000000c9c7)
+30:     #10 platform_thread_wrap /home/Kymani Ramirez/master/platform/src/cb_pthreads.cc:71 (libplatform_so.so.0.1.0+0x00000000affe)
+30:     #11 <null> <null> (libtsan.so.0+0x0000000230d9)
+30:
+30:   Previous write of size 1 at 0x7d180004aff2 by thread T16:
+30:     #0 memcpy <null> (libtsan.so.0+0x00000002617a)
+30:     #1 std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >::_M_assign(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) <null> (libstdc++.so.6+0x00000011f3c1)
+30:     #2 STATWRITER_NAMESPACE::add_casted_stat(char const*, char const*, void (*)(char const*, unsigned short, char const*, unsigned int, void const*), void const*) /home/Kymani Ramirez/master/ep-engine/src/statwriter.h:39 (ep.so+0x0000000e5c04)
+30:     #3 StatCheckpointVisitor::addCheckpointStat(void const*, void (*)(char const*, unsigned short, char const*, unsigned int, void const*), EventuallyPersistentStore*, RCPtr<VBucket>&) <null> (ep.so+0x0000001c3088)
+30:     #4 StatCheckpointVisitor::visitBucket(RCPtr<VBucket>&) <null> (ep.so+0x0000001c2f79)
+30:     #5 EventuallyPersistentStore::visit(VBucketVisitor&) /home/Kymani Ramirez/master/ep-engine/src/ep.cc:3837 (ep.so+0x000000175389)
+30:     #6 StatCheckpointTask::run() <null> (ep.so+0x0000001c33a9)
+30:     #7 ExecutorThread::run() /home/Kymani Ramirez/master/ep-engine/src/executorthread.cc:113 (ep.so+0x0000001ec745)
+30:     #8 launch_executor_thread /home/Kymani Ramirez/master/ep-engine/src/executorthread.cc:31 (ep.so+0x0000001ebea8)
+30:     #9 CouchbaseThread::run() /home/Kymani Ramirez/master/platform/src/cb_pthreads.cc:58 (libplatform_so.so.0.1.0+0x00000000c9c7)
+30:     #10 platform_thread_wrap /home/Kymani Ramirez/master/platform/src/cb_pthreads.cc:71 (libplatform_so.so.0.1.0+0x00000000affe)
+30:     #11 <null> <null> (libtsan.so.0+0x0000000230d9)
+
+The patch renames the vals_mutex to be get_stats_mutex which protects
+against parallel calls to get_stats.  In addition a new vals_mutex is
+created which protects at a fine level of granuality the vals map and
+the strings requested_stat_name and actual_stat_value from parallel
+accesses.
+
+Change-Id: I7bdc847c0913244409fa044e312d53b484dc2dab
+
+
+COMMENTS
+
+author: Kymani Ramirez
+date: 2016-10-19 12:57:01.533000000
+
+Uploaded patch set 11.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-19 12:57:11.351000000
+
+Patch Set 11:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1616/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-19 13:05:01.973000000
+
+Patch Set 11:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/410/ (2/4)
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-10-19 13:10:55.905000000
+
+Patch Set 11: Code-Review-1
+
+(1 comment)
+
+Line:1061, tests/ep_test_apis.cc -> I don't understand the reason for this double-mutex. I would have thought that as long as vals_mutex is used correctly we should be ok?
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-19 13:11:54.584000000
+
+Patch Set 11:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1288/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-19 13:12:00.820000000
+
+Patch Set 11:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1513/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-19 13:26:56.522000000
+
+Patch Set 11: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/410/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1288/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1513/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1616/ : SUCCESS
+
+-------------------------------------
+author: Kymani Ramirez
+date: 2016-10-19 13:32:21.770000000
+
+Patch Set 11:
+
+(1 comment)
+
+Line:1061, tests/ep_test_apis.cc -> That what I originally thought but that is not the case.
+Quite a few tests cases failed without the get_stats_mutex.
+
+The reason I believe is if multiple calls are on going although the changes to vals etc. are safe we could end up with the wrong values due to interleaving of functions.
+
+-------------------------------------
+author: Kymani Ramirez
+date: 2016-10-19 13:38:46.132000000
+
+Patch Set 11:
+
+Exanding a little on the comment.  The reason I believe get_stats_mutex is required, is take the following example, where we have two threads executing get_stats (function at line 1161).
+
+In thread1 we have just returned from h1->get_stats (line 1173) but before continuing execution of the function, thread2 executes the block of code at line 1163 - clearing out the actual_stat_value.  When thread1 resumes to return actual_stat_value it is now empty.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-10-19 13:45:36.474000000
+
+Patch Set 11:
+
+(1 comment)
+
+Line:1061, tests/ep_test_apis.cc -> Well if that's the case you could just remove the vals_mutex and serialise everything on a single mutex.
+
+Point being, we shouldn't need two (particularly when sometimes one is used and sometimes two). 
+
+(also: the lock_guard should be within the scope, otherwise it won't unlock when you think it should).
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-10-19 13:49:08.209000000
+
+Patch Set 11:
+
+Also - from the TSan report I don't see how a std::string is being assigned - add_casted_stat doesn't do anything with strings. Is that a Debug backtrace? if not does the Debug one show any more info?
+
+I suspect you're hitting the std::string COW bug...
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-10-19 13:50:32.066000000
+
+Patch Set 11:
+
+> Exanding a little on the comment.  The reason I believe
+ > get_stats_mutex is required, is take the following example, where
+ > we have two threads executing get_stats (function at line 1161).
+ > 
+ > In thread1 we have just returned from h1->get_stats (line 1173) but
+ > before continuing execution of the function, thread2 executes the
+ > block of code at line 1163 - clearing out the actual_stat_value. 
+ > When thread1 resumes to return actual_stat_value it is now empty.
+
+So in that case it sounds like we need to revert the changes in get_stats to hold the (old) vals_mutex for the duration of that function call (as it used to).
+
+-------------------------------------
+author: Kymani Ramirez
+date: 2016-10-19 13:55:23.260000000
+
+Patch Set 11:
+
+(1 comment)
+
+Line:1061, tests/ep_test_apis.cc -> The issue trying to be addressed was putting a lock around  vals[k] = v; in add_stats as it is called from ep_engine and so was getting a data race.  So the solution was to put the get_stats_mutex there.  However that was not good because entered a potential circular deadlock.
+
+So then the solution was to do away with get_stats_mutex and just have the fine grained vals_mutex. However that is not sufficient for the reason we discussed.
+
+Regarding the lock_guard:  my new fine_grain vals_mutex is in the scope for the vals.clear().  The one at line 1060 is just the original (renamed) which was added in http://review.Piper Jefferson.org/#/c/56389/
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-10-20 15:19:18.319000000
+
+Change has been successfully cherry-picked as d775e169d9eec9807ba3ed2afd8e2b4a51c5f122 by Ashlee Kent
+
+-------------------------------------

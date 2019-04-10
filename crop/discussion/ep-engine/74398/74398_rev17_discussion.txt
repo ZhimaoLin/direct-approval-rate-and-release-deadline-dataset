@@ -1,0 +1,65 @@
+DESCRIPTION
+
+MB-16181: Expose collection-length through get_item_info
+
+Collection-aware DCP will need to transmit the collection length
+for mutation/deletion/expiration messages, allowing the client to
+know the collection.
+
+Note this is currently an extra scan/search on the key looking for the
+separator. Two points:
+
+1. When separator changes are added this can go wrong. If the
+   get_item_info engine call back is made with a key "c::k" and the
+   separator has just changed from "::" to "-", we will report
+   a collectionLen of 0, instead of 1.
+   We would need to block separator changes if we know this bug could
+   be possible, e.g. if DCP queue is not empty cannot change
+   separator. Or read 2...
+
+2. This extra search could be removed if all StoredValue/Item carry
+   the collectionLen from construction onwards. Note we will have
+   scanned the DocKey at SET time for collection validation and thus
+   could save the collectionLen at that point removing the need for
+   this extra scan and at the same time addressing point 1.
+   This would be at the cost of 1 extra byte per Item/StoredValue.
+
+Change-Id: I8458b566d39a7774c38f5e069e19f048de4e3525
+
+
+COMMENTS
+
+author: Jim WNathalie Landryer
+date: 2017-03-14 08:58:24.921000000
+
+Uploaded patch set 17.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-03-14 09:15:05.800000000
+
+Patch Set 17: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/3505/ : FAILURE
+
+Compile error at /home/Piper Jefferson/jenkins/workspace/ep-engine-addresssanitizer-master/ep-engine/src/item.cc:207:14:
+error: no member named 'collectionLen' in 'item_info'
+ ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-addresssanitizer-master/3505/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/4691/ : FAILURE
+
+Compile error at /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/item.cc:207:14:
+error: no member named 'collectionLen' in 'item_info'
+ ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/4691/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/4253/ : FAILURE
+
+Compile error at /home/Piper Jefferson/jenkins/workspace/ep-engine-clang_analyzer-master/ep-engine/src/item.cc:207:14:
+error: 'struct item_info' has no member named 'collectionLen'
+ ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-clang_analyzer-master/4253/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/4919/ : FAILURE
+
+-------------------------------------

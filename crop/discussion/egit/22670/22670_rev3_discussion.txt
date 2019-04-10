@@ -1,0 +1,74 @@
+DESCRIPTION
+
+Prevent exception propagation from the auto-staging hook
+
+Signed-off-by: Gustavo Green xxx@xxx.xxx
+Change-Id: I41b2c75496178c925f09d65eab5a9b3ab6cbee32
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2014-05-05 07:57:42.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/5821/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-05-05 08:15:57.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/5821/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2014-05-05 16:14:18.000000000
+
+Patch Set 3: Code-Review-1
+
+(3 comments)
+
+Line:112, org.eclipse.egit.core/src/org/eclipse/egit/core/GitMoveDeleteHook.java -> s/auto-staging should/auto-staging deletions should/
+
+Line:116, org.eclipse.egit.core/src/org/eclipse/egit/core/GitMoveDeleteHook.java -> could you elaborate what's the advantage of ignoring the exception like that ?
+
+according to this method's javadoc returning false means that the team provider doesn't feel responsible for deleting this file which seems inappropriate here (can't test this on Mac since it doesn't fail to delete the file) 
+
+also it mentions that if the call is failing tree.failed() should be called to notify Team that it failed
+
+Line:7, /COMMIT_MSG -> s/from the auto-staging hook/when auto-staging moves or deletions/
+
+-------------------------------------
+author: Gustavo Green
+date: 2014-05-06 07:44:21.000000000
+
+Patch Set 3:
+
+(3 comments)
+
+Before I update the next patch set with two small aesthetic changes, I'd like your thoughts on my development on the change.
+
+Line:112, org.eclipse.egit.core/src/org/eclipse/egit/core/GitMoveDeleteHook.java -> Done
+
+Line:116, org.eclipse.egit.core/src/org/eclipse/egit/core/GitMoveDeleteHook.java -> I'll elaborate on my thoughts, and wait for your answer before pushing another review :).
+
+Well, my question would be more like "at what point should an automatic, but not mandatory, hook should fail a process as a whole"?
+
+Sometime in december, I had launched a discussion on egit-dev about the DirCache locking mechanism, along with a very small test case describing more or less the issue : http://dev.eclipse.org/mhonarc/lists/egit-dev/msg03353.html .
+
+I thought that it would be possible to implement a reentrant lock for the DirCache, but that proved impossible for me since there were just too many assumptions made that the process had free reign over everything.
+
+Basically, "git" is not responsible for merging files : someone might have provided his own custom merger for a given file, and we mustn't prevent him to work on said file. At the start of a merging process, the RecursiveMerger acquires and locks the DirCache. Then, when it sees like it needs to merge a file which possesses its own merger, it will delegate to that merger for all modifications. If the modification is "that file should be deleted", then the custom merger will delete it and tell it to its caller (the merger strategy), which in turn is responsible to update the index it has already locked. Problem here is that when the custom merger tries and delete the file, this hook is triggered. It fails to lock the index, and it throws up, failing the merge process as a whole just because it couldn't make an eager (and useless, in this case) modification to the index.
+
+That is why I ended up catching and ignoring the exception : whatever the case, I do not think that this hook should make the modification in the workspace fail entirely, whatever it is that it couldn't do. Even if it could not modify the index, the user will still be able to do it later, either through the staging view or through a command line interface for git. Then, and only then, will it be a good time to show an error to the user if the operation fails : an error to something he asked for, not an error for something that occurred automatically and, in this case, out of turn.
+
+I think the proper returned boolean is "false" : "I couldn't lock the index, so simply let the caller delete the file". returning "true" would mean that we did the deletion, which is wrong in this case.
+
+Line:7, /COMMIT_MSG -> Done
+
+-------------------------------------

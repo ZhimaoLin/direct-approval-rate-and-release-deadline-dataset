@@ -1,0 +1,110 @@
+DESCRIPTION
+
+Check the node status through Memcached.
+
+In order to check for the node status we request stats from
+Memcached. If they aren't returned, we consider the node as
+down. This includes nodes that are currently warming up the
+cache (this is intended).
+
+Nodes that are pending (they were already failovered) are
+not taken into account.
+
+Change-Id: I472da6806669675e6c64a48e1c808dc347c301dc
+
+
+COMMENTS
+
+author: Ayla Reynolds
+date: 2011-06-30 21:39:32.280000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2011-06-30 23:00:38.525000000
+
+Patch Set 3:
+
+Doesn't work. I blocked everything on one node and here's what  I've seen in logs:
+
+
+=INFO REPORT==== 1-Jul-2011::01:57:52 ===
+xxx@xxx.xxx Failing over {'EXIT',
+                                                             {timeout,
+                                                              {gen_server,
+                                                               call,
+                                                               [{'ns_memcached-default',
+                                                                 xxx@xxx.xxx
+                                                                {stats,<<>>},
+                                                                2000]}}}
+
+
+Apparently, it's passing this large term instead of node.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2011-06-30 23:00:45.095000000
+
+Patch Set 3: Fails
+
+
+
+-------------------------------------
+author: Ayla Reynolds
+date: 2011-06-30 23:13:36.203000000
+
+Patch Set 3:
+
+Weird, all my tests pass. I'll have another look tomorrow. Can you tell me what you did to make it fail?
+
+-------------------------------------
+author: Nathalie Landry
+date: 2011-06-30 23:19:25.718000000
+
+Patch Set 3:
+
+Also entire commits chain doesn't pass dialyzer.
+
+I simply made iptables drop all packets to/from some node.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2011-06-30 23:20:02.117000000
+
+Patch Set 3:
+
+This might be step in right direction:
+
+
+
+diff --git a/src/auto_failover.erl b/src/auto_failover.erl
+index bee0364..2aebf92 100644
+--- a/src/auto_failover.erl
++++ b/src/auto_failover.erl
+@@ -344,17 xxx@xxx.xxx check_nodes(Nodes, Buckets) ->
+     Combination =  [{N, B} || N <- Nodes, B <- Buckets],
+     misc:parallel_map(
+       fun({Node, Bucket}) ->
+-          try
+-              Reply = gen_server:call({ns_memcached:server(Bucket), Node},
+-                                      {stats, <<>>}, ?STATS_TIMEOUT),
+-              case Reply of
+-                  {ok, _Stats} -> nil;
+-                  % Coulnd't retreive stats, node should be considered as down
+-                  {memcached_error, _Status, _Msg} -> Node
+-              end
++          try gen_server:call({ns_memcached:server(Bucket), Node},
++                              {stats, <<>>}, ?STATS_TIMEOUT) of
++              {ok, _Stats} -> nil;
++                                                % Coulnd't retreive stats, node should be considered as down
++              {memcached_error, _Status, _Msg} -> Node
+           catch
+-              % Node was down
+-              exit:{{nodedown,_},_} -> Node
++              _T:_E -> Node
+           end
+       % Stop the call before the next tick starts
+       end, Combination, ?TICK - 200).
+
+-------------------------------------

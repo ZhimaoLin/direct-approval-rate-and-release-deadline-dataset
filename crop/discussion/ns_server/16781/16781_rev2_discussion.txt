@@ -1,0 +1,60 @@
+DESCRIPTION
+
+MB-5307: optimized ebucketmigrator network delays
+
+It was found that Naggle algorithm delays are slowing down rebalances
+quite a lot. On the other hand just naively setting TCP_NODELAY option
+does not work, because ebucketmigrator is using send per tap
+message. And I've found it to slow down takeovers that require sending
+some data volumes.
+
+Alternative approach of permanently having TCP_NODELAY on upstream
+socket and briefly enabling TCP_NODELAY on downstream socket for
+pushing of previously sent messages seems to work well. The idea is
+that erlang & memcached will batch enough stuff that we'll receive as
+one piece in handle_info. And then pass to process_data. Process data
+will do (potentially a bunch of) send calls. If after that we don't
+have full frame transmission may be delayed according to Naggle's
+algorithm. So we "push" this stuff through.
+
+Something better perhaps can be done. I.e. we could detect messages
+that we need to deliver asap (most likely with ack flag set) and only
+push them. But implemented behavior seems to be good enough. My
+thinking is that memcached is seemingly doing 10 messages per send
+syscall. Which for short messages is already imperfect. And memcached
+is using TCP_NODELAY. So we should be matching their questionable
+behavior. But hopefully not making it significantly worse.
+
+Change-Id: Ibc36bd8b010f3052c6731e78db656cf2cd7369bb
+
+
+COMMENTS
+
+author: Nathalie Landry
+date: 2012-06-05 17:07:52.588000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2012-06-05 17:08:08.189000000
+
+Patch Set 2: Looks good to me, approved
+
+Automatically re-added by Roselyn Villegas trivial rebase detection script.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-06-05 17:08:14.922000000
+
+Patch Set 2: Verified
+
+
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-06-05 20:36:43.996000000
+
+Change has been successfully cherry-picked as 4217416e71078303b4d7e6975e9eb6eee302f0c0.
+
+-------------------------------------

@@ -1,0 +1,170 @@
+DESCRIPTION
+
+First cut for auto-failover.
+
+You can enable it either by setting auto_failover to
+[{enable, true}, {interval, <intervalinmiliseconds>}],
+or by calling
+ns_orchestrator:enable_auto_failover(<intervalinmiliseconds>).
+To disable it, either change the auto_failover config setting to
+[{enable, false}, {interval, nil}], or call
+ns_orchestrator:disable_auto_failover().
+
+Change-Id: I3667d363a53d439fe0d54402871d3b95f59e326b
+
+
+COMMENTS
+
+author: Ayla Reynolds
+date: 2011-04-29 17:34:21.818000000
+
+Patch Set 1:
+
+This is a first version, to see if I'm on the right track. This is not a "ready to commit"-patch. Who else should added to review to this patch? I feel like someone with good OTP knowledge should have another look.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2011-04-29 17:50:03.536000000
+
+Patch Set 1: Do not submit
+
+1. I understand your testing concerns. You're modifying some existing code without test and that's tricky to test. Maybe you should look more into integration tests.
+
+2. Core logic is incorrect. With your approach it will sometimes failover nodes that are down only briefly. You really need to ensure that node was really down for long period.
+
+3. If you really need separate timer (i'm not sure) then separate gen_server make more sense. You will not need to suffer with extracting and putting timer into three types of records.
+
+-------------------------------------
+author: Noah Dean
+date: 2011-04-29 18:07:44.426000000
+
+Patch Set 1:
+
+I think we should have a separate gen_server just for failover management.
+
+With that module, you can register node down messages and then we can instruct the failover to initiate.  I'd do something like this:
+
+    % Every time we detect a node fault of any type, we tell it.
+    % It could just do this at the OTP layer since it's just a
+    % note.
+    ns_failover:node_down(Node).
+
+    % Periodically, we'll check the state of all the ones we
+    % accumulated.  This is just called blindly with a timer.
+    ns_failover:check_nodes().
+
+    % For each node, we make a decision.
+    % If the node is up, we remove it from our list.
+    % If the timestamp < threshold, we ignore it.
+    % If the timestamp > threshold, we fail it.
+    ns_failover:check_node(NodeName, Timestamp).
+
+You can design for testing by making sure your internal API is a bunch of stateless stuff.  Pass in your state and receive a new one.  The side-effect of failing it can be mocked or injected pretty easily.
+
+-------------------------------------
+author: Ayla Reynolds
+date: 2011-04-29 18:16:13.649000000
+
+Patch Set 1:
+
+@Aliaksey:
+
+1. I'd like to do some integration tests with cucumberl.
+
+2. No, that's what the interval is for. Just set the interval to a number bigger number and you are good.
+
+3. The reason why I've put everything into ns_orchestrator, that it runs only on a single node and not on every node. I need to have a closer look how to write a gen_server that runs only on one node and switches automatically to another one if it goes down.
+
+@Dustin:
+
+Most of the stuff is already in ns_cluster_membership (checking for nodes that are down).
+
+As you also propose to put it into its own gen_server I'll have a look at it next week, see 3) above for the problems I'll have.
+
+-------------------------------------
+author: Noah Dean
+date: 2011-04-29 18:31:02.457000000
+
+Patch Set 1:
+
+I'm not suggesting you write more code than is necessary (definitely reuse what's there), but to isolate discrete functionality into separate compilation units and test them in isolation.  Designing code for testability can be difficult, but it has this wonderful side-effect of requiring code to be really, really simple.
+
+So you may be able to ask if a node is valid from ns_cluster_membership, but you'll want a function inside your module that just takes these inputs and does something:
+
+    % node name, age, timeout, is up?
+    do_something(_Node, _Age, _Timeout, true) -> ok;
+    do_something(_Node, Age, Timeout, false) when Age < Timeout -> ok;
+    do_something(Node, Age, Timeout, true) -> fail(Node).
+
+Now you can test it.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2011-04-29 18:32:16.958000000
+
+Patch Set 1:
+
+>> 1. I'd like to do some integration tests with cucumberl.
+
+I know I'm biased here (heavily against BDD), but we have objective reason to avoid cucumberl. We already have some integration tests written in normal erlang.
+
+>> 2. No, that's what the interval is for. Just set the interval to a number bigger number and you are good.
+
+I don't think so. You should periodically check that node is still down and after enough number of checks decide that it's down. That'll ensure that you're not randomly failing over nodes.
+
+>> 3. The reason why I've put everything into ns_orchestrator, that it runs only on a single node and not on every node. I need to have a closer look how to write a gen_server that runs only on one node and switches automatically to another one if it goes down.
+
+There's mb_master_sup that's for things that need to be run only on one node.
+
+-------------------------------------
+author: Noah Dean
+date: 2011-04-29 18:36:37.774000000
+
+Patch Set 1:
+
+(BTW, the code in my comments isn't intended to be correct or useful, but just shaped similarly to the way correct and useful code might be)
+
+-------------------------------------
+author: Harley Martin
+date: 2011-04-29 18:42:22.723000000
+
+Patch Set 1:
+
+It sounds like Volker's implementation is neither right or wrong, but that the failover criterion is not well specified, or at least there are different interpretations.
+
+-------------------------------------
+author: Ayla Reynolds
+date: 2011-04-29 19:06:25.667000000
+
+Patch Set 1:
+
+@Aliaksey
+>> I know I'm biased here (heavily against BDD), but we have objective reason to avoid cucumberl. We already have some integration tests written in normal erlang.
+
+And also some in Cucumber (Ruby). But I don't care that much about it, it just sounded like fun (and dogfooding)
+
+>> I don't think so. You should periodically check that node is still down and after enough number of checks decide that it's down. That'll ensure that you're not randomly failing over nodes.
+
+Oh, I finally got the point. If I check it in a certain interval it could be down, only for a sec, not the full interval. And if I wait for two times to check it, it might have been up in the meantime (if the interval is big). So I need to check several times, to make sure it is really down (puh, this will make it harder :). Thanks.
+
+>> There's mb_master_sup that's for things that need to be run only on one node.
+
+Cool I'll have a look on Monday.
+
+@Dustin
+
+Thanks for the input.
+
+@Jan
+
+The auto-failover criterion is well defined. I can forward the email to anyone who wants it.
+
+-------------------------------------
+author: Roselyn Villegas Code Review
+date: 2011-05-24 01:26:23.225000000
+
+Your change could not be merged due to a path conflict.
+
+Please merge (or rebase) the change locally and upload the resolution for review.
+
+-------------------------------------

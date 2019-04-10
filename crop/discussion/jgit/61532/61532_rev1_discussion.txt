@@ -1,0 +1,86 @@
+DESCRIPTION
+
+Fix Repository class to respect “bare” builder option
+
+create() method of the Repository class was producing a non-bare
+repository regardless of whether BaseRepositoryBuilder.setBare is
+called or not.
+i.e.
+   new RepositoryBuilder().setGitDir(file).setBare().build().create();
+was failing with NoWorkTreeException.
+
+This commit fixes this behaviour by storing “bare” option in
+Repository class while being constructed and invoking create(bare)
+method with this argument when create() method is called.
+
+Bug: 469532
+Change-Id: I1dce8df1997107412458a257bfa1b554f0f4da00
+Signed-off-by: Roberto Gross xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Roberto Gross
+date: 2015-11-29 20:56:41.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-11-29 20:56:47.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7644/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-11-29 21:04:17.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7644/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-12-03 13:01:25.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:1338, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> we have a field "bare" now but the method "isBare()" is not using it. Strange
+
+-------------------------------------
+author: Roberto Gross
+date: 2015-12-12 10:31:36.000000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:129, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> I think a fix is needed for misleading comments regarding BaseRepositoryBuilder.bare field and its counterpart in this change. While inspecting the behaviour of this field i've observed that
+new RepositoryBuilder().setGitDir(SOME_DIR).setup().isBare() returns true (for SOME_DIR != “.git”) which contradicts with virtually all the comments and javadoc stating that this field is true only if forced. While apparently the reason for this behaviour is setBare fallback in BaseRepositoryBuilder.guessWorkTreeOrFail, i believe the behaviour is correct (at least similar to original git implementation) and it is the documentation and comments that should be changed.
+
+Line:1338, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> Thanks, it’s a very good point in fact. I hadn’t put much thought on it initially but now i agree, it’s really strange. The issue is, from Repository class point of view, we have no control over the abstract create(bare) function, and it should alter what isBare will return subsequently. Or should it? I have no idea what repo.isBare() should return in ambiguous cases like after the code below.
+
+Repository repo = new RepositoryBuilder().setWorkTree(dir).build();
+repo.create(true);
+
+Furthermore, concrete classes implementing this function have two potentially contradicting sources to test bare. One is the function argument and the other is isBare method. And of course FileRepository class uses both :). I naively wish create(bare) function would have never existed or at least been protected, but since it exists and public and we have backwards compatibility burden on our back, only option i can come up with is this "minimally invasive" solution of NOT adding bare field to Repository class and using create(isBare()) in create() method.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-12-14 10:25:28.000000000
+
+Patch Set 1: Code-Review-1
+
+(2 comments)
+
+Line:129, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> I would suggest to upload of change of the javadoc and discuss on the concrete proposal. I agree that bare handling is not well documented. Let's improve.
+
+Line:1338, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> Yes, I also think now that we should not introduce a "bare" field if we already have an abstract "isBare()" method. We left it up to the responsibility of implementors of Repository to have a consistent behavior of create(bare) and isBare(). Maybe we should document that better in Repository. And we should test our own implementations of Repository to behave as we expect.
+
+-------------------------------------

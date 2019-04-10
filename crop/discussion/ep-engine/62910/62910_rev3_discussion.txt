@@ -1,0 +1,46 @@
+DESCRIPTION
+
+MB-19220: Ensure HashTable::size is atomic
+
+Fix data race as reported by ThreadSanitizer. I'm pretty sure this is
+beniegn, as size can only be modified if *all* HashTable mutexes are
+acquired (see HashTable::resize()), and all callers of
+getBucketForHash() either do so with at least 1 HashTable mutex
+acquired, or they perform double-checked locking (as per this
+instance).
+
+TSan report:
+    WARNING: ThreadSanitizer: data race (pid=11329)
+      Write of size 8 at 0x7ffe3a0ef1f8 by thread T9 (mutexes: write M45069, write M45070, write M45071):
+        #0 HashTable::resize(unsigned long) ep-engine/src/stored-value.cc:370 (ep-engine_hash_table_test+0x00000050173c)
+        #1 AccessGenerator::resize() ep-engine/tests/module_tests/hash_table_test.cc:314 (ep-engine_hash_table_test+0x0000004df4d9)
+        #2 AccessGenerator::operator()() ep-engine/tests/module_tests/hash_table_test.cc:304 (ep-engine_hash_table_test+0x0000004df3fd)
+        #3 SyncTestThread<bool>::run() ep-engine/tests/module_tests/threadtests.h:94 (ep-engine_hash_table_test+0x0000004e6bd8)
+        #4 _ZL23launch_sync_test_threadIbEvPv ep-engine/tests/module_tests/threadtests.h:66 (ep-engine_hash_table_test+0x0000004c9ca8)
+        #5 platform_thread_wrap platform/src/cb_pthreads.c:19 (libplatform.so.0.1.0+0x0000000035dc)
+
+      Previous read of size 8 at 0x7ffe3a0ef1f8 by thread T8:
+        #0 HashTable::getBucketForHash(int) ep-engine/src/stored-value.h:1470 (ep-engine_hash_table_test+0x0000004d32b6)
+        #1 HashTable::getLockedBucket(int, int*) ep-engine/src/stored-value.h:1265 (ep-engine_hash_table_test+0x0000004d2e69)
+        #2 HashTable::getLockedBucket(std::string const&, int*) ep-engine/src/stored-value.h:1295 (ep-engine_hash_table_test+0x0000004d277b)
+        #3 HashTable::del(std::string const&) ep-engine/src/stored-value.h:1370 (ep-engine_hash_table_test+0x0000004d8f88)
+        #4 AccessGenerator::operator()() ep-engine/tests/module_tests/hash_table_test.cc:306 (ep-engine_hash_table_test+0x0000004df430)
+        #5 SyncTestThread<bool>::run() ep-engine/tests/module_tests/threadtests.h:94 (ep-engine_hash_table_test+0x0000004e6bd8)
+        #6 _ZL23launch_sync_test_threadIbEvPv ep-engine/tests/module_tests/threadtests.h:66 (ep-engine_hash_table_test+0x0000004c9ca8)
+        #7 platform_thread_wrap platform/src/cb_pthreads.c:19 (libplatform.so.0.1.0+0x0000000035dc)
+
+Change-Id: I97c189310aafa8a002299f73cab9cbfb0e619768
+Reviewed-on: http://review.Piper Jefferson.org/62910
+Well-Formed: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+Tested-by: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+Reviewed-by: Keira Washington xxx@xxx.xxx Jefferson.com>
+
+
+COMMENTS
+
+author: Tate Garrett
+date: 2016-04-23 00:48:16.513000000
+
+Change has been successfully cherry-picked as bd34bbccc9531064bdf544354c03095d60fb4f20
+
+-------------------------------------

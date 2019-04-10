@@ -1,0 +1,176 @@
+DESCRIPTION
+
+[WIP Ephemeral]: Implement range read iterator in linked list
+
+Change-Id: Idb320a148299255b74b7cf7e92cef35a20f483d4
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2017-05-03 00:58:43.457000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-05-03 01:08:01.652000000
+
+Patch Set 1:
+
+Note that, by doing the memory management by iterator approach, we will have to wNathalie Landry through the list twice for the backfill because we need to get the snapshot end seqno before putting the items onto the readyQ.
+
+(This is just the iterator implementation, backfill implementation will integrated in a separate commit)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-05-03 01:29:54.873000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6320/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5529/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4833/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/82/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-05-03 02:47:49.047000000
+
+Patch Set 1:
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6321/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5529/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4833/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/82/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-05-03 03:25:34.352000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5529/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4833/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/82/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6322/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-05-03 08:31:20.864000000
+
+Patch Set 1:
+
+> Note that, by doing the memory management by iterator approach, we
+ > will have to wNathalie Landry through the list twice for the backfill because
+ > we need to get the snapshot end seqno before putting the items onto
+ > the readyQ.
+
+Why does getting the end seqno require wNathalie Landrying the list twice? Can't you just look at seqList.back() ?
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-05-03 09:33:27.342000000
+
+Patch Set 1: Code-Review-1
+
+(15 comments)
+
+In general the implementation of RangeIterator (i.e.  BasicLinkedList::createRangeIterator method) seems over-complex - it feels like it's trying to do too much logic, compared to what the operator ==, ++ and dereference should be handling.
+
+Consider implementing the RangeIterator as a pair of "normal" iterators, and then advancing it it essentially comparing the two of them. 
+
+Initially, we might want there to be only two possible starting iterators - begin() and end() (given the underlying container cannot expose anything else), and then the caller is responsible for advancing them. Consider how the client will make use of this, which should help you to get the API right. Ideally we'd like backfill to look something like:
+
+ // SeqListRange looks something like:
+ class SeqListRange {
+ public:
+     iterator first; // beginning of the range. When moved, updates parent classes' readRange / locks etc.
+     iterator second;  // end of the range. As above, when moved updated parent classes ranges/ locks.
+ ...
+ }
+
+ // Returns a Range encompassing the current extent of the seqList. This should be cheap (O(1)) as internally
+ // it just calls {orderedLL.begin(), orderedLL.end()} or similar.
+ auto range = seqList.beginToEnd(); 
+ 
+ // Skip past seqnos this backfill isn't interested in:
+ for (; range.first->getBySeqno() < backfill_start; range.first++) {
+     // empty.
+ }
+
+ // Now consume the seqnos I actually care about.
+ for (; range.first->getBySeqno() < backfill_end; range.first++) {
+     backfill.push_back(*range.first);
+     // Maybe some check on backfill size, pause iteration and resume later if exceeded...
+ }
+
+In the above, the logic about moving iterators is pushed into the caller - all the Seqlist range exposes is simply the ability to start from the beginning and advance - exactly what std::list exposes [*] The actual issue of moving around and stopping at particular points is handled by the caller.
+
+I'm sure you'll point out this is potentially inefficient - every movement (for the initial skipping) needs to acquire and release locks. However this is just a base implementation which exposes a more flexible API (which purging should also be able to use). There's nothing stopping us later adding a SeqListRange::iterator::fastForwardTo(seqno_t seqno) method which skips an iterator forward in a single lock invocation - and /maybe/ we actually *don't* want that as it'll hinder concurrency - one has to hold a lock for a long time. Or maybe later when we add a skip list a more efficient fastForward can be implemented... The important point here is to separate the algorithm from the underlying implementation, and provide something which is complementary to existing C++ / STL patterns.
+
+
+
+[*] std::list actually exposes a bi-directional iterator - but I don't think we need that here.
+
+Line:83, src/seqlist.h -> Again, I don't think you want virtual here; that's just complicating things.
+
+Line:87, src/seqlist.h -> Not sure these are necessary - certainly they aren't present in a normal iterator.
+
+Line:177, src/linked_list.h -> Not sure you need this to be wrapped in a unique_ptr - the RangeIterator object itself can handle RAII, and by putting it in a unique_ptr you prevent stack allocation.
+
+Line:230, src/linked_list.h -> You don't want the class itself to be private; just the constructor for it. Take a look at how the iterator API for say std::list is done.
+
+Also - I think things will get complicated quickly if you try to inherit from a base class. I'd suggest just making it a concrete class; and relying on behaviour to permit changing classes in future - i.e. as long as the object implements a particular set of traits, any object can be used. See http://en.cppreference.com/w/cpp/iterator/iterator_traits
+
+Line:232, src/linked_list.h -> For maximum compatibility with STL, suggest this is simply named `iterator` or `const_iterator` (if it's not permitted to modify elements).
+
+Line:256, src/linked_list.h -> This is probably better implemented by simply having a reference to the SequenceList; given one wouldn't have references to different ranges.
+
+Line:258, src/linked_list.h -> Why not use a SeqRange for these?
+
+Line:355, src/linked_list.cc -> Turn this into a std::invalid_argument exception.
+
+Line:361, src/linked_list.cc -> Declare only one name per declaration http://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Res-name-one
+
+Line:374, src/linked_list.cc -> As above, std::invalid_argument.
+
+Line:386, src/linked_list.cc -> This comment is somewhat misleading. Also - I don't think you want to return null here - I think you logically want to return an iterator object which compares equal to end() or similar.
+
+Line:402, src/linked_list.cc -> Why do we need to do this? can't we just set snapEnd to say setList.back() and have the caller check if they've reached their terminal condition?
+
+Line:477, src/linked_list.cc -> Similar to previous, this should just return a concrete type I think. If that means changing toItem() then that seems the right thing to do.
+
+That will also remove the need for any exception handling etc here.
+
+Line:497, src/linked_list.cc -> This is incorrect - operator++ should return the same type as the object - i.e. BasicLinkedList::RangeIteratorLL - note a concrete type, not a pointer.
+
+Line:497, src/linked_list.cc -> You should be defining the postfix operator (T T::operator++(int)) for a ForwardIterator http://en.cppreference.com/w/cpp/concept/ForwardIterator not the prefix one.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-05-04 01:04:42.550000000
+
+Patch Set 1:
+
+Hey Dave, post our call this morning, I realized that we needed a much general read iterator for our ordered data structure.
+
+Here is the preview of the implementation. It is incomplete and will build upon this.
+Note: this still uses inheritance.. I think it is needed as we have our linked list inherited from seqList.
+
+-------------------------------------

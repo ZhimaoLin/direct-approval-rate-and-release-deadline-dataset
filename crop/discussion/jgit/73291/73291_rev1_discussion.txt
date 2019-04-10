@@ -1,0 +1,111 @@
+DESCRIPTION
+
+Fix computation of id in WorkingTreeIterator with autocrlf and smudging
+
+JGit failed to do checkouts when the index contained smudged entries and
+autocrlf was on. In such cases the WorkingTreeIterator calculated the
+SHA1 sometimes on content which was not correctly filtered. The SHA1 was
+computed on content which two times went through a lf->crlf conversion.
+
+We used to tell the treewalk whether it is a checkin or checkout
+operation and always use the related filters when reading any content.
+If on windows and autocrlf is true and we do a checkout operation then
+we always used a lf->crlf conversion on any text content. That's not
+correct. Even during a checkout we sometimes need the crlf->lf
+conversion. E.g. when calculating the content-id for working-tree
+content we need to use crlf->lf filtering although the overall operation
+type is checkout.
+
+Often this bug does not have effects because we seldom compute the
+content-id of filesystem content during a checkout. But we do need to
+know whether a file is dirty or not before we overwrite it during a
+checkout. And if the index entries are smudged we don't trust the index
+and compute filesystem-content-sha1's explicitly.
+
+This caused EGit not to be able to switch branches anymore on windows
+when autocrlf was true. EGit denied the checkout because it thought
+workingtree files are dirty because content-sha1 are computed on wrongly
+filtered content.
+
+Bug: 493360
+Change-Id: I1072a57b4c529ba3aaa50b7b02d2b816bb64a9b8
+
+
+COMMENTS
+
+author: Zachary Orozco
+date: 2016-05-20 13:51:30.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-05-20 13:51:36.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit-stable.gerrit/5/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-05-20 14:03:15.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit-stable.gerrit/5/ : SUCCESS
+
+-------------------------------------
+author: Nicolas Patterson
+date: 2016-05-23 07:24:37.000000000
+
+Patch Set 1: Code-Review+1
+
+(4 comments)
+
+I mainly verified with regard to attributes and stream types computation and did not find any issue in this new code.
++1
+
+Line:383, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> minor: why keeping the old method? make the OperationType a not null required argument
+
+Line:453, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> minor: why keeping the old method? make the OperationType a not null required argument
+
+Line:1351, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> same here: i understand that there would be an api change when removing this method, however making OperationType a not null required argument has the advantage that the decision what to pass has to be done on the original call and is therefore most specific.
+
+Line:603, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/TreeWalk.java -> I am just thinking about deleting this method and making operationType required. Reasoning in my comment on WorkingTreeIterator
+btw: why wrapping brackets around the call, it simply a delegated call.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2016-05-23 15:14:31.000000000
+
+Patch Set 1:
+
+(3 comments)
+
+Line:1351, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> we don't want to break or add API in a service release, can deprecate this in 4.4
+
+Line:603, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/TreeWalk.java -> we don't want to break or add API in a service release (increasing 3rd digit in version number)
+
+we can deprecate this in 4.4
+
+Line:192, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/EolRepositoryTest.java -> missing braces
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2016-05-23 15:15:35.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:192, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/EolRepositoryTest.java -> Done
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-05-23 20:15:46.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

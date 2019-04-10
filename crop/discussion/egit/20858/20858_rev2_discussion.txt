@@ -1,0 +1,124 @@
+DESCRIPTION
+
+Fix endless loop of GenerateHistoryJob
+
+The GenerateHistoryJob was scheduled over and over when the following
+precondiations were met:
+
+ - The preference "Team > Git > History > Maximum number of commits to 
+   show" has to be set to a numer smaller than the number of commits
+   in a repository
+ - The history of the repository is fully loaded into the History view
+ - The user scrolls down to the end or
+ - The user selects a reference which is not yet loaded into the 
+   History view
+
+Scrolling triggers the event listener added in the constructor of 
+CommitGraphTable (This is done to implement incremental loading).
+The event listener calls the method loadItem of GitHistory Page to load
+a given commit specified by its index. This method asks the 
+GenerateHistoryJob if the commit is less than BATCH_SIZE / 2 away from 
+the end, and if so, triggers a new GenerateHistoryJob.
+
+After loading the commits the GenerateHistoryJob wrongly computed the
+value of the incomplete variable. It did not check if all commits of 
+the history were loaded. Because of that the updateUI method did render
+the UI again leading to another call of the event listener above.
+
+This commit adds a check if all commits are loaded. 
+This is unfortunately not easily done with the SWTCommitList.
+
+So we check if no new commits were loaded in the current invocation of 
+the GenerateHistoryJob and in that case step out of the loop before 
+the check for incomplete is done. Then the method updateUI in 
+GenerateHistoryJob will not render the UI again and not start the 
+endless loop anymore.
+
+But the updateUI method has to render the UI once more after all 
+commits are loaded. This is ensured by the new field
+forcedRedrawsAfterListIsCompleted.
+
+Bug: 425691
+Change-Id: Ice8c59d537156a52acb80c8e004e838e279cdbe3
+
+
+COMMENTS
+
+author: Carlie Harper
+date: 2014-01-22 13:11:35.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-01-22 13:11:41.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/5487/
+
+-------------------------------------
+author: Carlie Harper
+date: 2014-01-22 13:18:35.000000000
+
+Patch Set 2:
+
+Could you please retest? The check if all commits are loaded was at the wrong position.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-01-22 13:29:27.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/5487/ : SUCCESS
+
+-------------------------------------
+author: Kaeden Tapia
+date: 2014-01-22 22:13:58.000000000
+
+Patch Set 2:
+
+* With Show find tool bar disabled, as I scroll down and it loads new commits, the warning message “flickers” out then in. (Should it even show it at all? more on that below)
+* With Show find tool bar enabled, the list of commits still goes beyond the maximum I set in the preferences
+* If I click on the Eclipse SWT Effects folder, it only has 3 commits but still warns that the list is incomplete
+* "The list is incomplete" does not go away when I scroll down to the first commit
+
+I’m very confused about how it should behave. I’ll summarize my understanding, based on your comments, I’m pretty sure I got this all wrong:
+
+* With Show find toolbar disabled, commits should be loaded incrementally. Because of that, the list should never be considered “incomplete” because commits are just loaded on demand as the user scrolls down and therefore, the maximum in the preferences has no effect.
+
+* With Show find toolbar enabled, commits are all completely loaded up to a maximum set by the preferences. If that maximum is exceeded, the warning message should appear, no more commits should be loaded.
+
+-------------------------------------
+author: Carlie Harper
+date: 2014-01-24 09:44:01.000000000
+
+Patch Set 2:
+
+>  With Show find tool bar disabled, as I scroll down and it loads new commits, the warning message “flickers” out then in. (Should it even show it at all? more on that below)
+
+Fixed: The warning message will not be shown anymore in this case
+> With Show find tool bar enabled, the list of commits still goes beyond the maximum I set in the preferences
+The coding always load BATCH_SIZE commits, but in my tests not more 
+
+> If I click on the Eclipse SWT Effects folder, it only has 3 commits but still warns that the list is incomplete
+
+This should be fixed now
+>    "The list is incomplete" does not go away when I scroll down to the first commit
+
+This should be fixed now
+
+I’m very confused about how it should behave. I’ll summarize my understanding, based on your comments, I’m pretty sure I got this all wrong:
+
+>    With Show find toolbar disabled, commits should be loaded incrementally. Because of that, the list should never be considered “incomplete” because commits are just loaded on demand as the user scrolls down and therefore, the maximum in the preferences has no effect.
+
+Works now.
+
+>    With Show find toolbar enabled, commits are all completely loaded up to a maximum set by the preferences. If that maximum is exceeded, the warning message should appear, no more commits should be loaded.
+
+This is a good question. So far the commits were also incrementally loaded in this case if the user scrolled down. I think the max commits preference was introduced to prevent the user from accidentially loading the whole history in this case. I think it makes sense.
+
+-------------------------------------

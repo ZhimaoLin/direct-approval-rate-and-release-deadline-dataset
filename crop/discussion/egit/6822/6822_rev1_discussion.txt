@@ -1,0 +1,140 @@
+DESCRIPTION
+
+Fix layout bugs in PullResultDialog
+
+- result group should not grab vertical space if it just contains a
+label
+- dialog was huge e.g. for simple FAST_FORWARD rebase result
+- always persist dialog width; only persist height for nontrivial
+content
+
+Change-Id: I1af2e26cfb3a86028579436804a3ff16ac38759a
+Signed-off-by: Dashawn Dalton xxx@xxx.xxx
+
+COMMENTS
+
+author: Dashawn Dalton
+date: 2012-07-17 17:02:08.000000000
+
+Patch Set 1:
+
+1. I authored 100% of this contribution 2. I have the rights to donate the content to Eclipse 3. I contribute the content under the EPL 4. I hate bad processes, see https://bugs.eclipse.org/381105
+
+Steps to reproduce the wrongly-huge dialog:
+- Pull
+- Reset HEAD to parent of HEAD (e.g. in History view)
+- Pull
+
+-------------------------------------
+author: Danika Greer
+date: 2012-07-23 15:20:26.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:208, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/pull/PullResultDialog.java -> I don't get this: does the result of `getInitialSize()` change after the first invocation or why is it called twice?
+
+-------------------------------------
+author: Dashawn Dalton
+date: 2012-07-25 15:03:28.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:208, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/pull/PullResultDialog.java -> Yeah, it's a bit tricky. The basic problem is that the infrastructure that uses Dialog#getDialogBoundsStrategy() only supports persisting the size (width & height together), but not just one of the dimensions.
+
+The trick here is that we:
+1. compute the default height (not using any persisted value)
+2. temporarily set "persistSize = true", which will affect our getDialogBoundsStrategy()
+3. call super.getInitialSize() to get the persisted size
+4. return a Point with persisted width and default height
+
+And the reason for all this is to improve UI stability and readability. Now that multi-selection is supported in the MultiPullResultDialog and that the PullResultDialog shows the repository name in the title, it's better to use full-width dialogs all the time.
+
+-------------------------------------
+author: Danika Greer
+date: 2012-07-26 09:52:57.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:208, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/pull/PullResultDialog.java -> I see. I wonder if there's another way. Would the following work?:
+
+* getDialogBoundsStrategy always uses DIALOG_PERSISTSIZE.
+* rename persistSize to usePersistedHeight
+
+in getInitialSize:
+
+		Point size = super.getInitialSize();
+		if (!usePersistedHeight) {
+			Point defaultSize = getShell().computeSize(SWT.DEFAULT, SWT.DEFAULT, true);
+			size.y = defaultSize.y;
+		}
+		return size;
+
+-------------------------------------
+author: Dashawn Dalton
+date: 2012-07-26 11:14:16.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:208, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/pull/PullResultDialog.java -> > Would the following work?:
+
+I don't think it would do what we want. This would always persist width & height when a dialog is closed. Persisting of the height would override the user-chosen height for the big dialog, so that value would be lost.
+
+In JUnit-speak:
+- expected: only persist size of big dialog; in small dialog, only restore width
+- actual: only persist & restore width of all dialogs
+
+-------------------------------------
+author: Dashawn Dalton
+date: 2012-07-26 11:20:04.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:208, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/pull/PullResultDialog.java -> Sorry, the "actual" would be worse, since it sometimes restores a wrong height:
+- actual: persist size of all dialogs; restore width in all dialogs; only restore height of big dialogs, but restore it to the last stored value, which could be the height of a small dialog
+
+-------------------------------------
+author: Danika Greer
+date: 2012-07-26 13:33:49.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:208, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/pull/PullResultDialog.java -> Right :/. Ok, just a minor code change then, to make this a bit more clear:
+
+* Extract the persistSize = true and try block into a method int getPersistedWidth.
+* Then the code reads like this:
+
+    int persistedWidth = getPersistedWidth();
+    return new Point(persistedWidth, defaultHeight);
+
+Agreed?
+
+-------------------------------------
+author: Dashawn Dalton
+date: 2012-07-26 15:40:14.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:208, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/pull/PullResultDialog.java -> Problems of getPersistedWidth():
+- throws away a Point object which has to be re-created on the next line
+- getPersistedWidth() would either only work for persistSize==false dialogs, or would need to be more complicated and save the old value of persistSize in a temp variable
+
+I would keep my code, but maybe add an explanation
+// For "small" dialogs with label-only results, use the default height and the persisted width
+
+But feel free to go with getPersistedWidth() or getPersistedSize() if you really think that's clearer.
+
+-------------------------------------

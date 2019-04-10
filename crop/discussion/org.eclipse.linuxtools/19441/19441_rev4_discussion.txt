@@ -1,0 +1,198 @@
+DESCRIPTION
+
+tmf: Merge history builder to state system analysis module
+
+The state system analysis module acts as kind of a state system
+factory. There is no need to have a separate TmfStateSystemFactory
+and HistoryBuilder class. 
+
+Merging the history builder functionality to the state system
+analysis module also allows for better handling of requests to
+analyze the trace. Now it's possible to cancel the analysis job.
+
+Later on, when all state systems (e.g. statistic state systems) are
+built using the state system analysis module the TmfStateSystemFactory
+and HistoryBuilder can be removed.
+
+Change-Id: Ibb52b20b6fdb16b665ad318cda04cf92d19ccf72
+Signed-off-by: Ricky Reeves <Meredith xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Ricky Reeves
+date: 2013-12-13 19:44:43.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-12-13 19:44:48.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4656/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-12-13 20:06:06.000000000
+
+Patch Set 4: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4656/ : FAILURE
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-12-13 23:42:02.000000000
+
+Patch Set 4: Code-Review-1
+
+(8 comments)
+
+Sorry for not looking at this earlier, this week was quite busy ;)
+
+I have to say, wow! That looks pretty good! Once we remove TmfStateSystemFactory and HistoryBuilder, we'll actually reduce the number of lines of code, AND we'll add functionality (being able to cancel state system construction from the UI).
+
+I think it's worth striving to keep only one way of doing things (hopefully the best way) because every extra class, API, code path, etc. is extra maintenance we have to carry forward.
+
+
+Could the unit test update be put in a separate patch? Since TmfStateSystemFactory is still there for now, they should still work. And for the final version, I feel those *unit* tests should instead create the provider/statesystem/backend objects manually, instead of going through the factory/analysis module. I can take care of that once we get to that point.
+
+I tried to break it, to close Eclipse while it's building etc., but nope, it's solid as rock :) The only downside I noticed is that if one cancels the Kernel analysis for example, it becomes impossible to restart it manually (from what I could tell). We have to close and re-open the trace. But that's functionality that will have to be added to the analysis framework.
+
+Also small comments. I would have fixed them, but I just wasn't sure what was the status of the patch it depends on, so didn't want to rebase it.
+
+Line:11, /COMMIT_MSG -> red! xD
+
+Line:19, lttng/org.eclipse.linuxtools.lttng2.kernel.core.tests/build.properties -> You also need to add the following line:
+  jars.extra.classpath = platform:/plugin/org.eclipse.jdt.annotation
+
+Eclipse will use the first line to get the correct classpath, but Maven uses the second line. This may be why the build failed to compile on Hudson (although I wonder why the previous builds worked anyway...)
+
+Line:58, lttng/org.eclipse.linuxtools.lttng2.kernel.core.tests/src/org/eclipse/linuxtools/lttng2/kernel/core/tests/stateprovider/StateSystemFullHistoryTest.java -> Same question about new File() vs File.createTempFile()
+
+Line:113, lttng/org.eclipse.linuxtools.lttng2.kernel.core.tests/src/org/eclipse/linuxtools/lttng2/kernel/core/tests/stateprovider/StateSystemFullHistoryTest.java -> Use TEST_FILE_NAME here, the goal of the test is to re-open the file that we know was created in xxx@xxx.xxx With BENCHMARK_FILE_NAME, this and the previous test are identical ;)
+
+With the previous test, we also passed a 'null' state provider, which is only allowed for cases where the file already exists (throws an exception if it doesn't). We lose the ability to do that if we go through an analysis module, but that's not necessarily a bad thing.
+
+Line:52, lttng/org.eclipse.linuxtools.lttng2.kernel.core.tests/src/org/eclipse/linuxtools/lttng2/kernel/core/tests/stateprovider/PartialStateSystemTest.java -> Is there a reason you are not using File.createTempFile() anymore? The advantage was that we were guaranteed to get a "new", non-existing file every time (it adds a random suffix before the extension).
+
+If not, then we should check if the file exists beforehand and delete it if it does.
+
+Line:155, lttng/org.eclipse.linuxtools.lttng2.kernel.core.tests/src/org/eclipse/linuxtools/lttng2/kernel/core/tests/stateprovider/PartialStateSystemTest.java -> Normally I'd find it safer to override the setTrace() to do this check at that moment, then calling super.setTrace() (and then you can override getTrace() too to make it return a CtfTmfTrace, so that you don't need to do this check every time it's called).
+
+But it's a test class, doesn't really matter.
+
+Line:62, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/TmfStateSystemAnalysisModule.java -> This is specific to the full and partial backends only. It could be defined in createFullHistory/createPartialHistory (just like 'granularity' is in createPartialHistory, it's a setting specific to that one)
+
+Line:149, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/TmfStateSystemAnalysisModule.java -> You could add
+  //---------
+  // Block comments
+  //---------
+before and after this series of methods, to isolate it from the rest.
+
+-------------------------------------
+author: Ricky Reeves
+date: 2013-12-16 14:10:12.000000000
+
+Patch Set 4:
+
+(8 comments)
+
+Thanks for looking at it. Glad to hear that the patch goes in the right direction.
+
+>Could the unit test update be put in a separate patch?
+>Since TmfStateSystemFactory is still there for now, they 
+>should still work. And for the final version, I feel those 
+>*unit* tests should instead create the 
+>provider/statesystem/backend objects manually, instead of 
+> going through the factory/analysis module. I can take 
+> care of that once we get to that point.
+
+I see what you mean. However, we need a way to test all the ways of building the history (full, partial etc) using the analysis framework (as we did with the factory).
+
+I can split the patch and provide the JUnit tests separately. We then can decide if we put it right away or later.
+
+> We have to close and re-open the trace. But that's 
+> functionality that will have to be added to the analysis > framework.
+Yes, that's is part of the Analysis Framework
+
+Line:11, /COMMIT_MSG -> Done
+
+Line:19, lttng/org.eclipse.linuxtools.lttng2.kernel.core.tests/build.properties -> yes, the build failed because of that
+
+Line:58, lttng/org.eclipse.linuxtools.lttng2.kernel.core.tests/src/org/eclipse/linuxtools/lttng2/kernel/core/tests/stateprovider/StateSystemFullHistoryTest.java -> I needed a handle to the state history file which is created by the state system analysis framework. I know it's hard-coded but I don't have a way to specify the location of the state history file using the state system analysis module.
+
+Line:113, lttng/org.eclipse.linuxtools.lttng2.kernel.core.tests/src/org/eclipse/linuxtools/lttng2/kernel/core/tests/stateprovider/StateSystemFullHistoryTest.java -> Copy paste error.
+
+Now we don't have a way to test that it actually re-opend an existing file instead of re-building. Maybe we should remove the waitForCompletion below, then it would fail later on at the checks.
+
+Line:52, lttng/org.eclipse.linuxtools.lttng2.kernel.core.tests/src/org/eclipse/linuxtools/lttng2/kernel/core/tests/stateprovider/PartialStateSystemTest.java -> Since the state system is build using the analysis module it is placed into the supplementary folder. I don't have way to specify where to store the state system with the current implementation of the state system analysis type.
+
+Line:155, lttng/org.eclipse.linuxtools.lttng2.kernel.core.tests/src/org/eclipse/linuxtools/lttng2/kernel/core/tests/stateprovider/PartialStateSystemTest.java -> Good comment. I took that from the Kernel State System Analysis module.
+
+Line:62, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/TmfStateSystemAnalysisModule.java -> Done
+
+Line:149, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/TmfStateSystemAnalysisModule.java -> Done
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2013-12-16 15:28:43.000000000
+
+Patch Set 4: Code-Review-1
+
+(3 comments)
+
+Good job! I'm looking forward to having the state system analysis work well and being able to use it without any slowdown and with the full analysis module possibilities. Thanks for looking into this.
+
+Just the small comment that TmfStateSystemAnalysisModule is not the right place to put this code though, it is just a utility class for use cases of 1 state system analysis.
+
+Line:58, lttng/org.eclipse.linuxtools.lttng2.kernel.core.tests/src/org/eclipse/linuxtools/lttng2/kernel/core/tests/stateprovider/StateSystemFullHistoryTest.java -> Would that be a bug in the state system analysis module? I did that because I thought those supplementary files all go to the same place and didn't want to bother having to manage doing otherwise. But if it is a requirement to be able to specify any file to save the state system in, then you should file a bug in bugzilla and I'll change that.
+
+Line:113, lttng/org.eclipse.linuxtools.lttng2.kernel.core.tests/src/org/eclipse/linuxtools/lttng2/kernel/core/tests/stateprovider/StateSystemFullHistoryTest.java -> Maybe that's the kind of test that should be done in the core plugin, with a stub state provider which would know whether it's been run (ss rebuilt) or not (read from existing file). Once that behavior of the state system analysis is tested right, there won't be the need for this unit test here.
+
+Line:43, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/TmfStateSystemAnalysisModule.java -> See comment here: this class is only a shortcut for analysis who need only one state system.
+
+If an analysis is based on more than one state system, then it won't use this class and the methods in here won't be available to it and it will have to be reimplemented. I don't know how Alex implemented the statistics module, as 2 modules or 1 module with 2 state systems, but it might be an example of this.
+
+It looks quite simple now to create a new state system, the builder is gone and that's great! Less code now and easier to understand, but I think the new code should go to a separate class, maybe use the TmfStateSystemFactory for it?
+
+-------------------------------------
+author: Ricky Reeves
+date: 2013-12-16 17:44:12.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:43, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/TmfStateSystemAnalysisModule.java -> If an analysis module needs more than one state system then it can contain 2 TmfStateSystemAnalysisModules as a member variable. That's what I understood when talking with Alex.
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2013-12-16 18:13:22.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:43, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/TmfStateSystemAnalysisModule.java -> It _can_ but it doesn't _have to_.  I guess we force the way if we do it like this. I can't really think of a use case for one or the other, but if it's well documented, then I'm ok with this. We'll just have to change this class description then, it is not just a shortcut, but THE way to have a state system.
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-01-02 22:56:41.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:58, lttng/org.eclipse.linuxtools.lttng2.kernel.core.tests/src/org/eclipse/linuxtools/lttng2/kernel/core/tests/stateprovider/StateSystemFullHistoryTest.java -> It's not unreasonable to require the statesystem analysis module always put its file in the supplementary files. It's a TMF-specific functionality, it can use TMF-specific locations.
+
+At the bare state system level, the path is configurable (you can specify whatever to HistoryTreeBackend). This will become more clear when the state system functionality is moved to its own plugin.
+
+This test is actually the problematic element here. If it's meant to be a unit test for the state system "plugin" itself, then it can use any path, like File.createTempFile(). If it's meant to test the analisys module functionality, it needs to look at where the module puts its stuff.
+
+I think this test file is more meant to be the former, but we'd also need TMF-specifc analysis module tests. We can leave it like this for now, but it's something to keep in mind once we add the "statesystem.tests" plugin.
+
+-------------------------------------

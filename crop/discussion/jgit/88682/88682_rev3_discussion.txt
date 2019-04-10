@@ -1,0 +1,159 @@
+DESCRIPTION
+
+Release references on DfsBlockCache#remove
+
+If a DfsPackFile is being closed the DfsBlockCache should remove all
+references to it from its internal data structures (clock, table,
+packs). If this not done the Refs will still be referenced and can’t be
+GC’ed.
+
+Signed-off-by: Annika Pacheco xxx@xxx.xxx
+Change-Id: Iaff6456d44ddafb8d804b3cf67060c9fdc661d19
+
+
+COMMENTS
+
+author: Annika Pacheco
+date: 2017-01-19 11:30:51.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-01-19 11:30:57.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/9662/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-01-19 11:37:36.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/9662/ : SUCCESS
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2017-01-21 01:59:21.000000000
+
+Patch Set 3: Code-Review-1
+
+(2 comments)
+
+Line:302, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsObjDatabase.java -> This part of this change is valuable--commitPack is moving the snapshot of current pack files forward, and this change is more quickly evicting stale values from the packCache map. There is a race condition where another thread reads the previous snapshot and then accesses the packCache map with those stale values. DfsPackFile creation is cheap so I think it is a net win.
+
+Line:12, /COMMIT_MSG -> This isn't precisely true, the time-based eviction will eventually dereference the packfile slices held by the table slots and make them available to the JVM's GC. This CL proposes to dereference them as soon as the DfsPackFile.close() is called.
+
+The problem with this approach is that DfsBlockCache.getOrCreate() will return an existing DfsPackFile instance, but it doesn't reference count them, so evicting the slots on the first call to DfsPackFile.close() strands the other in-flight requests that still hold references to the DfsPackFile (e.g., some of the ObjectInserters hold DfsPackFile references). In a server environment where there can be dozens of inflight requests I'd expect cache hits to go down.
+
+-------------------------------------
+author: Annika Pacheco
+date: 2017-01-24 09:36:42.000000000
+
+Patch Set 3:
+
+Hey Terry,
+
+thanks for your comments:
+
+Maybe to understand my motivation I have to explain the problem I am trying to solve: In our environment we a pretty huge cache (~500MB and 300 concurrent threads). Thus we have a lot of slots which not necessarily go away that fast. The problem in the end is that our servers crash with an OutOfMemory because the DfsBlockCache is exceeding the configured 500MB _by a huge amount_. So what I am really trying to do is to make the cache adhere to the configured cacheSize. From that point of view I find it problematic that it retains byte[] which don't contribute to the calculated cacheSize.
+
+If I understand correct though you are not really in favour of immediately removing the references on closing the DfsPackFile. Would it be ok to provide a prune()-method to the DfsBlockCache instead which will remove all (unreachable) references from the cache? Any client could then decide when it is "safe" to remove items from the cache.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2017-01-25 04:05:58.000000000
+
+Patch Set 3:
+
+> Maybe to understand my motivation I have to explain the problem I
+ > am trying to solve: In our environment we a pretty huge cache
+ > (~500MB and 300 concurrent threads).
+
+I don't consider 500MiB to be a huge cache. We routinely run with DfsBlockCache configured >4GiB.
+
+> Thus we have a lot of slots
+ > which not necessarily go away that fast. The problem in the end is
+ > that our servers crash with an OutOfMemory because the
+ > DfsBlockCache is exceeding the configured 500MB _by a huge amount_.
+
+This is very surprising and very interesting at the same time. It shouldn't be exceeding the limit. Do you have heap snapshots that show you how its holding onto more than it should?
+
+ > So what I am really trying to do is to make the cache adhere to the
+ > configured cacheSize. From that point of view I find it problematic
+ > that it retains byte[] which don't contribute to the calculated
+ > cacheSize.
+
+Yea, this sounds like a bug in the cache's accounting code.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2017-01-25 04:29:43.000000000
+
+Patch Set 3:
+
+(4 comments)
+
+Line:411, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsBlockCache.java -> Yes, the cache leaks the entry in the hash table, but this is only the HashEntry chain handle and its child Ref node. The actual byte[] was nulled out above by dead.value = null on line 405. So the byte[] can be immediately reclaimed by the Java GC.
+
+I previously didn't bother to clean the hash table chain during the clock eviction because I assumed we would touch all hash table chains soon enough under other accesses that we would eventually clean these orphaned nodes out of the buckets.
+
+Line:415, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsBlockCache.java -> We can't take the regionLock while we hold the clockLock. Elsewhere we take regionLock -> clockLock, which will eventually lead to deadlock.
+
+Line:417, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsBlockCache.java -> This would fail on the 2nd node in the bucket because entry has advanced and is not pointing at the root of the bucket. You need to use the original value you got for table.get(slot) at the start of the loop, even if you are on the 5th node in the chain.
+
+Line:527, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsBlockCache.java -> Removing all blocks associated with this pack isn't a bad idea. When the system calls remove(DsfPackFile) we have a pretty good notion the pack file is no longer part of the repository, so the memory its sitting on is now useless.
+
+I just didn't bother with this "optimization", because the cache eviction algorithm should eventually kill those blocks anyway, as they are not being accessed.
+
+If there is no pressure on the cache to evict (because its at/under target size), then there is no pressure to spend CPU time to evict this dead pack's blocks. The cache has "up to" its target size of memory promised to it, and the rest of the system should be hands off that part of the heap.
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2017-01-25 04:34:54.000000000
+
+Patch Set 3:
+
+> > Thus we have a lot of slots
+ > > which not necessarily go away that fast. The problem in the end is
+ > > that our servers crash with an OutOfMemory because the
+ > > DfsBlockCache is exceeding the configured 500MB _by a huge
+ > amount_.
+ > 
+ > This is very surprising and very interesting at the same time. It
+ > shouldn't be exceeding the limit. Do you have heap snapshots that
+ > show you how its holding onto more than it should?
+ > 
+ > > So what I am really trying to do is to make the cache adhere to
+ > the
+ > > configured cacheSize. From that point of view I find it
+ > problematic
+ > > that it retains byte[] which don't contribute to the calculated
+ > > cacheSize.
+ > 
+ > Yea, this sounds like a bug in the cache's accounting code.
+
+So what you are seeing may be a bug rather than the results of a particular usage pattern. IIUC, reserveSpace() is called for every reservation, if a DfsPackFile is used to load a single slot and is then closed, the slot should become available for reaping after 2 more allocations. Do you have a burst of reads at startup? It would be useful to know the access pattern so we can try to reproduce it (if this is a bug I'm sure it affects us to some extent.)
+
+-------------------------------------
+author: Annika Pacheco
+date: 2017-01-30 16:13:00.000000000
+
+Patch Set 3:
+
+Thanks for your inputs! Helped me a lot and I am convinced now that the implementation works as expected :-) Anyhow there are some things left I would like to to discuss. 
+
+_Leaking memory_: I have attached a screenshot from a crash dump on one of our servers [1]]. The DfsBlockCache was configured with a limit of 512 MB but in the end retained 2 GB heap. I guess this is due to a missing cleanup of the DfsPackFiles from the "packCache"-Map. What striked me at first was that 1.5 GB were retained from the DfsBlockCache#Ref's. This is why I tried to clean up these more aggressively. When looking at the merged path roughly all of them are related to the DfsBlockCache and only a few to the DfsPackFile (which do also contain a reference to a Ref) [2]. Though after removing DfsPackFiles regularly from the cache the numbers look better. So I guess a client has to find its way of pruning these regularly. We might want to keep the change in the DfsObjectDatabase to call close() on PackFiles which are to be deleted? How do you handle this in your environment? Do you have a recommendation?
+
+_Retention strategies_: In our product we have a lot of flucatancy with pack-files. These are created and are usually pretty short lived as we try to invoke the GarbageCollector very frequently (at most 5 packs may exist per repository before the GC kicks in). Thus the DfsBlockCache usually contains a lot of non-existing pack files. We do have a mechanism in place to remove these regularly now but besides that we would also like to remove the unreachable bytes. Instead of having the cache, after reaching its limit, to call reserveSpace() for each new block we would rather have it either remove associated content when closing the DfsPackFile or prune the cache regularly. After discussing this approach here and deciding that we rather don't want it this way proposed here. Do you have recommendation how to do this?
+
+I guess I would close this PR or reduce it to the added tests + the change in the DfsObjectDatabase? Depending on the answers to the two questions above is there anything else you would like to keep?
+
+[1] https://www.dropbox.com/s/isirnh3b30x3dma/img1.jpg?dl=0
+[2] https://www.dropbox.com/s/e325lemmxzn5vu0/img2.jpg?dl=0
+
+-------------------------------------

@@ -1,0 +1,159 @@
+DESCRIPTION
+
+Log major key events to be able to quickly recover HT state.
+
+This change introduces a new on-disk binary format for logging major
+key events only.  These events are limited to the creation and
+destruction of keys only -- modification of keys is out of scope, as
+is storing values.
+
+* Flow
+
+The logging hooks in to the persistence flow and does the following:
+
+After writing any new key or deleting any existing key from disk, a
+new log entry is buffered.
+
+The buffer is written when a block is full or on a flush event
+(configurable, usually after a commit1 or commit2 event).
+
+Before sending a commit to the underlying store, a commit1 event is
+logged.
+
+After the underlying store completes its commit, a commit2 is logged.
+
+* Configuration
+
+There are four new engine parameters that come with this feature:
+
+** klog_path
+
+Where the events should be logged.  An empty string (default) disables
+logging.
+
+** klog_block_size
+
+The buffer/block size for log entries.  The number should line up with
+the underlying filesystem block size.  Multiples may increase
+throughput.
+
+** klog_flush
+
+Configures when the buffer should be force-flushed.  There are four
+possible values:
+
+   off: never force a flush
+   commit1: force a flush after commit1 only
+   commit2: force a flush after commit2 only
+   full: force a flush after both commit1 and commit2
+
+** klog_sync
+
+Configures when the file should be fsynced.  There are four
+possible values:
+
+   off: never fsync
+   commit1: fsync after commit1 only
+   commit2: fsync after commit2 only
+   full: fsync after both commit1 and commit2
+
+Change-Id: Icdfcb4ae2da129144390e199ef794d85cd8246da
+
+
+COMMENTS
+
+author: Noah Dean
+date: 2012-01-19 17:39:10.329000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Abby Duran
+date: 2012-01-19 21:51:23.780000000
+
+Patch Set 3: Looks good to me, but someone else must approve
+
+(3 inline comments)
+
+This looks really great. My comments are minor things, and I have a couple of additional points:
+
+- Do we have any threshold on the size of the log file and create a new log file if the current log file size reaches to the threshold?
+
+- When the node completes warmup, then we don't need the old log file anymore, which was used in fast warmup.
+
+- If the system is crashed right after database commit, but right before logging COMMIT2 and fsync, we might have some missing items from the log file. I think you already mentioned this during the design review. I also think that this won't happen frequently because it will be in a very tiny time window.
+
+Line:61, mutation_log.cc -> const std::string &key? I'm not sure if the recent standard library uses COW for std::string.
+
+Line:2338, ep.cc -> Do we have any reasons "deleteAll" is not invoked for "deleteVBucket" / "resetVBucket" functions?
+
+Line:162, flusher.cc -> Just minor thing, how about checking if klog_path engine param is empty or not
+
+-------------------------------------
+author: Noah Dean
+date: 2012-01-19 23:07:04.116000000
+
+Patch Set 3: I would prefer that you didn't submit this
+
+(3 inline comments)
+
+There's no log length limit.  Compaction rules (coming) will decide to try to keep it small, but nothing artificial.
+
+We can keep the logfile and just let regular compaction deal with cleaning it up.  It's still valid after warmup and use.
+
+Yes, we should look through the things that weren't committed yet after loading.  Frank had suggested we might just want to delete all of the things that were uncommitted in the log for consistency.  I've got the API, I should do something with it.
+
+
+Great finds.  I'll clean this up tomorrow, most likely.
+
+Line:61, mutation_log.cc -> Very good.
+
+Line:2338, ep.cc -> I couldn't find them quickly on my conference call this morning.  :)  Definitely should be.
+
+Line:162, flusher.cc -> Oh yes, I could replace true with mutationLog.isEnabled().
+
+-------------------------------------
+author: Abby Duran
+date: 2012-01-19 23:26:45.550000000
+
+Patch Set 3: No score
+
+Thanks for the clarifications. Yeah, compaction makes sense to me because lots of old key events can be simply collapsed through their corresponding latest events.
+
+-------------------------------------
+author: Asher Vang
+date: 2012-01-20 12:08:09.706000000
+
+Patch Set 3: (10 inline comments)
+
+THis looks good. You should probably write some wrapper functions for the system calls that could fail with stuff we could retry (like eintr with friends)
+
+Line:21, mutation_log.cc -> You should probably handle EINTR?
+
+Line:88, mutation_log.cc -> Shouldn't you check the return code?
+
+Line:101, mutation_log.cc -> Shouldn't you check the return code?
+
+Line:177, mutation_log.cc -> You should use the constants instead of 0666...
+
+Line:2325, ep.cc -> You could just fetch this directly from store in an inlined getter from EPS. (that'll save you 8 bytes per entry...) (same goes for stats)
+
+Line:2641, ep.cc -> There is a hrtime2text in flusher.cc that'll prettyprint that ;)
+
+Line:2867, ep.cc -> Not related to this changeset, but this should be a configurable limit (and we should have a commit-failed() callback :D
+
+Line:303, ep.hh -> why not &log? Can it be NULL?
+
+Line:2935, ep_engine.cc -> why not have it add it's own stats? I find it more natural to keep it as close as possible to the implementation...
+
+Line:3025, ep_engine.cc -> Same as above... I think it should go into the mutationlog class...
+
+-------------------------------------
+author: Nora Conway
+date: 2012-01-20 19:00:57.177000000
+
+Patch Set 3:
+
+Windows makefile needs to list new files.
+
+-------------------------------------

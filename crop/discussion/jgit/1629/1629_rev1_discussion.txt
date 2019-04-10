@@ -1,0 +1,92 @@
+DESCRIPTION
+
+Add Resolve-In-Core content merge strategy
+
+Used by tools performing automatic merging and cherry-picking
+on bare repositores (e.x gerrit).
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-09-20 22:49:43.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(3 inline comments)
+
+
+
+Line:224, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMergerInCore.java -> This code is complex enough that it should be shared with ResolveMerger somehow.
+
+Line:2, org.eclipse.jgit/src/org/eclipse/jgit/merge/StrategyResolveInCore.java -> Please also include the standard line:
+
+ * and other copyright owners as documented in the project's IP log.
+
+Because we don't always update the copyright headers when an edit is made to the file after it is added to the repository.  The foundation requires us to have this line to alert readers that the above copyright notices might not be sufficient to fully document the current owners of the file.
+
+Line:71, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeStrategy.java -> Style-nit: Trailing space at end of line.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-09-21 07:32:29.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+We spent a lot of time in writing the ResolveMerger and also add ton's of unit tests for that algorithm. Therefore I am
+hoping that we can reuse the ResolveMerger instead of duplicating the code. I looked at the proposal and at least from my investigation it is a copy of ResolveMerge where all references to WorkDir are removed, right?
+
+So, what do you think, wouldn't it be possible to just add some parameter to ResolveMerger constructors ignore the workdir? The mainloop of the merge algorithm would get one additional if - performance should not be a problem here.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-09-21 07:33:56.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:224, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMergerInCore.java -> It's not only this method, but also mergeImpl() which looks similar enough to be reused.
+
+-------------------------------------
+author: Eleanor Frederick
+date: 2010-09-21 07:49:13.000000000
+
+Patch Set 1:
+
+Yeah, I thought about the same thing. Originally I didn't want to break existing functionality, so I decided to branch, but in the end the diff indeed seems to be not enough to justify a separate class or even hierarchy of classed like we discussed earlier today. I do expect it to get a little ugly, I am afraid I'll have to add more than one "if". Anyway, I'll take a look and try to submit a new revised patch soon.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-09-21 11:31:10.000000000
+
+Patch Set 1: (1 inline comment)
+
+Super. I am waiting for your proposal. I don't count the number of if's, but we have to take care that the main loop inside merge doesn't degrade performance-wise. If we can't achieve this copying the code would be ok.
+
+Line:9, /COMMIT_MSG -> I am not sure about cherry-picking. That's I think a different
+story from merge. With merge you have two states A and B and the merge result consists parts from A, parts from B and conflicts. A cherry pick is AFAIK different. There you take the diff of one commit (what lines are changed by this single commit) and try to apply this change on some other state. You have to solve problems like "Where in the target state do I have to add this change. Line numbers are not sufficient - you have to find the common lines (the context) listed in the diff)". Problems which a merge algorithm doesn't care about.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-09-21 14:14:09.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:9, /COMMIT_MSG -> cherry-pick can be implemented using merge.  :-)
+
+Lets say we want to cherry-pick commit C, whose parent is B, and we want to apply it on top of Q:
+
+  o----- B ----- C
+   \
+    o--o--o-- Q
+
+* Set the "ours" side to be Q.
+* Set the "theirs" side to be C.
+* Fix the merge base to be C^1, that is B.
+
+Where there is a B-C difference, it shows up as an edit made by "them" and is applied by the merge as a "theirs" side edit.  Where there is a B-Q difference, it shows up as an edit made by "us" and shows up as an "ours" side edit.  Providing that these edits aren't conflicting, the merge will complete cleanly.
+
+-------------------------------------

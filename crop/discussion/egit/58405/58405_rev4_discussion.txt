@@ -1,0 +1,106 @@
+DESCRIPTION
+
+Alleviate problems on case-insensitive file systems
+
+We have _no_ foolproof way to correctly compare paths:
+
+* IPath treats paths always case-sensitively, both in equals()
+  and in isPrefixOf(), which can give rise to unexpected problems
+  on case-insensitive file systems such as NTFS on Windows or HFS+
+  on OS X.
+* java.io.File considers HFS+ (Mac) a case-sensitive UnixFileSystem,
+  which is incorrect. (HFS+ can be either, and by default on Macs
+  is case-insensitive.) On Windows, File is indeed case-insensitive.
+* java.nio.file.Path also uses a case-sensitive sun.nio.fs.UnixPath
+  on HFS+. On Windows, it is case-insensitive.
+* org.eclipse.jgit.util.FS_POSIX.isCaseSensitive() returns
+  unconditionally false for Macs. However, HFS+ partitions _can_ be
+  case-sensitive. Furthermore, org.eclipse.jgit.util.FS doesn't have
+  operations for case-normalization.
+* org.eclipse.core.internal.resources.Project sets the project location
+  to the canonicalized file path. File.getCanonicalFile() does appear
+  to normalize capitalization to the form actually used in the file
+  system.
+* Many places in EGit do path comparisons between Eclipse IResources
+  and git working trees using any of the possibilities above.
+  
+Options to fix this are:
+* Use java.io.File or java.nio.file.Path, but that would leave HFS+ out
+  in the cold. Would require lots of changes throughout EGit to root
+  out any uses of comparisons via IPath.
+* Write our own comparison and prefix methods. Make sure only those are
+  used. Any collections storing paths or files would need to be checked
+  and adapted; or maybe we'd even need or own subclass of File...
+* Ensure that we use for repositories only the canonical path, like
+  Eclipse core does for IProjects, so that the same casing is used.
+
+This change implements the latter. It ensures that EGit and the
+Eclipse resource tree both have the same idea of where things are and
+should thus resolve most case-sensitivity problems, even if IPath is
+used. (That's bug 477281.)
+
+Fixes bug 478877. Depends on https://git.eclipse.org/r/#/c/58760/ in
+JGit. 
+  
+Bug: 477281
+Bug: 478877
+Change-Id: I1d29203e678afb3fb43a6fcb334706c9473afc4e
+Signed-off-by: Alayna Houston xxx@xxx.xxx
+
+COMMENTS
+
+author: Alayna Houston
+date: 2015-10-22 20:02:27.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-10-22 20:02:33.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/7754/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-10-22 20:04:34.000000000
+
+Patch Set 4: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/7754/ : FAILURE
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-10-22 20:06:42.000000000
+
+Patch Set 4:
+
+Thomas, jgit build is *still* running, the result will be in few minutes, see https://hudson.eclipse.org/jgit/job/jgit2/
+
+-------------------------------------
+author: Alayna Houston
+date: 2015-10-22 20:09:37.000000000
+
+Patch Set 4:
+
+> Thomas, jgit build is *still* running, the result will be in few
+ > minutes, see https://hudson.eclipse.org/jgit/job/jgit2/
+
+Doh!
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-10-22 20:14:11.000000000
+
+Patch Set 5: Patch Set 4 was rebased
+
+-------------------------------------
+author: Gerrit Johnathan Pham
+date: 2015-10-22 20:42:34.000000000
+
+Change has been successfully merged into the git repository by Jayvion Booth
+
+-------------------------------------

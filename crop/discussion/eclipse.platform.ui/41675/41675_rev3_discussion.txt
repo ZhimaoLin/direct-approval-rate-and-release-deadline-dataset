@@ -1,0 +1,91 @@
+DESCRIPTION
+
+Bug 41431 - [EditorMgmt] Affected editors should be closed before
+executing project close or delete
+
+The patch hooks into standard close/delete IDE actions and tries to find
+and close opened editors matching closed/deleted resource roots. This is
+the practical solution wich aims to cover 80% of user complains and
+doesn't claim to fix all sophisticated ways of closing or deleting
+resources in the IDE.
+
+The matched editors will be closed without confirmation (which happens
+already in Close/Delete actions) and only if the editor resource does
+not exists anymore.
+
+The editor matching strategy is pretty simple - it uses editor input
+objects and hopes that they are either FileEditorInput's or can provide
+adapters to IFile or IResource. This should cover the majority of
+"standard" IDE editors and works fine with not yet instantiated editor
+parts. Because real editor parts aren't instantiated there is no risk of
+unexpected side effects.
+
+3rd party editors can Leon Ochoaefit from the provided patch too - all what
+they need is to add IFile or IResource adapter to their input objects.
+
+P.S:
+The reason not to implement IResourceChangeListener is that this can
+have permanent negative side effects on performance, because each time
+such resource change happens the delta must be processed and each opened
+editor has to be matched against each closed/deleted resource, including
+extra (eventually redundant) confirmation dialog in case a dirty editor
+matches.
+
+Change-Id: I92af399bf0ceca3dfe8668a6c011c19c12d6ee51
+Signed-off-by: Jayvion Booth xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Jayvion Booth
+date: 2015-02-11 20:41:18.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-02-11 20:57:17.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/4485/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-02-11 21:18:53.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/4485/ : SUCCESS
+
+-------------------------------------
+author: Zaid Mosley
+date: 2015-02-12 09:14:24.000000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:299, bundles/org.eclipse.ui.ide/extensions/org/eclipse/ui/actions/CloseResourceAction.java -> For new methods we should prefer List, e.g., List<IResource>
+
+By putting this into the CloseResourceAction we make it API. I think this method should be placed in an internal package. For example in the future we should migrate away from actions to command and even better to Pojo handlers (e4) but this method would make this harder.
+
+I think the method would better fit on WorkLeon OchoachPage. What do you think Andrey?
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-02-12 12:24:43.000000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:299, bundles/org.eclipse.ui.ide/extensions/org/eclipse/ui/actions/CloseResourceAction.java -> 1) As usually, I want limit the change to the actual fix. Changing to List<> requires changes on unrelated places and blows up the actual patch. I can provide "cleanup" patch after that.
+
+2) The new closeMatchingEditors() method is package protected and is *not* a new API - or the entire package protected SWT code must be considered API too. Clients outside the "actions" package can't use it.
+
+3) I put the method here because it is used in this class and delete action only - and nowhere else. We could move the new code to the page class, but then we would need to move all the rest of the patch there, and this would again increase already huge WorkLeon OchoachPage code. Also the code has close relationship to the resources API, and I don't think we want deal with that in WorkbenchPage. As long as the code is not API and not used from anyone outside of the "actions" package (actually only in two actions here) I would keep it here.
+
+-------------------------------------

@@ -1,0 +1,161 @@
+DESCRIPTION
+
+TMF: Refactor XML model code, using factories to re-use element parsers
+
+The same XML syntax (and thus parsing) can be used for many XML components'
+element, like state providers and views, but the behavior of each component
+may be different. We use a factory to define create the classes with the
+various behaviors.
+
+Change-Id: Iec5d54155b93a79b1ebc5ffeb8eaffef5e6569ca
+Signed-off-by: Aryana Jones xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Annalise Jimenez
+date: 2014-03-27 17:08:05.000000000
+
+Uploaded patch set 7.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-03-27 17:17:11.000000000
+
+Patch Set 7:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/6122/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-03-27 17:58:45.000000000
+
+Patch Set 7: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/6122/ : SUCCESS
+
+-------------------------------------
+author: Kaeden Tapia
+date: 2014-03-28 17:39:31.000000000
+
+Patch Set 7: Code-Review+1
+
+All my comments were addressed.
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2014-03-31 19:33:45.000000000
+
+Patch Set 7:
+
+Alex any more objections or do I take Marc-André's +1 as a go for submit? ;-)
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-04-01 23:03:36.000000000
+
+Patch Set 7: Code-Review-1
+
+(16 comments)
+
+Yeah I did have a couple more comments ;)
+
+Line:126, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/stateprovider/XmlStateProvider.java -> Integer.parseInt() returns a int directly
+
+Line:100, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/model/TmfXmlStateValue.java -> Now in the category random useless things to know:
+
+.valueOf() returns a Boolean object, which then gets unboxed to a boolean. You can use .parseBoolean(), which returns a boolean directly.
+
+Line:129, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/model/TmfXmlStateValue.java -> This notion of coupling the possible string values to an enum values could be defined in the enum itself. For example, inside the definition of ValueTypeStack above:
+
+      public static ValueTypeStack getTypeFromString(String input) {
+          switch (input) {
+          case TmfXmlStrings.STACK_PUSH:
+              return PUSH;
+          case TmfXmlStrings.STACK_POP:
+              return POP;
+          case TmfXmlStrings.STACK_PEEK:
+              return PEEK;
+          default:
+              return NULL;
+          }
+      }
+
+Slightly less code! And it would allow reusing it.
+
+With the other switch/case just above it's not as easy, because we do not have access to ITmfStateValue.Type, which is defined elsewhere.
+
+Line:153, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/model/TmfXmlStateValue.java -> You could cache the null TmfXmlStateValueNull() as a static field, and return it directly, since all null values are the same. A bit like is done with TmfStateValue.nullValue();
+
+Line:250, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/model/TmfXmlStateValue.java -> you could just return it here, and save one level of indentation for the rest of the method.
+
+Line:263, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/model/TmfXmlStateValue.java -> hmm, there should be a enum in ITmfEventField that could advertise the type of field, without having to guess through a finite list of types.
+
+Line:316, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/model/TmfXmlStateValue.java -> no value = TmfStateValue.newIntValue() ? For if the type is not forced
+
+Line:335, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/model/TmfXmlStateValue.java -> same here?
+
+Line:470, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/model/TmfXmlStateValue.java -> as mentioned above this could be cached in a static variable. Would probably require moving the TmfXmlStateValueBase definition to its own file... not sure if it's worth it.
+
+Line:45, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/model/ITmfXmlStateValue.java -> no need for public, same for other methods
+
+Line:38, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/model/ITmfXmlStateAttribute.java -> no need for public in an interface
+
+Line:55, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/model/ITmfXmlStateAttribute.java -> idem
+
+Line:47, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/model/readwrite/TmfXmlStateAttributeReadWrite.java -> hmm, this is a place where contravariant return values would have been nice to have. Maybe in Java 10...
+
+Line:67, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/model/TmfXmlStateAttribute.java -> here too, you only iterate on the array, LinkedList seems more appropriate. Unless you instantiate it with the constructor ArrayList<>(int initialCapacity) (if you know it in advance), so that you avoid the array resizing.
+
+Line:301, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/model/TmfXmlStateAttribute.java -> you could have this case fall-through too. minor thing
+
+Line:42, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/model/TmfXmlLocation.java -> If you never access elements by their indexes, but instead iterate on the whole array, LinkedList is more appropriate. It's faster to build, since you don't have the amortized cost of resizing the internal array when it reaches its max capacity.
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2014-04-02 14:18:49.000000000
+
+Patch Set 7:
+
+(3 comments)
+
+Some answers to previous comments
+
+Line:153, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/model/TmfXmlStateValue.java -> Actually I can't since TmfXmlStateValueBase is an internal class, I need an enclosing instance for its object, so I can't have a static field with it.
+
+Unless I take those classes out of the TmfXmlStateValue, then add all the getters and setters for all its fields so the state value classes can access them. For what it's worth, this is just a default implementation that both existing factories, read-write and read-only, override anyway.
+
+Line:263, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/model/TmfXmlStateValue.java -> There should as in "I wish there was one but there isn't" or as in "I recall seeing it somewhere but can't tell you where"?
+
+Line:301, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/model/TmfXmlStateAttribute.java -> No I prefer it this way, because with SELF startQuark is really the value we want to return, but the other cases is a fallback satisfying default value. What if we change it? The SELF fall-through would also be affected.
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-04-02 17:52:19.000000000
+
+Patch Set 7:
+
+(1 comment)
+
+Line:153, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/model/TmfXmlStateValue.java -> I don't see "being able to access private fields of an inner class directly" as a good thing in general ;) But yeah in this case it's not worth the big overhaul just do be able to instantiate it statically.
+
+Well, it good be lazy-initialized, and stored in a static variable..... ok ok I'll stop ;)
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2014-04-02 19:59:52.000000000
+
+Patch Set 7:
+
+(1 comment)
+
+I feel there is always a subject of obstination with Alex :p
+No offense meant and none taken though...
+
+Line:153, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/model/TmfXmlStateValue.java -> I see "being able to access private fields of an inner class directly" more like "I could have done a big switch case in an outer class method for each of the inner class's method but that would have looked pretty ugly so I wrap it in inner classes, but really, I do want to access the private fields"
+
+So in my opinion that is not a bad thing either ;)
+
+-------------------------------------

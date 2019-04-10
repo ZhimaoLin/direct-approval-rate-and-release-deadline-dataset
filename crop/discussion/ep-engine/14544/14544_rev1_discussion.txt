@@ -1,0 +1,73 @@
+DESCRIPTION
+
+MB-4951: Update stats using a single thread
+
+Every time we try to add an item to the database, check to see
+if there is room in checkpoint queues, try to see of we have
+enough memory for backfill, ... we need to check that we aren't
+using more memory than we have allocated to use. This process
+required getting stats from tcmalloc and getting stats required
+going through a few spin locks and this resulted in a lot of
+contention. This fix adds a new thread to the MemoryTracker that
+will update the stats every 1/4 second in order to relieve
+contention around the spin locks in tcmalloc.
+
+Change-Id: Ibd54bfe1e1cbb6e201d9759d68dbf3399aaf45f0
+
+
+COMMENTS
+
+author: Abby Duran
+date: 2012-04-05 06:20:43.070000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(6 inline comments)
+
+
+
+Line:71, memory_tracker.cc -> Please correct the error message.
+
+Line:102, memory_tracker.cc -> It would be probably better to extract the allocated_bytes and fragmentation values from stats instance and store them into separate member variables.
+
+Line:105, memory_tracker.cc -> const char* stat_name
+
+Line:107, memory_tracker.cc -> This won't be small overhead as we need to do string comparisons on all stats for every memory allocation request. Let's have separate size_t member variables for fragmentation and allocated bytes.
+
+Line:114, memory_tracker.cc -> Let's simply return size_t member variable that represents fragmentation.
+
+Line:118, memory_tracker.cc -> Let's simply return size_t member variable that represents allocated bytes.
+
+-------------------------------------
+author: Noah Dean
+date: 2012-04-05 06:43:06.284000000
+
+Patch Set 1: (2 inline comments)
+
+
+
+Line:107, memory_tracker.cc -> might want to consider a perfect hash (or even better just a plain struct) if all the stats are known ahead of time.
+
+Line:115, memory_tracker.cc -> BTW, this cast is due to the thing Chiyoung pointed out above.  If you're casting, you should always second guess yourself when casting.
+
+-------------------------------------
+author: Abby Duran
+date: 2012-04-05 06:47:30.772000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:107, memory_tracker.cc -> Yeah, using a plain struct is a good idea.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2012-04-05 15:22:01.715000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:107, memory_tracker.cc -> This won't be called on every memory allocation, but I agree with your point here.
+
+-------------------------------------

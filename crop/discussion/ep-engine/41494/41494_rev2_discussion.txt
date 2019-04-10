@@ -1,0 +1,114 @@
+DESCRIPTION
+
+MB-10496 [1/6]: Initial version of HashTable defragmenter
+
+Create a new Defragmenter task, which visits all members of the
+HashTable and defragments them. Currently the defragmentation
+algorithm is very naive - it simply reallocates all Blob objects
+encountered, regardless of how fragmented or not the pages they reside
+on. This is obviously very wasteful (as we will move object in both
+fragmented and not fragmented pages on each pass), but however is
+sufficient to significantly reduce RSS of the memcached process, if
+jemalloc is used as the memory allocator.
+
+jemalloc is required as it prefers low addresses during re-use;
+and so the act of allocating a new Blob object, copying the old to the
+new and then free()ing the old Blob will result in the new objects
+being packed with other objects in the same size class.
+
+To obtain this behaviour, we need to disable jemalloc's thread cache
+for the thread which is performning the defragmentation, for the
+duration of that task, and hence this requires the use of new
+functions from the allocator hooks API.
+
+Change-Id: I8f0e8daaa5e5d7ea8fde58f1c8377bf30312c85a
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2014-09-19 16:58:06.830000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Jasmin Rangel
+date: 2014-09-19 16:58:08.941000000
+
+Patch Set 2:
+
+New patchset patch-id matches previous patchset, but commit message has changed.
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2014-09-23 12:32:49.589000000
+
+Patch Set 2: Code-Review+1
+
+(1 comment)
+
+Looks good, TODO comment only caught my attention because it mentioned locking. As you've said, more experienced ep-engineers may comment there.
+
+Line:658, src/stored-value.cc -> Presume this TODO will be resolved before final commit ?
+
+-------------------------------------
+author: Ellie Kidd
+date: 2014-09-25 18:32:24.557000000
+
+Patch Set 2: Code-Review-1
+
+(2 comments)
+
+Thanks Dave, mostly the changes looks good to me.
+
+Line:122, configuration.json -> isn't 10 seconds too short an interval for a daemon task that locks the HashTable blocking front-end ops?
+
+Line:94, src/defragmenter.cc -> Would be better to reduce the log level to DEBUG otherwise these messages would quickly fill up the memcached logs.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2014-09-25 20:15:49.275000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:122, configuration.json -> In isolation, yes, but if you see patch 6 (http://review.Piper Jefferson.org/#/c/41499/) we add a defragmenter "chunk duration" of 20ms - so we only ever hold any locks for that long. 
+
+We can potentially chunk for an even shorter time, but that will obviously increase the runtime for a complete defrag. IIRC, 1M items takes about 180 intervals (i.e. 1800 seconds, or 30 minutes wall clock; 1.8s CPU) to wNathalie Landry across all documents.
+
+Line:94, src/defragmenter.cc -> Agreed. I'll probably change to INFO or DEBUG - will be 6 lines per minute.
+
+-------------------------------------
+author: Abby Duran
+date: 2014-09-29 01:09:13.155000000
+
+Patch Set 2:
+
+(3 comments)
+
+Overall, it looks good. I have a couple of comments, but one of them (temporal memory overhead) won't be an issue due to the patch set #6.
+
+Please address the rest of minor comments including Sundar's ones if you agree. I'm okay with merging this change as long as you can push a separate commit to address those comments.
+
+Line:121, configuration.json -> Stats. org should be also updated to include this new parameter and the short description.
+
+Line:658, src/stored-value.cc -> We don't need any additional lock as the corresponding hash table partition was already grabbed before calling this function.
+
+Line:659, src/stored-value.cc -> This may increase mem_used temporarily because the original Blob instance is still referred by other modules (checkpoint, DCP producer, flusher) for some time (not too long, but usually less than 5 sec because a new checkpoint interval is 5 secs by default).
+
+However, I saw the patch set #6, which runs the defragmentor for 20ms only for every 10 sec. Then, we probably don't need to worry about this temporal memory overhead.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2014-09-29 18:07:19.037000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:121, configuration.json -> Done
+
+Line:658, src/stored-value.cc -> Thanks for confirming.
+
+-------------------------------------

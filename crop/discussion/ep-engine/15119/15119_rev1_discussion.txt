@@ -1,0 +1,56 @@
+DESCRIPTION
+
+don't loose notify events in notifyPendingConnections. MB-5136
+
+Because previously tapConnMap.wait would always wait 1 second it may
+cause 1 second delay if notify occurs when not
+notifyPendingConnections thread is not "parked" in wait.
+
+This was observed as occasional weird 1 second delays in vbucket
+takeover. And I've verified that it indeed makes rebalance faster.
+
+This potential 1 second delay is what makes MB-5136 relatively
+probable in practice.
+
+New code maintains cas-like notify counter variable. Which notify
+increments. And wait checks that under lock but prior to sleeping. If
+prior to sleeping wait finds this value changed it will realize that
+some notify event(s) happened between previous return from wait and
+it's next call. Thus it won't sleep in such case fixing this problem
+of "loosing" notifications.
+
+Change-Id: Ib2a38eb70f3fd5360910d49daf1ee2d7eede04be
+
+
+COMMENTS
+
+author: Nathalie Landry
+date: 2012-04-24 03:04:34.685000000
+
+Patch Set 1: Verified
+
+Same test is failing after this change as was failing before:
+
+
+Running getl... ep_testsuite.cc:422 Test failed: `Expected to be able to getl on first try' (last_status == PROTOCOL_BINARY_RESPONSE_SUCCESS)
+DIED
+
+And I've confirmed that rebalance is faster now. With some other TCP_NODELAY changes on ns_server side we're now at last utilizing (more than) 100% CPU when rebalancing localhost <-> localhost.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-04-24 03:05:23.539000000
+
+Patch Set 1: Fails
+
+wait a sec. I'm observing constant 100% cpu usage
+
+-------------------------------------
+author: Tate Garrett
+date: 2012-04-24 04:36:05.684000000
+
+Your change could not be merged due to a path conflict.
+
+Please merge (or rebase) the change locally and upload the resolution for review.
+
+-------------------------------------

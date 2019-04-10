@@ -1,0 +1,88 @@
+DESCRIPTION
+
+[Refactor]: Move VBucket::queueDirty() calls to update/addNewStoredValue()
+
+Currently there are 3 data structures contained in VBucket, namely, HashTable,
+Checkpoint, Backfill queue. Logically an item is pushed onto these data
+structures during (i) update of an exisitng item (ii) addition of a new item
+(iii) soft deletion of an item.
+
+For the above (i), (ii) and (iii) there can be many sources like set, add,
+delete, expire, set_with_meta, del_with_meta, insert from warmup etc.
+
+VBucket::queueDirty() is used to queue an item onto a checkpoint or
+backfill queue for replication and/or persistence. Rather than being called
+from all the sources of (i), (ii) and (iii) it can just be called from 3
+functions implementing (i), (ii) and (iii).
+
+Benefits of this design is
+(a) We decouple the logic of handling/holding items in VBucket data
+    structures from the source functions. Those functions can only focus
+    on deciding whether to add/update/delete an item in VBucket.
+(b) If we need 2 or more data structures to work in tandem to hold/handle
+    items in the VBucket it becomes easier. For example in ephemeral
+    vbucket the seqlist and hash table can work in tandem only in these
+    functions (just overriding these functions).
+(c) We can pull out the semantics of add/update/delete in VBucket like
+    seqno generation to the VBucket class from the Checkpoint. Today
+    seqno is generated from Checkpoint and then put onto the StoredValue
+    in hash table. Rather, seqno should be generated in VBucket during
+    (i), (ii) and (iii) and passed to the VBucket data structures in a
+    requried way (checkpoint demands items in monotonically increasing
+    seqno order, hash table doesn't care).
+
+And the caveat is we have to pass more parameters to functions implementing
+(i), (ii) and (iii) as we do some conditional stuff in VBucket::queueDirty()
+
+This commit move all calls related to (i) and (ii) to the respective 2
+functions. A following commit will address (iii)
+(It does not help to break this as different commits for (i) and (ii)
+ because update/addNewStoredValue() are called from same functions)
+
+Change-Id: I44b27c507403e6687f00fc3d0e5266e30ab4d7f9
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2017-02-07 17:20:37.761000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-02-07 17:29:55.762000000
+
+Patch Set 6: Code-Review-1
+
+(1 comment)
+
+Line:75, src/ep_types.h -> If you have a throw you don't need the return (the compiler knows it's unreachable).
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-02-07 17:34:59.510000000
+
+Patch Set 6:
+
+(1 comment)
+
+Line:75, src/ep_types.h -> Done
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-02-07 17:35:25.469000000
+
+Patch Set 6: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/3661/ : ABORTED
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/2298/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/3077/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/3474/ : SUCCESS
+
+-------------------------------------

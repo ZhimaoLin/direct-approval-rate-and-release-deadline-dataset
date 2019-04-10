@@ -1,0 +1,179 @@
+DESCRIPTION
+
+Introduce SyncStrategy for logical model support
+
+This allows to provide distinct implementations when doing
+synchronizations depending on whether or not the user is interested in
+logical models.
+The default SyncStrategy implementation does not deal with logical
+models at all and thus provides the best performance.
+The ModelAwareSyncStrategy consults the logical model providers to
+determine the set of resources involved in synchronization operations
+and thus can have important performance impact especially on large
+repositories.
+Preference 'allow models to participate...' now defaults to false. This
+has an impact on some test cases where we now set-up the preference
+before running them.
+
+Bug: 501990
+Change-Id: I9322cef70c037e0b2c270a7c2bab7d2ffd278f60
+Signed-off-by: Maleah Marks xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Maleah Marks
+date: 2016-09-27 15:25:04.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-09-27 15:25:11.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/9099/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-09-27 15:52:21.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/9099/ : SUCCESS
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-09-27 17:02:23.000000000
+
+Patch Set 1: Code-Review-1
+
+(1 comment)
+
+File Comment: org.eclipse.egit.ui.test/src/org/eclipse/egit/ui/view/synchronize/SynchronizeViewRemoteAwareChangeSetModelTest.java -> This test fails consistently in maven build on my Mac. See comment and screenshot on bug 501990; can't attach images here.
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-09-28 08:06:29.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:105, org.eclipse.egit.ui.test/src/org/eclipse/egit/ui/view/synchronize/MockLogicalResourceMapping.java -> Please specifiy the encoding.
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-09-28 08:23:24.000000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:110, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/synchronize/ModelAwareSyncStrategy.java -> Too much code duplication with the super class here. Introduce canCompareDirectly(IFile) in SyncStrategy (returning true), call it in the super implementation of this method, then remove this override.
+
+Would it make sense to also introduce an ISynchronizationStrategy interface? Besides, can we rename "SyncStrategy" to "SynchronizationStrategy", please? We have auto-completion, so long names should not be a typing problem :-), and in general I think abbreviations in names are best avoided.
+
+Line:212, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/synchronize/ModelAwareSyncStrategy.java -> These can be long-running operations. If I look at the callers of CompareUtils.compare(), it looks as if this will be called from the UI thread. Maybe we would need to pass through a progress monitor so that the user has a chance to cancel? (And of course, run the CompareUtils.compare() in a busyCursorWhile or some such.)
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-10-01 15:30:59.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:144, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/synchronize/ModelAwareSyncStrategy.java -> This is expensive; it'll consider the whole repository in the subscriber.init() call below. Can't we restrict this to a set of possible paths?
+
+-------------------------------------
+author: Maleah Marks
+date: 2016-10-03 08:55:24.000000000
+
+Patch Set 1:
+
+(5 comments)
+
+Hello Thomas,
+
+Thank you for your review and comments!
+I'm working on it to take them into account, I'll push a new patchset as soon as I can.
+In the meantime, I tried my best to answer your comments and questions.
+
+Line:110, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/synchronize/ModelAwareSyncStrategy.java -> Ok, I'll reduce code duplication and rename for non-abbreviated names (I used an abbreviation in the first place because I had the feeling that it was what was usually done in EGit/JGit. My mistake)
+
+Line:144, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/synchronize/ModelAwareSyncStrategy.java -> Unfortunately, we can't.
+We cannot know beforehand what other resources the model providers will need to be able to compute the logical model on the remote version.
+We are dealing with logical models where the 'scope' of the logical model requires a full access to the content of the 'remote version'. Of course, there are some model providers that won't need to access the whole repo but that's the case for EMFCompare at least in our use-cases.
+The only way I see to improve that in cases where it's not needed would be to introduce yet another preference to state whether we want to support logical models made of variable sets of files (as described in http://www.eclipse.org/eclipse/platform-team/team3.2/logical-support.doc).
+I'm not sure how much end-users would be able to understan this preference though...
+
+Line:212, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/synchronize/ModelAwareSyncStrategy.java -> Yes, I'll make sure that long running operations are managed so that UI doesn't freeze and users can see progress and cancel.
+
+File Comment: org.eclipse.egit.ui.test/src/org/eclipse/egit/ui/view/synchronize/SynchronizeViewRemoteAwareChangeSetModelTest.java -> I reproduced your issue on the mac of a colleague of mine.
+I'm waiting to have a more permanent access to a mac to see where this comes from. I'm under windows and the test passes.
+Does the test pass when you run it manually (is it only in maven that it fails)?
+
+Line:105, org.eclipse.egit.ui.test/src/org/eclipse/egit/ui/view/synchronize/MockLogicalResourceMapping.java -> Ok, will do.
+
+-------------------------------------
+author: Maleah Marks
+date: 2016-10-04 11:01:22.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+File Comment: org.eclipse.egit.ui.test/src/org/eclipse/egit/ui/view/synchronize/SynchronizeViewRemoteAwareChangeSetModelTest.java -> The problem was due to other tests that set up a specific team content provider, which has side effects on other tests.
+I fixed that by adding a relevant set-up to the failing test so that it always uses the expected team content provider.
+
+I'm unable to properly build egit under windows, I confess I never succeeded to have all the tests passing. I had only ran the test in isolation before pushing it, sorry about that.
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-10-04 21:19:33.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:144, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/synchronize/ModelAwareSyncStrategy.java -> I somehow can't believe that a logical model comparison would always need the whole remote tree. (Unless you had some crazy model that automagically included any resource with a particular file name or extension, for example.) And just because one doesn't know exactly yet which exact remote resources will be needed is no reason to pre-emptively load everything.
+
+I think what we need here is a RemoteResourceMappingContext that does not pull in the whole remote tree up front but that builds its cache incrementally.
+
+Building a full cache of the remote may be fine for a workspace synchronization, but is it the right approach for comparing a single element, even if that element can be a logical model comprising several (and possibly different local or remote) resources?
+
+-------------------------------------
+author: Maleah Marks
+date: 2016-10-07 09:12:30.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:144, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/synchronize/ModelAwareSyncStrategy.java -> Hello Thomas,
+
+I agree that having a RemoteResourceMappingContext that builds its cache in a lazy way would be the ideal solution.
+It would allow addressing the different kinds of logical models and would not impact the performance of the simple cases.
+I'll try and have a look at that, however any help or suggestion would be very welcome.
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-10-07 16:16:21.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:144, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/synchronize/ModelAwareSyncStrategy.java -> I'm afraid I can't help very much. This whole synchronization stuff is an area of EGit that I haven't really looked at yet, and it's been a while since I implemented that (model providers, resource variant trees, mapping contexts) in an different project myself (and not for git, either). Off-hand, it looks as if one needed a GitResourceVariantTreeSubscriber that doesn't pre-load its cache. (Or only a preferably small part of it. Not sure how this would perform if it does multiple tree walks.)
+
+-------------------------------------
+author: Gerrit Johnathan Pham
+date: 2016-12-06 23:26:29.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

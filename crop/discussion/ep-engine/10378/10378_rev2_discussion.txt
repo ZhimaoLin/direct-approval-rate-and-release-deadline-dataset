@@ -1,0 +1,83 @@
+DESCRIPTION
+
+Let mc-kvstore control mccouch write batch jobs
+
+This change allows mc-kvstore to control mcocuch batch jobs as
+follows:
+- A new engine parameter is added to put the limit on the
+number of concurrent workers at the mccouch side.
+- Batch size per mcocuch worker is now determined by dividing
+the transaction size by the max number of concurrent workers.
+- Items from the persistence queue are reordered so that each
+mccouch worker works only with a single vbucket database:
+ 1) Divide the list of items for each vbucket into multiple
+    chunks such that each chunk size is equal to the
+    above batch size.
+ 2) Iterate each vbucket and push its current chunk into the
+    outgoing queue. Remove the current chunk from each vbucket.
+ 3) Repeat step 2 until all the chunks are visited.
+
+    For example, suppose that the persistence queue currently has
+    (vb0,k1)...(v0,k2000)
+    (v1,k2001)...(v1,k4000)...
+    (v7,k14001)...(v7,k16000)
+
+    The batch size is 1000.
+
+    After reordering, the persistence queue will have
+    (vb0,k1)...(vb0,k1000)
+    (vb1,k2001)...(vb1,k3000)...
+    (vb7,k14001)...(vb7,k15000)
+    (vb0,k1001)...(vb0,k2000)
+    (vb1,k3001)...(vb1,k4000)...
+    (vb7,k15001)...(vb7,k16000).
+
+In the mccouch side, it will first receive the message indicating
+the max number of concurrent workers allowed from ep-engine, and
+then create a new worker whenever it receives an item with the new
+vbucket Id.
+
+Change-Id: I07036ad45b5cc80f4a09415a009c9e6f60807901
+
+
+COMMENTS
+
+author: Abby Duran
+date: 2011-11-02 23:43:53.404000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Noah Dean
+date: 2011-11-03 18:54:38.993000000
+
+Patch Set 2: Looks good to me, approved
+
+I think this is good progress.  I'm wondering if tighter interleaves would help, but that's really future experimentation at this point.
+
+-------------------------------------
+author: Abby Duran
+date: 2011-11-03 20:35:28.173000000
+
+Patch Set 2:
+
+Yeah, tighter interleaving could further improve the throughput (e.g., interleaving the vbuckets with more items first). We can investigate it in the near future.
+
+-------------------------------------
+author: Brandon Owens
+date: 2011-11-03 20:37:53.406000000
+
+Patch Set 2:
+
+is this ready for merge (assuming Chiyoung verified).
+further optimization will be great but should not stop incremental merging.
+
+-------------------------------------
+author: Asher Vang
+date: 2011-11-03 21:56:37.814000000
+
+Patch Set 2: I would prefer that you didn't submit this
+
+I'd like to rebase this on top of the singlethreaded version to avoid a merge hell. (I'm doing the rebase!)
+
+-------------------------------------

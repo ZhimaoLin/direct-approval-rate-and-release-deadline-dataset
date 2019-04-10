@@ -1,0 +1,148 @@
+DESCRIPTION
+
+CBQE-0: updating install.py and remote_util.py for upr default. Additionally XDCR_USE_OLD_PATH and COUCHBASE_REPL_TYPE variable was introduced in 3.0 and not present in previous version's start-up scripts.
+
+Change-Id: I0835efca95e77743697eabd29b0b57f1ffafa8db
+
+
+COMMENTS
+
+author: Fisher Vargas
+date: 2014-05-29 06:16:41.186000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2014-05-29 06:16:49.991000000
+
+Patch Set 1:
+
+Build Started http://factory.couchbase.com/job/testrunner-Jasmin Rangel-master/1620/
+
+-------------------------------------
+author: Fisher Vargas
+date: 2014-05-29 06:20:54.273000000
+
+Patch Set 1:
+
+Aruna, is xdcr_upr parameter still required?
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2014-05-29 06:39:14.309000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+http://factory.couchbase.com/job/testrunner-Jasmin Rangel-master/1620/ : SUCCESS
+
+-------------------------------------
+author: Esperanza Cherry
+date: 2014-05-29 08:05:33.460000000
+
+Patch Set 1: Code-Review-1
+
+(1 comment)
+
+Line:997, lib/remote/remote_util.py -> http://review.couchbase.org/#/c/37569/4/scripts/install.py
+
+Titus Ho		May 27 11:30 PM
+the use case for this check may not be needed: -p upr=none,
+results in upr = None, and today means upr will be enabled.
+Reply ...Reply 'Done'
+Esperanza Cherry		May 27 11:37 PM
+right, but my approach is: None - no changes true - set upr with force false - set tap
+I still adhere to the approach that the default should be the default, and not to change anything in the settings
+
+The last thing I can say about it. if you had the original implementation of such as now then we would not have to make any changes (in the case of change of default values), and we would have saved a week (as much was spent on this version)
+
+-------------------------------------
+author: Fisher Vargas
+date: 2014-05-30 17:00:25.370000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:997, lib/remote/remote_util.py -> Andrei,
+   This code block will be used only for clear installation/Upgrade. To force change Replication type at run time, change_env_variables() function is used. What is the use case of your implementation is not clear to me. Which case is not covered in this new implementation?
+
+-------------------------------------
+author: Esperanza Cherry
+date: 2014-05-31 08:08:29.081000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:997, lib/remote/remote_util.py -> change_env_variables is used in the tests and it's not related to installation. differs from your current implementation:
+1) it always allows to test default CB replication protocol via upr=None. so, we would not have to change anything in the code, if we had make the initial implementation of this
+2) it allows to set any COUCHBASE_REPL_TYPE with force
+(we have the same approach for vbuckets: even when we set vbuckets=1024 in params then all the same installation set the number 1024 even default value is 1024)
+3) unlikely but still possible:
+a) you need to test old 3.0.0 CB version with upr where is used tap protocol by default. so, you have to change code again or take old testrunner version
+b) devs decide to not use upr in 3.0.0 by default. you have to change code again?
+
+-------------------------------------
+author: Fisher Vargas
+date: 2014-06-02 05:32:30.673000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:997, lib/remote/remote_util.py -> I thought, this implementation is simplified version for your changes. E.g. if upr=True is passed there is no point in setting COUCHBASE_REPL_TYPE=upr in the init file (same for xdcr_upr=True) because it is by default now.  I don't any difference in this implementation logic/functionality change from previous version except simplified version. 
+
+1) upr=None is added for all previous versions to 3.0.0. upr=False/True will work as expected before.
+2) COUCHBASE_REPL_TYPE/XDC_OLD_PATH: is the new environment variable introduced in 3.0.0. Not on previous versions. 
+3-a) For testing older builds of 3.0.0, we can still pass upr=False/True through install.py as required. No need to download old testrunner.
+3-b) After Wayne's comment, Dev has made it default to use upr, while we still have facility to use TAP using upr=False/True parameters in install.py 
+
+Additionally, I recommend to keep installation script updated as product. Since product is using upr by default so installation script should also do the same, otherwise it will create confusion.
+
+-------------------------------------
+author: Fisher Vargas
+date: 2014-06-02 11:40:51.603000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:997, lib/remote/remote_util.py -> Installed using current testrunner with upr=True, xdcr_upr=True. Below changes are not required in the startup file, since it is True by default in the product now.
+
+2014-06-01 22:14:57,750 - root - INFO - command executed successfully
+2014-06-01 22:14:57,751 - root - INFO - running command.raw on 10.3.121.65: sed -i 's/END INIT INFO/END INIT INFO\nexport COUCHBASE_REPL_TYPE=upr/'                    /opt/couchbase/etc/couchbase_init.d
+2014-06-01 22:14:57,858 - root - INFO - command executed successfully
+2014-06-01 22:14:57,859 - root - INFO - running command.raw on 10.3.121.65: sed -i 's/ulimit -c unlimited/ulimit -c unlimited\n    export XDCR_USE_OLD_PATH=false/'                    /opt/couchbase/etc/couchbase_init.d
+2014-06-01 22:14:57,967 - root - INFO - command executed successfully
+2014-06-01 22:14:57,968 - root - INFO - running command.raw on 10.3.121.65: /etc/init.d/couchbase-server start
+
+
+Causing all XDCR tests to fail http://qa.hq.northscale.net/job/centos_x64--31_01--uniXDCR-P1/11/consoleFull and XDCR is not happening and destination has 0 items. Seems XDCR_USE_OLD_PATH should be set to true only for xdcr_upr=False. Rest no need to set it. It was the previous implementation done by Aruna.
+
+-------------------------------------
+author: Angelina Mayer
+date: 2014-06-02 18:44:44.367000000
+
+Patch Set 2: Patch Set 1 was rebased
+
+-------------------------------------
+author: Angelina Mayer
+date: 2014-06-02 20:27:40.138000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:997, lib/remote/remote_util.py -> ok, ONLY for XDCR_USE_OLD_PATH: per Alk, setting this variable to any value will force disk based xdcr until he removes support for this variable(which is a matter of days). So in my opinion, for now the code should read :
+
+if xdcr_upr is not None:   # assumes if xdcr_upr not none, it can only be false.
+      XDCR_USE_OLD_PATH = "true"		
+      output, error =  self.execute_command("sed -i 's/ulimit -c unlimited/ulimit -c unlimited\\n    export XDCR_USE_OLD_PATH={1}/'\	
+                                                                    /opt/{0}/etc/{0}_init.d".format(server_type, XDCR_USE_OLD_PATH))                    
+
+Btw, upr=True, xdcr_upr=True are both default now, should not be passed to any job. Kindly remove these params from all xdcr jobs. xdcr_upr = false is not going to be used as often as upr=false. It is assumed that if xdcr_upr is even passed to installer, it is to force disk based xdcr (xdcr_upr=false) and the above recommendation is based on that.
+
+-------------------------------------

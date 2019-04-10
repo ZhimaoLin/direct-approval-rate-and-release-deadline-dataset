@@ -1,0 +1,75 @@
+DESCRIPTION
+
+Better error message for non-existing local repository
+
+Use "/path/to/repository does not exists" instead of "URI is not
+supported".
+
+Bug: 315564
+
+
+COMMENTS
+
+author: Zachary Orozco
+date: 2011-03-07 09:19:50.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(4 inline comments)
+
+
+
+Line:103, org.eclipse.jgit/src/org/eclipse/jgit/transport/TransportLocal.java -> Style-nit: we don't use curly braces for one-line blocks. Maybe something like this...
+
+if ("file".equals(uri.getScheme()) || uri.getScheme() == null) {
+  if (!fs.resolve(new File(PWD), uri.getPath()).isDirectory())
+    throw new NotSupportedException(uri.getPath() + " does not exist");
+  return true;
+}
+
+Line:106, org.eclipse.jgit/src/org/eclipse/jgit/transport/TransportLocal.java -> Not so sure whether NotSupportedException is correct here. On the other hand: that's our only chance to report this error without breaking API.
+
+Line:218, org.eclipse.jgit.test/tst/org/eclipse/jgit/transport/TransportTest.java -> doesn't compile with eclipse and our standard warning/error settings. This method is not throwing any IOException (we are catching it).
+
+Line:332, org.eclipse.jgit/src/org/eclipse/jgit/transport/Transport.java -> that doesn't compile with our checked in eclipse settings because you
+haven't documented this exception in the javadoc. Just look at your change in eclipse and use our checked-in warning/error levels.
+
+Another thing: I was wondering why you don't break our builds by introducing a new unchecked exception. I found out: it's because this method is not used in egit/jgit.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-03-07 18:30:48.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(2 inline comments)
+
+
+
+Line:106, org.eclipse.jgit/src/org/eclipse/jgit/transport/TransportLocal.java -> Throwing NotSupportedException is probably the only thing we can do right now.
+
+For quite a while now I have wanted to rebuild the way this API works. I want to introduce a TransportType interface that implements canHandle(URIish,FS), and has open(Repository,URIish) to construct the Transport instance. Then we can get rid of the static list of canHandle invocations inside of Transport and instead walk through a list of registered TransportTypes.
+
+EGit's dialog can use that list of TransportType to enumerate what connections are available, rather than hard-coding them all.
+
+"Plugins" to JGit could register their own TransportType instances, allowing us to support other means of transport (e.g. rsync://) that we don't support today because it requires use of software the Eclipse Foundation won't let us redistribute as part of the core JGit library. But if users supply their own plugins from external sources, there is no reason they shouldn't be able to register and "Just Work".
+
+Because I can't think of what else is really critical for me to do today, I might try to sketch this out and post a change for discussion.
+
+Line:222, org.eclipse.jgit.test/tst/org/eclipse/jgit/transport/TransportTest.java -> This catch should be more targeted. We expect a TransportException here, don't we? So catch that, and let everything else be thrown to the caller. If any other type is thrown the test will fail.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-03-07 23:23:36.000000000
+
+Patch Set 1:
+
+I think my own change Iafd8e3a6285261412aac6cba8e2c333f8b7b76a5 fixes this, but in a different way.
+
+-------------------------------------
+author: Alannah Pena
+date: 2011-03-09 20:02:40.000000000
+
+Patch Set 1: Abandoned
+
+-------------------------------------

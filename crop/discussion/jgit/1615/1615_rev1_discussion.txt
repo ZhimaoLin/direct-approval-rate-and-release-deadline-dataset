@@ -1,0 +1,55 @@
+DESCRIPTION
+
+[DRAFT] WorkingTreeIterator supports attributes
+
+Correct binary-detection and EOL-handling requires
+to process "eol" and "text" attributes from the
+.gitattributes-hierachy.
+
+
+COMMENTS
+
+author: Saniya Hill
+date: 2010-09-17 15:23:33.000000000
+
+Patch Set 1:
+
+I don't really like the current implementation. I've tried to keep things similar to the Ignore-functionality. WorkingTreeIterator#decorateAttributesQuery is rather annoying. Alternatively there could be a stack (similar to C Git) with a fixed top-level element .git/info/attributes. The stack could be initialized by FileTreeIterator and pushes could happen in createSubtreeIterator(). For the pops we would need some new AbstractTreeIterator.dispose() method.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-09-20 21:19:54.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(1 inline comment)
+
+
+
+Line:86, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/FileTreeIterator.java -> None of this should be in FileTreeIterator.  It all should be implementable in WorkingTreeIterator.
+
+But attributes are harder than gitignore.  For attributes we also need to pay attention to the CanonicalTreeParser side of the house during checkout.  Because during checkout we need to use the gitattributes file from the repository to determine CRLF status of a file as we create or update it in the working tree.
+
+Given that, maybe we should implement attribute support using an AbstractTreeIterator that wraps another AbstractTreeIterator.  It can peek at the underlying AbstractTreeIterator to see if there is a gitattributes present, and if so it would setup an Attributes to represent the current attributes.  Peeking shouldn't be very expensive because ".gitattributes" is very likely to occur very early in a sorted list, and is actually not likely to exist.  So we probably only need to examine the first path of the wrapped iterator to prove its after ".gitattributes" and thus don't need attribute support... or it is ".gitattributes", we load it, and back(1) to undo.  That's all reasonably cheap.
+
+Then checkout client code that needs to care about attributes from a particular location (e.g. working tree or repository) can wrap the iterator with this AttributeIterator type and later query for attributes as necessary.
+
+Because TreeWalk manages iterators by creating a new iterator when it dives into a tree, and discards an iterator when it exits, we don't need to manage the stack ourselves.  Attribute collections from a nested subtree will automatically fall out of scope when the TreeWalk throws away the AttributeIterator.
+
+This also opens the door for some potential optimization of an Attributes object.  If we are in an AttributeIterator we might want to sort the entries by path name so we can merge join them against the underlying iterator's own names during next() and back(), reducing the amount of work we need to perform during a particular attribute query from the caller.  Likewise we might be able to be told by our caller that we only care about the "text" and "crlf" attributes, and discard any other rules that aren't relevant.
+
+-------------------------------------
+author: Rocco Fowler
+date: 2013-03-10 16:20:12.000000000
+
+Patch Set 1: Do not submit
+
+Please throw away this change. It's now included in I05f3ce1861fbf9896b1bcb7816ba78af35f3ad3d
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2013-03-28 17:24:24.000000000
+
+Patch Set 1: Abandoned
+
+-------------------------------------

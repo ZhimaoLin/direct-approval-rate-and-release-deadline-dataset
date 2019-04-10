@@ -1,0 +1,185 @@
+DESCRIPTION
+
+Rewrite reference handling to be abstract and accurate
+
+This commit actually does three major changes to the way references
+are handled within JGit.  Unfortunately they were easier to do as
+a single massive commit than to break them up into smaller units.
+
+Disambiguate symbolic references:
+---------------------------------
+
+  Reporting a symbolic reference such as HEAD as though it were
+  any other normal reference like refs/heads/master causes subtle
+  programming errors.  We have been bitten by this error on several
+  occasions, as have some downstream applications written by myself.
+
+  Instead of reporting HEAD as a reference whose name differs from
+  its "original name", report it as an actual SymbolicRef object
+  that the application can test the type and examine the target of.
+
+  With this change, Ref is now an abstract type with different
+  subclasses for the different types.
+
+  In the classical example of "HEAD" being a symbolic reference to
+  branch "refs/heads/master", the Repository.getAllRefs() method
+  will now return:
+
+      Map<String, Ref> all = repository.getAllRefs();
+      SymbolicRef HEAD = (SymbolicRef) all.get("HEAD");
+      ObjectIdRef master = (ObjectIdRef) all.get("refs/heads/master");
+
+      assertSame(master,               HEAD.getTarget());
+      assertSame(master.getObjectId(), HEAD.getObjectId());
+
+      assertEquals("HEAD",              HEAD.getName());
+      assertEquals("refs/heads/master", master.getName());
+
+  A nice side-effect of this change is the storage type of the
+  symbolic reference is no longer ambiguous with the storge type
+  of the underlying reference it targets.  In the above example,
+  if master was only available in the packed-refs file, then the
+  following is also true:
+
+      assertSame(Ref.Storage.LOOSE,  HEAD.getStorage());
+      assertSame(Ref.Storage.PACKED, master.getStorage());
+
+  (Prior to this change we returned the ambiguous storage of
+   LOOSE_PACKED for HEAD, which was confusing since it wasn't
+   actually true on disk).
+
+  Another nice side-effect of this change is all intermediate
+  symbolic references are preserved, and are therefore visible
+  to the application when they walk the target chain.  We can
+  now correctly inspect chains of symbolic references.
+
+  As a result of this change the Ref.getOrigName() method has been
+  removed from the API.  Applications should identify a symbolic
+  reference by testing for isSymbolic() and not by using an arcane
+  string comparsion between properties.
+
+Abstract the RefDatabase storage:
+---------------------------------
+
+  RefDatabase is now abstract, similar to ObjectDatabase, and a
+  new concrete implementation called RefDirectory is used for the
+  traditional on-disk storage layout.  In the future we plan to
+  support additional implementations, such as a pure in-memory
+  RefDatabase for unit testing purposes.
+
+Optimize RefDirectory:
+----------------------
+
+  The implementation of the in-memory reference cache, reading, and
+  update routines has been completely rewritten.  Much of the code
+  was heavily borrowed or cribbed from the prior implementation,
+  so copyright notices have been left intact as much as possible.
+
+  The RefDirectory cache no longer confuses symbolic references
+  with normal references.  This permits the cache to resolve the
+  value of a symbolic reference as late as possible, ensuring it
+  is always current, without needing to maintain reverse pointers.
+
+  The cache is now 2 sorted RefLists, rather than 3 HashMaps.
+  Using sorted lists allows the implementation to reduce the
+  in-memory footprint when storing many refs.  Using specialized
+  types for the elements allows the code to avoid additional map
+  lookups for auxiliary stat information.
+
+  To improve scan time during getRefs(), the lists are returned via
+  a copy-on-write contract.  Most callers of getRefs() do not modify
+  the returned collections, so the copy-on-write semantics improves
+  access on repositories with a large number of packed references.
+
+  Iterator traversals of the returned Map<String,Ref> are performed
+  using a simple merge-join of the two cache lists, ensuring we can
+  perform the entire traversal in linear time as a function of the
+  number of references: O(PackedRefs + LooseRefs).
+
+  Scans of the loose reference space to update the cache run in
+  O(LooseRefs log LooseRefs) time, as the directory contents
+  are sorted before being merged against the in-memory cache.
+  Since the majority of stable references are kept packed, there
+  typically are only a handful of reference names to be sorted,
+  so the sorting cost should not be very high.
+
+  Locking is reduced during getRefs() by taking advantage of the
+  copy-on-write semantics of the improved cache data structure.
+  This permits concurrent readers to pull back references without
+  blocking each other.  If there is contention updating the cache
+  during a scan, one or more updates are simply skipped and will
+  get picked up again in a future scan.
+
+  Writing to the $GIT_DIR/packed-refs during reference delete is
+  now fully atomic.  The file is locked, reparsed fresh, and written
+  back out if a change is necessary.  This avoids all race conditions
+  with concurrent external updates of the packed-refs file.
+
+  The RefLogWriter class has been fully folded into RefDirectory
+  and is therefore deleted.  Maintaining the reference's log is
+  the responsiblity of the database implementation, and not all
+  implementations will use java.io for access.
+
+  Future work still remains to be done to abstract the ReflogReader
+  class away from local disk IO.
+
+Change-Id: I26b9287c45a4b2d2be35ba2849daa316f5eec85d
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-01-23 02:44:15.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-01-23 02:47:49.000000000
+
+Patch Set 4: Looks good to me, but someone else must approve; IP review completed
+
+We're now at almost 100% test coverage in RefDirectory.  RefDirectoryTest alone covers everything except writing, the writes are covered elsewhere right now by existing tests.  
+
+Eventually we need to get the writes test by RefDirectoryTest as well.  But I'd rather get the API changed and passed through first... so we're really not any worse off at this point.
+
+So I think this is read to be merged.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-01-23 13:58:14.000000000
+
+Patch Set 4: I would prefer that you didn't submit this; No score
+
+This one's close.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:734, org.eclipse.jgit.test/tst/org/eclipse/jgit/lib/T0003_Basic.java -> Fixed.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:734, org.eclipse.jgit.test/tst/org/eclipse/jgit/lib/T0003_Basic.java -> Document this better than the name. The issue occurs because the tests write directly to the .git directory
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:107, org.eclipse.jgit/src/org/eclipse/jgit/lib/RefDatabase.java -> Converted to be abstract.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:107, org.eclipse.jgit/src/org/eclipse/jgit/lib/RefDatabase.java -> Why is this method both here and in the RefDirectory class. It is also differenct and not covered by tests
+
+-------------------------------------

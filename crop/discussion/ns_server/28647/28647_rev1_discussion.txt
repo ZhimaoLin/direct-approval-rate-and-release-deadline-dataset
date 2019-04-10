@@ -1,0 +1,86 @@
+DESCRIPTION
+
+CBSE-703 Force ddoc/rdoc replication on noconnection.
+
+In the referred ticket I saw that on one of the nodes
+capi_set_view_manager got a DOWN monitor message about
+capi_set_view_manager on other node with the reason noconnection. So
+local capi_set_view_manager removed the affected node from the list of
+nodes to replicate to. At the same time, the disconnection somehow got
+unnoticed by ns_node_disco. And thus it didn't sent an update
+event. Which left capi_set_view_manager unaware of the fact that node
+is now connected.
+
+Leaving above case aside, it seems that in case of intermittent
+disconnect there's no guaranteed order of monitor message and
+ns_node_disco update event. Which again may cause
+capi_set_view_manager to not replicate to some node.
+
+So the solution is to force capi_set_view_manager and
+xdc_rdoc_replication_srv update themselves when noconnection monitor
+message is received. For any other termination reason, restarted
+remote process will ask local process to update itself.
+
+Change-Id: I9950f06040a494d4909842428cef8f71b1a9aadf
+
+
+COMMENTS
+
+author: Meghan Vazquez
+date: 2013-08-29 01:26:03.710000000
+
+Patch Set 1: Verified+1
+
+-------------------------------------
+author: Nathalie Landry
+date: 2013-08-29 11:01:35.063000000
+
+Patch Set 1:
+
+Hm. It may be worthwhile to have you thoughts on how this message reordering may happen. I.e. why you think there's no guaranteed order.
+
+I.e. I can see how messages from ns_node_disco may be delayed. So nodeup may be reordered forward. But apparently problem is only possible if nodedown is moved forward ahead of corresponding nodeup. And I'm unable to see how this happens.
+
+From code inspection I'm seeing that as part of dist process death and apparently before it's net_kernel parent is notified it'll send out process monitor noconnection messages and then node disconnect. So connection from same node before disconnection is not complete appears impossible in that arguably incomplete understanding of erlang guts.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2013-08-29 11:10:45.748000000
+
+Patch Set 1:
+
+(1 comment)
+
+also see inline
+
+Line:357, src/capi_set_view_manager.erl -> that may move nodeup event _backwards_ and therefore looks harmful.
+
+-------------------------------------
+author: Porter Oconnor
+date: 2013-08-29 11:38:04.869000000
+
+Patch Set 1: Code-Review+1
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2013-08-29 16:03:41.249000000
+
+Patch Set 1: -Verified Code-Review-1
+
+My thinking was that if intermittent disconnect happens and ns_node_disco receives nodedown and then nodeup quickly and somehow capi_set_view_manager receives its {DOWN, _, _, _, noconnection} message after it already received node disco event corresponding to nodeup, then there will be the described problem. But now after looking into dist erts/emulator/beam/dist.c I agree that this is impossible.
+
+And actually after giving a second look to the log files, I see that ns_node_disco saw both nodedown and nodeup but it failed to notify other processes about these events: I don't see corresponding log message from ns_node_disco_log.
+
+Regarding misc:flush thing. My thought process on why it's safe was as follows. There are only two places where capi_set_view_manager updates the list of remote nodes: when it receives DOWN message and when it receives replicate_newnodes_docs. And any DOWN message would directly (in case of noconnection) or indirectly (in all the other case) result in another replicate_newnodes_docs message sent.
+
+And now I also think about another seemingly problematic case. Let's assume we have two nodes n1 and n2 and capi_set_view_manager crashes on n2. n1 will receive DOWN message from n2 and will remove it from remote_nodes. The process on n2 will be restarted and will send replicate_newnodes_docs message to n1 in its init function. But the delivery of this message is not guaranteed if disconnect happens. And finally if this disconnect is asymmetric (meaning that n2 cannot communicate to n1 but n1 can communicate to n2 or just fails to detect intermittent failure), then n1 will not add n2 back to the remote_nodes list. Does my description make sense to anyone?
+
+So I'll try to figure out why ns_node_disco event was not fired/delivered. And thanks for thought provoking review!
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2013-09-03 20:16:26.402000000
+
+Abandoned
+
+-------------------------------------

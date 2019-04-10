@@ -1,0 +1,197 @@
+DESCRIPTION
+
+RefDirectory.exactRef: Do not ignore symrefs to unborn branch
+
+When asked to read a symref pointing to a branch-yet-to-be-born (such
+as HEAD in a newly initialized repository), DfsRepository and
+FileRepository return different results.
+
+FileRepository:
+
+	exactRef("HEAD") => null
+
+DfsRepository:
+
+	exactRef("HEAD") => SymbolicRef[HEAD -> refs/heads/master=00000000]
+
+getRef("HEAD") returns the same as DfsRepository's exactRef in both
+backends.
+
+The intended behavior is the DfsRepository one: exactRef() is supposed
+to be like getRef(), but more exact because it doesn't need to
+traverse the search path.
+
+The discrepancy is because DfsRefDatabase implements exactRef()
+directly with the intended semantics, while RefDirectory uses a
+fallback implementation built on top of getRefs().  getRefs() skips
+symrefs to an unborn branch.
+
+Override the fallback implementation with a correct implementation
+that is similar to getRef() to avoid this.  A followup change will fix
+the fallback.
+
+Change-Id: Ic138a5564a099ebf32248d86b93e2de9ab3c94ee
+Reported-by: Elise Key xxx@xxx.xxx
+Improved-by: Zachary Orozco xxx@xxx.xxx
+Bug: 478865
+
+
+COMMENTS
+
+author: Eden Lin
+date: 2015-11-11 18:58:38.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-11-11 18:58:44.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7460/
+
+-------------------------------------
+author: Eden Lin
+date: 2015-11-11 18:59:51.000000000
+
+Patch Set 2:
+
+Thanks again for the thoughtful review. PTAL.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-11-11 19:05:39.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7460/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-11-12 10:38:27.000000000
+
+Patch Set 2:
+
+I am confused about your stack of open changes (sorry for reviewing so late) and the branches they are targeted at. When I look at change/49581 I see 12 depending changes (all ref related) targeting master and one change which they all depend on (this one) targeting at stable-4.1. Is that intended? 
+
+If thats true: Maybe you know best whether we can accept the performance decrease in the 4.1 branch if we accept this without 60108. Gerrit is only component which would be really hit by performance changes in exactRef(), right? Then lets go for the easy solution to bring only this change to stable-4.1, merge it soon to master and continue fixing the rest in master.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-11-12 10:44:48.000000000
+
+Patch Set 2: Code-Review+1
+
+-------------------------------------
+author: Eden Lin
+date: 2015-11-12 17:44:29.000000000
+
+Patch Set 2:
+
+> I am confused about your stack of open changes (sorry for reviewing
+ > so late) and the branches they are targeted at. When I look at
+ > change/49581 I see 12 depending changes (all ref related) targeting
+ > master and one change which they all depend on (this one) targeting
+ > at stable-4.1. Is that intended?
+ > 
+ > If thats true: Maybe you know best whether we can accept the
+ > performance decrease in the 4.1 branch if we accept this without
+ > 60108. Gerrit is only component which would be really hit by
+ > performance changes in exactRef(), right? Then lets go for the easy
+ > solution to bring only this change to stable-4.1, merge it soon to
+ > master and continue fixing the rest in master.
+
+Yep, while writing this I noticed other possible improvements
+(refactorings, mostly). Those are not urgent so they're targeted to
+master. I plan to rebase them against master once the two changes for
+stable-4.1 go in.
+
+60106 fixes the bug for FileRepository directly, without a performance
+regression this time (thanks to your review :)).
+
+60150 fixes the same bug for callers that make their own RefDatabase
+implementation (like Gerrit's Gitiles plugin).
+
+-------------------------------------
+author: Eden Lin
+date: 2015-11-12 18:12:32.000000000
+
+Patch Set 2: Verified+1
+
+-------------------------------------
+author: Elise Key
+date: 2015-11-12 18:50:02.000000000
+
+Patch Set 2: Code-Review+1
+
+-------------------------------------
+author: Beau Terry
+date: 2015-11-12 19:32:44.000000000
+
+Patch Set 2: Code-Review+1
+
+(5 comments)
+
+Despite all my comments this looks good to me.
+
+Line:281, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> This comment doesn't appear at getRef().
+
+Digging deeper, I wonder if we'd rather want to adapt the condition to check exactly that.
+
+    if (!name.startsWith("refs/") && e.getCause() instanceof InvalidObjectIdException))
+        ref = null
+    else
+        throw e;
+
+Line:284, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> mental note: we fire the refs changed event even when just reading it.
+
+Line:7, /COMMIT_MSG -> Negations are confusing (, specially when having more than one). How about: {Respect, Follow, Handle} symrefs to unborn branch
+
+Line:7, /COMMIT_MSG -> Mental note: in c git land we start with a lower case after the colon, in JGit we don't.
+
+Line:40, /COMMIT_MSG -> You used to sign off on JGit too, now you drop it?
+
+-------------------------------------
+author: Eden Lin
+date: 2015-11-12 19:33:33.000000000
+
+Patch Set 2: Code-Review+2
+
+-------------------------------------
+author: Eden Lin
+date: 2015-11-12 19:36:55.000000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:281, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> *nod* I added the comment because I needed it to understand the code.
+
+https://git.eclipse.org/r/60108 will make the two functions share code.
+
+Using startsWith("refs/") sounds like a good idea. I'll try that as a separate change on master.
+
+Line:40, /COMMIT_MSG -> I'm lazy. :)
+
+Committers have a standing implicit sign-off. I should probably switch to signing off explicitly to set a good example for new contributors.
+
+-------------------------------------
+author: Eden Lin
+date: 2015-11-12 19:41:51.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:284, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> Yep, fireRefsChanged() is about noticing when the cached values of refs have changed, which can happen in readRef and resolve.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-11-12 20:00:24.000000000
+
+Change has been successfully merged into the git repository by Eden Lin
+
+-------------------------------------

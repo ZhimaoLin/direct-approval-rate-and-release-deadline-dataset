@@ -1,0 +1,113 @@
+DESCRIPTION
+
+JVMCBC-414 Add Extended Support phase 2 for KV Error Map
+
+Motivation
+----------
+Couchbase server 5.0 provides key value error map with hints on handling
+errors on response. Add support to parse and consume the error map
+hints.
+
+Changes
+-------
+The following changes have been added to the key value response handler
+
+- Parses the retry specifications available for auto-retry attribute
+- Consumes and records the retry specifications on the request itself
+- Reconnect, retry if connection state invalidated attribute is present
+- Send config invalidated message if config update attribute is present
+- Changed error code type from short to long in error map keys to
+  accomodate unsigned shorts.
+
+Updated mock to latest version including the namespace changes. Mock integration
+tests have been added to verify constant, linear and exponential retries.
+
+Results
+-------
+Error map is parsed and consumed. Verification tests pass.
+
+Change-Id: Icd46f534ec984bafabea3657180d17be966cac52
+
+
+COMMENTS
+
+author: Marques Ellis
+date: 2017-06-01 00:15:57.668000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2017-06-01 11:09:55.825000000
+
+Patch Set 4: Code-Review-1
+
+(7 comments)
+
+Line:54, src/main/java/com/couchbase/client/core/endpoint/kv/ErrorMap.java -> are the whole long changes still needed now?
+
+Line:130, src/main/java/com/couchbase/client/core/endpoint/kv/KeyValueStatus.java -> is this still needed?
+
+Line:57, src/main/java/com/couchbase/client/core/message/AbstractCouchbaseRequest.java -> pretty sure they need to be volatile, right?
+
+Line:687, src/main/java/com/couchbase/client/core/endpoint/kv/KeyValueHandler.java -> any reason this is warn?
+
+Line:692, src/main/java/com/couchbase/client/core/endpoint/kv/KeyValueHandler.java -> hmm, not sure this is the right way to signal, because a disconnect is somehow terminal. we should rather shut down through the channel and the event will be picked up and goes the normal way?
+
+Line:179, src/main/java/com/couchbase/client/core/ResponseHandler.java -> just double checking that the maxRetryDuration is indeed an absolute value?
+
+Line:59, src/main/java/com/couchbase/client/core/endpoint/ResponseStatusConverter.java -> long?
+
+-------------------------------------
+author: Marques Ellis
+date: 2017-06-01 17:57:08.308000000
+
+Patch Set 4:
+
+(7 comments)
+
+Line:54, src/main/java/com/couchbase/client/core/endpoint/kv/ErrorMap.java -> No, just some leftovers, will change it back to short
+
+Line:130, src/main/java/com/couchbase/client/core/endpoint/kv/KeyValueStatus.java -> This one here is not needed.
+
+Line:57, src/main/java/com/couchbase/client/core/message/AbstractCouchbaseRequest.java -> Not necessarily, retryAfter, maxRetryDuration are written only once and definitely happens before the read.
+
+Line:687, src/main/java/com/couchbase/client/core/endpoint/kv/KeyValueHandler.java -> No particular reason, we had a warn before if there was error code found for response status just moved it over. It can be a debug log.
+
+Line:692, src/main/java/com/couchbase/client/core/endpoint/kv/KeyValueHandler.java -> Makes sense, will change it.
+
+Line:179, src/main/java/com/couchbase/client/core/ResponseHandler.java -> Yes it is an absolute value set on the first time receiving the retry specifications.
+
+Line:59, src/main/java/com/couchbase/client/core/endpoint/ResponseStatusConverter.java -> Some leftovers of the long change, will fix it
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2017-06-02 07:16:30.891000000
+
+MISMATCHED INLINE COMMENT
+Line:57, src/main/java/com/couchbase/client/core/message/AbstractCouchbaseRequest.java -> ... but read and write happen from different threads right? (write: io, read: res handler)
+
+-------------------------------------
+author: Marques Ellis
+date: 2017-06-02 17:56:08.862000000
+
+MISMATCHED INLINE COMMENT
+Line:57, src/main/java/com/couchbase/client/core/message/AbstractCouchbaseRequest.java -> yes, it is good to have it as volatile, fixed.
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2017-06-02 07:16:30.891000000
+
+MISMATCHED INLINE COMMENT
+Line:692, src/main/java/com/couchbase/client/core/endpoint/kv/KeyValueHandler.java -> hmm no its still explicitly calling disconnect() on the endpoint. I was thinking close the "channel" not the endpoint if that makes sense.
+
+The problem is with an explicit disconnect on the endpoint (https://github.com/couchbase/couchbase-jvm-core/blob/master/src/main/java/com/couchbase/client/core/endpoint/AbstractEndpoint.java#L467) disconnected is set to true which is a terminal event on its lifetime more or less.
+
+-------------------------------------
+author: Marques Ellis
+date: 2017-06-02 17:56:08.862000000
+
+MISMATCHED INLINE COMMENT
+Line:692, src/main/java/com/couchbase/client/core/endpoint/kv/KeyValueHandler.java -> Updated to call channel close
+
+-------------------------------------

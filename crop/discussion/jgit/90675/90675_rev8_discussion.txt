@@ -1,0 +1,107 @@
+DESCRIPTION
+
+FileRepository.autoGC: run in background
+
+When running an automatic GC on a FileRepository, when the caller
+passes a NullProgressMonitor, fork off a new thread (per repository)
+to run the GC in.
+
+In some cases, the auto GC limit is lower than the true number of
+unreachable loose objects, so auto GC will run after every (e.g) fetch
+operation.  This leads to the appearance of poor fetch performance.
+Since these GCs will never make progress (until either the objects
+become referenced, or the two week timeout expires), blocking on them
+simply reduces throughput.
+
+In the event that an auto GC would make progress, it's still OK if it
+runs in the background.  The progress will still happen.
+
+This matches the behavior of regular git.
+
+If the user passes a ProgressMonitor that is not a
+NullProgressMonitor, they might actually care about the progress of
+the GC, and would get confused if that progress happened after the
+autoGC call returns, so we run in the foreground in that case.
+
+Git (and now jgit) uses the lock file for gc.log to prevent
+simultaneous runs of background gc.  Further, it writes errors to
+gc.log, and won't run background gc if that file is present and
+recent.  If gc.log is too old (according to the config gc.logexpiry),
+it will be ignored.
+
+Change-Id: I3870cadb4a0a6763feff252e6eaef99f4aa8d0df
+Signed-off-by: Carissa Dunn xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Douglas Trujillo
+date: 2017-03-18 23:04:22.000000000
+
+Uploaded patch set 8: Patch Set 7 was rebased.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-03-18 23:04:29.000000000
+
+Patch Set 8:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/9987/
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-03-19 20:53:32.000000000
+
+Patch Set 8: Code-Review-1
+
+(1 comment)
+
+Line:181, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GcLog.java -> what I tried
+* using jgit version https://git.eclipse.org/r/#/c/90868/4 and egit current master
+* cloned https://gerrit.googlesource.com/gerrit
+* deleted most branches and tags to generate a lot of garbage
+* played with pruneexpire options 
+* ran jgit gc a couple of times until garbage objects were stored as loose objects
+* created a couple of merge commits to provoke triggering autogc
+
+then I hit the following exception:
+
+ eclipse.buildId=unknown
+java.version=1.8.0_112
+java.vendor=Oracle Corporation
+BootLoader constants: OS=macosx, ARCH=x86_64, WS=cocoa, NL=en_US
+Framework arguments:  -product org.eclipse.sdk.ide
+Command-line arguments:  -product org.eclipse.sdk.ide -data /Users/d029788/Documents/workspace/egit-neon/../runtime-EGit-neon -dev file:/Users/d029788/Documents/workspace/egit-neon/.metadata/.plugins/org.eclipse.pde.core/EGit/dev.properties -os macosx -ws cocoa -arch x86_64 -consoleLog
+
+org.eclipse.core.jobs
+Error
+Sun Mar 19 21:36:22 CET 2017
+An internal error occurred during: "Merging with refs/heads/test".
+
+java.lang.IllegalStateException: Lock on /Users/d029788/tmp/git/gerrit1/.git/gc.log not held.
+	at org.eclipse.jgit.internal.storage.file.LockFile.requireLock(LockFile.java:380)
+	at org.eclipse.jgit.internal.storage.file.LockFile.write(LockFile.java:296)
+	at org.eclipse.jgit.internal.storage.file.GcLog.write(GcLog.java:181)
+	at org.eclipse.jgit.internal.storage.file.GC.gc(GC.java:224)
+	at org.eclipse.jgit.internal.storage.file.FileRepository.lambda$0(FileRepository.java:654)
+	at org.eclipse.jgit.internal.storage.file.FileRepository.autoGC(FileRepository.java:681)
+	at org.eclipse.jgit.api.MergeCommand.call(MergeCommand.java:388)
+	at org.eclipse.egit.core.op.MergeOperation$1.run(MergeOperation.java:187)
+	at org.eclipse.core.internal.resources.Workspace.run(Workspace.java:2240)
+	at org.eclipse.core.internal.resources.Workspace.run(Workspace.java:2267)
+	at org.eclipse.egit.core.op.MergeOperation.execute(MergeOperation.java:216)
+	at org.eclipse.egit.core.internal.job.JobUtil$2.runInWorkspace(JobUtil.java:105)
+	at org.eclipse.core.internal.resources.InternalWorkspaceJob.run(InternalWorkspaceJob.java:39)
+	at org.eclipse.core.internal.jobs.Worker.run(Worker.java:56)
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-03-19 21:44:52.000000000
+
+Patch Set 8:
+
+(1 comment)
+
+Line:181, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GcLog.java -> though a file gc.log.lock was present in the .git folder of the repository
+
+-------------------------------------

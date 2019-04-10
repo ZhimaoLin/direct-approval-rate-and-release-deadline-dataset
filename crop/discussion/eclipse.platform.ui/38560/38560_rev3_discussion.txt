@@ -1,0 +1,79 @@
+DESCRIPTION
+
+[219578] Fix sort of tab when they are provided by several plugins
+(Upgrade to Java 5 required)
+
+Change-Id: Ia55f6ad02e673560867ed051b6837d658aa8641e
+Signed-off-by: apupier xxx@xxx.xxx
+
+COMMENTS
+
+author: Brenden Conley
+date: 2015-03-06 15:23:36.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/4847/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-03-06 15:52:33.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/4847/ : SUCCESS
+
+-------------------------------------
+author: Teagan Marsh
+date: 2015-03-09 19:24:08.000000000
+
+Patch Set 3: Code-Review-1
+
+(6 comments)
+
+Thanks Aurelien.  This code definitely needs some commenting to explain the purpose of the sort.  And there's a bug that needs to be fixed (see detailed comments).
+
+It would be helpful to have a unit test that fails with the current algorithm: the order of the configuration elements within a plugin is stable, so you should be able to define a pathological ordering of a set of tabs within the org.eclipse.ui.tests.views.tabbed bundle.  So I think you could create a TabbedPropertyRegistry and then call getTabDescriptors()
+
+Line:438, bundles/org.eclipse.ui.views.properties.tabbed/src/org/eclipse/ui/internal/views/properties/tabbed/view/TabbedPropertyRegistry.java -> Algorithm implementation notes:
+<ul>
+<li> "afterTab" is interpreted in a lazy fashion: these after-tabs appear somewhere after their specified tab, but are unlikely to appear immediately after.</li>
+<li> We keep tabs with the same "afterTab" together.</li>
+<li> We consider no "afterTab" as meaning "after TOP".</li>
+</ul>
+
+Line:463, bundles/org.eclipse.ui.views.properties.tabbed/src/org/eclipse/ui/internal/views/properties/tabbed/view/TabbedPropertyRegistry.java -> Magic strings should at least be named constants.  But why don't you just use the empty string?
+
+Line:485, bundles/org.eclipse.ui.views.properties.tabbed/src/org/eclipse/ui/internal/views/properties/tabbed/view/TabbedPropertyRegistry.java -> /* Walk through the currently ordered tabs for this category.  For each tab, we append all of its after-tabs. */
+
+Line:492, bundles/org.eclipse.ui.views.properties.tabbed/src/org/eclipse/ui/internal/views/properties/tabbed/view/TabbedPropertyRegistry.java -> /* There must be tabs that reference other tabs that don't exist or that haven't been processed in our list. Find Find an after-tab group whose referenced tab does not exist. */
+
+Line:494, bundles/org.eclipse.ui.views.properties.tabbed/src/org/eclipse/ui/internal/views/properties/tabbed/view/TabbedPropertyRegistry.java -> mapOfAfterTab.isEmpty()?
+
+Line:495, bundles/org.eclipse.ui.views.properties.tabbed/src/org/eclipse/ui/internal/views/properties/tabbed/view/TabbedPropertyRegistry.java -> Hmm, this doesn't seem right: it's possible we have mapOfAfterTab with the following key-values at this point:
+
+   "aaa" -> { tab(id: "bbb", afterTab: "aaa") }
+   "zzz" -> { tab(id: "aaa", afterTab: "zzz") }
+
+If our map iterator chooses the afterTab:"aaa" entries, then we'll have violated the ordering.
+
+I think you need to do something like:
+
+   // Go through the remaining afterTab groups and
+   // find the groups that don't come after a tab in
+   // any other group
+   Set<String> unreferenced = new HashSet<>(mapOfAfterTab.keySet());
+   for(Collection<TabDescriptor> tabs : mapOfAfterTab.values()) {
+      for(TabDescriptor t : tabs) {
+         unreferenced.remove(t.getId());
+      }
+   }
+   if(unreferenced.isEmpty()) {
+      // uh oh: we have a cycle; choose one at random
+   } else {
+      // take the first off of unreferenced and go
+   }
+
+-------------------------------------

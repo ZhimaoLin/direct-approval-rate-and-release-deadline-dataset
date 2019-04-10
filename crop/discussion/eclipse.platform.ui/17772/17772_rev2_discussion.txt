@@ -1,0 +1,97 @@
+DESCRIPTION
+
+Bug 419749 – [e4 WorkLeon Ochoach] - Remove the deprecated PackageAdmin
+
+Remove of the deprecated PackageAdmin from the "org.eclipse.e4.ui.workLeon Ochoach"
+bundle. The relevant changes are:
+- fragment detection with BundleRevision
+- bundle lookup by symbolic name via BundleTracker
+- topoSort dependency resolving via BundleWiring
+
+Change-Id: Ic127de678b2fc726b7a3fd9ca97fafb109fb0bfb
+Signed-off-by: Jaydon Logan xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2013-10-25 16:44:34.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/147/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-10-25 16:58:20.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/147/ : SUCCESS
+
+-------------------------------------
+author: Slade Moran
+date: 2013-10-25 17:16:08.000000000
+
+Patch Set 2: Code-Review+1 IP-Clean+1
+
+This looks reasonable to me, but I'm going to ask Tom W to have a quick look at it as well.
+
+-------------------------------------
+author: Natalie Woods
+date: 2013-10-25 18:01:47.000000000
+
+Patch Set 2:
+
+Some observations:
+
+1) The BundleFinder approach likely is going to have a faster runtime performance than the use of FrameworkWiring.findProviders in the future simply because it is a more direct call to a simple Map.  findProviders requires the creation of a requirement, evaluation of a filter and some advanced hashing based on primary namespace keys down in the generic capability database of the framework.  This runtime performance comes at the cost of an extra Map you need to do your specialized hashing, but I think that cost is pretty low considering the trade off for runtime performance.
+
+2) Why is BundleFinder not generified to implement BundleTrackerCustomizer<List<Bundle>>?  That would avoid the raw casting in removeBundle.
+
+3) Most importantly.  I think you are missing dependencies through re-exported (evil) dependencies.  For each wire in the BundleNamespace you will want to traverse the providers BundleNamespace wires to see if they are re-exporting bundles and you will have to do this recursively down the tree of dependencies.  See the following link for code in the framework package admin impl that does the same thing, but in reverse (from the provider up to the requirers)
+
+http://git.eclipse.org/c/equinox/rt.equinox.framework.git/tree/bundles/org.eclipse.osgi/container/src/org/eclipse/osgi/internal/framework/legacy/PackageAdminImpl.java?id=I20131023-2000#n415
+
+-------------------------------------
+author: Jaydon Logan
+date: 2013-10-25 18:20:01.000000000
+
+Patch Set 2:
+
+Ad 2) I thought about generifing the BundleTracker and its Customizer but I saw that all other code parts didn't use gernics and so I decided to also not use them.
+ 
+Ad 3) Thanks for the info I will have closer look in the next days. Currently I just wanted to create a replacement for the current topoSort and this, as its comments says, doesn't do a recursive resolve.
+
+-------------------------------------
+author: Natalie Woods
+date: 2013-10-25 18:44:33.000000000
+
+Patch Set 2:
+
+BundleTracker and BundleTrackerCustomizer themselves are generified.  If your project is using Java 5 or later then I recommend your implementations of BundleTrackerCustomizer use generics.
+
+The previous code used RequiredBundle.getRequiring [1] which took care of finding requirers that depend on a bundle through re-exported dependencies automatically.  I did not review the old code enough to understand if it through out the results of non-direct dependencies, but I don't think it did.  That is why I assumed you would want to also pay attention to the transitive requirers of re-exported resources.
+
+
+[1] http://www.osgi.org/javadoc/r5/core/org/osgi/service/packageadmin/RequiredBundle.html#getRequiringBundles()
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2014-03-19 06:50:00.000000000
+
+Project policy requires all submissions to be a fast-forward.
+
+Please rebase the change locally and upload again for review.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2014-03-19 06:50:12.000000000
+
+Project policy requires all submissions to be a fast-forward.
+
+Please rebase the change locally and upload again for review.
+
+-------------------------------------

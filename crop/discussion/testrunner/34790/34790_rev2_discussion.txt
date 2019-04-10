@@ -1,0 +1,134 @@
+DESCRIPTION
+
+CBQE-2136: add a bucket compaction task
+
+adding a task for manually triggering compaction. this is useful for purging non-resident items.
+
+Change-Id: Ia87c03c98a8baa06d08b8fa372d1ea24c09cfa96
+
+
+COMMENTS
+
+author: Titus Ho
+date: 2014-03-21 19:29:58.912000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2014-03-21 19:56:35.543000000
+
+Patch Set 2:
+
+Build Started http://factory.couchbase.com/job/testrunner-Jasmin Rangel-master/765/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2014-03-21 20:21:38.491000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+http://factory.couchbase.com/job/testrunner-Jasmin Rangel-master/765/ : SUCCESS
+
+-------------------------------------
+author: Esperanza Cherry
+date: 2014-03-22 11:43:03.193000000
+
+Patch Set 2: Code-Review-1
+
+(2 comments)
+
+Line:2942, lib/tasks/task.py -> in the current implementation compact_bucket never return false. if-else blocks are extra here.
+
+Line:2983, lib/tasks/task.py -> Tommie, maybe  should be 'and' here(return (not compacting) AND progress == 100)
+
+for example: compacting was not started, func returns "not False" ie True.
+
+-------------------------------------
+author: Titus Ho
+date: 2014-03-24 14:23:25.569000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:2942, lib/tasks/task.py -> it doesn't explicetly return false but will return None on exception which causes this piece to enter else clause.  In that case state should set to FINISHED, otherwise it goes into checking.
+
+Line:2983, lib/tasks/task.py -> It is 'or' because of the case where compaction could've already finished by the time I check here and so progress would never get set to 100 causing this to return false when task actually completed.  alternatively I could set progress to 100 at beginning and let status update it but that isn't intuitive.
+
+-------------------------------------
+author: Esperanza Cherry
+date: 2014-03-24 18:07:31.257000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:2942, lib/tasks/task.py -> strange for me). if "self.rest.compact_bucket(self.bucket)" raise BucketCompactionException then we jump to except_block "except BucketCompactionException as e:". still believe that "else" block never executed
+
+Line:2983, lib/tasks/task.py -> hm, but what if compaction was successful triggered but not started? or will be started with delay?
+
+-------------------------------------
+author: Titus Ho
+date: 2014-03-24 18:20:41.093000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:2942, lib/tasks/task.py -> I see, yes what you are saying is right
+
+Line:2983, lib/tasks/task.py -> if started with delay there's 20 retries, each 10 seconds which will catch that.  
+
+if however compaction request return success but never actually starts I haven't thought about. perhaps there is some compaction task history?  but I'm thinking our tests that use this task will most likely catch some error as we would call compaction and later check if data size is lower, or if expired items purged, all of which is external verification.  what do you think?
+
+-------------------------------------
+author: Titus Ho
+date: 2014-03-24 18:23:23.550000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:2983, lib/tasks/task.py -> actually, the compaction task has to actually start in first 10 seconds.
+there is a 10s wait before check() schedules execute()
+
+ task_manager.schedule(self, 10)
+
+I think I will make it so that we include the not yet compacting state in retry as well
+
+-------------------------------------
+author: Esperanza Cherry
+date: 2014-03-24 19:56:52.027000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:2983, lib/tasks/task.py -> I know only one way to be sure that compaction run and completed:
+check any vbucket data file:
+0.couch.6 - before compaction
+0.couch.7 - after compaction
+though I do not know how to get this sequence  through api
+
+-------------------------------------
+author: Esperanza Cherry
+date: 2014-03-24 20:17:08.741000000
+
+Patch Set 2: -Code-Review
+
+(1 comment)
+
+Line:2983, lib/tasks/task.py -> also maybe it's better to use rest.check_compaction_status instead of "for loop" that already returns 'status, task["progress"]"
+
+-------------------------------------
+author: Tate Garrett
+date: 2014-03-26 21:12:36.275000000
+
+The change could not be merged due to a path conflict.
+
+Please rebase the change locally and upload the rebased commit for review.
+
+-------------------------------------

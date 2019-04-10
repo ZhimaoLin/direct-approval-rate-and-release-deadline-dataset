@@ -1,0 +1,110 @@
+DESCRIPTION
+
+MB-23767: Notify vb high priority requests in a separate task
+
+Vbucket high priority requests are made by ns server during rebalance
+wherein it expects a notification when the vbucket receives upto a
+particular seqno.
+
+We must send this notification in a separate task rather than in
+front end thread to avoid deadlocks due to lock inversion.
+That is, a front end thread generally makes call down the stack and
+acquires locks in the order top to down (in our software stack).
+But a notification path is up the software stack and hence must be
+done as a separate task.
+
+This commit creates a daemon task per Ephemeral Bucket to notify
+vb high priority reuqests. When the task runs it notifies all the
+connections to be notified as goes to sleep. When a new connection
+is to be notified the task is woken again.
+
+The current deadlock that was hit is captured in MB-23767.
+
+Change-Id: Id114bedb5cd4de8b493ae6885734c3d440c8bea3
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2017-04-13 05:46:31.381000000
+
+Uploaded patch set 7.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-04-13 05:59:35.328000000
+
+Patch Set 7: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4528/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/5750/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5245/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/5986/ : SUCCESS
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2017-04-13 08:24:33.005000000
+
+Patch Set 7: Code-Review-1
+
+(3 comments)
+
+Line:150, src/ephemeral_bucket.h -> Why doesn't the task just own all the notifications? When new notifications are added, just insert them onto the tasks map and call wakeup? Similar to some of the DCP tasks e.g. ActiveStreamCheckpointProcessorTask
+
+Line:498, src/vbucket.h -> notifications
+
+Line:501, src/vbucket.h -> getHighPriorityNotifications
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-13 14:07:12.830000000
+
+Patch Set 7: Code-Review-1
+
+(2 comments)
+
+Line:313, src/ephemeral_bucket.cc -> To keep the object consistent you should clear notifyQ after processing all items (as logically they have been consumed).
+
+Line:153, src/ephemeral_bucket.h -> Not needed - the base class already has a pointer to the engine.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-04-13 15:57:52.831000000
+
+Patch Set 7:
+
+(5 comments)
+
+Line:313, src/ephemeral_bucket.cc -> notifyQ is local variable. You mean clear toNotify ? I thought that it is automatically cleared after std::move. Anyways calling clear on toNotify after the move
+
+Line:150, src/ephemeral_bucket.h -> Legacy reasons and more.
+Notification requests are stored in the respective vbucket sub classes for both ephemeral and ep vbuckets as they are vbucket level requests.
+
+Only for  Ephemeral vbuckets, notifications are sent in a separate notify task. And the task is at bucket level (as opposed to having multiple tasks if it was 1 per vbucket).
+
+In Ep vbuckets, notifications are sent from the flusher task.
+
+This is similar to the ActiveStreamCheckpointProcessorTask. Only difference being ActiveStreamCheckpointProcessorTask is woken up and it checks if items are to be processed, but this task is woken up only if we need to notify. Otherwise, running this task for every mutation and then seeing there is no pending notification (which is the case 99.99% of times) is a overkill.
+
+Line:153, src/ephemeral_bucket.h -> Done
+
+Line:498, src/vbucket.h -> Done
+
+Line:501, src/vbucket.h -> Done
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-13 16:11:35.969000000
+
+Patch Set 7:
+
+(1 comment)
+
+Line:313, src/ephemeral_bucket.cc -> Ah sorry - I thought it was a member variable.
+
+-------------------------------------

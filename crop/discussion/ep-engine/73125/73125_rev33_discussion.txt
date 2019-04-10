@@ -1,0 +1,120 @@
+DESCRIPTION
+
+MB-16181: Flusher integration with set/get support
+
+This commit ties together collections code so that system events
+and manifest updates are now applied to storage.
+
+This commit updates the threading model to ensure concurrent sets and
+collection manifest changes are interlocked.
+
+All keys read and written belong to the default collection and because
+the $default collection is pre-allocated, get and set with this patch
+are successful, even with the collection policing in place.
+
+Test code can now make use of new VBucket methods so that the
+collection state can be changed and we can write tests that drive
+data into collections (and check the collections policing).
+
+A new class, SystemEventFlush, captures the extra state a single
+run of the flusher needs for the handling of SystemEvents (the writing
+special documents and _local docs)
+
+This commit enables set/get only to be collection aware - each
+datapath in/out method will need similar "isValid" checks.
+
+Change-Id: Ia6e6cb14d7e0fa2c418e0f52d9ab38ab36baf12d
+
+
+COMMENTS
+
+author: Jim WNathalie Landryer
+date: 2017-02-20 12:01:34.337000000
+
+Uploaded patch set 33: Patch Set 32 was rebased.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-02-20 12:22:22.160000000
+
+Patch Set 33: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/2658/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/3428/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/3830/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/4045/ : SUCCESS
+
+-------------------------------------
+author: Keira Washington
+date: 2017-02-20 13:08:36.595000000
+
+Patch Set 33:
+
+(6 comments)
+
+Line:90, src/collections/vbucket_manifest.h -> Shouldn't this be automatically generated? Or if nothing else `= default;` ought to make it.
+
+Also this is a massive nitpick but it's nice to keep the constructors together at the top of the class declaration.
+
+Line:996, src/kvstore.h -> persist
+
+Line:637, src/kv_bucket.cc -> Do you need to be holding the read handle for all of these?
+
+Line:97, src/systemevent.cc -> nit: else after return
+
+https://github.com/Piper Jefferson/memcached/blob/master/docs/CodingStandards.rst#don-t-use-else-after-a-return
+
+Line:136, src/systemevent.cc -> When the method name alone eats up half the line limit then it's probably a sign that it's too long.
+
+Line:213, src/collections/vbucket_serialised_manifest_entry.h -> I would have thought this violates StandardLayoutType
+
+-------------------------------------
+author: Aaliyah Proctor
+date: 2017-02-20 13:45:07.713000000
+
+Patch Set 33:
+
+(1 comment)
+
+Line:90, src/collections/vbucket_manifest.h -> MSVC 2013 doesn't like default move constructors and I don't think it autogenerates them either.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-02-20 22:13:09.771000000
+
+Patch Set 33:
+
+(3 comments)
+
+Line:54, src/collections/vbucket_manifest.h -> required
+
+Line:19, /COMMIT_MSG -> Is this something you plan add in future ?
+
+Line:637, src/kv_bucket.cc -> +1
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2017-02-23 19:48:26.758000000
+
+Patch Set 33:
+
+(5 comments)
+
+rebasing/updating soon
+
+Line:90, src/collections/vbucket_manifest.h -> will move, as Olly says MSVC is causing trouble and we're still way off MSVC 2015 :(
+
+Line:19, /COMMIT_MSG -> evp_store_collections_test.cc uses the new methods in this commit
+
+Line:637, src/kv_bucket.cc -> no, don't think so, will shift, as long as the ordering is the same vbstate -> readhandle or vice versa, it's ok
+
+Line:136, src/systemevent.cc -> I've always liked a chatty name, my screen is massive, but will look to something more in-keeping with our world
+
+Line:213, src/collections/vbucket_serialised_manifest_entry.h -> it's actually no longer required, i had an issue with this which is fixed elsewhere and at one point wondered if any padding was causing issue. the pack(1) actually makes no difference to the compilers layout so will remove
+
+-------------------------------------

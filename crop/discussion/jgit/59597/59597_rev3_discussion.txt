@@ -1,0 +1,122 @@
+DESCRIPTION
+
+Use 'reused' bitmap to filter walk during bitmap selection
+
+When building fullBitmap in order to determine which ancestor chain to
+add this commit to, we were excluding the ancestors of reusedCommits
+using markUninteresting.  This use of markUninteresting is a bit
+wasteful because we already have a bitmap indicating exactly which
+commits should be excluded (which can save some walking).  Use it.
+
+A separate commit will remove the now-redundant markUninteresting
+call.
+
+No behavior change intended (except for performance improvement).
+
+Change-Id: I1112641852d72aa05c9a8bd08a552c70342ccedb
+
+
+COMMENTS
+
+author: Eden Lin
+date: 2015-11-04 02:09:01.000000000
+
+Uploaded patch set 3: Patch Set 2 was rebased.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-11-04 02:25:54.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7388/
+
+-------------------------------------
+author: Eden Lin
+date: 2015-11-04 02:29:41.000000000
+
+Patch Set 3:
+
+> This is fine so far as it goes and is a good change. It still
+ > doesn't address the subtlety of how writeBitmaps, commitBitmapIndex,
+ > and CompressedBitmapBuilder.add() all work together. When I read
+ > the code, I think I should be able to remove the writeBitmaps.addBitmap()
+ > and writeBitmaps.clearBitmaps() calls from selectCommits(), but if
+ > I do, performance suffers greatly.
+ > 
+ > I just tried to make a suggestion here and realized it wouldn't
+ > work. It is subtle.
+
+Thanks for reviewing it.
+
+I think the problematic API is BitmapIndex.BitmapBuilder.add:
+
+ /**
+  * Adds the id and the existing bitmap for the id, if one exists, to the
+  * bitmap.
+  *
+  xxx@xxx.xxx true if the value was not contained or able to be loaded.
+  */
+ boolean add(AnyObjectId objectId, int type);
+
+No one just reading the name of that method is going to know what it does. Does it add the named object to the bitmap, or all objects reachable from it. Turns out it depends on whether the BitmapIndex owns an existing bitmap for that object.
+
+I'd be happier if add() would set a single bit and the caller were responsible for the other cases where you can do something faster:
+
+ if (bitmap.contains(c)) {
+   // already included
+ } else if (index.getBitmap(c) != null) {
+   bitmap.or(index.getBitmap(c));
+ } else {
+   bitmap.add(c, OBJ_COMMIT);
+   for (RevCommit p : c.getParents()) {
+     rememberToAlsoHandle(p);
+   }
+ }
+
+instead of
+
+ if (bitmap.add(c)) {
+   for (RevCommit p : c.getParents()) {
+     rememberToAlsoHandle(p);
+   }
+ }
+
+even though the latter is more concise.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-11-04 02:34:37.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7388/ : SUCCESS
+
+-------------------------------------
+author: Eden Lin
+date: 2015-11-04 03:06:39.000000000
+
+Patch Set 3:
+
+> > This is fine so far as it goes and is a good change. It still
+ > > doesn't address the subtlety of
+[...]
+ > I think the problematic API is BitmapIndex.BitmapBuilder.add:
+
+What do you think of something like https://git.eclipse.org/r/59625? If it looks sensible, I can make changes on top to use the new API.
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2015-11-05 19:46:16.000000000
+
+Patch Set 3: Code-Review+1
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-11-05 22:08:26.000000000
+
+Change has been successfully merged into the git repository by Eden Lin
+
+-------------------------------------

@@ -1,0 +1,53 @@
+DESCRIPTION
+
+ReceivePack supports InputStream data after pack
+
+When receiving a pack, data buffered after the pack can restored to
+the InputStream if the stream supports mark and reset.
+
+Change-Id: If04915c32c91be28db8df7e8491ed3e9fe0e1608
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2012-06-15 05:33:46.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(1 inline comment)
+
+
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2012-06-15 05:39:49.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:1167, org.eclipse.jgit/src/org/eclipse/jgit/transport/PackParser.java -> This is actually buggy. when there was data left in the buffer (e.g. bAvail = 17 bytes) we skip what we consumed (e.g. bOffset = 8175 bytes), leaving the stream at the first of those 17 bytes that is still in our buffer. We slide those 17 bytes down to the start of buf, and then later read into buf those 17 bytes again. This will create a corrupted stream.
+
+Your unit test doesn't show this bug because where it happens is subtle. We have these split buffer cases when an object header spans over an 8192 byte boundary in the pack stream, or when an OBJ_REF_DELTA has its base SHA-1 span across the 8192 byte boundary. This is a difficult input to construct because you need to get the alignment right to have the header section of an object span over the 8k alignment.
+
+I think we want to skip by bAvail again after the new mark was set.
+
+-------------------------------------
+author: Karlee Dorsey
+date: 2012-06-15 22:18:22.000000000
+
+Patch Set 1: (1 inline comment)
+
+Added another test that checks the header edge case.
+
+Line:1167, org.eclipse.jgit/src/org/eclipse/jgit/transport/PackParser.java -> Done
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2012-06-15 05:33:45.000000000
+
+MISMATCHED INLINE COMMENT
+Line:1164, org.eclipse.jgit/src/org/eclipse/jgit/transport/PackParser.java -> nit: this should be before the packDigest.update or after the onStoreStream so those two calls are still next to each other as they operate on the same range of the buf, and this doesn't matter where it goes relative to those calls.
+
+-------------------------------------

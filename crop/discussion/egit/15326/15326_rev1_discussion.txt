@@ -1,0 +1,94 @@
+DESCRIPTION
+
+Allow to deny a commit when warnings or errors exist.
+
+Originally, the commit works fine even if there are errors or warnings
+in the committed resources. With CVS the user could choose if he wants
+to allow such commits. The code has been extended to support this
+functionality, too.
+
+Bug: 373067
+Signed-off-by: Carlos Bowman xxx@xxx.xxx
+Change-Id: I3d57bf24a4ea42af6e440a50cf7baef2f0ba4c6e
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2013-08-11 17:09:44.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/sandbox/job/egit.gerrit/4761/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-08-11 17:24:10.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/egit.gerrit/4761/ : SUCCESS
+
+-------------------------------------
+author: Danika Greer
+date: 2013-08-12 20:41:24.000000000
+
+Patch Set 1:
+
+(13 comments)
+
+Good first cut, see inline comments.
+
+What's also missing is setting some sane defaults for the new preferences in UIPreferenceInitializer (for the scopes, we probably want to leave the actions to "Ignore").
+
+Line:46, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/preferences/DialogsPreferencePage.java -> Instead of "0", "1", "2", could we store "PROMPT", "IGNORE", etc? This way we can also map it to an enum when reading it and then the switch statement is much much nicer and doesn't need any comments anymore.
+
+Also, why not write it like this?:
+
+String[][] foo = { { ...Label, "0" }, { ...Label, "1" }, ... }
+
+-> You can't mess up the indices and it's more readable.
+
+Line:120, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/preferences/DialogsPreferencePage.java -> This is done twice.
+
+Line:123, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/commit/CommitUI.java -> This can actually be replaced (even before this change) by ProjectUtil.getProjects(repo), it doesn't need to be moved to CommitErrorWarningsUtil.
+
+Line:235, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/commit/CommitUI.java -> Checking the preferences here seems unnecessary, they are already checked in CommitErrorWarningsUtil.
+
+Line:50, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/commit/CommitErrorWarningsUtil.java -> No, this is never a good idea, we don't want anything to print to stderr. Either we really ignore it (remove the above line and add a comment like "// Assume there are no problems then"). Or we log it, but I think ignoring is the right thing to do here.
+
+Line:81, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/commit/CommitErrorWarningsUtil.java -> It should be one method only, not two. Makes it easier for the caller and we can show one dialog with the combined problems (warnings and errors).
+
+Line:101, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/commit/CommitErrorWarningsUtil.java -> The only thing that's different here is the resources which are passed to the method. Extract the gathering ot the resources to a new method, so it can also be shared for warnings. getRoot can be wrapped in an array of size 1 or a Collections.singleton().
+
+Line:107, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/commit/CommitErrorWarningsUtil.java -> I thought we decided to not offer the "Deny" option? Please remove it. I know the desire to add as much as possible, but we really need to keep this simple.
+
+Line:112, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/commit/CommitErrorWarningsUtil.java -> Have you tried showing the actual problems (warnings, errors) in the dialog? Should not be too hard. Basically, we need to subclass MessageDialog and implement createCustomArea, something like this:
+
+  IMarker[] problems = ...;
+  TableViewer tableViewer = new TableViewer(parent);
+  tableViewer.setContentProvider(ArrayContentProvider.getInstance());
+  tableViewer.setLabelProvider(labelProvider);
+  tableViewer.setInput(problems);
+
+labelProvider needs to be implemented, e.g. with a ITableLabelProvider.
+
+Line:181, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/commit/CommitErrorWarningsUtil.java -> Return a Collection here, and make doesResourceContainMarkerOfSeverity accept a collection instead of varargs.
+
+Line:184, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/commit/CommitErrorWarningsUtil.java -> See comment in CommitUI, replace with ProjectUtil.getProjects(repo)
+
+Line:4, /COMMIT_MSG -> Please correct your committer info, it should be the same as author.
+
+Line:7, /COMMIT_MSG -> Usual Git practice is to leave off the "." at the end of the subject, just like in an e-mail subject.
+
+-------------------------------------
+author: Carlos Bowman
+date: 2013-08-12 21:18:43.000000000
+
+Patch Set 1:
+
+Okay, I'll have a look at the comments and publish the next patch the next days..
+
+-------------------------------------

@@ -1,0 +1,72 @@
+DESCRIPTION
+
+Fix invalid memory accesses to objectregistry during engine shutdown
+
+During engine shutdown (EvpDestroy) we proceed to stop (and join) all
+executorpool threads. However a number of invalid memory accesses have
+been observed when there was more than one bucket (prior to shutting
+down). See for example the following Valgrind report:
+
+   Thread 7 mc:reader_4:
+   Invalid read of size 8
+      at 0x7918DDD: fetch_sub (atomic_base.h:628)
+      by 0x7918DDD: ObjectRegistry::memoryDeallocated(unsigned long) (objectregistry.cc:215)
+      by 0x406711: invoke_delete_hook (alloc_hooks.c:71)
+      by 0x406711: free (alloc_hooks.c:95)
+      by 0x50407C0: platform_thread_wrap (cb_pthreads.c:24)
+      by 0x54A4E99: start_thread (pthread_create.c:308)
+      by 0x5D4138C: clone (clone.S:112)
+    Address 0x6c8b4e0 is 1,248 bytes inside a block of size 3,072 free'd
+      at 0x528F8C8: je_valgrind_freelike_block (valgrind.c:33)
+      by 0x78A1478: EvpDestroy (ep_engine.cc:141)
+      by 0x4039A9: destroy_bucket(engine_interface*, engine_interface_v1*, bool) (engine_testapp.cc:995)
+      by 0x74069CA: perf_latency_baseline_multi_bucket(test*, int, int) [clone .isra.141] (ep_perfsuite.cc:336)
+      by 0x403524: execute_test (engine_testapp.cc:1098)
+      by 0x403524: main (engine_testapp.cc:1435)
+
+(a number of similar errors follow this one...)
+
+The issue is that during it's cleanup the thread (a reader thread in
+this instance) free()s it's thread context object, which is tracked by
+the objectregistry. So far so good, except in this instance the engine
+(aka bucket) assosicated with the thread is a one which was previously
+deleted - and we are attempting to access stats from a free'd engine.
+
+Solution is simply to reset the engine associated with thread to null
+when they stop running.
+
+Change-Id: Ia382ef53f984bfc9eb61657204d015412e62e7f2
+
+
+COMMENTS
+
+author: Hugo Blankenship
+date: 2015-07-14 16:34:02.417000000
+
+Patch Set 2:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/475/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-07-14 16:56:48.546000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/475/ : FAILURE
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-07-14 17:50:03.287000000
+
+Patch Set 3: Patch Set 2 was rebased
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-07-14 18:31:09.239000000
+
+Change has been successfully cherry-picked as 010358f61cade1674f5e8f2871d58dc32ee1fd6c
+
+-------------------------------------

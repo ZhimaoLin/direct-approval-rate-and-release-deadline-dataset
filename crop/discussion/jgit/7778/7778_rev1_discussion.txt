@@ -1,0 +1,116 @@
+DESCRIPTION
+
+Introduce "never" as parseable date
+
+For configuration parameter like "gc.pruneexpire" we need to understand
+the value "never". This should cause the parser to return null. All
+users of the parser have to be adapted to handle null return values
+correctly
+
+Change-Id: I7744eaee9bf5026da517151c212c88325c348d6c
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2012-09-15 12:14:39.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2265/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-09-15 12:19:20.000000000
+
+Patch Set 1: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2265/ : SUCCESS
+
+-------------------------------------
+author: Juliet Cantu
+date: 2012-09-15 15:39:33.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(2 inline comments)
+
+
+
+Line:65, org.eclipse.jgit/src/org/eclipse/jgit/util/GitDateParser.java -> Strange characters here.
+
+Line:12, /COMMIT_MSG -> Why not Sun Aug 17 08:12:55 CET 292278994 ?
+
+That's never for all practical purposes. Even Git may be obsolete by that time. Fewer callers need to adapt. 
+
+That's new Date(Long.MAX_VALUE) btw. One should perhaps create a constant Date instance in case one actually need to identify this as "never". If you subclass it toString() can return "never".
+
+That would allow us to parser "always" as no date, i.e. null.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2012-09-15 22:38:25.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:12, /COMMIT_MSG -> May first idea was also new Date(Long.MAX_VALUE). But after some thoughts, readings, discussions I believe it is better to express that we can't return a real date instead of returning fake dates. "never" is something different than a date in the far future (although I agree that a far future date would represent "never" quite good for a lot of use cases).
+
+My example: Image you program against Jgit and want to sleep until you reach the point in time specified in some git configuration parameter. If we return Date(Long.MAX_VALUE) you sleep forever. If we return a NEVER constant or null to indicate that the parser can't return a date it's obvious that it doesn't make sense to sleep until you reach "never" :-)
+
+And you are mentioning an even better example: "always". There is really no chance we can return a good fake Date to represent always. That means: there is no chance that our parser will return a valid Date for every parseable date-strings. Every caller will have to check for null-values an react on them.
+
+My suggestion: return null for never and always and have methods in the parser isNever or isAlways to allow callers to find out what to do if the parser returns a null date.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2012-09-16 08:45:27.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:12, /COMMIT_MSG -> "never" i normal talk mean "not now" (e.g. until I change my mind). Unless you have a humungous number of sleeper there should no problem with sleeping and not really different from sleeping a few months or so. If they do they should already handle dates far into the future today, with or without "never". This forces people to change the code for no reason at all. I'm not proposing that we introduce always now, but I think we can have that as an option.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2012-09-16 19:49:43.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:12, /COMMIT_MSG -> Robin, we have currently no usage of the GItDateParser in the master branch. I am the only one I know of who uses it in an open changes. The number of "people we force to change code" is about one. Maybe you have an open change ... but that's it.
+
+I would like to have a parser API which is able to support "never" and "always". This will force users of the parser to do special handling for these special value - we will not be able to express this with instances of Date. I would vote for expressing clearly in our API that not always valid dates can be returned.
+
+Imagine what would happen if we miss the opportunity now to fix the API and return a fake (far-future) date for never. More and more jgit programmers start using the parser ... and then you come and introduce "always" which is represented as null. Then you really force more people to change code and expect null values correctly.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2012-09-17 20:23:22.000000000
+
+Patch Set 1: (2 inline comments)
+
+
+
+Line:65, org.eclipse.jgit/src/org/eclipse/jgit/util/GitDateParser.java -> looks like a superfluous tab
+
+Line:12, /COMMIT_MSG -> yeah, there shouldn't be a lot of users of GitDateParser yet.
+
+What's the use case to require "always" ? Do you want to run gc on "every" git operation ? Doesn't sound useful to me.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2012-09-17 20:39:17.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:65, org.eclipse.jgit/src/org/eclipse/jgit/util/GitDateParser.java -> Done
+
+-------------------------------------

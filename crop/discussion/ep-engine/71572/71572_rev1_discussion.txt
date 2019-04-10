@@ -1,0 +1,187 @@
+DESCRIPTION
+
+[Refactor]: Move completeBGFetchForSingleItem() go from KVBucket to VBucket
+
+Change-Id: Ib474a3773fa1f0cf80b14eacfa6881a55839f999
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2017-01-05 00:52:11.946000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-05 00:52:19.384000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/2608/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-05 00:52:19.510000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2486/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-05 00:52:19.653000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1314/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-05 00:52:19.781000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2133/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-05 01:00:37.809000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2133/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2486/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1314/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/2608/ : SUCCESS
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-01-05 02:43:37.957000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:101, src/vbucket.h -> If this way of returning is ok, I can proceed with making these a class and making it more safer by restricting certain access to the members
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-01-05 10:53:25.931000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:101, src/vbucket.h -> Yeah that seems fine - if we want to encapsulate the data returned in an object that seems a good approach.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-01-05 11:36:27.680000000
+
+Patch Set 1: Code-Review-1
+
+(10 comments)
+
+Trying to understand exactly why we need the merging of the notify states, and why completeBGFetch is queuing dirty items - that feels the wrong place to do that. 
+
+See detailed comments below.
+
+Line:742, src/vbucket.cc -> Don't see why we need to call piggyBack here - the initial retCtx is empty, right?
+
+Line:785, src/vbucket.cc -> Needs updating
+
+Line:835, src/vbucket.cc -> It's not clear from this code what happens to the other members (if any of the retCtx), moreover if we later add more members we won't have the compiler tell us we need to update this creation site.
+
+Suggest you in-place construct the return status here, making it clear that all elements are set:
+
+ return VBUpdateReturnCtx{status, notifyIOComplete};
+
+Line:939, src/vbucket.cc -> You generally don't need std::make_pair anymore in C++11, you should be able to just do:
+
+ return {v, retCtx.vbNotifyCtx};
+
+Line:939, src/vbucket.cc -> given this is the default vbNotifyCtx (you haven't assigned anything to it), it'll be clearer to the reader that no notification actions are needed if you instead in-place construct an empty one - something like:
+
+ return {v, VBNotifyCtx{}};
+
+Line:949, src/vbucket.cc -> Again, to simplify control flow you can probably just do:
+
+ return {v, queueDirty(*v)};
+
+Line:58, src/vbucket.h -> Seeing as you're making this an enum class, you can:
+
+1. drop the EXP_BY_ prefix (as it's in the type)
+2. Use a style more in line with our other enum classes:
+
+ enum class ExpireBy {
+     Pager,
+     Compactor,
+     Access
+ };
+
+Line:73, src/vbucket.h -> I was initially confused by the name of this method - how about something like `merge()` or similar?
+
+(Should also add a brief description to it to aid in confusion) ;)
+
+Line:85, src/vbucket.h -> If you're going to throw exceptions (and abort the function), you should do the check before you change any other state in this object (see also Strong exception safety: https://en.wikipedia.org/wiki/Exception_safety)
+
+It might make more sense to change this statically, so it's impossible to hit this exception. For example have a separate base class for the "mergable" notification, and a different class for IOComplete results, and only allow merging on the first one. Something like:
+
+struct NotifyVBUpdate {
+     int64_t bySeqno;
+     bool notifyFlusher;
+     bool notifyReplication;
+     
+     void merge(const NotifyVBUpdate& other) { ... };
+}
+
+struct NotifyBGFetched {
+    NotifyVBUpdate update;
+    bool notifyIOComplete;
+
+    // Note: no merge method.
+}
+
+This statically prevents one merging two statuses which require notification.
+
+As an aside, I don't fully understand why there is the complexity in completeBGFetchForSingleItem - it feels like all it should do is "restore" something  into the HashTable. If things have subsequently changed since the original BGfetch was issued (looks like there's code there to handle the case where a StoredValue has been mutated since the previous bgfetch), it feels like the completeBGFetch method should just tell the front-end to retry it's BG fetch. Couldn't we just simplify this method and remove the need for the notifyIOComplete merging? (i.e. remove queueDirty?) Am I missing something?
+
+Line:604, src/vbucket.h -> What's the ownership semantics of this return value? Is is always safe for me to dereference the StoredValue - what about if another thread concurrently deletes the underlying StoredValue?
+
+Does this need to use a smart ptr or similar?
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-01-06 01:01:43.788000000
+
+Patch Set 1:
+
+(7 comments)
+
+Line:742, src/vbucket.cc -> Done
+
+Line:785, src/vbucket.cc -> Done
+
+Line:939, src/vbucket.cc -> Done
+
+Line:939, src/vbucket.cc -> Done
+
+Line:949, src/vbucket.cc -> Done
+
+Line:58, src/vbucket.h -> Done
+
+Line:73, src/vbucket.h -> Done
+
+-------------------------------------
+author: Tate Garrett
+date: 2017-01-13 21:56:19.536000000
+
+Change has been successfully cherry-picked as 606a8c7c3041d5fed4309b0c8794ac8edf40f560 by Adrianna Holmes
+
+-------------------------------------

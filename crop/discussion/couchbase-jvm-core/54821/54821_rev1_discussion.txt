@@ -1,0 +1,65 @@
+DESCRIPTION
+
+JVMCBC-236: Eagerly convert doc id string into bytes.
+
+Motivation
+----------
+Previously, the core will actually conver the document ID three times
+into a utf-encoded byte array:
+
+	- in the key/value locator
+	- in the handler to calculate the key length
+	- in the codec when the request is encoded
+
+Since 1 is happening on the core thread and 2&3 on the io threads, doing
+this repetetive task is quite expensive and generates unnecessary GC.
+
+Modifications
+--------------
+This changeset encodes it once when the object is created and for now stores
+both representations for backwards compatibility.
+
+The locator already uses the byte array and so does the key length calculation
+in the handler. In a new changeset also the request encoding will use the new
+byte array and then the double storage can be removed (and replaced with a
+simple new String(bytes, CharsetUtil.UTF_8) for backwards compat.
+
+Result
+------
+Less string encoding on the hot code path, less gc and better performance.
+
+Change-Id: Idffd809b426f7181c98ad52c74ac192717fad903
+
+
+COMMENTS
+
+author: Natasha Sullivan
+date: 2015-08-25 16:19:52.828000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2015-08-25 16:23:37.401000000
+
+Patch Set 1: Verified+1
+
+-------------------------------------
+author: Estrella Humphrey
+date: 2015-08-26 07:33:43.303000000
+
+Patch Set 1: Code-Review-1
+
+(2 comments)
+
+Line:47, src/main/java/com/couchbase/client/core/message/kv/AbstractKeyValueRequest.java -> typo, should be "keyBytes"
+
+Line:68, src/main/java/com/couchbase/client/core/message/kv/AbstractKeyValueRequest.java -> I wonder if it wouldn't be better to have the keyBytes array initialized to an empty array when key is null/empty (even though the various code path already work with the assumption that the key is non null were it shouldn't be)
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-08-26 10:51:55.523000000
+
+Change has been successfully cherry-picked as 171f8f298fc2aba533163dd9df81d62106cd5b5e
+
+-------------------------------------

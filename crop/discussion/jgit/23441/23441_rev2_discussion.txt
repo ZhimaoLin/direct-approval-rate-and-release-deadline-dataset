@@ -1,0 +1,114 @@
+DESCRIPTION
+
+Retry to call credentials provider if http authentication failed
+
+If the user provided wrong credentials or credentials changed we
+shouldn't give up immediately but retry to get valid credentials from
+the credentials provider. Reset the credentials provider if
+authentication failed repeatedly to avoid it reuses wrong credentials in
+case it stored them in a persistent store.
+
+Bug: 338048
+Bug: 342592
+Bug: 427735
+Change-Id: Ibd62ef3da17be6454991c43f524c8bbc7ca3c37e
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+
+COMMENTS
+
+author: Douglas Trujillo
+date: 2014-03-17 10:14:29.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-03-17 10:14:35.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/egit/job/jgit.gerrit/4864/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-03-17 10:26:14.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/jgit.gerrit/4864/ : SUCCESS
+
+-------------------------------------
+author: Carlie Harper
+date: 2014-03-19 03:42:53.000000000
+
+Patch Set 2:
+
+(2 comments)
+
+I don't understand some details of the implementation.
+
+Line:475, org.eclipse.jgit/src/org/eclipse/jgit/transport/TransportHttp.java -> why 4?
+
+Line:482, org.eclipse.jgit/src/org/eclipse/jgit/transport/TransportHttp.java -> Why should it be retried after the Credentials are reset?
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2014-03-19 07:07:33.000000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:475, org.eclipse.jgit/src/org/eclipse/jgit/transport/TransportHttp.java -> 1. attempt is done without credentials -> server responds with header WWW-Authenticate if authentication is required
+
+2. we may have used outdated credentials persisted e.g. in secure store
+
+3. and 4. two more chances in case the user did a typo (during ssh authentication we have 3 tries but there we always provide credentials with HTTP this is different due to the way basic/digest authentication works [1])
+
+[1] https://tools.ietf.org/html/rfc2617#page-5, https://tools.ietf.org/html/rfc2617#page-8
+
+Line:482, org.eclipse.jgit/src/org/eclipse/jgit/transport/TransportHttp.java -> if credentials changed on the server side we need to reset otherwise we will try to reuse credentials stored in secure store (when using EGitCredentialsProvider) and should allow the user to try again
+
+-------------------------------------
+author: Zachary Orozco
+date: 2014-03-19 16:23:11.000000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:475, org.eclipse.jgit/src/org/eclipse/jgit/transport/TransportHttp.java -> Hmm, and what is with attempt 5? Even if "4 < authAttempts" is false we will again try to evaluate "authMethod.authorize(uri, credentialsProvider)" and try it a last time. Not a problem, but I am not sure if you intendet that authorization is tried even if authAttempts is 5.
+
+The old code said "1 < authAttempts" meant that we do max 2 attempts to connect. One without any credentials and one where we ask the credentials provider. So "4 < ..." means we try it at max 5 times.
+
+Line:482, org.eclipse.jgit/src/org/eclipse/jgit/transport/TransportHttp.java -> what would be wrong if we always reset here (not only when authAttempts is 2). If a authorization failed isn't it always good to reset the credentialsProvider which has given wrong credentials the last time?
+
+Imagine:
+  attempt 1: without credentials -> auth fails
+  attempt 2: with credentials from the provider. The provider got the credentials from the secure store. Auth fails. We reset the credentials provider to let him forget the data from the secure store
+  attempt 3: with credentials from the provider. The provider now asks the user. The user enters wrong credentials and sets the option to "store in secure store". Authorization fails. Since attempt != 2 we don't reset the provider
+  attempt 4: with credentials from the provider. Will the provider not use again the credentials which failed already last time?
+
+-------------------------------------
+author: Zachary Orozco
+date: 2014-03-19 16:33:57.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:475, org.eclipse.jgit/src/org/eclipse/jgit/transport/TransportHttp.java -> Matthias, forget my comment. I misread this code.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2014-03-20 00:01:09.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:482, org.eclipse.jgit/src/org/eclipse/jgit/transport/TransportHttp.java -> I could follow your proposal by introducing https://git.eclipse.org/r/#/c/23643/ in EGit
+
+-------------------------------------

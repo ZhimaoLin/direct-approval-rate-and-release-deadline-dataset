@@ -1,0 +1,81 @@
+DESCRIPTION
+
+Parsing of PersonIdent for multiple authors fixed.
+
+PersonIdent should be parsable for an invalid commit which
+contains multiple authors, like "A <a@a.org>, B xxx@xxx.xxx
+PersonIdent(String) constructor now delegates to
+RawParseUtils.parsePersonIdent().
+
+Change-Id: Ie9798d36d9ecfcc0094ca795f5a44b003136eaf7
+
+
+COMMENTS
+
+author: Saniya Hill
+date: 2010-08-20 13:23:39.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-08-25 17:01:55.000000000
+
+Patch Set 4: I would prefer that you didn't submit this
+
+(7 inline comments)
+
+
+
+Line:81, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/RawParseUtils_ParsePersonIdentTest.java -> I wouldn't call this a legal case.  Maybe move it to a new testParsePersonIdent_fuzzyCases() ?
+
+Line:125, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/RawParseUtils_ParsePersonIdentTest.java -> Since nameB is now unused, maybe you can drop it and clarify the code above?  Everyone is passing 0 anyway for it, we probably should have just hard-coded it to to begin with.
+
+Line:200, org.eclipse.jgit/src/org/eclipse/jgit/lib/PersonIdent.java -> I would prefer xxx@xxx.xxx RawParseUtils#parsePersonIdent(String)} here so that actual HTML documentation provides a jump to the replacement method's documentation.
+
+Line:315, org.eclipse.jgit/src/org/eclipse/jgit/lib/Commit.java -> I realized that having this duplication here in Commit and in RevCommit was silly, so Commit had all of its parsing code removed and the class was renamed to CommitBuilder.
+
+So please rebase onto current master and drop this particular edit, you don't need it anymore.
+
+Line:706, org.eclipse.jgit/src/org/eclipse/jgit/util/RawParseUtils.java -> Why emailE - 1?  emailE must be '>' according to your condition on line 693, or its raw.length.  nextLF will return raw.length if you pass it raw.length.  So I don't think you need to subtract 1.
+
+Actually, the more that I think about this, maybe we can say instead:
+
+  int timeBegin = emailE;
+  do {
+    int e = nextLF(raw, timeBegin, '>');
+    if (e < raw.length && raw[e - 1] == '>')
+      timeBegin = e;
+    else
+      break;
+  } while (true);
+
+That way we only scan the string once going forwards, rather than scanning from the end backwards.  Then you can leave the old time parsing code alone and just update its starting point to be timeBegin.
+
+Line:7, /COMMIT_MSG -> Style-nit: We try to be more present-tense in a commit message.  "Fix parsing of multiple authors in PersonIdent" perhaps?
+
+Line:149, org.eclipse.jgit/src/org/eclipse/jgit/lib/Tag.java -> Same as with Commit, this class no longer exists in master.
+
+-------------------------------------
+author: Saniya Hill
+date: 2010-08-26 10:47:43.000000000
+
+Patch Set 4: (6 inline comments)
+
+
+
+Line:81, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/RawParseUtils_ParsePersonIdentTest.java -> Done
+
+Line:125, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/RawParseUtils_ParsePersonIdentTest.java -> Done
+
+Line:200, org.eclipse.jgit/src/org/eclipse/jgit/lib/PersonIdent.java -> Done
+
+Line:315, org.eclipse.jgit/src/org/eclipse/jgit/lib/Commit.java -> Done
+
+Line:706, org.eclipse.jgit/src/org/eclipse/jgit/util/RawParseUtils.java -> If we have passed condition on line 693, we know that raw[emailE - 1] is '>'. raw[emailE] may be LF, so nextLF(raw, emailE) will go too far (to the next LF).
+
+Regarding the suggested loop, the code doesn't look simpler to me than what the patch contains now, on the other hand it's not as tolerant regarding "junk" after the author email. I've added another test case to RawParseUtils_ParsePersonIdentTest.testParsePersonIdent_fuzzyCases() illustrating a possible problem.
+
+Line:149, org.eclipse.jgit/src/org/eclipse/jgit/lib/Tag.java -> Done
+
+-------------------------------------

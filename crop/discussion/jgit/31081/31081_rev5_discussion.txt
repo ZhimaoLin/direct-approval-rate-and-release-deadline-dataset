@@ -1,0 +1,340 @@
+DESCRIPTION
+
+Let ObjectWalk.markUninteresting also mark the root tree as
+uninteresting
+
+Using the ObjectWalk and marking a commit as uninteresting didn't mark
+its root tree as uninteresting. This caused the "missing tree ..."
+error in Gerrit under special circumstances. For example, if the
+patch-set 2 changes only the commit message then the patch-set 1
+and patch-set 2 share the same root-tree:
+
+  ps1 -> o   o <- ps2
+          \ /
+           o root-tree
+
+The transported pack will contain the ps2 commit but not the root-tree
+object.
+
+When using the BaseReceivePack.setCheckReferencedObjectsAreReachable
+JGit will check the reachability of all referenced objects not provided
+in the transported pack. Since the ps1 was advertised it will properly
+be marked as uninteresting. However, the root-tree was reachable because
+the ObjectWalk.markUninteresting missed to mark it as uninteresting.
+JGit was then rejecting the pack with the "missing tree ..." exception.
+
+Gerrit-issue: https://code.google.com/p/gerrit/issues/detail?id=1582
+Change-Id: Iff2de8810f14ca304e6655fc8debeb8f3e20712b
+Signed-off-by: Reina Singh xxx@xxx.xxx
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+
+COMMENTS
+
+author: Brenden Conley
+date: 2014-08-28 22:06:06.000000000
+
+Patch Set 5:
+
+Build Started https://hudson.eclipse.org/egit/job/jgit.gerrit/5513/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-08-28 22:14:50.000000000
+
+Patch Set 5: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/jgit.gerrit/5513/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2014-08-28 22:29:51.000000000
+
+Patch Set 5: Code-Review+2
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2014-08-28 22:29:54.000000000
+
+Change has been successfully merged into the git repository.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2014-09-17 15:12:55.000000000
+
+Patch Set 5:
+
+This change has caused a >10x performance dedegradion for us in both push (server side) and fetch (client side) when JGit us run on https://chromium.googlesource.com/chromium/src.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2014-09-17 15:20:57.000000000
+
+Patch Set 5:
+
+Sorry, hit send too fast. This commit slows down the connectivity check logic executed by ReceivePack and the "quickfetch" part of fetch when JGit runs on https://chromium.googlesource.com/chromium/src.
+
+The numerous tags under refs/tags/* combined with the number of files in the repository causes a long traversal time inside of markUninteresting(). With this commit, ReceivePack can see its connectivity check take >90s just to makUninteresting. Without its well below a human measurable time.
+
+I understand the bug this tries to fix and that correctness needs to come first, but performance is also a feature and 90s isn't acceptable. So we will need to improve the connectivity checking algorithm.
+
+-------------------------------------
+author: Dillon Cross
+date: 2014-09-18 11:58:45.000000000
+
+Patch Set 5:
+
+Sorry, didn't want to destroy the performance.
+
+Trying to find another solution... or optimize the performance of the reachability check.
+
+-------------------------------------
+author: Shyanne Larsen
+date: 2015-03-03 13:35:51.000000000
+
+Patch Set 5:
+
+We recently upgraded to a recent JGit version and we also noticed a huge performance degradation when Gerrit/JGit executes pushes (e.g. the replication plugin). 
+
+git bisect pointed towards this commit. 
+
+> Trying to find another solution... or optimize the performance of the reachability check.
+
+Is this work still ongoing...?
+
+Large gits in combination with lots of refs and 30 Gerrit slaves makes this patch have a quite large negative impact on our production environment. 
+
+(E.g. 40 Cores running with 100% CPU when replication kicks in).
+
+-------------------------------------
+author: Shyanne Larsen
+date: 2015-03-05 09:08:29.000000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:28, /COMMIT_MSG -> I'm new to these parts of the code, but looking at the code in ObjectWalk.java, it seems markTreeUninteresting() is recursive, and marks the whole tree as uninteresting. Am I reading the code wrong? If not: Is this necessary? Would it not be enough to mark the tree root and save quite some time?
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-03-05 13:34:00.000000000
+
+Patch Set 5:
+
+Imagine you mark tree t1 as uninteresting. Then you want that all objects reachable from t1 are uninteresting. There is blob b reachable from t1.
+Imagine also you have commit c as start of your objectwalk. c has as root tree t2 and does not refer (not even recursively) to t1. But t2 also references blob b.
+
+If you mark only t1 as uninteresting (and not all its descendants like b) and you start walking from c ... then it may happen that you will not notice b is uninteresting because in the walk you never reach t1.
+
+In the following test repo if you start walking with commit b2 and you mark commit c2 as uninteresting you may fail to detect that the blob containing "1" is unteresting
+. To proof that comment the lines [1] and run ObjectWalkTest. You'll see testCull() failing because of that.
+
+  > rm -fr * .git/
+  > git init
+  Initialized empty Git repository in /tmp/a/.git/
+  > mkdir a c
+  > echo 1 >a/1
+  > echo 3 >c/3
+  > git add .
+  > git commit -m a
+  [master (root-commit) b2ec58c] a
+   2 files changed, 2 insertions(+)
+   create mode 100644 a/1
+   create mode 100644 c/3
+  > echo 2 >a/1 
+  > git commit -a -m b1
+  [master a9fc39f] b1
+   1 file changed, 1 insertion(+), 1 deletion(-)
+  > git commit --allow-empty -m b2
+  [master 94e73a4] b2
+  > git checkout HEAD~2
+  HEAD is now at b2ec58c... a
+  > git rm -r c
+  rm 'c/3'
+  > echo 4 >a/1 
+  > git commit -a -m c1
+  [detached HEAD 22bafdc] c1
+   2 files changed, 1 insertion(+), 2 deletions(-)
+   delete mode 100644 c/3
+  > git commit --allow-empty -m c2
+  [detached HEAD 3e3c2cb] c2
+  > git log --all --oneline --decorate --graph
+  * 3e3c2cb (HEAD) c2
+  * 22bafdc c1
+  | * 94e73a4 (master) b2
+  | * a9fc39f b1
+  |/  
+  * b2ec58c a
+  > 
+
+[1] https://github.com/eclipse/jgit/blob/v3.7.0.201502260915-r/org.eclipse.jgit/src/org/eclipse/jgit/revwalk/ObjectWalk.java#L684-L723
+
+-------------------------------------
+author: Shyanne Larsen
+date: 2015-03-17 10:17:37.000000000
+
+Patch Set 5:
+
+@Christian: Thanks for the thorough explanation.
+
+@All:
+So, I proof-of-concepted a cache. Please excuse the long post.
+
+In ObjectWalk I added a cache that looks like this:
+
+	private static class CachedObjectMode {
+		final public AnyObjectId obj;
+		final public int mode;
+
+		public CachedObjectMode(AnyObjectId obj, int mode) {
+			this.obj = obj;
+			this.mode = mode;
+		}
+	}
+
+	private static Hashtable<ObjectId, CachedObjectMode[]> treeModeCache = new Hashtable<ObjectId, CachedObjectMode[]>();
+
+
+
+Then I modified markTreeUninteresting accordingly:
+
+
+	private void markTreeUninteresting(final RevTree tree)
+			throws MissingObjectException, IncorrectObjectTypeException,
+			IOException {
+		if ((tree.flags & UNINTERESTING) != 0)
+			return;
+		tree.flags |= UNINTERESTING;
+
+		CachedObjectMode[] cachedChildModes = treeModeCache.get(tree.getId());
+
+		if (cachedChildModes != null) {
+			for (CachedObjectMode objMode : cachedChildModes) {
+				if (objMode != null) {
+					switch (objMode.mode) {
+					case TYPE_FILE:
+					case TYPE_SYMLINK:
+						lookupBlob(objMode.obj).flags |= UNINTERESTING;
+						break;
+
+					case TYPE_TREE:
+						markTreeUninteresting(lookupTree(objMode.obj));
+						break;
+
+					case TYPE_GITLINK:
+						break;
+					}
+				} else {
+					throw new IOException(
+							"Expected object not in treeModeCache!");
+				}
+			}
+			return;
+		}
+
+		LinkedList<CachedObjectMode> cachedChildObjs = new LinkedList<CachedObjectMode>();
+		byte[] raw = reader.open(tree, OBJ_TREE).getCachedBytes();
+		for (int ptr = 0; ptr < raw.length;) {
+			byte c = raw[ptr];
+			int mode = c - '0';
+			for (;;) {
+				c = raw[++ptr];
+				if (' ' == c)
+					break;
+				mode <<= 3;
+				mode += c - '0';
+			}
+			while (raw[++ptr] != 0) {
+				// Skip entry name.
+			}
+			ptr++; // Skip NUL after entry name.
+
+			switch (mode >>> TYPE_SHIFT) {
+			case TYPE_FILE:
+			case TYPE_SYMLINK:
+				idBuffer.fromRaw(raw, ptr);
+				cachedChildObjs.add(new CachedObjectMode(idBuffer, mode));
+				lookupBlob(idBuffer).flags |= UNINTERESTING;
+				break;
+
+			case TYPE_TREE:
+				idBuffer.fromRaw(raw, ptr);
+				cachedChildObjs.add(new CachedObjectMode(idBuffer, mode));
+				markTreeUninteresting(lookupTree(idBuffer));
+				break;
+
+			case TYPE_GITLINK:
+				break;
+
+			default:
+				idBuffer.fromRaw(raw, ptr);
+				throw new CorruptObjectException(MessageFormat.format(
+						JGitText.get().corruptObjectInvalidMode3,
+						String.format("%o", Integer.valueOf(mode)), //$NON-NLS-1$
+						idBuffer.name(), "", tree)); //$NON-NLS-1$
+			}
+			ptr += ID_SZ;
+		}
+		treeModeCache.put(tree.getId(),
+				cachedChildObjs.toArray(new CachedObjectMode[0]));
+	}
+
+
+
+So I just cache the tree modes and children. From profiling, I knew most time spent in reading and inflating parts of the pack-files, and a cache like this would minimize the need for disk reading.
+
+When testing this basic cache using Gerrit, when replicating really large gits, I could cut the replication time from 65 seconds to 14 seconds. But of course this type of cache steals _a lot_ of memory. Also, it will grow forever and not be very thread safe (it is just a proof-of-concept after all). 
+
+But, before I continue working on it, is a cache like this even reasonable? If we would make it configurable (opt-in)? If so, may I bring in guava or something similar to help manage statistics and memory usage?
+
+Thoughts?
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-03-17 10:47:56.000000000
+
+Patch Set 5:
+
+why don't you propose this. That makes it easy to see which lines you have changed and comment on your implementation.
+
+-------------------------------------
+author: Shyanne Larsen
+date: 2015-03-17 11:06:52.000000000
+
+Patch Set 5:
+
+> why don't you propose this. That makes it easy to see which lines
+ > you have changed and comment on your implementation.
+
+For me, it made sense to continue the discussion here. And the change is not really usable for anything else than performance tests in its current state. But I can push it as a draft if it would make the discussions easier?
+
+-------------------------------------
+author: Shyanne Larsen
+date: 2015-03-19 10:44:31.000000000
+
+Patch Set 5:
+
+> > why don't you propose this. That makes it easy to see which lines
+ > > you have changed and comment on your implementation.
+ > 
+ > For me, it made sense to continue the discussion here. And the
+ > change is not really usable for anything else than performance
+ > tests in its current state. But I can push it as a draft if it
+ > would make the discussions easier?
+
+Forget about the code snippet. It's not working. Forgot that IdBuffer was mutable, and the mode shifting. After correcting, the result was not as good (~60sec -> ~30sec), but the memory usage is huge. If I can find a reasonable way to cache it, I'll push a RFC.
+
+-------------------------------------
+author: Larry Mcclain
+date: 2015-04-09 10:48:24.000000000
+
+Patch Set 5:
+
+I gave the ObjectWalk-cache a shot [1].
+Please have a look.
+
+[1] https://git.eclipse.org/r/#/c/45530/
+
+-------------------------------------

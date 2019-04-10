@@ -1,0 +1,113 @@
+DESCRIPTION
+
+Propagate project text label decoration up to working set
+
+This introduced a different type for resource mappings so that the
+configured project text decoration is used for working sets instead of
+the default container/folder decoration. It also collects repository
+name and branch info to allow those decorations for working sets but
+only if all projects within the working set share the same repository.
+
+Bug: 369969
+Change-Id: I4aaea78104b5ab74f819e72c07126b34425b00d3
+Signed-off-by: Rocco Fowler xxx@xxx.xxx
+
+COMMENTS
+
+author: Rocco Fowler
+date: 2012-10-22 06:58:19.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-10-22 06:58:24.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/sandbox/job/egit.gerrit/3481/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-10-22 07:14:15.000000000
+
+Patch Set 2: I would prefer that you didn't submit this
+
+Build Unstable 
+
+https://hudson.eclipse.org/sandbox/job/egit.gerrit/3481/ : UNSTABLE
+
+-------------------------------------
+author: Danika Greer
+date: 2012-10-22 11:52:55.000000000
+
+Patch Set 2:
+
+> There is some discussion at bug 369969. One proposal was "[ ]" for different repos in a working set. There is also the case where different repos are in a working set but all pointing to the same branch. Should that be visualized too?
+
+Ah yes, that would be very nice. I think we should do that with this change while we're at it.
+
+I think for different repos with different branches, no decoration is better ("").
+
+So, we have the following cases:
+
+1. All from same repository and same branch:
+   [repo branch ?status]
+2. All from same repo, but not same branch:
+   [repo *] or [repo ]
+3. All from same branch, but not repo:
+   [* branch] or [ branch]
+4. All different -> empty
+
+I'm not sure if "*" or "" is better for the case where the values differ.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2012-10-22 12:08:51.000000000
+
+Patch Set 2:
+
+> I'm not sure if "*" or "" is better for the case where the values differ.
+
+I think "*" is better since otherwise it's impossible to distinguish "[* x]" from "[x *]"
+
+-------------------------------------
+author: Rocco Fowler
+date: 2012-11-01 10:58:38.000000000
+
+Patch Set 2:
+
+> 2. All from same repo, but not same branch:
+>    [repo *] or [repo ]
+
+Can this really happen? I thought that all projects from the same repo do always have the same branch?
+
+Also note, the proposed implementation calculates branch name and status only once because it's expensive. If we want to show a '*' I have to do the calculation for every project until there is at least a difference. Worst case means that the calculation happens for all projects but they are all at the same repo and branch.
+
+-------------------------------------
+author: Danika Greer
+date: 2012-11-01 15:12:24.000000000
+
+Patch Set 2:
+
+>> 2. All from same repo, but not same branch: > [repo *] or [repo ]
+
+> Can this really happen? I thought that all projects from the same repo do always have the same branch?
+
+Err, I meant when the repo name is the same (e.g. two different clones). It's probably rare but possible.
+
+> Also note, the proposed implementation calculates branch name and status only once because it's expensive. If we want to show a '*' I have to do the calculation for every project until there is at least a difference. Worst case means that the calculation happens for all projects but they are all at the same repo and branch.
+
+The most expensive to calculate is the branch status, as that needs to walk commits. Why not build a Set<Repository> first in the project loop, and then after the loop, do the following:
+
+    if (repositories.size() == 1) {
+        // Calculate repo name, branch name and status
+    } else {
+        // Loop over repositories
+        // Stop calculating repo names if they are > 1 (using a set or some variables)
+        // Do the same for branch names
+    }
+
+Branch status is not needed in the else, as that would be confusing. E.g. it would show ?1, but the actual number of commits to push would be > 1 because it's from multiple repos.
+
+-------------------------------------

@@ -1,0 +1,242 @@
+DESCRIPTION
+
+[ctf] Hoist getLong into BitBuffer.
+
+Even if the ByteBuffer does not support getLong natively,
+the abstraction should still stay in the BitBuffer and not
+at each use site.
+
+And the complex computation for signed-extension is useless
+when you let Java do the signed extension and truncate
+when the resquested number representation is unsigned.
+
+A exception has been added to detect an unsupported integer range.
+
+Change-Id: I835d7437cc0640b20587350650c0f65f5adc930d
+Signed-off-by: Jordon Obrien xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Jordon Obrien
+date: 2013-11-24 20:26:14.000000000
+
+Uploaded patch set 10.
+
+-------------------------------------
+author: Tessa Dickson
+date: 2013-11-24 23:20:15.000000000
+
+Patch Set 10: Code-Review+1
+
+-------------------------------------
+author: Tessa Dickson
+date: 2013-11-24 23:31:46.000000000
+
+Patch Set 10:
+
+(1 comment)
+
+small optimisation possible, but really not a showstopper, and not even sure it would change anything in real life, so feel free to keep your current implementation if you wish.
+
+Line:116, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/io/BitBuffer.java -> very smallish nit: since getLong is expected to be executed very often, it might possibly be worthwhile to do:
+
+if (this.byteOrder == ByteOrder.BIG_ENDIAN) {
+  /* Cast the signed-extended int into a unsigned int. */
+  b &= 0xFFFFFFFFL;
+  return (a << 32) | b;
+} else {
+  /* Cast the signed-extended int into a unsigned int. */
+  a &= 0xFFFFFFFFL;
+  return (b << 32) | a;
+}
+
+since the shift by 32 will automatically truncate the high order bits. But possibly the JVM will be clever enough to figure it out too.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-25 14:42:48.000000000
+
+Patch Set 10:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4129/
+
+-------------------------------------
+author: Nathanael Holden
+date: 2013-11-25 14:44:39.000000000
+
+Patch Set 10:
+
+I had to abort builds for Patch Set 7 and 8 as they seemed to hang on "org.eclipse.linuxtools.ctf.core.tests.AllCtfCoreTests".
+
+-------------------------------------
+author: Jordon Obrien
+date: 2013-11-25 15:37:16.000000000
+
+Patch Set 10: Code-Review+1
+
+(1 comment)
+
+Thanks Mathieu.
+
+Short answer, micro-optimisation.
+I prefer readability and maintenance.
+
+But, any of them will have a lgtm from me.
+
+Line:116, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/io/BitBuffer.java -> I saw the same optimisation.
+My tough was "Which one is the more readable, easy to document?".
+
+In fact, getInt has a flag to truncate for unsigned but in our case it doesn't works because getInt return an int.
+Returning a long will force cast at each use site, beurk.
+
+And, in this case, you force the reader to think about the fact that shifting doesn't need a cast.
+
+-------------------------------------
+author: Tessa Dickson
+date: 2013-11-25 15:40:47.000000000
+
+Patch Set 10:
+
+I'm OK with readability and maintenance argument. If we ever care to run benchmarks and see a significant difference, then the optimization becomes appropriate. So +1 for the code as you submitted it.
+
+-------------------------------------
+author: Nathanael Holden
+date: 2013-11-25 16:08:26.000000000
+
+Patch Set 10:
+
+I think there's still an issue with patch set 10. Build appears to be hanging. Taking > 1.5hrs to run when average time is ~ 0.5 hr .
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-25 16:35:54.000000000
+
+Patch Set 10: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4129/ : ABORTED
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2013-11-25 16:36:54.000000000
+
+Patch Set 10:
+
+I cancelled the builds, both were hanging, at 2 different places.  I'll see if I can reproduce the hang locally here.
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2013-11-25 17:22:37.000000000
+
+Patch Set 10:
+
+Look at org.eclipse.linuxtools.tmf.core.tests.ctfadaptor.FunkyTraceTest
+
+testSecondToLastEvent causes a Null Pointer Exception. The next test hangs.
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2013-11-25 17:22:56.000000000
+
+Patch Set 10: Verified-1
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2013-11-25 18:37:57.000000000
+
+Patch Set 10:
+
+THis looks like a bug because of the code base and the tests being slightly out of sync. We had {patch test} -> {patch fix that the test fixes} and I think this will be solved by a simple rebase. I will try later today.
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2013-11-25 18:41:49.000000000
+
+Patch Set 10:
+
+(1 comment)
+
+Found the bug, not sure how to fix, will look into it asap. But the problem is with the patch, not TMF.
+
+There is the possibility to have integers larger than 32 and smaller than 64 bits in ctf AFAIK.
+
+Line:124, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/IntegerDefinition.java -> This is why the test fails. We are testing 35 bit ints.
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2013-11-25 18:42:19.000000000
+
+Patch Set 10: Verified-1 Code-Review-1
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-11-25 19:02:32.000000000
+
+Patch Set 10:
+
+First time I jump into this patch,
+ Even if the ByteBuffer does not support getLong natively
+but ByteBuffer does have a .getLong() method?
+
+Any reason we want to treat long's differently, instead of adding a case to the switch in getInt(int length, boolean signed) ?
+
+-------------------------------------
+author: Jordon Obrien
+date: 2013-11-25 19:04:08.000000000
+
+Patch Set 10: -Code-Review
+
+Alex, I don't have a opinion on that.
+Both sounds good to me.
+
+-------------------------------------
+author: Jordon Obrien
+date: 2013-11-25 19:12:38.000000000
+
+Patch Set 10:
+
+(1 comment)
+
+I agree there is an issue here. It's a bug.
+
+The cases that receives an exception was badly manage before.
+The fix should be include in this patch (as this patch is a redesign of the method).
+
+Volunteers? Otherwise I'll jump on it soooon.
+
+Line:124, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/IntegerDefinition.java -> This patch doesn't introduce the bug.
+In fact, TMF currently treat those cases as 32 bits or less *silently*. Which is wrong / worse.
+
+-------------------------------------
+author: Tessa Dickson
+date: 2013-11-25 19:22:50.000000000
+
+Patch Set 10: Code-Review-1
+
+Matthew: CTF can indeed have integers between 32 and 64 bit. However, the code before this proposed patch was not handling 33 to 63 bit correctly. Etienne added an exception to ensure that those badly handled cases were never used, and it appears the exception triggers. This means the test cases were not complete enough to detect that 33 to 63 bits handling of integers was buggy.
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2013-11-25 19:48:27.000000000
+
+Patch Set 10: -Code-Review
+
+(1 comment)
+
+good catch, we'll get on it asap.
+
+Line:124, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/IntegerDefinition.java -> good catch, we'll get on it asap
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-11-25 19:51:45.000000000
+
+Patch Set 10:
+
+Regarding hanging builds (thanks Gen for debugging it!), any unit test that does some kind of wait() should contain a Timeout @Rule, to make sure it fails the test instead of hanging the build (there's some examples in tmf tests already, a xxx@xxx.xxx should find them).
+
+I'll try to add some to the most obvious culprits.
+
+-------------------------------------

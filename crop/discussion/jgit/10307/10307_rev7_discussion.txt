@@ -1,0 +1,165 @@
+DESCRIPTION
+
+Performance fixes in DateRevQueue
+
+When a lot of commits are added to DateRevQueue, the
+sort-on-insertion approach is very heavy on CPU cycles.
+
+One approach to fix this was made by Santos Moore:
+https://git.eclipse.org/r/#/c/5491/
+
+But using Java's PriorityQueue seems to have brought some
+extra overhead, and the desired performance could not be
+reached.
+
+This fix takes another approach to the insertion problem,
+without changing the expected behaviour or bringing extra
+memory overhead:
+
+If we detect over 1000 commits in the DateRevQueue, a
+"seek-index" is rebuilt every 1000th added commit.
+
+The index keeps track of every 100th commit in the
+DateRevQueue. During insertions, it will be used for a
+preliminary scanning (binary search) of the queue, with
+the intention of helping add() find a good starting point
+to start walking from. After finding this starting point,
+add() will step commit-by-commit until the correct
+insertion place in the queue is found (today, the queue
+is expected to be sorted at all times).
+
+When applied to repositories with many refs, this approach
+has proven to bring huge performance gains and scales quite
+well.
+
+For instance, in a repository with close to 80000 refs,
+we could cut down the time a typical Gerrit replication
+of 1 commit would take (just a push from JGit's point of
+view) from 32sec down to 3.5sec.
+
+Below you see some typical times to add a specific amount
+of commits (with random commit times) to the DateRevQueue
+and the difference the preliminary seek-index makes:
+
+Commits | Index | No Index
+   1024     8ms        8ms
+   2048    13ms        9ms
+   4096     5ms       59ms
+   8192    11ms      595ms
+  16384    22ms     3058ms
+  32768    64ms    13811ms
+  65536   201ms    62677ms
+ 131072   783ms   331585ms
+
+Only one extra reference is needed for every 100 inserted
+commits (and only when we see more than 1000 commits in
+the queue), so the memory overhead should be negligible.
+
+Various index-stepping values were tested, and 100 seemed to
+scale very well and be effective from start.
+
+In the future, it should probably be dynamic and based on
+the number of refs in the queue, but this should serve well
+as a starting point.
+
+Note: While other fundamentally different data structures may
+be more suitable, the DateRevQueue is extremely central to
+many of the Git core operations. This approach was chosen,
+since the effect of the patch is easy to predict in conjuction
+with the current implementation. A totally new data structure
+will make it harder to predict behaviour in many common and
+uncommon cases (in terms of breaking ties, memory usage, cost
+when using few elements, object creation/disposing overhead,
+etc).
+
+Change-Id: Ie7b99f40eacf6324bfb4716d82073adeda64d10f
+
+
+COMMENTS
+
+author: Shyanne Larsen
+date: 2013-02-22 12:39:36.000000000
+
+Uploaded patch set 7.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2013-02-22 17:49:38.000000000
+
+Patch Set 7: I would prefer that you didn't submit this
+
+(4 inline comments)
+
+
+
+Line:87, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DateRevQueue.java -> I think you can rewrite this:
+
+  if (++sinceLastIndex > REBUILD_INDEX_COUNT)
+    buildIndex();
+  inQueue++;
+
+and move the sinceLastIndex reset to into the buildIndex method. This rewrite is a little shorter here in this already long method, and avoids an extra compare. We still get the benefit that we don't attempt to create the index until we have added at last 1000 items, but we avoid the extra branch for inQueue.
+
+Line:96, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DateRevQueue.java -> What is the point of index[first] != null test?
+
+Initially the index is null so we never reach here. After a rebuild first points to a valid non-null entry.
+
+When next() runs it may advance first, but first still points to a valid index, provided that first <= last. The only time first isn't pointing at a non-null entry is when first > last. In this case we also can't be sure first isn't > index.length. If the array was sized exactly right then last == index.length-1 and next() could advance first to be one past that when it pops the last index bucket. Now this array index operation will throw an exception.
+
+I think you want to write:
+
+  if (first <= last && index[first].commit.commitTime > when)
+
+and modify the field initialization and clear() method to set last = -1.
+
+Line:104, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DateRevQueue.java -> no curly braces on this statement.
+
+Line:151, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DateRevQueue.java -> style nit: I would phrase this loop as:
+
+  int qi = 0, ii = 0;
+  for (Entry q = head; q != null; q = q.next) {
+    if (++qi % 100 == 0)
+      index[ii++] = q;
+  }
+
+Its shorter by two lines because you can combine into the for loop. I know you have three "iterators" here, but I think its sane to use the for loop for the Entry pointer that is the main loop control variable. The other two "iterators" qi and ii aren't related to the number of iterations the loop makes so don't need to be in the for loop construct.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-02-22 19:40:27.000000000
+
+Patch Set 7:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2993/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-02-22 19:45:30.000000000
+
+Patch Set 7: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2993/ : SUCCESS
+
+-------------------------------------
+author: Shyanne Larsen
+date: 2013-02-25 11:47:03.000000000
+
+Patch Set 7: (4 inline comments)
+
+
+
+Line:87, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DateRevQueue.java -> I think we need to keep both inQueue and sinceLastIndex here. 
+
+For instance, if we receive a very old commit we will need to traverse all commits in the repository that is newer than our  newly received (but older) commit, before all commits in the DateRevQueue are finally marked as uninteresting and the PendingGenerator is happy.
+
+So.. If we have few refs but a very long history, we will continuously have relatively few objects in the queue but run add()/next() lots of times when receiving our (old) commit. And the DateRevQueue will not really have a need for the index in this situation.
+
+Line:96, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DateRevQueue.java -> Done
+
+Line:104, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DateRevQueue.java -> Done
+
+Line:151, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DateRevQueue.java -> Done
+
+-------------------------------------

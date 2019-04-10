@@ -1,0 +1,179 @@
+DESCRIPTION
+
+Process all "have"s even when MissingObjectException is encountered
+
+Because objects described by the client using "have" lines do not need
+to be reachable by any ref on the server, it is possible for them to
+point to missing objects in the reachability graph.  When such an
+object is encountered, I1097a2defa4a9dcf502ca8baca5d32880378818f (Only
+throw MissingObjectException when necessary, 2017-03-29) aborts the
+"have" walk early to salvage the fetch.  The downside of that change
+is that remaining "have"s are ignored unless they pointed directly to
+an object with a bitmap.  In the worst case this can increase the
+bandwidth cost of a fetch to the cost of a clone because most "have"s
+are ignored.
+
+Avoid this cost by bypassing the failed "have" completely and moving
+on to the remaining "have"s.
+
+Change-Id: Iac236b6d05f735078c9935abfa6e58d1eb47f388
+
+
+COMMENTS
+
+author: Eden Lin
+date: 2017-04-17 18:50:38.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-04-17 18:50:45.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/10183/
+
+-------------------------------------
+author: Beau Terry
+date: 2017-04-17 18:51:38.000000000
+
+Patch Set 4: Code-Review+1
+
+-------------------------------------
+author: Eden Lin
+date: 2017-04-17 18:51:58.000000000
+
+Patch Set 4: Code-Review+2
+
+-------------------------------------
+author: Eden Lin
+date: 2017-04-17 18:53:16.000000000
+
+Patch Set 4: Verified+1
+
+Passes "bazel test ...", except for the three known failures (FileTreeIteratorTest, RacyGitTests, FSTest).
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2017-04-17 18:53:27.000000000
+
+Change has been successfully merged into the git repository by Eden Lin
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-04-17 19:12:47.000000000
+
+Patch Set 4:
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/10183/ : SUCCESS
+
+-------------------------------------
+author: Beatrice Lester
+date: 2017-05-03 09:57:19.000000000
+
+Patch Set 4:
+
+We have deployed this change and I1097a2de to try to get rid of the hundreds of MissingObjectException incidents we were having every day. So far, the number of this incidents seems to have decreased but we are seeing a new stack trace, probably related to these changes:
+
+[2017-05-03 06:56:27,329] [SSH git-upload-pack '/projectA.git' (u)] ERROR com.google.gerrit.sshd.BaseCommand : Internal server error (user u account 1020470) during git-upload-pack '/projectA.git'
+org.eclipse.jgit.transport.UploadPackInternalServerErrorException
+	at org.eclipse.jgit.transport.UploadPack.sendPack(UploadPack.java:1402)
+	at org.eclipse.jgit.transport.UploadPack.service(UploadPack.java:772)
+	at org.eclipse.jgit.transport.UploadPack.upload(UploadPack.java:666)
+	at com.google.gerrit.sshd.commands.Upload.runImpl(Upload.java:87)
+	at com.google.gerrit.sshd.AbstractGitCommand.service(AbstractGitCommand.java:101)
+	at com.google.gerrit.sshd.AbstractGitCommand.access$000(AbstractGitCommand.java:32)
+	at com.google.gerrit.sshd.AbstractGitCommand$1.run(AbstractGitCommand.java:70)
+	at com.google.gerrit.sshd.BaseCommand$TaskThunk.run(BaseCommand.java:437)
+	at java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:511)
+	at java.util.concurrent.FutureTask.run(FutureTask.java:266)
+	at java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.access$201(ScheduledThreadPoolExecutor.java:180)
+	at java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.run(ScheduledThreadPoolExecutor.java:293)
+	at com.google.gerrit.server.git.WorkQueue$Task.run(WorkQueue.java:396)
+	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1142)
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:617)
+	at java.lang.Thread.run(Thread.java:745)
+Caused by: java.lang.IllegalStateException: Output has already been started.
+	at org.eclipse.jgit.revwalk.RevWalk.assertNotStarted(RevWalk.java:1363)
+	at org.eclipse.jgit.revwalk.RevWalk.setRevFilter(RevWalk.java:531)
+	at org.eclipse.jgit.internal.storage.pack.PackWriterBitmapWalker.findObjectsWalk(PackWriterBitmapWalker.java:162)
+	at org.eclipse.jgit.internal.storage.pack.PackWriterBitmapWalker.findObjects(PackWriterBitmapWalker.java:114)
+	at org.eclipse.jgit.internal.storage.pack.PackWriter.findObjectsToPackUsingBitmaps(PackWriter.java:1854)
+	at org.eclipse.jgit.internal.storage.pack.PackWriter.findObjectsToPack(PackWriter.java:1661)
+	at org.eclipse.jgit.internal.storage.pack.PackWriter.preparePack(PackWriter.java:764)
+	at org.eclipse.jgit.transport.UploadPack.sendPack(UploadPack.java:1507)
+	at org.eclipse.jgit.transport.UploadPack.sendPack(UploadPack.java:1391)
+	... 15 more
+
+Does this ring any bell?
+
+-------------------------------------
+author: Paloma Kennedy
+date: 2017-05-03 17:16:06.000000000
+
+Patch Set 4:
+
+Thanks for reporting, I think we need to reset the RevWalk in the one-by-one walk loop.
+
+-------------------------------------
+author: Eden Lin
+date: 2017-05-03 22:26:03.000000000
+
+Patch Set 4:
+
+Should be fixed by https://git.eclipse.org/r/96352.
+
+If someone has time to write a unit test for this, that would make be happy.
+
+-------------------------------------
+author: Beatrice Lester
+date: 2017-05-03 22:41:45.000000000
+
+Patch Set 4:
+
+Nice, thank you. Will deploy the fix and report back.
+
+-------------------------------------
+author: Beatrice Lester
+date: 2017-05-11 15:16:48.000000000
+
+Patch Set 4:
+
+The occurrence of MissingObjectException dropped in our repositories from hundreds to a few dozens a day. Thanks for the fixes. 
+We still have a case; however, where the users are unable to clone or pull from the repository because of a similar issue: 
+
+[SSH git-upload-pack '/project' (user)] ERROR com.google.gerrit.sshd.BaseCommand : Internal server error (user account 123) during git-upload-pack '/project'
+org.eclipse.jgit.errors.PackProtocolException: want 63c1c82b24e42efa2d83ae36202af77c7387a119 not valid
+at org.eclipse.jgit.transport.UploadPack.parseWants(UploadPack.java:1190)
+at org.eclipse.jgit.transport.UploadPack.processHaveLines(UploadPack.java:1063)
+at org.eclipse.jgit.transport.UploadPack.negotiate(UploadPack.java:1043)
+at org.eclipse.jgit.transport.UploadPack.service(UploadPack.java:744)
+at org.eclipse.jgit.transport.UploadPack.upload(UploadPack.java:666)
+at com.google.gerrit.sshd.commands.Upload.runImpl(Upload.java:87)
+at com.google.gerrit.sshd.AbstractGitCommand.service(AbstractGitCommand.java:101)
+at com.google.gerrit.sshd.AbstractGitCommand.access$000(AbstractGitCommand.java:32)
+at com.google.gerrit.sshd.AbstractGitCommand$1.run(AbstractGitCommand.java:70)
+at com.google.gerrit.sshd.BaseCommand$TaskThunk.run(BaseCommand.java:437)
+at java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:511)
+at java.util.concurrent.FutureTask.run(FutureTask.java:266)
+at java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.access$201(ScheduledThreadPoolExecutor.java:180)
+at java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.run(ScheduledThreadPoolExecutor.java:293)
+at com.google.gerrit.server.git.WorkQueue$Task.run(WorkQueue.java:396)
+at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1142)
+at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:617)
+at java.lang.Thread.run(Thread.java:745)
+Caused by: org.eclipse.jgit.errors.MissingObjectException: Missing unknown 63c1c82b24e42efa2d83ae36202af77c7387a119
+at org.eclipse.jgit.internal.storage.file.WindowCursor.open(WindowCursor.java:156)
+at org.eclipse.jgit.lib.ObjectReader$1.open(ObjectReader.java:299)
+at org.eclipse.jgit.revwalk.RevWalk$2.next(RevWalk.java:971)
+at org.eclipse.jgit.transport.UploadPack.parseWants(UploadPack.java:1176)
+... 17 more
+
+Running JGit GC fixes this error but it comes again after a few minutes. Checking in the repository, the "missing" object is present and most of the times is a commit even if we have also seen trees.
+
+Any hints how to troubleshoot this? I want to understand why is GC fixing temporarily the repository but it "corrupts" again later and also an idea of the causes and how to fix this problem in a more permanent basis. I have to say that from the thousands of repositories in our Gerrit instance, only a handful of them show this behavior. Thanks.
+
+-------------------------------------

@@ -1,0 +1,74 @@
+DESCRIPTION
+
+JCBC-544: Demonstrate how to handle errors in the views
+
+The server respose from the view request represented by ViewResult
+object, and we are using onError() callback only if there some
+unexpected runtime errors. Other errors, including missing design
+document or a view are expected from the server and safely wrapped into
+that object.
+
+The test checks that it properly fills in the error field of ViewResult
+when the design document is not exist.
+
+diff --git c/src/integration/java/com/couchbase/client/java/DesignDocumentTest.java i/src/integration/java/com/couchbase/client/java/DesignDocumentTest.java
+index 7623777..eaa369e 100644
+--- c/src/integration/java/com/couchbase/client/java/DesignDocumentTest.java
++++ i/src/integration/java/com/couchbase/client/java/DesignDocumentTest.java
+@@ -7,6 xxx@xxx.xxx import com.couchbase.client.java.util.ClusterDependentTest;
+ import com.couchbase.client.java.view.*;
+ import org.junit.Before;
+ import org.junit.Test;
++import rx.Observable;
++import rx.Observer;
++import rx.functions.Func1;
+
+ import java.util.Arrays;
+ import java.util.List;
+@@ -190,4 xxx@xxx.xxx public class DesignDocumentTest extends ClusterDependentTest {
+         manager.publishDesignDocument("pub2").toBlocking().single();
+     }
+
++   xxx@xxx.xxx
++    public void shouldThrowErrorWhenQueryingMissingDesignDocument() {
++        ViewQuery queryTemplate = ViewQuery.from("test", "dummy");
++        queryTemplate.stale(Stale.FALSE);
++        Observable<ViewRow> viewRowObservable = bucket().query(queryTemplate).flatMap(new Func1<ViewResult, Observable<ViewRow>>() {
++            public Observable<ViewRow> call(ViewResult res) {
++                if (res.success()) {
++                    return res.rows();
++                } else {
++                    throw new DesignDocumentException(res.error().getString("error"));
++                }
++            }
++        });
++
++        viewRowObservable.subscribe(new Observer<ViewRow>() {
++           xxx@xxx.xxx
++            public void onCompleted() {
++            }
++
++           xxx@xxx.xxx
++            public void onError(Throwable throwable) {
++                assertEquals("not_found", throwable.getMessage());
++            }
++
++           xxx@xxx.xxx
++            public void onNext(ViewRow viewRow) {
++                throw new AssertionError("onNext() called on empty results");
++            }
++        });
++    }
+ }
+
+Change-Id: Ica5eebc638a0b31782f1680f898eacade4af3897
+
+
+COMMENTS
+
+author: Cory Peck
+date: 2014-09-11 20:56:10.401000000
+
+Uploaded patch set 1.
+
+-------------------------------------

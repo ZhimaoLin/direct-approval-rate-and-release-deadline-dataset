@@ -1,0 +1,122 @@
+DESCRIPTION
+
+Capture non-progress side band #2 messages and put in result
+
+Any messages received on side band #2 that aren't scraped as a
+progress message into our ProgressMonitor are now forwarded to a
+buffer which is later included into the OperationResult object.
+Application callers can use this buffer to present the additional
+messages from the remote peer after the push or fetch operation
+has concluded.
+
+The smart push connections using the native send-pack/receive-pack
+protocol now request side-band-64k capability if it is available
+and forward any messages received through that channel onto this
+message buffer.  This makes hook messages available over smart HTTP,
+or even over SSH.
+
+The SSH transport was modified to redirect the remote command's
+stderr stream into the message buffer, interleaved with any data
+received over side band #2.  Due to buffering between these two
+different channels in the SSH channel mux itself the order of any
+writes between the two cannot be ensured, but it tries to stay close.
+
+The local fork transport was also modified to redirect the local
+receive-pack's stderr into the message buffer, rather than going to
+the invoking JVM's System.err.  This gives applications a chance
+to log the local error messages, rather than needing to redirect
+their JVM's stderr before startup.
+
+To keep things simple, the application has to wait for the entire
+operation to complete before it can see the messages.  This may
+be a downside if the user is trying to debug a remote hook that is
+blocking indefinitely, the user would need to abort the connection
+before they can inspect the message buffer in any sort of UI built
+on top of JGit.
+
+Change-Id: Ibc215f4569e63071da5b7e5c6674ce924ae39e11
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-02-11 20:17:30.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-02-11 20:17:41.000000000
+
+Patch Set 4:  Looks good to me, but someone else must approve; IP review completed
+
+
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-02-12 03:00:34.000000000
+
+Patch Set 4:  Looks good to me, but someone else must approve; IP review completed
+
+
+
+-------------------------------------
+author: Blake Oneal
+date: 2010-02-17 00:08:25.000000000
+
+Patch Set 4: No score
+
+
+
+-------------------------------------
+author: Blake Oneal
+date: 2010-02-17 00:08:43.000000000
+
+Patch Set 4: Looks good to me, but someone else must approve
+
+Sorry, should have been +1
+
+-------------------------------------
+author: Blake Oneal
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:87, org.eclipse.jgit/src/org/eclipse/jgit/transport/SideBandInputStream.java -> Does the \n get captured instead of the $ here? What happens if there's just an \r$ instead of \n$?
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-13 00:21:45.000000000
+
+MISMATCHED INLINE COMMENT
+Line:87, org.eclipse.jgit/src/org/eclipse/jgit/transport/SideBandInputStream.java -> ^ and $ in this regex are matching start and end of string, not start and end of line.  And the final character is either \r or \n, but not both.  C Git might produce a \r if this is a continuation progress message with more messages coming, or \n if this is the final message.  But it doesn't produce both over the network.
+
+-------------------------------------
+author: Blake Oneal
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:152, org.eclipse.jgit/src/org/eclipse/jgit/transport/TransportLocal.java -> Interesting diff formatting from Gerrit here; it seems to think that r) has been changed with the remainder of the code, and the trailing ; is from line 146.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-13 00:21:45.000000000
+
+MISMATCHED INLINE COMMENT
+Line:152, org.eclipse.jgit/src/org/eclipse/jgit/transport/TransportLocal.java -> The Gerrit diff bug you observed here appears to be fixed in 2.1.2 final release.  We tweaked the heuristics quite a bit between when you first reviewed the code, and now when I'm looking through it again to address comments.
+
+-------------------------------------
+author: Blake Oneal
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:129, org.eclipse.jgit/src/org/eclipse/jgit/transport/Connection.java -> This is technically an API breaking change. Are we going to release it as part of 0.7.0?
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-13 00:21:45.000000000
+
+MISMATCHED INLINE COMMENT
+Line:129, org.eclipse.jgit/src/org/eclipse/jgit/transport/Connection.java -> Although its an API breakage, we aren't promising API compatibility until we release 1.0.  But I would like to try to avoid breaking 0.7 builds until 0.8... and we'll probably break API again in 0.8.   Hopefully I can slide this whole series into 0.7.0, or quickly turn around 0.8 after.  Having the side band error data from server side hooks is necessary for proper use within Gerrit Code Review over http.
+
+-------------------------------------

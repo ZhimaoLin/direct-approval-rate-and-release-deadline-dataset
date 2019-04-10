@@ -1,0 +1,146 @@
+DESCRIPTION
+
+MB-15946: Move DCP cursors to new open chkPt when the chkPt has only meta items
+
+(1): When a new checkpoint is created and only queue_op_empty and
+queue_op_checkpoint_start are added, we must move any DCP and persistence
+cursors pointing to queue_op_checkpoint_end in the previous checkpoint to this
+new checkpoint. Note we cannot move the TAP cursors in the same way when they
+are pointing to queue_op_checkpoint_end. This is because TAP replication
+protocol expects to receive queue_op_checkpoint_end.
+Hence the change also adds a flag to identify if a cursor needs
+queue_op_checkpoint_end or not.
+
+(2): Also, when items for replication are got from the checkpoint, we can move
+to the new checkpoint even if we encounter queue_op_checkpoint_end. This is
+needed because, we do not want to leave any replication cursors hanging onto
+queue_op_checkpoint_end in the closed checkpoint when there are only meta items
+in the current open checkpoint.
+
+Both the above changes will help release the memory occupied by the closed
+checkpoints.
+
+Change-Id: I5c46bfd250dc486cf1adac7e243806e600ddc8b6
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2016-02-23 01:26:56.779000000
+
+Uploaded patch set 13.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-23 01:27:02.509000000
+
+Patch Set 13:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2649/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-23 01:46:14.592000000
+
+Patch Set 13: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1902/ : FAILURE
+
+Failure of a CTest test  ( http://factory.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/1902/ )
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2649/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-23 02:01:16.477000000
+
+Patch Set 13: -Verified
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1903/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-23 02:06:58.080000000
+
+Patch Set 13: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1903/ : FAILURE
+
+Failure of a CTest test  ( http://factory.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/1903/ )
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2649/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-23 02:07:29.044000000
+
+Patch Set 13: -Verified
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1904/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-23 02:12:50.846000000
+
+Patch Set 13: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2649/ : SUCCESS
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1904/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-02-23 09:21:01.542000000
+
+Patch Set 13: Code-Review-2
+
+(2 comments)
+
+Line:408, CMakeLists.txt -> You don't need these - ep_testsuite runs as a loaded module into engine_testapp (which already includes the mock_server functionality itself).
+
+Why do you think these source files are needed?
+
+Line:27, tests/ep_testsuite_dcp.cc -> Why is this included? You shouldn't need it (see my previous comment)
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2016-02-23 09:28:39.878000000
+
+Patch Set 13:
+
+(2 comments)
+
+Line:408, CMakeLists.txt -> Need to for get_mock_server_api()->cookie->notify_io_complete(cookie, ENGINE_SUCCESS);
+Was getting linker error without this.
+
+I see that stream_test module also includes this (to link the same function), so thought this is permissible.
+
+Line:27, tests/ep_testsuite_dcp.cc -> Need it for get_mock_server_api()->cookie->notify_io_complete(cookie, ENGINE_SUCCESS);
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-02-23 09:44:23.657000000
+
+Patch Set 13:
+
+(1 comment)
+
+Line:408, CMakeLists.txt -> stream_test is a standalone executable, which is why it compiles the code itself.
+
+If you need access to stuff in the server (i.e. normally memcached, but engine_testapp in these test suites), then you should look at the harness functionality in engine_testapp.cc - see http://src.Piper Jefferson.org/source/xref/trunk/memcached/programs/engine_testapp/engine_testapp.cc#1427
+
+A simple example would be something like release_free_memory(void) - http://src.Piper Jefferson.org/source/xref/trunk/memcached/programs/engine_testapp/engine_testapp.cc#1051
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-02-24 23:23:47.654000000
+
+Change has been successfully cherry-picked as ef72046d58bbe9c67bf2ab760f9bd7bbeefb85e8
+
+-------------------------------------

@@ -1,0 +1,115 @@
+DESCRIPTION
+
+MB-16949: BackfillManager: Fix leak due to circular reference
+
+There is a circular reference between BackfillManager and DcpProducer,
+which means that BackfillManager is never deleted. This is caused by
+BackfillManager holding an (unused) SingleThreadedRCPtr to
+DcpProducer.
+
+Fix this by Removing this unused smart pointer. Unfortunately exposes
+a latent deadlock when destructing BackfillManager - ~BackfillManager
+(indirectly) calls ~ActiveStream, which in turn calls
+BackfillManager::bytesSent() which attempts to acquire the Backfill
+lock; however the lock is already acquired in ~BackfillManager.
+
+Fix this by removing the call to bytesSent() in ~ActiveStream - as
+it's already been updated in other methods.
+
+The now correct deletion of DcpProducer and the smart-pointer
+triggered deletion of ActiveStream leads to a lock-inversion
+problem in that different locks are being acquired in different
+orders on the possible deletion paths.
+
+Fix this by removing the lock acquisition from destructors.
+The locks in destructors are providing no protection, no
+code should be refering to the deleting object, they risk
+accessing freed memory with or without the locks.
+
+Change-Id: Id79fbf8bc39463d4874c2f61378b7f110345631b
+
+
+COMMENTS
+
+author: Hugo Blankenship
+date: 2015-12-15 19:21:49.012000000
+
+Patch Set 3:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1804/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-12-15 19:21:51.034000000
+
+Patch Set 3: Well-Formed+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/restricted-branch-check/629/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-12-15 19:36:41.970000000
+
+Patch Set 3: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1804/ : FAILURE
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1053/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-12-15 20:13:26.317000000
+
+Patch Set 3: -Verified
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1805/ (2/2)
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-12-15 20:16:48.876000000
+
+Patch Set 3:
+
+Not sure why windows is failing on compilation:
+
+ error C2061: syntax error : identifier 'protocol_binary_request_get_keys'
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-12-15 20:22:59.805000000
+
+Patch Set 3: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1805/ : FAILURE
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1053/ : SUCCESS
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-12-16 02:42:37.335000000
+
+Patch Set 3: Code-Review-2
+
+Merging http://review.Piper Jefferson.org/#/c/57417/, this isn't required.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-12-16 02:48:51.286000000
+
+Patch Set 3:
+
+sherlock->master merge: http://review.Piper Jefferson.org/#/c/57835/
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-12-18 13:53:19.145000000
+
+Abandoned
+
+-------------------------------------

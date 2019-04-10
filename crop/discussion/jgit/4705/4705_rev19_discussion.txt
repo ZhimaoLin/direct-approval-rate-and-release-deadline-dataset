@@ -1,0 +1,316 @@
+DESCRIPTION
+
+Garbage collector for FileRepositories
+
+Implements a garbage collector for FileRepositories. Main ideas are
+copied from the garbage collector for DFS based repos
+(DfsGarbageCollector). Added functionalities are
+- pruning loose objects
+- handling of the index
+- packing refs
+- handling of reflogs (objects referenced from reflog will not be
+pruned/)
+
+These are features of a GC which are not handled in this change and
+which should come with subsequent changes:
+- unpacking packed objects into loose objects (to support that pruning
+packed objects doesn't delete them until they are older than two weeks)
+- expiration of reflogs
+- support for configuration parameters (e.g. gc.pruneExpire)
+
+Change-Id: I14ea5cb7e0fd1b5c50b994fd77f4e05bfbb9d911
+Signed-off-by: Zachary Orozco xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Zachary Orozco
+date: 2012-05-09 09:19:39.000000000
+
+Uploaded patch set 19.
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-05-09 09:19:43.000000000
+
+Patch Set 19:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1797/ 
+
+-------------------------------------
+author: Zachary Orozco
+date: 2012-05-09 09:21:26.000000000
+
+Patch Set 19: Looks good to me, but someone else must approve
+
+- rebased on a fix for PackWriter. Now all tests run
+- modified commit message
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-05-09 09:24:33.000000000
+
+Patch Set 19: Verified
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1797/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2012-06-04 17:28:16.000000000
+
+Patch Set 19: I would prefer that you didn't submit this
+
+(30 inline comments)
+
+I have still only managed to complete a partial review. I have not looked at the prune logic in this cycle. Basically I only read the methods which have comments in them. :-(
+
+Line:597, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/RefDirectory.java -> Using a String[] here feels odd. Most places in JGit that are taking a dynamic length as input from the caller use List rather than array as the List is easier to construct dynamically.
+
+Internally we might keep arrays where the length doesn't change frequently, and we might return those arrays as-is to avoid wrapping overheads if we think we can trust the caller to not muck with the array itself.
+
+Line:623, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/RefDirectory.java -> It isn't necessary to lock every reference all at once in order to pack. You can rely on the atomic compare-and-swap sort of nature of loose references to avoid needing all of these locks at once.
+
+The "correct" algorithm is:
+
+* Lock the packed-refs file.
+* Read each loose reference: update the new packed-refs in-memory
+* Commit the packed-refs file.
+* Lock each loose reference.
+* Delete the loose reference if it exactly matches the packed-refs file.
+
+This avoids needing to lock all of them at once. Which could get you into some nasty deadlock conditions if other callers were also trying to do something similar and didn't lock them in a nice order.
+
+Line:631, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/RefDirectory.java -> nit: curly braces aren't required here
+
+Line:635, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/RefDirectory.java -> nit: extra blank line
+
+Line:654, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/RefDirectory.java -> I would have done this do/while.compareAndSet as the outer loop. Chances are no other thread will be competing with the GC thread to update looseRefs, so you can do the entire thing as one list rebuild. If you fail on the compareAndSet it means something in the loose references did change, as a reader observed a different set of content on disk than you did at the start of GC. That means there are probably some loose references you can't prune away.
+
+I think it is unlikely the GC thread will be starved here, it should be able to make progress.
+
+Line:102, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Just declare GC instances are not thread-safe. Simple. :-)
+
+Line:125, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> inline this and drop the ?: operator when initializing pm.
+
+Line:128, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> extra trailing 1 here? this currently is a lot more than 2 weeks.
+
+Line:133, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> <li>pack loose references into packed-refs</li>
+
+Line:139, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> s/created newly/newly created/?
+
+Line:141, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> nit: extra blank line
+
+Line:181, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> new File(oldPack.getPackFile().getPath() + ".keep").exists()
+
+Line:433, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> This is why I suggest passing in List<String> to RefDirectory.
+
+Line:476, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> This could just as well be a List. PackIndex in a set is relying on reference equality.
+
+Line:478, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> You have this idiom twice in the class. Maybe a helper method somewhere would be good.
+
+Line:491, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> If you make excluded a list, put this at the front with add(0, ...) since it contains most of the objects you don't need to pack in the next writePack attempt for the nonHeads.
+
+Line:559, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> getIndexFile() checks isBare() and throws NoWorkTreeException. So your comment here isn't really correct.
+
+Line:572, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> add revWalk = null after this line to save yourself from calling dispose again in the finally block. You still need that call in finally in case an exception throws during parseTree.
+
+Line:580, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Not really. You aren't skipping dirty submodules correctly. And I don't like using zeroId for this test when file mode is more accurate:
+
+  while (treeWalk.next()) {
+    switch (treeWalk.getRawMode(0) & FileMode.TYPE_MASK) {
+      case FileMode.TYPE_MISSING:
+      case FileMode.TYPE_GITLINK:
+        continue;
+
+      case FileMode.TYPE_TREE:
+      case FileMode.TYPE_FILE:
+      case FileMode.TYPE_SYMLINK:
+        ret.add(objectId);
+        continue;
+
+      default:
+        throw new IOException(MessageFormat.format(
+          JGitText.get().corruptObjectInvalidMode3,
+          String.format("%o", Integer.valueOf(treeWalk.getRawMode(0)),
+          treeWalk.getObjectId(0).name(),
+          treeWalk.getPathString(),
+          repo.getIndexFile()));
+    }
+  }
+
+Line:612, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> I prefer just using two random file names for this like ObjectDirectoryPackParser does:
+
+  File packdir = new File(repo.getObjectsDirectory(), "pack");
+  tmpPack = File.createTempFile("gc_", ".pack_tmp", packdir);
+  tmpIdx = new File(
+    packdir,
+    tmpPack.getName().substring(0, tmpPack.getName().lastIndexOf('.'))
+    + ".idx_tmp");
+
+Line:634, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> this line wrapped badly, name it idxStream instead?
+
+Line:646, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> This rename will fail on windows if the set of objects didn't change. The existing pack still exists, and its file handle is still open, so windows won't permit the pack to be replaced. This means we can't repack a repository on windows just to tweak the compression settings.
+
+Not sure what you want to do here. Do we just punt and say you can't use JGit on windows to adjust compression settings of an already packed repository?
+
+Line:648, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> The new files should be set read only before the rename, not after.
+
+Line:651, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> If this fails but the prior renameTo succeeds to replace an existing pack, we have a corrupt repository. The new index isn't in position so the offset data is all wrong, but the new pack is already in place so the old index will point to corruption.
+
+When finally runs before the return, the tmpIdx still exists, so its deleted. So now the user has a corrupt repository, where the pack and index disagree with each other, and they can't finish the rename on their own because they don't have the new index file.
+
+If there is anytime to panic in this routine, its when this rename fails, but the pack rename was OK, and the realIdx already exists.
+
+It might be OK to do this, where we ensure we leave the remains behind and warn the caller that things did not go as expected:
+
+  boolean delete = true;
+  try {
+
+    if (!tmpPack.renameTo(realPack))
+      return null;
+    delete = false;
+
+    if (!tmpIdx.renameTo(realIdx)) {
+      File newIdx = new File(realIdx.getParentFile(), realIdx.getName() + ".new");
+      if (!tmpIdx.renameTo(newIdx))
+        newIdx = tmpIdx;
+      throw new IOException("Panic index file "
+        + newIdx + " must be renamed to replace "
+        + realIdx + "; until then repository is corrupt");
+    }
+  } finally {
+    if (delete && tmpPack != null && tmpPack.exists())
+      tmpPack.delete();
+    if (delete && tmpIdx != null && tmpIdx.exists())
+      tmpIdx.delete();
+  }
+
+Line:657, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> This has a race condition for two different JGit threads doing a GC of the same repository at the same time. One thread will make the temporary pack/index file with createNewFile. The other will fail, see it exists, and delete it.
+
+Now the first thread that one the creation event will fail when it tries to rename, because the pack doesn't exist anymore. (Assuming a POSIX filesystem.)
+
+Line:663, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> optional nit: rename "t" to "ext"? its not clear it is supposed to be the extension.
+
+Line:702, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> This implementation doesn't match the documentation of numberOfPackedObjects. By using a HashSet<ObjectId> you are removing duplicates. And spending a lot of time to gather this data.
+
+Instead use:
+
+  for (PackFile f : repo.getObjectDatabase().getPacks())
+    ret.numberOfPackedObjects += f.getIndex().getObjectCount();
+
+Line:708, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> unnecessary assignment, the value is already 0 in a new object.
+
+Line:733, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> optional: consider returning this from setters to support chaining configuration.
+
+Line:734, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> nit: none of these parens are necessary.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2012-06-14 02:18:43.000000000
+
+Patch Set 19: (4 inline comments)
+
+found time for a few more comments
+
+Line:128, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> oh this is l not L. We prefer L when you are trying to force long.
+
+Line:216, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> minor style nit: this could be declared at line 227 right before the for loop
+
+Line:238, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> unnecessary blank line
+
+Line:400, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> equals is a better name since you return boolean.
+
+i think you can also declare this method static.
+
+-------------------------------------
+author: Brenton Chung
+date: 2012-06-14 09:33:57.000000000
+
+Patch Set 19: Looks good to me, but someone else must approve
+
+
+
+-------------------------------------
+author: Zachary Orozco
+date: 2012-06-15 10:33:49.000000000
+
+Patch Set 19: (32 inline comments)
+
+
+
+Line:597, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/RefDirectory.java -> agree, I'll change this to List<String>
+
+Line:623, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/RefDirectory.java -> Done
+
+Line:631, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/RefDirectory.java -> Done
+
+Line:635, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/RefDirectory.java -> Done
+
+Line:102, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done
+
+Line:125, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done
+
+Line:128, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done
+
+Line:133, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done
+
+Line:139, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done
+
+Line:141, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done
+
+Line:181, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done
+
+Line:216, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done
+
+Line:238, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done
+
+Line:400, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done
+
+Line:433, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done
+
+Line:476, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done
+
+Line:478, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done. Added a utility method to PackFile
+
+Line:491, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done
+
+Line:559, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> oh, right, didn't know that. I thought we support bare repos with an index. Anyhow: I just remove the comment. I think the code is still ok.
+
+Line:572, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done
+
+Line:580, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done. I just modified your suggestion by adding an extra check against NPE for the expression "treeWalk.getObjectId(0).name()".
+
+Line:612, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done. Little bit strange now: Since temporary pack files are created with createTempFile we can always create them and don't have to care for exceptions. But temporary idx files have a computed name and we may hit the situation that this file already exists.
+
+Line:634, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done
+
+Line:646, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> I was searching for an easy way to close the filehandles hold by the packfile - but couldn't find a good way. Even PackFile.close() does not seem to close the RandomAccessFile.
+So, for now I also don't have a better solution than to not allow those repacks on windows.
+
+Line:648, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done
+
+Line:651, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done
+
+Line:657, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Is this still a problem? I changed coding so that temporary pack files are created by createTempFile(). Temporary indexes are named similar to their associated pack files. Therefore I think two threads will now work on two different set's of temporary files. So, your comment is ok because this code really has the problem you describe but the next patch set is not vulnerable anymore.
+
+Line:663, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done
+
+Line:702, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done
+
+Line:708, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done
+
+Line:733, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done
+
+Line:734, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done. Kept only one set of parens around the comparison. I find it easier to read.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2012-07-29 13:39:12.000000000
+
+Your change could not be merged due to a path conflict.
+
+Please merge (or rebase) the change locally and upload the resolution for review.
+
+-------------------------------------

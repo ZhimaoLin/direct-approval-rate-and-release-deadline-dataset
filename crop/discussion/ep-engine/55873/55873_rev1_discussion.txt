@@ -1,0 +1,143 @@
+DESCRIPTION
+
+Fix data race in CouchKVStore stats access
+
+As reported by ThreadSanitizer. CouchKVStore maintains three maps of
+vBucketID to counter - dbFileRevMap, cachedDocCount &
+cachedDeleteCount. These are read by some of the stats functions
+(e.g. doDcpVbTakeoverStats) without a lock and hence there is a
+potential race.
+
+Solve this by changing the type of these counters to RelaxedAtomic.
+
+WARNING: ThreadSanitizer: data race (pid=14070)
+  Write of size 8 at 0x7d9000002000 by thread T7 (mutexes: write M12364):
+    #0 CouchKVStore::saveDocs(unsigned short, unsigned long, _doc**, _docinfo**, unsigned long, KVStatsCtx&) /home/Piper Jefferson/couchbase/ep-engine/src/couch-kvstore/couch-kvstore.cc:1932:9 (ep.so+0x000000146628)
+    #1 CouchKVStore::commit2couchstore(Callback<KVStatsCtx>*) /home/Piper Jefferson/couchbase/ep-engine/src/couch-kvstore/couch-kvstore.cc:1808:34 (ep.so+0x00000013fcb7)
+    #2 CouchKVStore::commit(Callback<KVStatsCtx>*) /home/Piper Jefferson/couchbase/ep-engine/src/couch-kvstore/couch-kvstore.cc:1095:13 (ep.so+0x00000013f941)
+    #3 EventuallyPersistentStore::commit(unsigned short) /home/Piper Jefferson/couchbase/ep-engine/src/ep.cc:3351:13 (ep.so+0x00000008a0f6)
+    #4 EventuallyPersistentStore::flushVBucket(unsigned short) /home/Piper Jefferson/couchbase/ep-engine/src/ep.cc:3298:17 (ep.so+0x0000000891b0)
+    #5 Flusher::flushVB() /home/Piper Jefferson/couchbase/ep-engine/src/flusher.cc:296:13 (ep.so+0x0000000ddd05)
+    #6 Flusher::step(GlobalTask*) /home/Piper Jefferson/couchbase/ep-engine/src/flusher.cc:186:9 (ep.so+0x0000000dc6e5)
+    #7 FlusherTask::run() /home/Piper Jefferson/couchbase/ep-engine/src/tasks.cc:63:12 (ep.so+0x000000112222)
+    #8 ExecutorThread::run() /home/Piper Jefferson/couchbase/ep-engine/src/executorthread.cc:115:26 (ep.so+0x0000000d86ee)
+    #9 launch_executor_thread(void*) /home/Piper Jefferson/couchbase/ep-engine/src/executorthread.cc:33:9 (ep.so+0x0000000d8265)
+    #10 platform_thread_wrap /home/Piper Jefferson/couchbase/platform/src/cb_pthreads.c:23:5 (libplatform.so.0.1.0+0x000000003c31)
+
+  Previous read of size 8 at 0x7d9000002000 by main thread (mutexes: write M18926):
+    #0 CouchKVStore::getNumPersistedDeletes(unsigned short) /home/Piper Jefferson/couchbase/ep-engine/src/couch-kvstore/couch-kvstore.cc:2239:23 (ep.so+0x000000147e0f)
+    #1 EventuallyPersistentEngine::doDcpVbTakeoverStats(void const*, void (*)(char const*, unsigned short, char const*, unsigned int, void const*), std::string&, unsigned short) /home/Piper Jefferson/couchbase/ep-engine/src/ep_engine.cc:5721:28 (ep.so+0x0000000b196e)
+    #2 EventuallyPersistentEngine::getStats(void const*, char const*, int, void (*)(char const*, unsigned short, char const*, unsigned int, void const*)) /home/Piper Jefferson/couchbase/ep-engine/src/ep_engine.cc:4672:14 (ep.so+0x0000000b069f)
+    #3 EvpGetStats(engine_interface*, void const*, char const*, int, void (*)(char const*, unsigned short, char const*, unsigned int, void const*)) /home/Piper Jefferson/couchbase/ep-engine/src/ep_engine.cc:214:38 (ep.so+0x00000009f26e)
+    #4 mock_get_stats(engine_interface*, void const*, char const*, int, void (*)(char const*, unsigned short, char const*, unsigned int, void const*)) /home/Piper Jefferson/couchbase/memcached/programs/engine_testapp/engine_testapp.cc:239:19 (engine_testapp+0x0000004c553d)
+    #5 get_int_stat(engine_interface*, engine_interface_v1*, char const*, char const*) /home/Piper Jefferson/couchbase/ep-engine/tests/ep_test_apis.cc:990:24 (ep_testsuite.so+0x000000083c04)
+    #6 test_dcp_vbtakeover_no_stream(engine_interface*, engine_interface_v1*) /home/Piper Jefferson/couchbase/ep-engine/tests/ep_testsuite.cc:3565:15 (ep_testsuite.so+0x000000055d43)
+    #7 execute_test(test, char const*, char const*) /home/Piper Jefferson/couchbase/memcached/programs/engine_testapp/engine_testapp.cc:1090:19 (engine_testapp+0x0000004c4142)
+    #8 main /home/Piper Jefferson/couchbase/memcached/programs/engine_testapp/engine_testapp.cc:1439 (engine_testapp+0x0000004c4142)
+
+Change-Id: I593b31417bfe47d8ed50dd986f51763604e54645
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2015-10-07 17:53:08.331000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-10-07 17:53:14.534000000
+
+Patch Set 1:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1168/
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-10-07 17:56:56.830000000
+
+Patch Set 1:
+
+Note: This is dependant on: http://review.Piper Jefferson.org/#/c/55870/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-10-07 18:00:08.307000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1168/ : FAILURE
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-10-07 19:08:41.333000000
+
+Patch Set 1: -Verified
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1171/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-10-07 19:20:23.545000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1171/ : FAILURE
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-10-07 21:06:51.980000000
+
+Patch Set 1: Code-Review+2
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-10-07 21:21:37.548000000
+
+Patch Set 1: -Verified
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1178/
+
+-------------------------------------
+author: Abby Duran
+date: 2015-10-07 21:21:53.016000000
+
+Patch Set 1: Code-Review+2
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-10-07 21:33:21.408000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1178/ : FAILURE
+
+-------------------------------------
+author: Abby Duran
+date: 2015-10-07 22:30:10.667000000
+
+Removed the following votes:
+
+* Verified-1 by Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+
+
+-------------------------------------
+author: Abby Duran
+date: 2015-10-07 22:30:12.789000000
+
+Patch Set 1: Verified+1
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-10-07 22:30:17.975000000
+
+Change has been successfully cherry-picked as a847eb3aa610956ba738098d45767c012ed8bdfb
+
+-------------------------------------

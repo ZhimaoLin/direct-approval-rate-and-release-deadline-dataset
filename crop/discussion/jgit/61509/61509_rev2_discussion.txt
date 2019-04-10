@@ -1,0 +1,217 @@
+DESCRIPTION
+
+Null-annotated Ref class and fixed related compiler errors
+
+This change fixes all compiler errors in JGit and replaces possible
+NPE's with either appropriate exceptions, avoiding multiple "Nullable
+return" method calls or early returning from the method.
+
+Change-Id: I24c8a600ec962d61d5f40abf73eac4203e115240
+Signed-off-by: Jayvion Booth xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Jayvion Booth
+date: 2015-11-30 21:53:02.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-11-30 21:58:07.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7657/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-11-30 22:07:30.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7657/ : SUCCESS
+
+-------------------------------------
+author: Eden Lin
+date: 2015-12-01 00:04:57.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:155, org.eclipse.jgit.pgm/src/org/eclipse/jgit/pgm/Merge.java -> The 'oldHeadId == null' case is when merging into an unborn branch. (In the previous review I had thought that was 'oldHead == null'. Sorry for the confusion. I'll try introducing a well-documented getHead() method to Repository in a separate patch to simplify.
+
+Turns out that MergeCommand has support for that case. It performs a DirCacheCheckout, then a RefUpdate, then returns status FAST_FORWARD. Which brings us here (thanks for catching it).
+
+In C git, a normal fast-forward merge prints "Updating %s..%s" but a fast-forward merge into an unborn branch is silent. To match that, jgit merge could do something like
+
+  if (oldHeadId != null) {
+    String oldId = oldHeadId.abbreviate(7).name();
+    String newId = result.getNewHead().abbreviate(7).name();
+    outw.println(format(CLIText.get().updating, oldId, newId));
+  }
+
+-------------------------------------
+author: Eden Lin
+date: 2015-12-01 00:49:00.000000000
+
+Patch Set 2:
+
+(8 comments)
+
+Line:492, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> Objects.equals? (e.g.
+
+  return Objects.equals(r1.getObjectId(), r2.getObjectId());
+
+) FWIW neither object id should be null here because these are non-symbolic refs from the ref database.
+
+Line:564, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> unnecessary parens.
+
+I wonder if a getHeadId(Ref) helper would make sense (e.g. tryFastForward also does the same call-getHead().getObjectId()-and-examine-the-result thing).
+
+Line:680, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> likewise
+
+Line:1201, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> likewise
+
+Line:341, org.eclipse.jgit/src/org/eclipse/jgit/api/CheckoutCommand.java -> The objectId == null case should not be possible. Could simplify by making the code match the intent more directly:
+
+  if (headRef.isSymbolic()) {
+    return Repository.shortenRefName(headRef.getTarget().getName());
+  }
+
+  // detached HEAD
+  ObjectId id = headRef.getObjectId();
+  if (id == null) {
+    throw new AssertionError(
+      String.format("HEAD is neither a symref nor an ObjectIdRef: %s", headRef));
+  }
+  return id.getName();
+
+Line:78, org.eclipse.jgit.pgm/src/org/eclipse/jgit/pgm/RevParse.java -> getRefs skips dangling symrefs, so r.getObjectId() should never be null. This could error out:
+
+  ObjectId id = r.getObjectId();
+  if (id == null) {
+    throw new AssertionError(
+       String.format("getRefs returned unresolved ref %s", r));
+  }
+  outw.println(id.name());
+
+Line:1132, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> The only caller is LooseUnpeeled, which uses a non-null id
+
+Line:1151, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> All callers use a non-null id
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-12-05 18:25:20.000000000
+
+Patch Set 2:
+
+(9 comments)
+
+Many thanks, I like your feedback.
+
+Line:492, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> sure.
+
+Line:564, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Done
+
+Line:680, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Done
+
+Line:1201, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Done
+
+Line:341, org.eclipse.jgit/src/org/eclipse/jgit/api/CheckoutCommand.java -> Similar to the previous case, I've added an assert here.
+
+Line:155, org.eclipse.jgit.pgm/src/org/eclipse/jgit/pgm/Merge.java -> Done
+
+Line:78, org.eclipse.jgit.pgm/src/org/eclipse/jgit/pgm/RevParse.java -> I haven't used AssertionError, this seem to be uncommon in jgit. Instead, in the next patch I've added assert statements here and in similar code later.
+
+Line:1132, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> Done
+
+Line:1151, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> Done
+
+-------------------------------------
+author: Eden Lin
+date: 2015-12-08 00:21:09.000000000
+
+Patch Set 2:
+
+(3 comments)
+
+Line:564, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Thanks.
+
+Unlike the other examples, this is safe since the code that guarantees the assertion is our own code (so use of assert here is uncontroversial).
+
+Line:341, org.eclipse.jgit/src/org/eclipse/jgit/api/CheckoutCommand.java -> Nice --- this is a lot clearer than the code in the base version.
+
+Same thought re defensive programming:
+
+ // Detached HEAD. Every non-symbolic ref in the ref database has an
+ // object id, so this cannot be null.
+ ObjectId id = headRef.getObject();
+ if (id == null) {
+   throw new NullPointerException();
+ }
+ return id.getName();
+
+Line:78, org.eclipse.jgit.pgm/src/org/eclipse/jgit/pgm/RevParse.java -> This is an interesting use of assert --- it essentially functions as a comment. It would be helpful to also include a comment explaining why the assertion holds:
+
+ // getRefs skips dangling symrefs, so objectId should never be null.
+ assert objectId != null;
+
+The more general issue with assert is that runtime checking of assertions can be (and often is) disabled. Here we luck out because if a future code change ends up allowing objectId to be null, the objectId.name() call will catch that and throw NPE (good).
+
+But that general issue with assert makes it tempting to avoid as a pattern anyway (except in code e.g. guarded by an 'if' where a runtime check would definitely not be useful). I suspect that's part of why jgit uses assert sparingly:
+
+ $ git grep --cached -e 'assert[ (]' |wc -l
+ 36
+
+If we want a runtime impossible-condition check, explicitly throwing AssertionError or NPE would be a way to do it (and I suppose that since it's an impossible condition it wouldn't need a message):
+
+ // getRefs skips dangling symrefs, so objectId should never be null.
+ if (objectId == null) {
+   throw new AssertionError();
+ }
+
+On second thought, since getRefs is a method callers often reimplement, the paranoid check seems worthwhile --- this is what e.g. http://docs.guava-libraries.googlecode.com/git/javadoc/com/google/common/base/Verify.html is for. It's redundant but good protection in case the code changes later. We can use NPE instead of VerifyException.
+
+ // getRefs skips dangling symrefs, so objectId should never be null.
+ if (objectId == null) {
+   throw new NullPointerException();
+ }
+
+-------------------------------------
+author: Eden Lin
+date: 2015-12-15 00:00:43.000000000
+
+Patch Set 2:
+
+(2 comments)
+
+Bump for some unaddressed comments on PS2 (I wish gerrit had a "copy forward" feature to make this unnecessary).
+
+Line:341, org.eclipse.jgit/src/org/eclipse/jgit/api/CheckoutCommand.java -> ping
+
+Line:78, org.eclipse.jgit.pgm/src/org/eclipse/jgit/pgm/RevParse.java -> ping
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-12-15 07:58:39.000000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:341, org.eclipse.jgit/src/org/eclipse/jgit/api/CheckoutCommand.java -> Done
+
+Line:78, org.eclipse.jgit.pgm/src/org/eclipse/jgit/pgm/RevParse.java -> Done
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-12-15 08:37:51.000000000
+
+Change has been successfully merged into the git repository by Jayvion Booth
+
+-------------------------------------

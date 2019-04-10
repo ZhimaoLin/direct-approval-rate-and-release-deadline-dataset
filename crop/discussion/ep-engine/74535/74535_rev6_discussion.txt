@@ -1,0 +1,133 @@
+DESCRIPTION
+
+OrderedStoredValue [3/4]: Add OrderedStoredValue & factory
+
+Add a subclass of StoredValue - OrderedStoredValue - which
+additionally knows it's position in the seqno order. These objects are
+constructed with a new OrderedStoredValueFactory (simiilar to
+StoredValue), as they also have a variable-length key allocated inline
+at the end of their fixed fields.
+
+See the StoredValue comment block for more details on
+OrderedStoredValue's implementation.
+
+Expand the StoredValue unit tests to also test this new class.
+
+Change-Id: I2465fadee84d18a6ce449f5995ca34da82e2adb2
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2017-03-03 18:08:39.753000000
+
+Uploaded patch set 6: Patch Set 5 was rebased.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-03-03 18:40:05.028000000
+
+Patch Set 6:
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/3118/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/4292/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/3861/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/4513/ : SUCCESS
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-03-03 21:50:21.613000000
+
+Patch Set 6: Code-Review+1
+
+(1 comment)
+
++1 because prefer one more person to review this
+
+Line:577, src/stored-value.h -> Make it non-default and force the StoredValueFactory to pass false ?
+
+-------------------------------------
+author: Kymani Ramirez
+date: 2017-03-04 07:00:33.063000000
+
+Patch Set 6: Code-Review-1
+
+(5 comments)
+
+Line:237, src/storeddockey.h -> why is this commented out?
+
+Line:11, /COMMIT_MSG -> similar
+
+Line:577, src/stored-value.h -> +1
+
+Line:633, src/stored-value.h -> Not a boolean?
+
+Line:677, src/stored-value.h -> for my understanding: what is that +1 for? (and also case below)
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-03-05 06:46:34.484000000
+
+Patch Set 6: Code-Review-1
+
+(2 comments)
+
+Line:109, src/stored-value.h -> Can you please confirm that this delete is good enough for the delete of OrderedStoredValue obj as well ?
+
+And is it sufficient if delete is called directly on the OrderedStoredValue obj ?
+
+Line:677, src/stored-value.h -> It points to the memory location where the key starts (just after the "this" obj).
+The diagrams at the beginning explain this.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-03-05 21:07:28.844000000
+
+Patch Set 6:
+
+(1 comment)
+
+Line:652, src/stored-value.h -> Now that the base class "StoredValue" is stored as ref counted ptr in the hashtable, what will happen if the ref count of the ptr goes to zero when it is released from the hashtable ? We will want to keep it around as a stale value in the linked list even after it is removed from the hashtable.
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2017-03-06 10:33:26.428000000
+
+Patch Set 6:
+
+(2 comments)
+
+Line:577, src/stored-value.h -> Can we go with a tag over the bool? Although with construction being very restricted, maybe not worth it.
+
+Line:633, src/stored-value.h -> Our nru has 3 values
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-03-06 12:41:11.855000000
+
+Patch Set 6:
+
+(4 comments)
+
+Line:237, src/storeddockey.h -> Will fix.
+
+Line:109, src/stored-value.h -> Good spot - we do need the same tag dispatching to ensure that the destructor for OrderedStoredValue is invoked (unlikely a problem for OrderStoredValue itself, but likely an issue for the boost intrusive list).
+
+Line:577, src/stored-value.h -> I think given the constructor is private a tag is maybe overkill. However I will remove the default argument which makes it more explicit.
+
+Line:652, src/stored-value.h -> Then the linked list probably needs to use ref-counted pointers :(
+
+Note - the HashTable /doesn't/ use ref-counted pointers (unique_ptr isn't ref-counted). 
+
+However the ownership semantics are more complicated in the Ephemeral case - the linked list can be considered to be logically "owning", and the HashTable is non-owning (all valid StoredValues are in the linked list, but not all valid StoredValues are in the HashTable).
+
+The problem with this approach is then we have two different modes for the current HashTable class - an owning mode for Persistent, and a non-owning more for Ephemeral. That's not unreasonable, but needs some refactoring - say to create a Ownership policy for HashTable. 
+
+Let me have a think about this...
+
+-------------------------------------

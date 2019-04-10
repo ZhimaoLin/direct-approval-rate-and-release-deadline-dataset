@@ -1,0 +1,121 @@
+DESCRIPTION
+
+Reimplementation of file name matcher and ignore rule parser
+
+The current IgnoreRule/FileNameMatcher implementation scales not well
+with huge repositories - it is both slow and memory expensive (bug
+440732). Addtitionally, the "double star" pattern is not understood by
+the parrser (bug 416348).
+
+The proposed implementation is a complete clean room rewrite of the
+gitignore parser and fnmatcher.
+
+Bug 416348
+Bug 440732
+Change-Id: Ibefb930381f2f16eddb9947e592752f8ae2b76e1
+Signed-off-by: Jayvion Booth xxx@xxx.xxx
+
+COMMENTS
+
+author: Jayvion Booth
+date: 2014-08-11 07:28:57.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-08-11 07:29:03.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/egit/job/jgit.gerrit/5457/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-08-11 07:33:47.000000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/egit/job/jgit.gerrit/5457/ : FAILURE
+
+-------------------------------------
+author: Danika Greer
+date: 2014-08-11 14:13:22.000000000
+
+Patch Set 1:
+
+(2 comments)
+
+Just some quick comments, couldn't look at the details yet.
+
+I'm not sure if we want to expose all that as API in a "fnmatch2" package. Maybe it should be internal? Also, we may want to add deprecation warnings to the old classes.
+
+About the test failures, did you compare with C Git? If JGit does something in a different way than C Git, it's probably C Git that is right.
+
+Line:12, /COMMIT_MSG -> parrser :)
+
+Line:18, /COMMIT_MSG -> "Bug" -> "Bug:" (both lines)
+
+-------------------------------------
+author: Jayvion Booth
+date: 2014-08-11 18:09:56.000000000
+
+Patch Set 1:
+
+> About the test failures, did you compare with C Git?
+
+I don't really understand the test failures.
+
+Those four cases fail with unsatisfied assertions:
+
+1)	public void testSpecialGroupCase7() throws Exception {
+		assertMatch("[:]]", ":]", true, false);
+	}
+
+Matches CLI Git behavior, but I haven't seen any specs for this and also can't understand how it can be matched from the glob point of view, because glob above (if it would be valid) would match only one single character, not two! Therefore I've first skipped this case to get some more background info why it should work.
+
+2)	public void testSpecialGroupCase8() throws Exception {
+		assertMatch("[:]]", ":", false, true);
+	}
+
+Matches CLI Git behavior, still no clue where it is defined and why it should *not* match ":" (except that the entire glob is invalid, which seems not be the case because we have the matching case for ':]' above). Also same as #1 - no specs and no idea.
+
+3)	public void testSpecialGroupCase9() throws Exception {
+		try {
+			assertMatch("[[:]", ":", true, true);
+			fail("InvalidPatternException expected");
+		} catch (InvalidPatternException e) {
+			// expected
+		}
+	}
+
+CLI Git has no issue with this, it actually *matches* the ":" file, and my new code correctly matches the expectation but test fails because it expects an exception! This pattern can be derived from http://man7.org/linux/man-pages/man7/glob.7.html. So might be something Windows related??? No hint from the jgit code why it expects an exception here.
+
+4)	public void testFilePathSimpleCase() throws Exception {
+		assertFileNameMatch("a/b", "a/b", '/', true, false);
+	}
+
+And for case 4: we are in file *name* matcher part here, so we are speaking in names, not paths. Therefore strange to see this as test case where a full path is matched against full path in *name* matcher... The *path* matcher can of course match this, but I'm struggling to add support for matching *paths* in name matchers. This test case has no impact for IgnoreRule, as the code uses path matcher there.
+
+So from 4 tests I count two first as "strange" (CLI git bug?), third one as jgit bug (or special treatment of undocumented issues?) and last one as wrong test case.
+Again, ANY hint is welcome.
+
+-------------------------------------
+author: Jayvion Booth
+date: 2014-08-11 22:22:03.000000000
+
+Patch Set 1:
+
+I've played a little bit with the .gitignore anf CLI git and think that it would make sense NOT to threat the new .gitignore parser as the full featured fnmatcher/glob implementation (and so remove some tests/code from it). This means, I will put all fnmatch2 content into ignore/internal package.
+
+E.g. according to https://www.kernel.org/pub/software/scm/git/docs/gitignore.html, "glob" matching is used in CLI git, but looking at the CLI git behavior, one can see that it doesn't understand special patterns for Collating symbols and Equivalence class expressions as defined in http://man7.org/linux/man-pages/man7/glob.7.html. Instead, CI git reads the pattern [.a-umlaut.] *literally* (and completely ignores [[.a-umlaut.]]!), mean it will match each of the single characters inside brackets (at least my 1.9.1 git version on Ubuntu). It means,  CLI git is absolutely fine about [.a-umlaut.] pattern and [.a-umlaut.]*[.a-umlaut.] will match for example "aha", "uhu", or "bla", also in jgit. 
+
+So, I've revisited FileNameMatcherTest test and converted it to "IgnoreRuleSpecialCasesTest".
+
+BTW I've just fixed two "strange" test cases regarding [:]] pattern. It is trivial if read as "[:]" followed by "]". Too stupid to understand that last opened bracket is just a literal character and *not* part of the [] pair with the first bracket.
+
+I will update the code tomorrow.
+
+-------------------------------------

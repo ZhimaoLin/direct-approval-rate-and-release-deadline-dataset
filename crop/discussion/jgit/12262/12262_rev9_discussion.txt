@@ -1,0 +1,96 @@
+DESCRIPTION
+
+Move ArchiveCommand into standard porcelain API
+
+Allow use of ArchiveCommand without depending on the jgit command-line
+tools.
+
+To avoid complicating the process of installing and upgrading JGit,
+this does not add a dependency by the org.eclipse.jgit bundle on
+commons-compress.  Instead, the caller is responsible for registering
+any formats they want to use by calling ArchiveCommand.registerFormat.
+
+This patch puts functionality that requires an archiver into a
+separate org.eclipse.jgit.archive bundle for people who want it.  One
+can use it by calling ArchiveCommand.registerFormat directly to
+register its formats or by relying on OSGi class loading to load
+org.eclipse.jgit.archive.FormatActivator, which takes care of
+registration automatically.
+
+Once the appropriate formats are registered, you can make a tar or zip
+from a git tree object as follows:
+
+	ArchiveCommand cmd = git.archive();
+	try {
+		cmd.setTree(tree).setFormat(fmt).setOutputStream(out).call();
+	} finally {
+		cmd.release();
+	}
+
+Change-Id: I418e7e7d76422dc6f010d0b3b624d7bec3b20c6e
+
+
+COMMENTS
+
+author: Eden Lin
+date: 2013-05-24 19:42:51.000000000
+
+Uploaded patch set 9.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-05-24 19:42:57.000000000
+
+Patch Set 9:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3585/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-05-24 19:48:39.000000000
+
+Patch Set 9: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3585/ : SUCCESS
+
+-------------------------------------
+author: Eden Lin
+date: 2013-05-24 19:48:51.000000000
+
+Patch Set 9:
+
+Thanks for the careful review, and sorry for the slow turnaround. Here's a reroll.
+
+Questions:
+
+ - Should the registerFormat() and unregisterFormat() functions be less strict? This version throws an exception in response to attempts to register a format that was already registered, under the assumption that it's better to have a strict API than to hide a bug elsewhere. But maybe in some cases it would be more convenient for those functions to be idempotent?
+
+ - Should call() take care of calling release() automatically, to save the caller from the trouble of keeping a local for the ArchiveCommand?
+
+ - Is it ok to ask callers to register formats one at a time, or should org.eclipse.jgit.archive include another class providing all-in-one registerFormats() / unregisterFormats() helpers?
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2013-05-24 23:53:16.000000000
+
+Patch Set 9:
+
+> - Should registerFormat() and unregisterFormat() be less strict? 
+
+You could do this by testing in registerFormat() if the caller tries to add the same object instance. Unfortunately does this mean we should reference count the entries and only remove after the same number of register calls? It gets complicated fast. I think its sane to just ask callers to only register a format once.
+
+>  - Should call() take care of calling release() automatically?
+
+Yes.
+
+>  - Is it ok to ask callers to register formats one at a time
+
+Yes.
+
+> include another class providing all-in-one registerFormats() / unregisterFormats() helpers?
+
+No.
+
+-------------------------------------

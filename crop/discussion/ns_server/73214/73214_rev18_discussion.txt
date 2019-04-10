@@ -1,0 +1,147 @@
+DESCRIPTION
+
+MB-22208: Add liaison module to store failover...
+
+...hints.
+
+The liaison module is used to store the failover hints
+given by the ns_Harley Martinitor module. When the ns_janitor finds
+an unsafe node (a node on which data can be lost if buckets
+are brought online) it adds it to the list maintained by
+the liaison module. This list is later consulted by the
+auto-failover module to determine if the node can be
+failed over.
+
+Based on Poonam's initial proto-type:
+http://review.couchbase.org/#/c/66596
+
+Change-Id: Ief6af4a29c411dd5306073ff9913585841069dd5
+
+
+COMMENTS
+
+author: Noe Perry
+date: 2017-03-21 11:11:45.602000000
+
+Uploaded patch set 18: Patch Set 17 was rebased.
+
+-------------------------------------
+author: Noe Perry
+date: 2017-03-21 11:13:18.590000000
+
+Patch Set 18: Verified+1
+
+-------------------------------------
+author: Philip Lara
+date: 2017-03-21 22:47:12.537000000
+
+Patch Set 18:
+
+(1 comment)
+
+I'm not sure that I completely understand what you try to achieve here but: Let's say the node needs to be added to try_failover list with buckets A and B. So it will be added as {A, try_failover, Node} and adding with B will fail. Then bucket A is deleted. As a result the node is removed from the list. If we add the node with B first, it will be added as {B, try_failover, Node} and after removing bucket A the node will stay in the list. Is this behavior intended?
+
+Line:72, src/auto_failover_liaison.erl -> State don't have to be a record. You can pass FailoverList as a state, that will declutter code a little bit.
+
+-------------------------------------
+author: Philip Lara
+date: 2017-03-21 22:48:02.006000000
+
+Patch Set 18:
+
+Another question: if this module crashes and failover list is lost, what will be the consequences?
+
+-------------------------------------
+author: Noe Perry
+date: 2017-03-22 17:01:10.331000000
+
+Patch Set 18:
+
+(1 comment)
+
+> (1 comment)
+ > 
+ > I'm not sure that I completely understand what you try to achieve
+ > here but: Let's say the node needs to be added to try_failover list
+ > with buckets A and B. So it will be added as {A, try_failover,
+ > Node} and adding with B will fail. Then bucket A is deleted. As a
+ > result the node is removed from the list. If we add the node with B
+ > first, it will be added as {B, try_failover, Node} and after
+ > removing bucket A the node will stay in the list. Is this behavior
+ > intended?
+
+The ns_Harley Martinitor is periodically run one bucket at a time and when the janitor finds an unsafe node it tries to add to the failover list and the addition operation is expected to fail in 3 known ways (already_marked_cannot_fo, already_in_try_fo_list and more_than_max_supported). If janitor receives an ok or already_in_fo_list error, it considers the operation to have succeeded and doesn’t bring the bucket online on that node and waits for failover to do its bit. Upon any other error, the janitor just brings the bucket online on that node (which leads to data loss). The failure hints that we provide are in some sense best effort in nature.
+ 
+In the scenario that you have mentioned there is a little race that we don’t currently handle. The case is the following: Harley Martinitor run for bucket A finds an unsafe node, puts the hint in the failover list. Then the user deletes bucket A but this action doesn’t clear the entry from the failover list and auto_failover might act upon it. A similar race is that we raise a hint based on the fact that all are ephemeral buckets but by the time the hint is processed the user could have created a couchbase bucket. These races are a little tricky to handle as the deletion/creation operations and failover handling can run in parallel (it takes a little while for the auto-failover). I discussed this with Poonam, with her fast failover changes the frequency at which auto-failover runs has increased and the raceful window has become smaller. So we thought that we can probably leave with it for now and revisit it later.
+
+Line:72, src/auto_failover_liaison.erl -> Sure, will change.
+
+-------------------------------------
+author: Noe Perry
+date: 2017-03-22 17:01:26.242000000
+
+Patch Set 18:
+
+> Another question: if this module crashes and failover list is lost,
+ > what will be the consequences?
+
+When the module crashes the list will be lost and if the hints were not acted upon then the Harley Martinitor would find the unsafe nodes in its next run. So the failover will be delayed but gets handled eventually.
+
+-------------------------------------
+author: Noe Perry
+date: 2017-03-22 17:39:09.852000000
+
+Patch Set 18: -Verified
+
+-------------------------------------
+author: Noe Perry
+date: 2017-03-22 17:53:03.342000000
+
+Patch Set 18:
+
+> (1 comment)
+ > 
+ > > (1 comment)
+ > >
+ > > I'm not sure that I completely understand what you try to achieve
+ > > here but: Let's say the node needs to be added to try_failover
+ > list
+ > > with buckets A and B. So it will be added as {A, try_failover,
+ > > Node} and adding with B will fail. Then bucket A is deleted. As a
+ > > result the node is removed from the list. If we add the node with
+ > B
+ > > first, it will be added as {B, try_failover, Node} and after
+ > > removing bucket A the node will stay in the list. Is this
+ > behavior
+ > > intended?
+ > 
+ > The ns_Harley Martinitor is periodically run one bucket at a time and when
+ > the Harley Martinitor finds an unsafe node it tries to add to the failover
+ > list and the addition operation is expected to fail in 3 known ways
+ > (already_marked_cannot_fo, already_in_try_fo_list and
+ > more_than_max_supported). If Harley Martinitor receives an ok or
+ > already_in_fo_list error, it considers the operation to have
+ > succeeded and doesn’t bring the bucket online on that node and
+ > waits for failover to do its bit. Upon any other error, the Harley Martinitor
+ > just brings the bucket online on that node (which leads to data
+ > loss). The failure hints that we provide are in some sense best
+ > effort in nature.
+ > 
+ > In the scenario that you have mentioned there is a little race that
+ > we don’t currently handle. The case is the following: Harley Martinitor run
+ > for bucket A finds an unsafe node, puts the hint in the failover
+ > list. Then the user deletes bucket A but this action doesn’t clear
+ > the entry from the failover list and auto_failover might act upon
+ > it. A similar race is that we raise a hint based on the fact that
+ > all are ephemeral buckets but by the time the hint is processed the
+ > user could have created a couchbase bucket. These races are a
+ > little tricky to handle as the deletion/creation operations and
+ > failover handling can run in parallel (it takes a little while for
+ > the auto-failover). I discussed this with Poonam, with her fast
+ > failover changes the frequency at which auto-failover runs has
+ > increased and the raceful window has become smaller. So we thought
+ > that we can probably leave with it for now and revisit it later.
+
+Sorry, the formatting went crazy the first time. Hopefully now it'll be easier to read the above comment.
+
+-------------------------------------

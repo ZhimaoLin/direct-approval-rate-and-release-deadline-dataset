@@ -1,0 +1,338 @@
+DESCRIPTION
+
+Implement AutoClosable interface to support try-with-resources block
+
+Bug: 428039
+Change-Id: I41880862db5303b5bea4b2184ba7844d69c997b5
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Zachary Orozco
+date: 2015-02-09 13:15:54.000000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-02-09 13:31:56.000000000
+
+Patch Set 5:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/6003/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-02-09 13:39:41.000000000
+
+Patch Set 5: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/6003/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-02-09 13:39:56.000000000
+
+Patch Set 5: Code-Review+2
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-02-09 13:39:59.000000000
+
+Change has been successfully merged into the git repository.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-03-10 00:39:18.000000000
+
+Patch Set 5:
+
+(2 comments)
+
+Line:91, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsPackFile.java -> I don't understand why "internal" types like DfsPackFile, PackFile, ObjectDatabase and RefDatabase are AutoCloseable.
+
+We _never_ use these in scopes where you would use try-with-resources:
+
+  try (PackFile pf = .... ) {
+  }
+
+just never would happen. We retain these objects long term in the block cache, or they are held by a higher level Repository object that should manage the close for the caller(s).
+
+Line:102, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> I am mixed on this being AutoCloseable.
+
+Maybe its correct but are there going to be some warnings now in Gerrit and EGit and the like where a Repository is opened in one scope and held a long time before being closed elsewhere?
+
+-------------------------------------
+author: Santos Moore
+date: 2015-03-10 00:41:18.000000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:102, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> Personally I think it will improve Gerrit overall to have this AutoCloseable, despite maybe having to xxx@xxx.xxx here and there.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-03-10 00:42:05.000000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:102, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> OK, I can accept Repository being AutoCloseable. What about the internal types like RefDatabase, PackFile and friends?
+
+-------------------------------------
+author: Santos Moore
+date: 2015-03-10 00:49:33.000000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:102, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> No, they are always owned by a higher-level object that should be closed.
+
+Similarly Git should definitely not be AutoCloseable IMHO. I often find myself doing:
+
+ Repository repo = openRepo();
+ try {
+   Git git = Git.wrap(repo);
+   git.someHighLevelApi().call();
+   somethingNotExposedByGitApi(repo);
+ } finally {
+   repo.close();
+ }
+
+To avoid a warning we would have to do:
+
+ try (Repository repo = openRepo();
+     Git git = Git.wrap(repo)) {
+   git.someHighLevelApi().call();
+   somethingNotExposedByGitApi(repo);
+ }
+
+But this is broken, because repo gets double-closed which screws with refcounting.
+
+-------------------------------------
+author: Santos Moore
+date: 2015-03-10 00:51:05.000000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:102, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> Honestly, I don't know why Git has a close method at all, but we can't change it now.
+
+But making it AutoCloseable says "hey you should definitely use this in a try-with-resources block", which is a broken pattern in this case.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-03-10 00:54:25.000000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:102, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> In the Git case wrap could set a flag inside of the Git instance that makes the close() a no-op, leaving the repo open for the caller to release.
+
+Unfortunately that is a major semantic change for anyone currently doing:
+
+  Git git = Git.wrap(... some repo ...);
+  // do stuff
+  git.close();
+
+to use the higher level API to manage the repository itself.
+
+We could add a wrapNoClose() method or something to Git to make close() a no-op, but I can't think of what that method would be called. Maybe we overload wrap?
+
+  public static Git wrap(Repository repo, boolean close);
+
+Then your example is:
+
+ try (Repository repo = openRepo();
+     Git git = Git.wrap(repo, false)) {
+   git.someHighLevelApi().call();
+   somethingNotExposedByGitApi(repo);
+ }
+
+Which is still awkward.
+
+-------------------------------------
+author: Santos Moore
+date: 2015-03-10 00:55:55.000000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:102, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> Or we could just leave Git alone...
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-03-10 00:58:28.000000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:102, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> So leave it sort of broken with implements AutoCloseable?
+
+-------------------------------------
+author: Santos Moore
+date: 2015-03-10 00:59:40.000000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:102, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> Oops. I meant leave alone and not make it AutoCloseable. But since this change is already submitted that would mean reverting the AutoCloseable change to Git.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-03-10 12:30:59.000000000
+
+Patch Set 5:
+
+Regarding: why has Git a close() method and why is Git autocloseable.
+
+Dave, Shawn, you see it from gerrit perspective where you anyhow have Repository instances in hand and just sometimes wrap them with the Git class. I agree: in the use case with wrap() it's not correct to free close the repo on Git.close(). We should fix that.
+
+But think about this code:
+
+  Git g = Git.cloneRepository().setDirectory(tmpDir).setURI("https://github.com/chalstrick/dondalfi").call();
+  //work on the repo
+  g.close();
+  rm(tmpDir); // helper method which deletes a file hierarchy
+
+I see that quite often when people write small tools with the Git API. And that code fails without the g.close() call (at least on Windows)
+because the packfiles are still in use. If an Git instance internally creates resources which need to be closed at some time then it should
+offer an close() method which does this. Users of the Git class often don't know the Repository class (not talking about Packfiles etc). I
+never liked the code we had before which forced those people to call git.getRepository().close() in order to be able to delete a repository
+on the filesystem.
+
+Why don't we teach the Git class to free only those resources on close() which have been created by that instance. Git.clone().xyz().close() whould
+close the repo created internally during the clone() call. But Git.wrap(r).xyz().close() would not close r. Then Git could stick to be auto-closeable.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-03-10 17:11:33.000000000
+
+Patch Set 5:
+
+> Regarding: why has Git a close() method and why is Git
+ > autocloseable.
+ > 
+ > Dave, Shawn, you see it from gerrit perspective where you anyhow
+ > have Repository instances in hand and just sometimes wrap them with
+ > the Git class. I agree: in the use case with wrap() it's not
+ > correct to free close the repo on Git.close(). We should fix that.
+ > 
+ > But think about this code:
+ > 
+ > Git g = Git.cloneRepository().setDirectory(tmpDir).setURI("https://github.com/chalstrick/dondalfi").call();
+ > //work on the repo
+ > g.close();
+ > rm(tmpDir); // helper method which deletes a file hierarchy
+ > 
+ > I see that quite often when people write small tools with the Git
+ > API. And that code fails without the g.close() call (at least on
+ > Windows)
+ > because the packfiles are still in use. If an Git instance
+ > internally creates resources which need to be closed at some time
+ > then it should
+ > offer an close() method which does this. Users of the Git class
+ > often don't know the Repository class (not talking about Packfiles
+ > etc). I
+ > never liked the code we had before which forced those people to
+ > call git.getRepository().close() in order to be able to delete a
+ > repository
+ > on the filesystem.
+ > 
+ > Why don't we teach the Git class to free only those resources on
+ > close() which have been created by that instance. Git.clone().xyz().close()
+ > whould
+ > close the repo created internally during the clone() call. But
+ > Git.wrap(r).xyz().close() would not close r. Then Git could stick
+ > to be auto-closeable.
+
+I am in favor of this, but it is a behavior change for wrap(). Callers that currently use wrap(r).xyz().close() would fail to close r in a new version of JGit, which could be confusing.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2015-03-10 20:37:35.000000000
+
+Patch Set 5:
+
+> > Regarding: why has Git a close() method and why is Git
+ > > autocloseable.
+ > >
+ > > Dave, Shawn, you see it from gerrit perspective where you anyhow
+ > > have Repository instances in hand and just sometimes wrap them
+ > with
+ > > the Git class. I agree: in the use case with wrap() it's not
+ > > correct to free close the repo on Git.close(). We should fix
+ > that.
+ > >
+ > > But think about this code:
+ > >
+ > > Git g = Git.cloneRepository().setDirectory(tmpDir).setURI("https://github.com/chalstrick/dondalfi").call();
+ > > //work on the repo
+ > > g.close();
+ > > rm(tmpDir); // helper method which deletes a file hierarchy
+ > >
+ > > I see that quite often when people write small tools with the Git
+ > > API. And that code fails without the g.close() call (at least on
+ > > Windows)
+ > > because the packfiles are still in use. If an Git instance
+ > > internally creates resources which need to be closed at some time
+ > > then it should
+ > > offer an close() method which does this. Users of the Git class
+ > > often don't know the Repository class (not talking about
+ > Packfiles
+ > > etc). I
+ > > never liked the code we had before which forced those people to
+ > > call git.getRepository().close() in order to be able to delete a
+ > > repository
+ > > on the filesystem.
+ > >
+ > > Why don't we teach the Git class to free only those resources on
+ > > close() which have been created by that instance.
+ > Git.clone().xyz().close()
+ > > whould
+ > > close the repo created internally during the clone() call. But
+ > > Git.wrap(r).xyz().close() would not close r. Then Git could stick
+ > > to be auto-closeable.
+ > 
+ > I am in favor of this, but it is a behavior change for wrap().
+ > Callers that currently use wrap(r).xyz().close() would fail to
+ > close r in a new version of JGit, which could be confusing.
+
+how about adding a new method e.g. bind() for the new behavior (don't autoclose)
+and clearly document the difference ?
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-03-11 08:49:36.000000000
+
+Patch Set 5:
+
+> how about adding a new method e.g. bind() for the new behavior
+ > (don't autoclose)
+ > and clearly document the difference ?
+
+We could do that. That would be safe.
+
+Since we are approaching a major release we would have the chance to break semantics, or? Is it really a no-go to say "from 4.0 onwards Git.close() will not close repos are not created by that instance"? I personally see it as a bug (at least not intended) that Git.close() closes repos it has not created. If we would be completely free I would vote for the same pattern in Git as in TreeWalk (https://git.eclipse.org/r/#/c/43617/)
+
+-------------------------------------
+author: Santos Moore
+date: 2015-03-17 22:36:01.000000000
+
+Patch Set 5:
+
+I implemented my preferred fix (with slight semantic differences) in https://git.eclipse.org/r/44050, feel free to continue discussion there.
+
+-------------------------------------

@@ -1,0 +1,189 @@
+DESCRIPTION
+
+ctf: Introducing the FixedLengthStringDefintion
+
+This patch introduces the fixedlength string that will make sequences
+and arrays read faster when it's a string, as the ctf spec specifies
+that they are aligned on 8 bits and always 8 bits wide per character.
+
+Sequences and arrays can either be ArrayDefinition2s or
+FixedStringDefintions.
+
+This patch gives a 20% acceleration in sequential reading.
+
+Signed-off-by: Ivy Mitchell xxx@xxx.xxx
+Change-Id: I7933268b7f9271f74f7d59339ea9b8343fdb021e
+
+COMMENTS
+
+author: Ivy Mitchell
+date: 2014-06-13 15:45:18.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-06-13 16:51:10.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/7368/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-06-13 17:06:19.000000000
+
+Patch Set 4: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/7368/ : FAILURE
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-06-13 18:23:46.000000000
+
+Patch Set 4:
+
+(28 comments)
+
+We should disable the compiler setting "Signal use of deprecated API in deprecated code", in this and probably the other plugins too. It makes this patch less horrible ;)
+
+I'm obviously not a fan of ArrayDeclaration2, etc. If we judge that maintaining the API is worth the extra cruft, we could live with it. But we should bear in mind (rawr) that:
+
+* We are now at like 2-3 days into the new cycle. And we are already ready to break the API apart completely. Can we really hole a whole year??
+* This is CTF's public API. It's not as "important" as TMF's API for instance, since most users extend TMF.
+
+Some comments for now.
+
+Line:43, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/SequenceDeclaration2.java -> here too, the second <String, String> is unneeded. It does look cool though...
+
+Line:93, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/SequenceDeclaration2.java -> remove
+
+Line:108, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/SequenceDeclaration2.java -> remove
+
+Line:110, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/SequenceDeclaration2.java -> no no no, on a whole method it can cause all sorts of weird problems.
+
+Extract paths.get(i) and definitions.build() to local variables, and suppresswarning on those only.
+
+Line:165, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/SequenceDeclaration2.java -> no
+
+Line:34, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/FixedStringDefinition.java -> same line
+
+and put that field last, it's "different" from the other two.
+
+Line:55, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/FixedStringDefinition.java -> they are all one per line, you can put length on another line too
+
+Line:68, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/FixedStringDefinition.java -> this makes a long line, perhaps some of these could be done in separate variables first? (the last two parameters for instance)
+
+Line:72, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/FixedStringDefinition.java -> same line
+
+Line:9, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/AbstractArrayDefinition.java -> separate line
+
+Line:39, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/AbstractArrayDefinition.java -> no!
+
+Line:47, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/AbstractArrayDefinition.java -> no
+
+Add description too
+
+Line:57, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/AbstractArrayDefinition.java -> I -> i
+
+why not throw an AOOBE if i > length too, and make it non-null?
+
+Line:60, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/ArrayDefinition2.java -> remove
+
+Line:69, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/ArrayDefinition2.java -> same line
+
+Line:98, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/ArrayDefinition2.java -> Why do we have this method and the one above, if we also expose the whole list in getDefinitions()? It should be one or the other.
+
+Line:110, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/ArrayDefinition2.java -> why the scoping?
+
+Line:28, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/CompoundDeclaration.java -> y u no implement? Is this meant to be abstract? (meaning, you could remove the method definition altogether)
+
+Line:2, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/ArrayDeclaration2.java -> only Ericsson. for now
+
+Line:9, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/ArrayDeclaration2.java -> separate line
+
+Those two comments apply to many other classes as well
+
+Line:56, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/ArrayDeclaration2.java -> <String, String> before the create() doesn't hurt, but it's not mandatory (type inference can actually infer here)
+
+Line:99, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/ArrayDeclaration2.java -> no
+
+Line:125, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/ArrayDeclaration2.java -> nono
+
+Line:154, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/ArrayDeclaration2.java -> If you make use of the fact that the objects are stored in List in the Multimap, in this case perhaps it's easier to declare fChildrenNames as an ArrayListMultimap. This would make this cast unnecessary.
+
+(just like we can declare TreeMap's if we end up using methods specific to TreeMap.)
+
+Line:158, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/ArrayDeclaration2.java -> can't wait for xxx@xxx.xxx String> !
+
+Line:164, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/ArrayDeclaration2.java -> same line
+
+Line:169, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/ArrayDeclaration2.java -> no
+
+Line:54, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/ScopedDefinition.java -> get rid of this? (along with lookupSequence)
+
+This will require updating some tests
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-06-13 18:24:14.000000000
+
+Patch Set 4: Code-Review-1
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2014-06-16 21:30:22.000000000
+
+Patch Set 4:
+
+(23 comments)
+
+Line:93, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/SequenceDeclaration2.java -> Done
+
+Line:108, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/SequenceDeclaration2.java -> Done
+
+Line:34, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/FixedStringDefinition.java -> Done
+
+Line:68, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/FixedStringDefinition.java -> Done
+
+Line:72, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/FixedStringDefinition.java -> Done
+
+Line:9, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/AbstractArrayDefinition.java -> Done
+
+Line:39, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/AbstractArrayDefinition.java -> Done
+
+Line:47, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/AbstractArrayDefinition.java -> Done
+
+Line:57, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/AbstractArrayDefinition.java -> Done
+
+Line:60, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/ArrayDefinition2.java -> Done
+
+Line:69, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/ArrayDefinition2.java -> Done
+
+Line:98, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/ArrayDefinition2.java -> GetDefinitions is now an iterable. Safer
+
+Line:110, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/ArrayDefinition2.java -> Done
+
+Line:28, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/CompoundDeclaration.java -> Done
+
+Line:2, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/ArrayDeclaration2.java -> Done
+
+Line:9, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/ArrayDeclaration2.java -> Done
+
+Line:56, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/ArrayDeclaration2.java -> Done
+
+Line:99, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/ArrayDeclaration2.java -> Done
+
+Line:125, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/ArrayDeclaration2.java -> Done
+
+Line:154, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/ArrayDeclaration2.java -> Done
+
+Line:158, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/ArrayDeclaration2.java -> Done
+
+Line:164, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/ArrayDeclaration2.java -> Done
+
+Line:54, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/ScopedDefinition.java -> API breakage?
+
+-------------------------------------

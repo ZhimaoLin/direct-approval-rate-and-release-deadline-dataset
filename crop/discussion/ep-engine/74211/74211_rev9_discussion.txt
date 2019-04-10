@@ -1,0 +1,83 @@
+DESCRIPTION
+
+MB-22620: Check for datatypes in conflict resolution of META commands
+
+During conflict resolution of set/delete_with_meta commands,
+if one of the datatypes happens to the xattr and the other is not,
+the one with xattrs wins the conflict. In such cases, a bg fetch
+is required to fetch the datatype from disk, if required
+
+Change-Id: Ifa7c512eb49f94c47aa9e5a12f8ba5a317699ebf
+
+
+COMMENTS
+
+author: Bobby Buck
+date: 2017-03-02 01:58:22.857000000
+
+Uploaded patch set 9.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-03-02 02:09:32.478000000
+
+Patch Set 9: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/3033/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/4209/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/3778/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/4428/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-03-02 10:55:38.519000000
+
+Patch Set 9: Code-Review-1
+
+(6 comments)
+
+Line:5360, src/ep_engine.cc -> As previous, I think this can be simplified - in the validation part of setWithMeta() above, look at the datatype and only allow the XATTR flag in datatype if isXattrSupported() is true - if not then fail with EINVAL.
+
+Then you can remove this additional argument from kvBucket->setWithMeta() and friends.
+
+Line:50, src/conflict_resolution.cc -> Can simplify this to:
+
+ return mcbp::datatype::is_xattr(in_datatype) &&
+        !mcbp::datatype::is_xattr(cur_datatype);
+
+Line:60, src/conflict_resolution.cc -> I think XATTR should be the /last/ (tie-breaker) check - so it should be moved to here.
+
+Line:912, src/vbucket.cc -> Speak to Trond about this - he's working on moving the datatype field into StoredValue, so it will be part of the normal metadata. That means we don't have to handle XATTR specially (i.e. fetch the Value for it) and hence will simplify the code significantly here.
+
+If Trond can have that implemented in say the next week I suggest we wait for that as it makes this patch much simpler.
+
+Line:53, src/conflict_resolution.h -> Style: Probably clearer if named `v_datatype` and `meta_datatype` - as they then match the variable names of the main input params.
+
+Line:55, src/conflict_resolution.h -> I'm not sure this is the correct place to check this - I think any incoming SET_META mutations should have already validated that XATTR is enabled before accepting incoming datatypes as XATTR.
+
+In other words, the ConflictResolution classes should just operate on whatever datatypes they are passed, with the assumption that it's already been validated.
+
+-------------------------------------
+author: Bobby Buck
+date: 2017-03-03 22:53:12.794000000
+
+Patch Set 9:
+
+(5 comments)
+
+Line:5360, src/ep_engine.cc -> Done
+
+Line:50, src/conflict_resolution.cc -> Done
+
+Line:60, src/conflict_resolution.cc -> Done
+
+Line:53, src/conflict_resolution.h -> Done
+
+Line:55, src/conflict_resolution.h -> Done
+
+-------------------------------------

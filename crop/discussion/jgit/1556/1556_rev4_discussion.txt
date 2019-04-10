@@ -1,0 +1,63 @@
+DESCRIPTION
+
+Unpack and cache large deltas as loose objects
+
+Instead of spooling large delta bases into temporary files and then
+immediately deleting them afterwards, spool the large delta out to
+a normal loose object.  Later any requests for that large delta can
+be answered by reading from the loose object, which is much easier
+to stream efficiently for readers.
+
+Since the object is now duplicated, once in the pack as a delta and
+again as a loose object, any future prune-packed will automatically
+delete the loose object variant, releasing the wasted disk space.
+
+As prune-packed is run automatically during either repack or gc, and
+gc --auto triggers automatically based on the number of loose objects,
+we get automatic cache management for free.  Large objects that were
+unpacked will be periodically cleared out, and will simply be restored
+later if they are needed again.
+
+After a short offline discussion with Junio Hamano today, we may want
+to propose a change to prune-packed to hold onto larger loose objects
+which also exist in pack files as deltas, if the loose object was
+recently accessed or modified in the last 2 days.
+
+Change-Id: I3668a3967c807010f48cd69f994dcbaaf582337c
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-09-08 05:28:32.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-09-08 05:33:49.000000000
+
+Patch Set 4: Looks good to me, but someone else must approve; IP review completed
+
+I think we want this in 0.9 because otherwise large objects stored as deltas in packs can be incredibly slow to access, especially if they are accessed often.
+
+The downside is, when checking out a large object into the local working directory, we're also deflating it as a loose object just in case we need to re-read that content in the future.  Large binary objects are probably less frequently modified by the user in the working directory, so we're probably less likely to actually need this faster access.  So we might be doing too much work in some cases.
+
+But for a gerrit code review server serving large binary files, this really helps, because users of the server tend to access the same objects several times before the next git gc runs.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2010-09-09 12:00:58.000000000
+
+Patch Set 4: Looks good to me, approved; IP review completed
+
+
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2010-09-09 12:29:08.000000000
+
+Change has been successfully merged into the git repository.
+
+-------------------------------------

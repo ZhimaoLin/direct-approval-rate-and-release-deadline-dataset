@@ -1,0 +1,180 @@
+DESCRIPTION
+
+Add support to follow HTTP redirects
+
+git-core follows HTTP redirects so JGit should also provide this.
+
+Bug: 465167
+Change-Id: I86518cb76842f7d326b51f8715e3bbf8ada89859
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+
+COMMENTS
+
+author: Douglas Trujillo
+date: 2017-01-16 00:48:50.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-01-16 00:48:57.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/9646/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-01-16 00:56:18.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/9646/ : SUCCESS
+
+-------------------------------------
+author: Elise Key
+date: 2017-01-16 01:56:44.000000000
+
+Patch Set 3:
+
+(3 comments)
+
+Line:520, org.eclipse.jgit/src/org/eclipse/jgit/transport/TransportHttp.java -> debug?
+
+Line:412, org.eclipse.jgit/src/org/eclipse/jgit/internal/JGitText.java -> The other entries here are in alphabetical order, so this should go after invalidPathReservedOnWindows.
+
+Line:353, org.eclipse.jgit/resources/org/eclipse/jgit/internal/JGitText.properties -> Missing closing quote here?
+
+Also to keep the entries in alphabetical order, this should be moved after invalidPathReservedOnWindows
+
+-------------------------------------
+author: Maeve Walter
+date: 2017-01-17 02:20:56.000000000
+
+Patch Set 3:
+
+(2 comments)
+
+It seems that this fix goes the wrong way, see comments in TransportHttp.java
+
+Line:516, org.eclipse.jgit/src/org/eclipse/jgit/transport/TransportHttp.java -> Response code 301 and 302 of a HTTP GET was checked for redirection here, which was unnecessary. By default, both `HttpURLConnection` and `HttpClient` will handle redirection of GET automatically.
+
+Line:969, org.eclipse.jgit/src/org/eclipse/jgit/transport/TransportHttp.java -> More work should be done here since conn is a POST request opened in TransportHttp$Service.openStream() method, whose response will not be handled by TransportHttp.connect() method above.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-01-17 09:58:47.000000000
+
+Abandoned
+
+https://git.eclipse.org/r/#/c/88811 looks better
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-08-04 06:48:51.000000000
+
+Restored
+
+see https://git.eclipse.org/r/#/c/102442/
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-08-04 15:49:07.000000000
+
+Patch Set 3:
+
+Ok. When this is picked up:
+
+1. Bo mentioned above that HttpURLConnection and HttpClient both transparently did redirect handling. Well, they also do authentication handling, yet it is done explictly here. (And needed, too.) 
+
+2. Updating baseUrl is the right way; that way the POST could already work with the correct URL. Perhaps MOVED_PERM redirects should even be logged so that users are aware of them and
+can update their git URLs.
+
+3. The recursive unlimited redirect following on POST added in change 88811 should be fixed.
+
+4. In any case, tests should be included. 88811 should have had tests from the start.
+
+5. The whole redirect following business should honor the git config http.followRedirects (possible values true (meaning always), false (never), and initial (only on GET, but not on POST)). See https://git-scm.com/docs/git-config .
+
+6. git config has no way to specify the number of redirects that will be followed. C git uses curl, and that has its own way of specifying a redirect limit. Some redirect limit config may need to be introduced. Quick off-the-top-of-my-head suggestion: introduce a git config setting "http.redirectLimit".
+
+-------------------------------------
+author: Eden Lin
+date: 2017-08-04 16:32:10.000000000
+
+Patch Set 3: Code-Review-1
+
+(1 comment)
+
+Line:9, /COMMIT_MSG -> Thanks for working on this. But be careful: see
+
+ https://kernel.googlesource.com/pub/scm/git/git/+/50d3413740d1da599cdc0106e6e916741394cc98
+ https://kernel.googlesource.com/pub/scm/git/git/+/6628eb41db5189c0cdfdced6d8697e7c813c5f0f
+
+To avoid certain kinds of attacks, the approach Git took is to handle redirects on the initial /info/refs request and update the base URL accordingly, and then refuse to follow redirects after that.
+
+I haven't looked carefully at the code, but I noticed the commit message and tests didn't cover this issue, so I thought I should mention it.
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-08-04 17:11:08.000000000
+
+Patch Set 3:
+
+(1 comment)
+
+Jonathan, note that this is an older commit that once was abandoned. Matthias has resurrected it because 88811 evidently didn't fix the issue, there's a new attempt https://git.eclipse.org/r/#/c/102442/ coming in, and I thought it would be better to resurrect this and finish it.
+
+Do you see more than the 6 items I had mentioned in my previous global comment?
+
+Line:9, /COMMIT_MSG -> These are excellent links; nice to see such informative commit messages :-)
+
+I had mentioned http.followRedirects already in my global patch comment (item #5). And I suggest to even limit following redirects only a certain number of times.
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-08-04 18:23:34.000000000
+
+Patch Set 3:
+
+A note on point 1 (httpUrlConnection already does follow redirects): it looks as if that's true only iff
+
+1. the new URL has the same protocol (line 2556 at [1]). This would explain why the Github http->https redirects are not working.
+
+2. a redirected POST is turned into a GET unless the http.strictPostRedirect system property is set.
+
+This explains why we need to do our own redirect handling on top of the one provided by the JDK. And the POST->GET translation looks rather bothersome; I think we must even disable the built-in redirect connection handling and enforce that on our connections via setInstanceFollowsRedirects(false). Also, the special cases mentioned by Jonathan might require us doing that anyway.
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-08-04 18:26:06.000000000
+
+Patch Set 3:
+
+> line 2556 at [1]
+
+Oops, forgot the link:
+
+[1] http://grepcode.com/file/repository.grepcode.com/java/root/jdk/openjdk/8u40-b25/sun/net/www/protocol/http/HttpURLConnection.java#HttpURLConnection.followRedirect%28%29
+
+ > 2. a redirected POST is turned into a GET
+
+Oops, forgot the source mention: line 2635 at [1].
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-08-07 09:46:54.000000000
+
+Patch Set 3:
+
+(3 comments)
+
+Line:520, org.eclipse.jgit/src/org/eclipse/jgit/transport/TransportHttp.java -> C git informs the user on stderr unconditionally.
+
+Line:412, org.eclipse.jgit/src/org/eclipse/jgit/internal/JGitText.java -> Done
+
+Line:353, org.eclipse.jgit/resources/org/eclipse/jgit/internal/JGitText.properties -> Done in PS 11.
+
+-------------------------------------

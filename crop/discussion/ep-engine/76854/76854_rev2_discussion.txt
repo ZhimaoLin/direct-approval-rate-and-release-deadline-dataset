@@ -1,0 +1,261 @@
+DESCRIPTION
+
+MB-23936: Use Threadlocal variables to accumulate stats
+
+Currently when we allocate/deallocate memory, we update the per bucket
+variable `totalMemory`. Mutiple threads contend on this variable heavily
+as mem allocation/deallocation happen often. The primary idea of
+this commit is to maintain threadlocal mem counters for each bucket and
+merge it to the `totalMemory` once the local counter reaches a threshold
+either based on size or no.of times the local counter has been updated.
+
+Limitations:
+-----------
+- We create one thread local variable per bucket. Different OS'es seem
+  to enforce different limits on the no.of tlv. Although we have a hard
+  limit of 10 buckets, I'm noting this here for future reference.
+  [NetBSD:256 Linux:1024 OSX:512 Windows:1088]
+
+- Windows does not seem to provide an api for releasing the mem
+  allocated for a thread-local on thread exit in a way like pthreads do.
+  So there will be a small leak of about (3*long) on every bucket unload.
+
+Change-Id: Id14ced2776a29afae18831b372140dd028136b32
+
+
+COMMENTS
+
+author: Trace Williamson
+date: 2017-04-17 21:32:57.086000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-04-17 22:03:14.269000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/5810/ : FAILURE
+
+ThreadSanitizer issue: data race /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/item_pager.cc:276 ItemPager::run()  ( http://cv.jenkins.couchbase.com//job/ep-engine-threadsanitizer-master/5810/ )
+
+Timeout of a CTest test 26/26 Test  #5: ep-engine_ep_unit_tests ..................} ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/5810/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6048/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4587/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5303/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-18 10:16:22.842000000
+
+Patch Set 2: Code-Review-1
+
+(12 comments)
+
+Generally looks good - will be interesting to see the numbers ;)
+
+A suggestion for a sightly different approach which would solve the issue with the numbers being stale (and having to hack around it in the tests):
+
+- Create a contiguous array of memory counts (CachelinePadded<Counter>), then assign one to each thread (store the address in TLS). Each thread can just update that counter as appropriate, and /not/ have to worry about merging.
+- To read the counter, the reader can simply accumulate all elements in the array.
+
+This would require us to know the maximum number of buckets allowed to pre-allocate the array, but I don't think that's a problem.
+
+Line:76, src/objectregistry.h -> Suggest just explicitly constructing the guard object - or at the very least don't use a macro containing `__` as that's reserved (http://en.cppreference.com/w/cpp/keyword)
+
+Line:683, src/ep_engine.cc -> Style: If you use std::stoull or similar which throws an exception you can remove the use of checkNumeric(). See usage in setFlushParam above which has been updated to the simpler API.
+
+Line:6402, src/ep_engine.cc -> Style: Always use braces for conditionals, even if just one line.
+
+Line:6431, src/ep_engine.cc -> Perf: Might be worth looking at if the modulus is expensive here - if it is you could change the predicate to `if (counter.count >= threshold)` and then zero counter.count below when you zero counter.used.
+
+Line:25, /COMMIT_MSG -> Note that we create all our (long-term) threads via cb_create_thread, so we should be able to solve this leak by using the destructor there (see cb_win32.cc in platform).
+
+Line:22, src/threadlocal.h -> Style: Slightly nicer to use a std::function here - allows more flexibility about what the caller can specify for its state.
+
+Line:475, configuration.json -> Style: Maybe rename to "mem_merge_bytes_threshold` as that makes the unit of the option explicit.
+
+Line:36, src/stats.h -> Please keep alphabetical. `git clang format` should do this for you.
+
+Line:206, src/stats.h -> This probably warrants investigation - I don't believe totalMemory should go negative.
+
+Line:217, src/stats.h -> Please document what `force` is for.
+
+Line:339, src/stats.h -> Why the change from `Counter`?
+
+Line:680, src/stats.h -> Style: Given we initialise all other member variables in the constructor, suggest we stay consistent and do the same for these two members.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-18 10:50:26.231000000
+
+Patch Set 2:
+
+> (12 comments)
+ > This would require us to know the maximum number of buckets allowed
+ > to pre-allocate the array, but I don't think that's a problem.
+
+*Edit* Meant "maximum number of threads allowed" - which is doable, although maybe a little trickier. 
+
+IIRC phosphor does some tricks like this - might want to take a look there.
+
+-------------------------------------
+author: Trace Williamson
+date: 2017-04-18 18:29:47.241000000
+
+Patch Set 2:
+
+(9 comments)
+
+Numbers: [Green is ThreadLocal. Red is current master]
+---------- 
+256B Read Heavy - 3.6M ops/s [+35%]
+http://cbmonitor.sc.Piper Jefferson.com/reports/html/?snapshot=ares_500-9200_access_412e&snapshot=ares_500-9999_access_d561
+
+256B Write Heavy - 1.9Mops/s [+40%]
+
+http://cbmonitor.sc.Piper Jefferson.com/reports/html/?snapshot=ares_500-9501_access_bc69&snapshot=ares_500-2634_access_506a
+
+Line:76, src/objectregistry.h -> I'll stick to single underscore. I did not see any naming convention for macros. Usually I would use all caps, but because this macro would be used in many places(later), I was not sure if it would become a readability issue.
+
+Line:6402, src/ep_engine.cc -> My bad. Will fix this.
+
+Line:6431, src/ep_engine.cc -> Sounds good. Will do that.
+
+Line:25, /COMMIT_MSG -> There are some caveats in doing this in the thread dtor.
+
+- First there is no clear way of iterating through all thread-locals across different OS'es.
+- Secondly the ptr stored in a thread-local may be stale and deleting it would crash the program (I noticed it when an engine is destroyed, but one of the threads had ptr to it in the threadlocal). 
+- Thirdly , the ptr may actually be valid & used elsewhere, which happens in our case where the engine ptr is stored as tlv & used by other threads, so deleting it is out of question.
+
+Though the second& third cases can be considered as bugs in code, it is definitely worth investigating.
+
+Line:36, src/stats.h -> My bad. Will fix this
+
+Line:206, src/stats.h -> TotalMemory can go negative. Memory allocation / deallocation happen in different threads, and the thread that allocated the memory may not merge its counter to totalMemory , but the one that deallocated may merge its counter to total memory. This is also why I had to change the totalMemory from size_t counter to long long
+
+Line:217, src/stats.h -> Will do.
+
+Line:339, src/stats.h -> Because with this change totalMemory, could go negative. Counter is size_t & I had to make it signed. (explained above)
+
+Line:680, src/stats.h -> Will do.
+
+-------------------------------------
+author: Trace Williamson
+date: 2017-04-18 18:49:24.987000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:25, /COMMIT_MSG -> This might work: we can have a dtor list or map of tlv-key->dtor inside each thread. (Something similar to ValueChangeListener in the Config class)
+
+-------------------------------------
+author: Keira Washington
+date: 2017-04-18 19:07:58.217000000
+
+Patch Set 2:
+
+> *Edit* Meant "maximum number of threads allowed" - which is doable, although maybe a little trickier. 
+> IIRC phosphor does some tricks like this - might want to take a look there.
+
+To do it in the style of phosphor would be for each thread to allocate their own atomic counters on thread creation and to register it centrally into some kind of map from threadid->counter. To read the counter would be the same as your suggestion: simply accumulate all elements in the map. At thread shutdown it would deregister and deallocate the counter. The downside is you would need to hold a lock to read the counter.
+
+That's more or less how phosphor handles thread names / chunk tenants.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-19 07:40:13.387000000
+
+Patch Set 2:
+
+(1 comment)
+
+> > *Edit* Meant "maximum number of threads allowed" - which is
+ > doable, although maybe a little trickier.
+ > > IIRC phosphor does some tricks like this - might want to take a
+ > look there.
+ > 
+ > To do it in the style of phosphor would be for each thread to
+ > allocate their own atomic counters on thread creation and to
+ > register it centrally into some kind of map from threadid->counter.
+ > To read the counter would be the same as your suggestion: simply
+ > accumulate all elements in the map. At thread shutdown it would
+ > deregister and deallocate the counter. The downside is you would
+ > need to hold a lock to read the counter.
+ > 
+ > That's more or less how phosphor handles thread names / chunk
+ > tenants.
+
+For reference, Paul McKenney's book "Is Parallel Programming Hard, And, If So, What Can You Do About It?" (https://www.kernel.org/pub/linux/kernel/people/paulmck/perfbook/perfbook.html) has some great suggestions for solving these kinds of problems.
+
+Line:206, src/stats.h -> Ah ok, makes sense - I wasn't thinking of some merging but not others.
+
+I guess this is another reason to investigate having a collection of counters which the reader accumulates all at once - while there's still a small possibility of negative values (if you've accumulated between a decrement without the increment on a later thread), I believe it would be of much smaller magnitude.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-19 07:41:10.659000000
+
+Patch Set 2:
+
+> 
+ > For reference, Paul McKenney's book "Is Parallel Programming Hard,
+ > And, If So, What Can You Do About It?" (https://www.kernel.org/pub/linux/kernel/people/paulmck/perfbook/perfbook.html)
+ > has some great suggestions for solving these kinds of problems.
+
+Specifically Chapter 5: Counting in this instance.
+
+-------------------------------------
+author: Trace Williamson
+date: 2017-04-19 16:56:37.715000000
+
+Patch Set 2:
+
+(1 comment)
+
+The valgrind job seems to identify leaks in the unit tests.  These are not leaks per se. The thread local variables are correctly destroyed on thread exit.
+
+But what is happening in the unit tests is, the Main thread runs the bucket initialization & hence tlv is created in the main thread.  The main thread does not exit via thread-exit, rather it exits the program with exit call. This does not call the thread-local destructors. Calling pthread_exit(NULL) before the main function ends is supposed to call the dtors, but it is not working for us.  We might have to suppress these errors :(
+
+Line:206, src/stats.h -> Array of counters has been implemented & perf-tested.
+
+The perf system has about 40 cores & the memcached process had 96 threads [31 libevent, 60 executors and 1 of main/logger/stats/audit/stdin]. Apart from about 4 threads about 90 seemed to be contending for mem counting. With 113 counters and each thread randomly picking one, we get about 20% perf increase. Had tested multiple variations, with 1/113 counters , w/o CachelinePadded counters. No notable  perf change on the variations. The only case I'd not tested was to assign a fixed id for each thread, as I could not convert the thread-id to a numeric value & assigning a an id on thread creation would have meant to change the platform code & change a lot of unit tests as the tests run on threads not created by using our apis.
+ 
+This is the last implementation: https://github.com/Trace Williamson/ep-engine/tree/counterarray.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-20 07:53:44.130000000
+
+Patch Set 2:
+
+(19 comments)
+
+Line:206, src/stats.h -> I was more thinking about giving them their own counter, and having them registered in a container.
+
+I think you should be able to do this relatively easily with your current code - when creating a TLMemCounter, instead of having it's own counter, have it be assigned an element from a contiguous container (std::deque is probably a good choice), and stores a ptr to that element.
+
+* To record memory, simply dereference the ptr and update the value.
+* To read the counters; simply iterate the container and accumulate. Upon read, counters should be (eventually) accurate.
+
+To handle thread-deletion (should be rare but we need to handle to be correct), have the counter manager zero that slot (maybe you'll need a "bias" counter in slot zero to hold values from deleted threads?) and mark it as unsed. It can be then re-used if a new thread comes along.
+
+To handle thread creation, first check for unused slots and use one if present, otherwise extend the deque - which has the advantage of not invalidating any ptrs to elements if you insert at the end (or beginning).
+
+This should give lock-free updates (just a ptr dereference and addition/subtraction), and lock-free reads (just iterate the whole container). You probably need a mock when adding/removing threads, but that should be vary rare. It also gives "eventually" consistent numbers, so the changes to the unit tests for "immediate" stats are no longer required.
+
+-------------------------------------
+author: Trace Williamson
+date: 2017-04-20 19:24:53.549000000
+
+MISMATCHED INLINE COMMENT
+Line:206, src/stats.h -> sounds good.It is definitely worth to merge both the counter array & threadlocal implementations. Will try this out in the next iteration.
+
+-------------------------------------

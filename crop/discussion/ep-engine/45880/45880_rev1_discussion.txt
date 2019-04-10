@@ -1,0 +1,162 @@
+DESCRIPTION
+
+observe_seqno: Fix spurious byteswap conversions
+
+This was causing a crash since the nested conditionls would be
+performing ntoh{s,ll} on an already converted value.
+
+Change-Id: I4ab23d68ed5d46b6c4d0e10bd6beaf040c2da877
+
+
+COMMENTS
+
+author: Wyatt Kramer
+date: 2015-01-26 18:35:48.501000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Wyatt Kramer
+date: 2015-01-26 18:38:06.549000000
+
+Patch Set 1: Verified+1
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-01-26 18:44:38.844000000
+
+Patch Set 1: Code-Review-1
+
+(2 comments)
+
+Line:4700, src/ep_engine.cc -> vb_id = htons(vb_id)
+
+Line:4662, src/ep_engine.cc -> I don't think these extra variables are required.
+
+-------------------------------------
+author: Wyatt Kramer
+date: 2015-01-26 19:23:16.741000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:4662, src/ep_engine.cc -> They aren't strictly required, but not having them would mean you need to use 'req->message.header.request.vbucket' and similar on output. I personally find that very annoying to read.. but there might be guidelines elsewhere.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-01-26 19:46:50.017000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:4662, src/ep_engine.cc -> What I meant was, you could do something like this: 
+
+vb_id = req->message.header.request.vbucket; 
+
+vb_id = ntohs(vb_id); 
+
+...
+
+vb_id = htons(vb_id); 
+
+Anyhow, the bug here is at line 4700 (base): vb_id = htonll(vb_id),
+which should be vb_id = htons(vb_id)
+
+-------------------------------------
+author: Wyatt Kramer
+date: 2015-01-26 19:54:18.264000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:4662, src/ep_engine.cc -> Also lines 4713 and 4714..
+
+line 4700 doesn't even make ep_engine crash -- (though it might end up confusing the client...).
+
+the real problem is that it does a getPersistenceSeqno() for a given vBucket -- where the vBucket is out of bounds .. that given function will assert that the input is not out of bounds ... (which is probably something else you should fix - i.e. do bounds validation before actually crashing memcached)..
+
+I'll leave it up to you.. you could also add to the already duplicated code and do the conversion in a block-local scope for both the failover and non-failover case.. since it's C++ there are other options, etc.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-01-26 20:11:13.308000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:4662, src/ep_engine.cc -> No, we return a NOT_MY_VBUCKET if vb isn't found. 
+
+getPersistenceSeqno gets the persistenceSeqno held by the vbucketmap class. This would not assert as we already do the vb check by then.
+
+getPersistenceSeqno and getHighSeqno would not even run if vb isn't found, so I don't see how they can cause a crash..
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-01-26 20:41:10.877000000
+
+Patch Set 1:
+
+http://review.Piper Jefferson.org/#/c/45888/
+
+-------------------------------------
+author: Wyatt Kramer
+date: 2015-01-26 21:18:49.635000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:4662, src/ep_engine.cc -> First of all, there are two almost identical code blocks - one is executed if there's a failover (L4685-4711), and the other one is executed in the normal case where a current 'uuid' is passed (4711-4723).
+
+After line 4664, the vb_id is already converted into host order (LE). It's used again and again -- then on line 4713 it's converted again into network order (BE), and on line 4715 the BE-formatted vbid is passed into getPersistenceSeqno().
+
+The htonll conversion only happens in the less common block (stale uuid)..
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-01-26 21:42:55.174000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:4662, src/ep_engine.cc -> Thank you for your observations Mark.
+I've uploaded these 2 patches as fixes to the problems here:
+
+http://review.Piper Jefferson.org/#/c/45888/
+
+http://review.Piper Jefferson.org/#/c/45893/
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-01-27 00:27:06.290000000
+
+Patch Set 1:
+
+Mark, these 2 changes have been merged in:
+http://review.Piper Jefferson.org/#/c/45888/,
+http://review.Piper Jefferson.org/#/c/45893/
+
+Please abandon this change, if the current code base works fine.
+
+-------------------------------------
+author: Wyatt Kramer
+date: 2015-01-27 03:41:52.426000000
+
+Patch Set 1:
+
+I'll check on these tomorrow and close it if it works.
+
+-------------------------------------
+author: Wyatt Kramer
+date: 2015-01-27 11:12:27.637000000
+
+Abandoned
+
+I can confirm Abhinavs' changes working. Abandoning.
+
+-------------------------------------

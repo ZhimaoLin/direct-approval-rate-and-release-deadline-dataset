@@ -1,0 +1,68 @@
+DESCRIPTION
+
+JCBC-795: Named Prepared Statement support
+
+Motivation:
+-----------
+The query team introduce the possibility to name prepared statements.
+Instead of keeping the whole Query Plan, one can simply send the name
+which is a way lighter payload.
+If not given one in the "PREPARE..." statement, the server will generate
+a name and cache the plan as well.
+
+Since the cache of plans is not (yet) distributed, we want to be able to
+intelligently retry (re-prepare the statement) if the name is not known.
+We also want to give a coherent name to our prepared statements in order
+to have the same names on all nodes.
+
+Modifications
+-------------
+This change gets rid of the QueryPlan class, replaced by PreparedPayload
+which only stores the name and the original statement (for retry).
+
+the query() method will detect a PreparedQuery and chain retry logic to
+it: if the RetryStrategy is best effort, it will peek into the errors()
+stream and detect 4040 (name is not found), in which case it will do
+a prepare again.
+
+AsyncQueryResult's info is now a stream of QueryMetrics directly in the
+constructor signature.
+
+Added a DigestUtils class that can encode a String in SHA1, used as the
+identifier for a given statement (low chances of collisions between two
+well-formed N1QL statements).
+
+Tests have been added and amended, but integration testing is not
+entirely possible while there's no mean of removing a prepared statement
+from the server's cache.
+
+Results
+-------
+All tests pass, a PreparedQuery is retried once if the N1QL service says
+it doesn't know about a prepared statement with that particular name.
+
+Change-Id: Iae5d07aa91828501a0fd1c97983a293bf2568854
+
+
+COMMENTS
+
+author: Estrella Humphrey
+date: 2015-07-02 13:56:54.562000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Estrella Humphrey
+date: 2015-07-02 13:58:51.331000000
+
+Patch Set 1:
+
+there could still be a problem with this approach (retry on client side) since the retry could end up going to a different node from the one that reported the prepared statement is unknown. verified on a 1 node cluster (localhost)...
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-07-22 09:29:28.368000000
+
+Change has been successfully cherry-picked as a9f22259c94dd19f7eaffadd5c979d75018fa80c
+
+-------------------------------------

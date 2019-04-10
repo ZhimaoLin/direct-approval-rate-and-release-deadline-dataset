@@ -1,0 +1,95 @@
+DESCRIPTION
+
+MB-23293: Remove seqno from mutation log
+
+This patch:
+        - Removes the rowid(seqno) from the mutation log (v2)
+        - Removes storage of the seqno from the access scanner
+        - Changes the storage of rows in the access scanner to a vector
+          from a linked list
+
+Use of the sequence number stored in the access log by warmup was
+removed by MB-20623 as it was unused. As such it makes sense not to
+store it in the access log or the access scanner.
+
+As the access scanner is the only other component that makes use of the
+mutation log, the sequence number was removed from V2 of
+MutationLogEntry since it is unused.
+
+As MutationLogEntryV2 as yet doesn't appear in a release "in the wild"
+it seems unnecessary to increment MutationLogEntry to V3.
+
+This commit reduces the memory overhead per item stored in the access
+scanner as can be seen below in the before and after comparison.
+
+Before:
+$ ./ep_engine_benchmarks
+Run on (8 X 2200 MHz CPU s)
+2017-03-29 09:50:07
+------------------------------------------------------------------------------------------------------------------
+Benchmark                                                           Time           CPU Iterations
+ UserCounters...------------------------------------------------------------------------------------------------------------------
+AccessLogBenchEngine/MemoryOverhead/0/32768/min_time:0.000      31682 ns       6000 ns          1 MaxBytesAllocatedPerItem=0 Control
+AccessLogBenchEngine/MemoryOverhead/1/32768/min_time:0.000   28544445 ns   22181000 ns          1 MaxBytesAllocatedPerItem=106 AccessScanner
+AccessLogBenchEngine/MemoryOverhead/0/65536/min_time:0.000       7550 ns       8000 ns          1 MaxBytesAllocatedPerItem=0 Control
+AccessLogBenchEngine/MemoryOverhead/1/65536/min_time:0.000   57640028 ns   49224000 ns          1 MaxBytesAllocatedPerItem=104 AccessScanner
+
+After:
+$ ./ep_engine_benchmarks
+Run on (8 X 2200 MHz CPU s)
+2017-03-29 09:50:48
+------------------------------------------------------------------------------------------------------------------
+Benchmark                                                           Time           CPU Iterations
+ UserCounters...------------------------------------------------------------------------------------------------------------------
+AccessLogBenchEngine/MemoryOverhead/0/32768/min_time:0.000      39719 ns       6000 ns          1 MaxBytesAllocatedPerItem=0 Control
+AccessLogBenchEngine/MemoryOverhead/1/32768/min_time:0.000   21993107 ns   17858000 ns          1 MaxBytesAllocatedPerItem=82 AccessScanner
+AccessLogBenchEngine/MemoryOverhead/0/65536/min_time:0.000       7347 ns       7000 ns          1 MaxBytesAllocatedPerItem=0 Control
+AccessLogBenchEngine/MemoryOverhead/1/65536/min_time:0.000   38534385 ns   31009000 ns          1 MaxBytesAllocatedPerItem=80 AccessScanner
+
+Change-Id: I4becdc56a54518cb914298ce99709b8886fe6f35
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2017-03-29 13:04:09.263000000
+
+Patch Set 3: Patch Set 2 was rebased
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-03-29 13:19:13.761000000
+
+Patch Set 3: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/5256/ : FAILURE
+
+ThreadSanitizer issue: data race ??:0 operator delete(void*)  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/5256/ )
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/5256/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/5464/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4043/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/4775/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-03-29 14:03:35.132000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4043/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/4775/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/5471/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/5263/ : SUCCESS
+
+-------------------------------------

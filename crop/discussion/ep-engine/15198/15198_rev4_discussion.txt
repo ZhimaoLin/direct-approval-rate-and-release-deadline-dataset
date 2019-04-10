@@ -1,0 +1,219 @@
+DESCRIPTION
+
+MB-5013: touch/gat command does not go persistent
+
+This change-set fixes the bug by making expiration time persistent.
+It introduces a new kvstore level operation namely setMeta() to
+enable client to update a subset of columns, e.g., key metadata
+without writing a complete row including value column to db file.
+It also implements SQLite support for operation setMeta() and a
+CouchStore level implementation is required if we forward merge
+this fix to 2.0.
+
+Change-Id: Id36b4876fbbc3c2ded4d0237aa069a6dd15823cb
+
+
+COMMENTS
+
+author: Macie Morton
+date: 2012-04-26 01:44:02.259000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Macie Morton
+date: 2012-04-26 01:45:55.189000000
+
+Patch Set 4:
+
+In PS4, remove change in queueitem.hh and in flusher, we check if item is resident or not to choose se()t or set_meta()
+
+-------------------------------------
+author: Noah Dean
+date: 2012-04-26 01:55:30.561000000
+
+Patch Set 4:
+
+This seems quite complicated and unnecessary.  Is there any reason to believe doing anything more than marking the object dirty and making sure it's in a persistence queue is required?
+
+Do we have reason to believe SQLite or couchstore would get any performance increase if we conceptually updated part of a document (i.e. are we sure it wouldn't rewrite the entire thing anyway)?
+
+-------------------------------------
+author: Abby Duran
+date: 2012-04-26 02:21:47.429000000
+
+Patch Set 4:
+
+I thought that it would be better to not write the value if it's already in the underlying store and item's average value size is not small. But, this change still doesn't guarantee that we can only update the meta fields for items whose values are not mutated.
+
+Yes, as you mentioned, if we can simply mark an item as dirty and push it into the flusher queue, we don't need to define an additional API in the kvstore for updating the meta fields only, but instead just uses the same code path as set API, which makes this change much simpler at the expense of larger data to be persisted. Anyway, we will take into account your inputs here.
+
+-------------------------------------
+author: Noah Dean
+date: 2012-04-26 03:43:42.609000000
+
+Patch Set 4:
+
+Sounds good.  I don't know that SQLite will do any kind of partial update, and I'm sure couchstore won't.  IMO, it's always best to solve the bug (MB-5013) independently from a performance enhancement on top of it.  This is, at the very least, two changesets, IMO.
+
+-------------------------------------
+author: Macie Morton
+date: 2012-04-26 06:44:17.899000000
+
+Patch Set 4:
+
+Dustin，thanks for code reviewing. I am not sure why we need to split the fix into two change sets. IMO, the fix itself is pretty straightforward. At EPStore level, it does nothing but marking the item dirty and making it persistent in flusher. At SQLite layer, it is also pretty standard, just as other existent SQLte APIs. 
+
+It does not make sense to me to update the complete row when only TTL changes. I would imagine the value part should be much bigger than the key and meta data.
+The current fix should be never worse than using set() to update all columns. 
+
+
+Chiyoung, per our discussion, we undo the change in queueditem.hh. Could you explain why it still cannot guarantee update of the meta fields for non-resident items whose values are not mutated? Thanks.
+
+-------------------------------------
+author: Noah Dean
+date: 2012-04-26 06:49:42.001000000
+
+Patch Set 4:
+
+I would split it into two changes because it's only a small part a fix for MB-5013 and a large part of an optimization you believe to be necessary for cases where touch and gat are heavily used.
+
+IMO, you should do the smallest fix that can possibly make the bug go away (e.g. mark it as dirty and queue for persistence).  Then do the more complicated thing where you ask the underlying store to only do the partial updates.  Then, before you submit the optimization, measure it to see if the additional complexity ever yields any measurable result.
+
+The added complexity can introduce bugs, and you may want to roll it back while keeping MB-5013 fixed.  This is the reason you should keep changesets as small as possible in general.  This one pretty clearly is doing two different things.  One of them is required and the other is risky.
+
+-------------------------------------
+author: Macie Morton
+date: 2012-04-26 07:04:08.733000000
+
+Patch Set 4:
+
+Hi Dustin,   Thanks a lot for quick response. Writing the complete row including value part to update TTL is a not a good fix to me, because it may probably introduce new performance issue. Simple thing fix does not necessarily mean less risk, IMHO.
+
+-------------------------------------
+author: Asher Vang
+date: 2012-04-26 07:13:57.201000000
+
+Patch Set 4:
+
+I have to agree with Dustin here.. This bug is targetted for a fix to 1.8.1, and now we're introducing a complete new interface all the way down to the kv-store. Do we have any idea if this _will_ be a faster? Do we know if the new logic works (What happens if we store a key, then update the metadata _before_ the key is persisted.. I guess the deduplication logic should ensure that this item is only persisted once.. which one is going to win?? the update of the meta was the last one, but that will fail an assertion in the kvstore logic due to missing id) (i didn't see a test case testing stuff like that etc)..
+
+Concerns like this makes me think that doing it the safe and easy way for 1.8.1 is the correct thing to do, and then do optimizations later on when we've got more time to test all aspects of it.
+
+-------------------------------------
+author: Macie Morton
+date: 2012-04-26 07:25:59.699000000
+
+Patch Set 4:
+
+Hi Trond, Given my limited knowledge about ep-engine, I am not sure I understand your test case (store a key first, update the TTL before key is persistent, deduplication logic kicks in) is related to that if we should split the change set. Even we remove the set_meta() part from this change set, we still have to deduplicate these two queued items, right? Seems to me the last update would win. Correct me if I am wrong. 
+
+I am totally OK with splitting the change set, just hope to be convinced it is justified. :)
+
+-------------------------------------
+author: Asher Vang
+date: 2012-04-26 07:45:31.358000000
+
+Patch Set 4:
+
+The persistence model in ep-engine is "eventually persistent", that means that we won't store each permutation of the object to disk, but just "some" of them if the object change rapidly. Given the fact that we may accept a lot more operations going over the wire than our disk is capable of sucking up, we have de-duplication logic when we write stuff to disk. I haven't verified this, but I believe it'll pick the newest queue op for the key and perform that operation for the key to the database. Since this used to be either set or delete, it was pretty safe to do. In this case it would have been a set_meta call, and now we're going to try to update an item we haven't stored yet..
+
+-------------------------------------
+author: Abby Duran
+date: 2012-04-26 07:48:41.791000000
+
+Patch Set 4:
+
+Another major reason why we defined the new setmeta API is that if we update the TTL for a non-resident item, the flusher should be still able to persist the new TTL for that non-resident item without overwriting its value with the 4 byte dummy Blob instance. We can adapt the existing set API, but we thought that having the new setmeta API would be better to deal with this case.
+
+-------------------------------------
+author: Noah Dean
+date: 2012-04-26 15:26:58.742000000
+
+Patch Set 4:
+
+setMeta sounds like a good solution to the touch-non-resident bug, but doesn't contribute to the solution to the bug in the subject line here.
+
+IMO, you should ever have to justify making something more simple, but more complicated.  Every line of code should be justified.
+
+I would be hugely surprised if SQLite stored columns for a single row in different parts of the disk in general.  I know couchdb never would, so I'd also be surprised if couchstore did.  In these cases, it could very well be slower because instead of supplying the full row for an unconditional write, you're requiring the underlying store to read the existing one, merge the parts and write them back.
+
+There may be optimizations in the case of overflows that would yield some improvement, but I'd want to see some performance results before suggesting it's a prerequisite to solve this bug.
+
+In any case, it's a different change and should be titled something like "introduced setMeta kvstore API" and come with really awesome tests that address the types of things Trond pointed out as well as other edge cases.  I do think it's a pretty major change that shouldn't sneak in as a hypothetical performance optimization to a bug fix.
+
+It's Chiyoung's call, though.
+
+-------------------------------------
+author: Macie Morton
+date: 2012-04-26 17:41:15.976000000
+
+Patch Set 4:
+
+Thank you guys for great discussion. 
+
+Dustin, I am not sure how complicated and efficient to adapt set() to persist TTL for a non-resident item. Do you need to read the value column from the disk first to build a complete row and then write it back?  If this is the case, set_meta() makes things simple for me.  If not, it would do similar things to set_meta(). 
+
+
+Trond, We eliminate interface change in checkpoint queue. op_set is still the only set op, and it has no impact to de-duplication logic. The only thing is that flusher will choose set() or set_meta() to persist depending on the item is resident or not.
+
+-------------------------------------
+author: Noah Dean
+date: 2012-04-26 17:57:59.912000000
+
+Patch Set 4:
+
+If you're concerned about the complexity around touching evicted keys, you should provide a test case for when that occurs.  This code only covers touching resident keys.
+
+I think it's very important to keep changesets as small and descriptive as possible.  The summary of this one is incorrect.  An accurate summary would be:
+
+introduce setMeta() for updating only expiration and flags and fix MB-5013 so touch and gat effects are persisted
+
+You're doing two totally different and unrelated things here.  You're doing it because you assume that you will see performance gains from doing so.  That's tremendously dangerous.
+
+You're asserting a performance gain you haven't measured.  I think it will be slower (as I described above).
+
+If you're concerned about correctness around the non-resident case, then the unit test will help with that.
+
+If you're concerned about performance, make a case for it and show you improve it.  If it's too complex to do the fetch + write, then show that you can do it another way with less code, but that you don't lose data when a set occurs and is followed by a touch or a touch is followed by a set.  (I'm certain you'll lose data in this case, but I'd happy to see proof that you don't).
+
+The most simple solution to a problem is always the safest solution to a problem by definition.  (because if it's not safe, it's either not a valid solution or it's not the most simple one)
+
+-------------------------------------
+author: Abby Duran
+date: 2012-04-26 18:04:49.074000000
+
+Patch Set 4:
+
+I think we already had enough discussion. We will consider the comments from you guys.
+
+-------------------------------------
+author: Macie Morton
+date: 2012-04-26 18:15:45.382000000
+
+Patch Set 4:
+
+Dustin, I am not sure I understand your comment. This change-set covers both resident and non-resident items. If item is resident, we still use set() to write the complete row. For me, the issue is how to persist TTL for a non-resident item. 
+
+
+By "complexity", I mean code complexity to adapt set() to persist TTL for a non-resident item, which I think is what you want. Today it seems we issue an asynchronous background fetch for GAT command, do we need to do similar things for set TTL for a non-resident item? 
+
+In you comment you said "it could very well be slower because instead of supplying the full row for an unconditional write, you're requiring the underlying store to read the existing one, merge the parts and write them back.
+
+If we require a bg fetch to persist TTL, what is the difference? And what about engine crashes when we wait for background fetch to finish? This risk is unnecessary to me.
+
+-------------------------------------
+author: Abby Duran
+date: 2012-04-26 18:39:40.332000000
+
+Patch Set 4:
+
+Jin,
+
+I still think having the new setMeta API is better in  performance (I don't know how much, but we can measure it later) and updating the TTL for non-resident items.
+
+Let's split this commit into two. The first one is to define the new setMeta API with unit tests. The second commit should be the fix to MB-5013 by using setMeta API and include unit tests that cover various sequences of set and touch/gat for a given key.
+
+Let's discuss offline if you have other thoughts or concerns.
+
+-------------------------------------

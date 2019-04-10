@@ -1,0 +1,104 @@
+DESCRIPTION
+
+Fail RefUpdate with REJECTED when object is missing
+
+The comment in safeParse about expecting some old objects to be missing
+is only applicable to the old ID, not the new ID. A missing new ID is a
+bug or programmer error, and we should not update a ref to point to one.
+
+Change-Id: I734b1c32d5404752447d9e20329471436ffe05fc
+
+
+COMMENTS
+
+author: Santos Moore
+date: 2017-07-07 15:40:21.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-07-07 15:40:28.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/10429/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-07-07 15:46:10.000000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/10429/ : FAILURE
+
+-------------------------------------
+author: Santos Moore
+date: 2017-07-07 16:11:33.000000000
+
+Patch Set 1: Code-Review-1
+
+This affects BatchRefUpdate as well, will need to add some tests for that.
+
+-------------------------------------
+author: Santos Moore
+date: 2017-07-07 16:19:34.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:118, org.eclipse.jgit/src/org/eclipse/jgit/lib/RefUpdate.java -> I'm not sure this is the right thing to do.
+
+ReceiveCommand#setResult translates RefUpdate.Result.REJECTED to ReceiveCommand.Result.REJECTED_NONFASTFORWARD, presumably because this Javadoc says REJECTED means non-ff. Thus in order to make BatchRefUpdate return REJECTED_MISSING_OBJECT, we will have to have somewhat duplicate code in BatchRefUpdate to handle this case.
+
+A cleaner solution might be:
+
+* Add RefUpdate.Result.REJECTED_MISSING_OBJECT and RefUpdate.Result.REJECTED_OTHER_REASON, to mirror the ReceiveCommand.Result statuses.
+* Document that RefUpdate.Result.REJECTED really means rejected due to non-ff, not an unspecified reason (which would be REJECTED_OTHER_REASON), and it is only named this confusingly-general way for backwards compatibility.
+
+I don't know what the impact would be of extending the RefUpdate.Result enum; all current values date back to the original Eclipse commit in 2009, so we haven't had to deal with this case before. Hopefully, most callers already treat unknown values as failure, but one can never be sure.
+
+Does anyone know the Eclipse policy on adding new values to existing enums?
+
+-------------------------------------
+author: Santos Moore
+date: 2017-07-07 16:33:30.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:118, org.eclipse.jgit/src/org/eclipse/jgit/lib/RefUpdate.java -> I guess another alternative is: make this change use IO_FAILURE instead of REJECTED for missing objects.
+
+Would still need to have special code in BatchRefUpdate, but that's pretty simple, as the next patch set will show.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-07-21 23:27:11.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:118, org.eclipse.jgit/src/org/eclipse/jgit/lib/RefUpdate.java -> adding constants to enums doesn't break binary compatibility [1], Eclipse API evolution guidelines also say that adding enum constants doesn't break binary compatibility[2]. Client code can use the values() method to determine the ordinal positions of the enum constants, such code may be broken by reordering enum constants or adding new constants not at the end.
+
+So I'd say implement the cleaner solution and add the proposed new enum constants RefUpdate.Result.REJECTED_MISSING_OBJECT, RefUpdate.Result.REJECTED_OTHER_REASON at the end of the enum
+
+[1] https://docs.oracle.com/javase/specs/jls/se8/html/jls-13.html#jls-13.4.26
+
+[2] https://wiki.eclipse.org/Evolving_Java-based_APIs_2#Evolving_API_Classes
+
+-------------------------------------
+author: Santos Moore
+date: 2017-07-25 17:33:06.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:118, org.eclipse.jgit/src/org/eclipse/jgit/lib/RefUpdate.java -> Thanks for the pointer. Done.
+
+-------------------------------------

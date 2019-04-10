@@ -1,0 +1,133 @@
+DESCRIPTION
+
+Validate names of received refs and abort if strange names appear
+
+Strange names could introduce changes outsidet the refs directory
+unless we take actions to prevent them,
+
+This change introduces a small API incompatibility.
+
+Change-Id: Ic5547de8211550c60a0c0bad12845b4d52780502
+
+
+COMMENTS
+
+author: Juliet Cantu
+date: 2012-09-08 21:44:17.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-09-08 21:44:22.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2231/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-09-08 21:49:09.000000000
+
+Patch Set 2: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2231/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2012-09-11 00:45:33.000000000
+
+Patch Set 2: I would prefer that you didn't submit this
+
+(4 inline comments)
+
+
+
+Line:112, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseConnection.java -> indexOf('/') would be sufficient here.
+
+Line:115, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseConnection.java -> So for HEAD (which servers advertise) we check if x/HEAD is valid, and its not right? So this always causes HEAD to fail doesn't it?
+
+I'm not convinced this is the right place to make this change. This method is about being told what the remote side gave us, and nothing more, nothing less. We should be filtering what is valid before we apply it to the local Repository, not when we are looking at the collection we parsed off the wire.
+
+The other place to barf would be when parsing the wire format. We only parse the wire data in 2 places, and we abort there if the ObjectId isn't a valid SHA-1 in hex. We could also abort if the reference name isn't strictly a valid reference name. But I prefer to be lenient in what we read from the remote peer, and strict on what we apply to the local repository.
+
+Line:261, org.eclipse.jgit/src/org/eclipse/jgit/util/FileUtils.java -> s/an exceptions/an exception/
+
+Line:277, org.eclipse.jgit/src/org/eclipse/jgit/util/FileUtils.java -> This isn't strictly atomic. If to is created between the test and the rename, it gets replaced. :-)
+
+I think the name of this method is too easy to assume we should always use it for renames.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2012-09-11 01:23:58.000000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:115, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseConnection.java -> This is a common methods called by all transports, hence I felt it would be convenient to fix all protocols in one place.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2012-09-11 14:23:33.000000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:115, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseConnection.java -> Just because its a common method doesn't mean its always the right place to fix a common bug. :-)
+
+The risk here is a writing a bad name to a local repository. The local repository name of a ref comes from a lot more sources than just the Map supplied by the remote peer. It could come from a bad reference specification supplied in .git/config or on the command line.
+
+We should be catching and refusing these inside of the reference writing code path, and not relying on this little setter method to make sure data going to local disk is safe.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2012-09-16 08:30:45.000000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:115, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseConnection.java -> The only reason for doing this here is to protect against remote evil refs, e.g. remote exploits. I think everything should go through a common method and why not this method, even
+if that was not the original purpose.
+
+If someone hacks your local .git/config or trick the user (e.g. telling him to type "mvn install" you are already toast, not much we can do there. What we can do is to prevent bad stuff entering from the outside without the user having an option to inspect the downloaded crap.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2012-09-16 18:15:17.000000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:115, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseConnection.java -> I agree we should protect against an evil ref. But we should be doing it by protecting the local repository from writing an evil ref, not by blocking the protocol from seeing that the remote sent an evil ref.
+
+This is the wrong place to be checking if a ref name is valid and throwing if it isn't.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2012-09-17 22:37:53.000000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:115, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseConnection.java -> It will see the error and no you won't be able to use the remote, but since it has been compromised, should you. It seem C Git has quite brutal handling of an attempt to use such a repo too.
+
+Would RefUpdate.updateImpl() be a better place? Can't return a message there, only REJECTED. Does it cover all cases?
+
+-------------------------------------
+author: Elise Key
+date: 2017-08-29 13:16:31.000000000
+
+Abandoned
+
+Abandoning after 1 year or more of inactivity.
+
+If this change is still needed, please restore it.
+
+-------------------------------------

@@ -1,0 +1,178 @@
+DESCRIPTION
+
+Only throw MissingObjectException when necessary
+
+When preparing the bitmap, the flag ignoreMissingStart only applied to
+the start object. However, sometime the start object is present but some
+related objects are not present during the walk, we should only release
+the MissingObjectException when the ignoreMissingStart is set false.
+
+Change-Id: I1097a2defa4a9dcf502ca8baca5d32880378818f
+Signed-off-by: Paloma Kennedy xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Eden Lin
+date: 2017-04-05 23:09:25.000000000
+
+Patch Set 5: Published edit on patch set 4
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-04-05 23:09:32.000000000
+
+Patch Set 5:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/10131/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-04-05 23:25:45.000000000
+
+Patch Set 5: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/10131/ : SUCCESS
+
+-------------------------------------
+author: Paloma Kennedy
+date: 2017-04-05 23:43:28.000000000
+
+Patch Set 5: Code-Review+1
+
+-------------------------------------
+author: Eden Lin
+date: 2017-04-06 00:16:32.000000000
+
+Patch Set 5: Code-Review+2
+
+By the way, the !useBitmap case has the same bug.
+
+When we see the MissingObjectException, we don't have enough information to see which of the "start"s was invalid and start over. One way to salvage the bitmap would be to do a reachability check and start over using that.
+
+But that's still just layering workarounds. I don't think we're going to be able to get around modifying RevWalk.
+
+-------------------------------------
+author: Eden Lin
+date: 2017-04-06 00:18:11.000000000
+
+Patch Set 5:
+
++tparker to get his opinion on "The resulting packfile is likely to be much too large, but that's better than serving an error."
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2017-04-08 00:10:30.000000000
+
+Patch Set 5: Code-Review+2
+
+It isn't clear to me that this will result in large pack files, or at least not for the common cases. The code in PackWriter that invokes this is:
+  BitmapBuilder haveBitmap = bitmapWalker.findObjects(have, null, true);
+  bitmapWalker.reset();
+  BitmapBuilder wantBitmap = bitmapWalker.findObjects(want, haveBitmap, false);
+  BitmapBuilder needBitmap = wantBitmap.andNot(haveBitmap);
+
+Lets say that C->B->A and D->B->A and A has a bitmap associated with it. 
+
+If the client has(B) and wants(C) and C is a commit that has references a missing object, then the client really can't get C, and the second call to findObjects() fails because ignoreMissingStart == true.
+
+If the client has(B) and wants(D) and C is a commit that has references a missing object, then the client can succeed in getting D, and it will be a minimal pack since the walk from D found the bitmap associated with A.
+
+If the client has(B) and wants(C) and B is a commit that has references a missing object, then iiuc the second call to findObjects() uses the AddUnseenToBitmapFilter and will stop the walk when it sees B, and the wantBitmap.andNot(haveBitmap) calculation will result in a minimal pack.
+
+There may be a more uncommon case that I haven't thought about but for those rare cases returning more data rather than outright failing seems acceptable.
+
+-------------------------------------
+author: Eden Lin
+date: 2017-04-08 00:58:32.000000000
+
+Patch Set 5:
+
+> If the client has(B) and wants(C) and B is a commit that has
+ > references a missing object, then iiuc the second call to
+ > findObjects() uses the AddUnseenToBitmapFilter and will stop the
+ > walk when it sees B, and the wantBitmap.andNot(haveBitmap)
+ > calculation will result in a minimal pack.
+
+What happens if the client has(B), wants(C), B references a missing object, and B is not reachable from C?
+
+After all, if B were reachable from C then that would typically mean it doesn't reference any missing objects. In the usual case wants come from refs. GC guarantees that nothing reachable from a ref can be missing.
+
+-------------------------------------
+author: Eden Lin
+date: 2017-04-08 01:10:37.000000000
+
+Patch Set 5:
+
+> > If the client has(B) and wants(C) and B is a commit that has
+ > > references a missing object, then iiuc the second call to
+ > > findObjects() uses the AddUnseenToBitmapFilter and will stop the
+ > > walk when it sees B, and the wantBitmap.andNot(haveBitmap)
+ > > calculation will result in a minimal pack.
+ > 
+ > What happens if the client has(B), wants(C), B references a missing
+ > object, and B is not reachable from C?
+ > 
+ > After all, if B were reachable from C then that would typically
+ > mean it doesn't reference any missing objects. In the usual case
+ > wants come from refs. GC guarantees that nothing reachable from a
+ > ref can be missing.
+
+In case that sounds far-fetched: that describes the case that motivated this patch. If it's an ignorable case then we don't need this patch at all. ;-)
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2017-04-08 06:12:20.000000000
+
+Patch Set 5:
+
+You are more or less describing my case #2, about which I was wrong. It should be described as has(C,B), wants(D), where it only matters that B is an ancestor of D. I was reading the code as if the new try block was applied to each commit in the starting set, so that subsequent elements in the set would still get processed. But it doesn't so if "haveBitmap" starts walking from C and throws the MOE, it fails fast. "haveBitmap" will only record commit C and maybe a tree and a few blob objects but nothing else, making the andNot() operation a noop. The pack would contain all objects reachable from D.
+
+We could mitigate that by falling back to trying to process each commit in the starting set separately. But enabling RevWalk/ObjectWalk to ignore missing objects is superior, because if only non-commit objects are missing the walk would eventually find a commit with an associated bitmap and create an accurate account for older history. So I'd rather focus on that.
+
+> "GC guarantees that nothing reachable from a ref can be missing."
+True, but we think we have a bug where some of the reachable objects in left in garbage packs. When we didn't expire garbage packs, that was fine. Now that we enabled garbage expiration on our servers, we are seeing missing objects. This change is about minimizing the blast radius of trouble when we trigger that bug. I do vote for giving users too much data rather than failing the command.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2017-04-12 14:25:11.000000000
+
+Change has been successfully merged into the git repository by Ariel Sawyer
+
+-------------------------------------
+author: Eden Lin
+date: 2017-04-13 17:16:57.000000000
+
+Patch Set 5:
+
+> > "GC guarantees that nothing reachable from a ref can be missing."
+ >
+ > True, but we think we have a bug where some of the reachable
+ > objects in left in garbage packs. When we didn't expire garbage
+ > packs, that was fine. Now that we enabled garbage expiration on our
+ > servers, we are seeing missing objects. This change is about
+ > minimizing the blast radius of trouble when we trigger that bug. I
+ > do vote for giving users too much data rather than failing the
+ > command.
+
+Just to be clear, I am able to "git clone --mirror" the relevant repositories. I believe they'd pass a "git fsck" check. The assumptions that they don't satisfy are
+
+1. any object referenced by an object in the object store is also in the object store
+2. any object referenced by an object in a non-UNREACHABLE_GARBAGE pack is also in a non-UNREACHABLE_GARBAGE pack
+
+They do satisfy
+
+3. any object directly or indirectly referenced by a ref is in the object store.
+
+Unlike traditional garbage collectors, I don't git gc ever tried to satisfy assumption (1). "git fsck" explicitly permits it to be violated. A violation of (1) is all it takes to trigger this bug.
+
+The jgit dfs garbage collector usually tries to satisfy (2), but there are some exceptions:
+
+a. Local operations using ObjectInserter can create objects referencing unreachable garbage (in an UNREACHABLE_GARBAGE pack and not referenced by any path from refs). This is a race that can lead to (3) being violated. I'll open a bugzilla bug to track that.
+b. An end-user request (e.g. a "git push") takes two steps: (i) create new objects in a non-UNREACHABLE_GARBAGE pack (ii) update refs to point to the new objects. If garbage collection occurs between (i) and (ii), then the new objects are moved to UNREACHABLE_GARBAGE. After step (ii), the objects are referenced and new objects outside UNREACHABLE_GARBAGE are permitted to point to them. This violates (2) but does not lead to (3) being violated because the next garbage collection will promote the objects out of UNREACHABLE_GARBAGE because they are referenced. This is ok and is by design: it is why the jgit dfs garbage collector was designed to require two collections to prune an object.
+
+In summary, violations of the assumptions (1) and (2) are okay and expected. This change is about handling violations of the assumption (1) more gracefully. We should expect it to trigger from time to time. "git fsck" only checks assumption (3).
+
+-------------------------------------

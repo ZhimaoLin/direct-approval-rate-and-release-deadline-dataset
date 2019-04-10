@@ -1,0 +1,143 @@
+DESCRIPTION
+
+MB-19359: [3] Address lock inversion with vb's state lock and snapshot lock
+
++ [Not a backport, this code was altered/removed in master]
++ Address this lock inversion by moving the code that reads the vbucket
+  snapshot range to outside the vbucket's state lock context.
+
+15:30:43 WARNING: ThreadSanitizer: lock-order-inversion (potential deadlock) (pid=235352)
+15:30:43   Cycle in lock order graph: M21536 (0x7d640002f720) => M21533 (0x7d640002f5f0) => M21536
+15:30:43
+15:30:43   Mutex M21533 acquired here while holding mutex M21536 in thread T17:
+15:30:43     #0 pthread_rwlock_rdlock <null> (engine_testapp+0x000000462260)
+15:30:43     #1 cb_rw_reader_enter <null> (libplatform.so.0.1.0+0x000000004800)
+15:30:43     #2 RWLock::readerLock() /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-3.0.x/ep-engine/src/rwlock.h:38 (ep.so+0x0000001327e0)
+15:30:43     #3 ReaderLockHolder::ReaderLockHolder(RWLock&) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-3.0.x/ep-engine/src/locks.h:167 (ep.so+0x0000000f84c7)
+15:30:43     #4 EventuallyPersistentStore::addTAPBackfillItem(Item const&, unsigned char, bool) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-3.0.x/ep-engine/src/ep.cc:851 (ep.so+0x0000000d9c67)
+15:30:43     #5 PassiveStream::commitMutation(MutationResponse*, bool) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-3.0.x/ep-engine/src/dcp-stream.cc:1370 (ep.so+0x00000029e25c)
+15:30:43     #6 PassiveStream::processMutation(MutationResponse*) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-3.0.x/ep-engine/src/dcp-stream.cc:1346 (ep.so+0x00000029d0a0)
+15:30:43     #7 PassiveStream::processBufferedMessages(unsigned int&) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-3.0.x/ep-engine/src/dcp-stream.cc:1286 (ep.so+0x00000029c9f2)
+15:30:43     #8 DcpConsumer::processBufferedItems() /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-3.0.x/ep-engine/src/dcp-consumer.cc:599 (ep.so+0x0000002632d4)
+15:30:43     #9 Processer::run() /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-3.0.x/ep-engine/src/dcp-consumer.cc:48 (ep.so+0x000000262ecf)
+15:30:43     #10 ExecutorThread::run() /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-3.0.x/ep-engine/src/executorthread.cc:109 (ep.so+0x0000001e3dc1)
+15:30:43     #11 launch_executor_thread(void*) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-3.0.x/ep-engine/src/executorthread.cc:34 (ep.so+0x0000001e33ea)
+15:30:43     #12 platform_thread_wrap /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-3.0.x/platform/src/cb_pthreads.c (libplatform.so.0.1.0+0x00000000377c)
+15:30:43
+15:30:43   Mutex M21536 acquired here while holding mutex M21533 in main thread:
+15:30:43     #0 pthread_mutex_lock <null> (engine_testapp+0x00000047e9e0)
+15:30:43     #1 cb_mutex_enter <null> (libplatform.so.0.1.0+0x0000000039c0)
+15:30:43     #2 Mutex::acquire() /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-3.0.x/ep-engine/src/mutex.cc:31 (ep.so+0x0000001e28ee)
+15:30:43     #3 LockHolder::lock() /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-3.0.x/ep-engine/src/locks.h:71 (ep.so+0x000000080bc3)
+15:30:43     #4 LockHolder::LockHolder(Mutex&, bool) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-3.0.x/ep-engine/src/locks.h:48 (ep.so+0x000000080832)
+15:30:43     #5 VBucket::getCurrentSnapshot(unsigned long&, unsigned long&) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-3.0.x/ep-engine/src/vbucket.h:233 (ep.so+0x0000000fb245)
+15:30:43     #6 ActiveStream::ActiveStream(EventuallyPersistentEngine*, SingleThreadedRCPtr<DcpProducer>, std::string const&, unsigned int, unsigned int, unsigned short, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-3.0.x/ep-engine/src/dcp-stream.cc:293 (ep.so+0x000000291276)
+15:30:43     #7 DcpProducer::streamRequest(unsigned int, unsigned int, unsigned short, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long*, ENGINE_ERROR_CODE (*)(vbucket_failover_t*, unsigned long, void const*)) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-3.0.x/ep-engine/src/dcp-producer.cc:259 (ep.so+0x00000027b9a3)
+15:30:43     #8 EvpDcpStreamReq(engine_interface*, void const*, unsigned int, unsigned int, unsigned short, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long*, ENGINE_ERROR_CODE (*)(vbucket_failover_t*, unsigned long, void const*)) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-3.0.x/ep-engine/src/ep_engine.cc:1471 (ep.so+0x0000001395e3)
+15:30:43     #9 mock_dcp_stream_req /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-3.0.x/memcached/programs/engine_testapp/engine_testapp.c (engine_testapp+0x0000004caf81)
+15:30:43     #10 dcp_stream(engine_interface*, engine_interface_v1*, char const*, void const*, unsigned short, unsigned int, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, int, int, int, int, int, bool, bool, unsigned long, bool) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-3.0.x/ep-engine/tests/ep_testsuite.cc:3427 (ep_testsuite.so+0x0000000b357e)
+15:30:43     #11 test_dcp_replica_stream_backfill(engine_interface*, engine_interface_v1*) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-3.0.x/ep-engine/tests/ep_testsuite.cc:5311 (ep_testsuite.so+0x00000008e78a)
+15:30:43     #12 execute_test /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-3.0.x/memcached/programs/engine_testapp/engine_testapp.c (engine_testapp+0x0000004c4e9f)
+15:30:43     #13 main crtstuff.c (engine_testapp+0x0000004c2e01)
+
+Change-Id: Idc09ce9af98669f74f28d1fd4b1cc15f7d8b1152
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2016-04-27 17:37:58.749000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-27 17:38:05.512000000
+
+Patch Set 3:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-3.0.x/201/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-27 17:38:09.504000000
+
+Patch Set 3: Well-Formed+1
+
+Permission granted to commit: 
+
+http://server.jenkins.Piper Jefferson.com/job/restricted-branch-check/13362/artifact/restricted.html : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-27 17:47:02.409000000
+
+Patch Set 3:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/596/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-27 17:51:57.594000000
+
+Patch Set 3:
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-3.0.x/201/ : FAILURE (skipped)
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-3.0.x/201/ )
+
+ThreadSanitizer issue: lock-order-inversion (potential deadlock) ??:0 pthread_rwlock_rdlock  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-3.0.x/201/ )
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-27 18:38:37.791000000
+
+Patch Set 3:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/599/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-27 18:56:34.935000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/599/ : SUCCESS
+
+-------------------------------------
+author: Keira Washington
+date: 2016-04-27 21:01:19.147000000
+
+Patch Set 3: Code-Review+2
+
+-------------------------------------
+author: Abby Duran
+date: 2016-04-27 23:42:39.977000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:291, src/dcp-stream.cc -> Is this still OK if a vbucket state is changed from replica to active while this if clause is being executed?
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-04-28 00:05:20.094000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:291, src/dcp-stream.cc -> I believe it should be fine, because views are the only DCP client that can read from the replica at the moment. If the current vb's snapshot_end seqno is greater than the en_seqno specified, the producer would just stream the entire snapshot and close, as opposed to streaming till the specified en_seqno and closing in case of an active vbucket.
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-04-28 01:43:04.773000000
+
+Change has been successfully cherry-picked as 4de869b4bcf16c5f4a9032502242112eec3395dc by Abby Duran
+
+-------------------------------------

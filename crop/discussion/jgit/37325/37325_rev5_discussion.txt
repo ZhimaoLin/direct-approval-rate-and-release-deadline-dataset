@@ -1,0 +1,121 @@
+DESCRIPTION
+
+Extract path info from requests without decoding
+
+Gitiles malfunctions in conjunction with jgit and guice
+because of a recent guice bug fix. Work around the problem
+by parsing the URI directly, bypassing the unescaping
+performed by the getPathInfo method.
+
+This rest of this message is copied from
+https://gerrit-review.googlesource.com/#/c/60820/ :
+
+The fix for Guice issue #745[1] causes getPathInfo() within the
+GuiceFilter to return decoded values, eliminating the difference
+between "foo/bar" and "foo%2Fbar". This is in spec with the servlet
+standard, whose javadoc for getPathInfo[2] states that the return
+value be "decoded by the web container".
+
+Work around this by extracting the path part directly from the request
+URI, which is unmodified by the container. This is copying the Guice
+behavior prior to the bugfix. We do this with a static method rather
+than using our own HttpServletRequestWrapper as we don't want to
+produce a request wrapper that is not in spec.
+
+[1] https://github.com/google/guice/issues/745
+[2] http://docs.oracle.com/javaee/7/api/javax/servlet/http/HttpServletRequest.html#getPathInfo()
+
+Change-Id: I7fdb291bda377dab6160599ee537962d5f60f1e8
+Signed-off-by: Parker James xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Parker James
+date: 2014-12-09 19:59:04.000000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-12-09 20:05:33.000000000
+
+Patch Set 5:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/5817/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-12-09 20:14:16.000000000
+
+Patch Set 5: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/5817/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2014-12-09 20:20:41.000000000
+
+Patch Set 5: Code-Review-1
+
+(7 comments)
+
+Line:55, org.eclipse.jgit.http.test/tst/org/eclipse/jgit/http/server/ServletUtilsTest.java -> Add a test for context path of "/". I think we have some servers that return that for root rather than "".
+
+Line:73, org.eclipse.jgit.http.test/tst/org/eclipse/jgit/http/server/ServletUtilsTest.java -> The argument order is... weird.
+
+Consider flipping it around to be:
+
+  contextPath, servletPath, requestUri
+
+Then tests will be:
+
+  "/c", "/s", "/c/s/foo/bar/"
+
+which is so much easier to read.
+
+Line:114, org.eclipse.jgit.http.server/src/org/eclipse/jgit/http/server/glue/RegexPipeline.java -> Should we also change SuffixPipeline to use the encoded path?
+
+Maybe its OK its matching on the decoded path info, but do we want to use the encoded pathinfo inside the wrapped request created by service?
+
+Line:238, org.eclipse.jgit.http.server/src/org/eclipse/jgit/http/server/ServletUtils.java -> xxx@xxx.xxx 3.6 javadoc header.
+
+Line:268, org.eclipse.jgit.http.server/src/org/eclipse/jgit/http/server/ServletUtils.java -> curly braces are unnecessary for single statement blocks inside JGit code
+
+Line:271, org.eclipse.jgit.http.server/src/org/eclipse/jgit/http/server/ServletUtils.java -> I see you chose not to use early return pattern?
+
+Line:27, /COMMIT_MSG -> This is untrue in this change.
+
+JGit wraps the requests created by RegexPipeline. The path info of those requests is encoded and has not been decoded by the container, because this code overrides the container.
+
+-------------------------------------
+author: Parker James
+date: 2014-12-09 22:53:11.000000000
+
+Patch Set 5:
+
+(7 comments)
+
+Line:55, org.eclipse.jgit.http.test/tst/org/eclipse/jgit/http/server/ServletUtilsTest.java -> Done
+
+Line:73, org.eclipse.jgit.http.test/tst/org/eclipse/jgit/http/server/ServletUtilsTest.java -> Done
+
+Line:114, org.eclipse.jgit.http.server/src/org/eclipse/jgit/http/server/glue/RegexPipeline.java -> For the sake of consistency, I'm glad you brought this to my attention. I don't know the answers; I'm not familiar with typical usage of SuffixPipeline. I didn't even know it was there. I'll assume that the encoded path is fine, and preferable for the sake of consistency. I think we were getting the encoded path (in error) prior to the Guice change, and I'm not aware that it caused any problems.
+
+I substituted getEncodedPathInfo for getRequestPath in SuffixPipeline. I'm assuming the second sentence referred to that class, since we're already using the encoded path in the wrapped objects created by RegexPipeline.
+
+Line:238, org.eclipse.jgit.http.server/src/org/eclipse/jgit/http/server/ServletUtils.java -> Done.
+
+Is the standard documented somewhere? No other methods in this class xxx@xxx.xxx tags and this convention isn't mentioned in the EGit/JGit contributor guide.
+
+I'm also adding xxx@xxx.xxx tag to the following method; I don't know a priori whether it's required (or forbidden) for package protected methods.
+
+Line:268, org.eclipse.jgit.http.server/src/org/eclipse/jgit/http/server/ServletUtils.java -> Done
+
+Line:271, org.eclipse.jgit.http.server/src/org/eclipse/jgit/http/server/ServletUtils.java -> Sorry, I misinterpreted your suggestion. Done.
+
+Line:27, /COMMIT_MSG -> Done
+
+-------------------------------------

@@ -1,0 +1,59 @@
+DESCRIPTION
+
+SPY-138: Allow the ExecutorService to be overridden.
+
+Change-Id: I6f9c577f734c33f2d6004031253dd561b6302b4c
+
+
+COMMENTS
+
+author: Andreas Short
+date: 2013-10-08 04:45:22.524000000
+
+Patch Set 1:
+
+(2 comments)
+
+I'd like your take on the ExecutorService.  You may be able to convince me that this is fine, or maybe if you look at some other stuff you'll agree there's an issue here too.
+
+-2 is for the type of thread pool, though again I might be able to be convinced to defer this to a later release (with a bug filed).
+
+Line:301, src/main/java/net/spy/memcached/ConnectionFactoryBuilder.java -> There's a bit of a concurrency issue here.  The caller can keep a reference to this and can shut it down.  Of course, we can document that's not allowed, but we can't enforce it.
+
+At the very least, we should document who is responsible for starting or stopping the thing passed in.
+
+Thinking about this a bit, in some ways, maybe we should just have an enum defined that specifies a few different behaviors and we manage all of the creation.  This is way less flexible, but far more correct?
+
+Line:263, src/main/java/net/spy/memcached/DefaultConnectionFactory.java -> I should have thought about this before, but I think this really should be a cachedThreadPool() with some specifics about keeping the number of threads bound.  I think we can change this here though.  It shouldn't be too much I don't think.  See ThreadPoolExecutor.
+
+The concern is that in the ideal, we don't want a bunch of threads running when there's no work to be done.  We *will* get questions about this if we do.
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2013-10-08 05:35:50.032000000
+
+Patch Set 1:
+
+Actually it should be quite easy. According to the docs:
+
+http://docs.oracle.com/javase/7/docs/api/java/util/concurrent/Executors.html#newCachedThreadPool()
+
+so we can easily switch it to that one. I'll fix up the code
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2013-10-08 05:47:32.369000000
+
+Patch Set 1:
+
+(1 comment)
+
+hmm now that I think about it, we need to keep a ref if the custom passed in is there or not, because we can't shut an external service down just if the CouchbaseClient terminates.
+
+that's kinda odd, because if it gets used somewhere else we'll break functionality.
+
+Line:301, src/main/java/net/spy/memcached/ConnectionFactoryBuilder.java -> I think we _need_ passing in an actual ExecutorService, just because of the fact that if you create a bunch of CouchbaseClient objects you want to create one externally and share it with all of them.
+
+I'll add some docs here in the docblock and also make sure it gets in the official docs.
+
+-------------------------------------

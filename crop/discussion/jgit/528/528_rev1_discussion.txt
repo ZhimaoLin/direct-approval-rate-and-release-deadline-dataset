@@ -1,0 +1,47 @@
+DESCRIPTION
+
+Make Repository.getConfig aware of changed config
+
+In the current implementation Repository reads user and repository 
+config only at creation point of time.
+The new implementatiopn checks in Repository.getConfig if user or 
+repository config have changed on disk and reload the config if 
+required. In case of reloading the config a new config object is 
+created to ensure thread safe access to the config object.
+
+Signed-off-by: Marlie Beasley xxx@xxx.xxx
+
+COMMENTS
+
+author: Willow Cantrell
+date: 2010-04-07 18:46:10.000000000
+
+Patch Set 1: Looks good to me, but someone else must approve
+
+
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-04-11 02:38:37.000000000
+
+Patch Set 1: I would prefer that you didn't submit this; No score
+
+Good idea, this has been missing for a while now.  But I think we can do better than discarding the whole Config object, given that Config should be thread-safe.
+
+Line:335, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> Locking the configuration shouldn't be necessary.
+
+FileBasedConfig extends from Config, and Config is thread-safe via atomic references.  So you just need to determine if either file needs to be refreshed, and if so, run its load() method again to pull it in from disk.
+
+Line:118, org.eclipse.jgit/src/org/eclipse/jgit/lib/FileBasedConfig.java -> We prefer to cache the modification time before we read the file.  That way if the file is modified while we are scanning it, our cached time should be older than the final edit time, and we'll scan it again the next time we are asked about the file.
+
+Caching the time after the read opens a race condition where we finish reading the old version, and someone else changes the file before we can get the modification time from it.  In this case we would skip that update entirely and never notice it has occurred.
+
+Line:145, org.eclipse.jgit/src/org/eclipse/jgit/lib/FileBasedConfig.java -> You can get this data from LockFile.  Before we call lf.write above, add this line:
+
+  lf.setNeedStatInformation(true);
+
+Then after lf.commit() was successful you can use:
+
+  lastModified = lf.getCommitLastModified()
+
+-------------------------------------

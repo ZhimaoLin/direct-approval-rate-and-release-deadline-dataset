@@ -1,0 +1,90 @@
+DESCRIPTION
+
+BatchRefUpdate: Default to non-atomic transactions
+
+BatchRefUpdate currently defaults to atomic transactions when the
+underlying ref database supports them and the caller didn't specify
+whether atomic transactions where desired by calling setAtomic.
+
+That change was made for backward compatibility: callers like
+ReceivePack assumed that using a BatchRefUpdate would guarantee
+atomicity when the ref database supports atomic transactions, and we
+didn't want to break those callers.  But in practice it makes for a
+hard-to-use API --- code that is well tested on a database that does
+not perform atomic transactions can fail in hard to predict ways on a
+database that supports atomic transactions.
+
+For example, Gerrit's ReceiveCommits forgets to call setAtomic(false)
+and fails a push that should have partially succeeded because of that
+(but only when run on top of a RefDatabase that supports atomic
+transactions).
+
+In other words, callers have to be careful to call setAtomic with an
+appropriate value anyway.
+
+So let's use a predictable default of "false" for atomic.
+
+This only affects users using a RefDatabase that performs atomic
+transactions.  For RefDirectory the behavior is unchanged.
+
+Change-Id: I1250e4ef6ad27fa83b78fb5d9d9913d4b2cb8c50
+
+
+COMMENTS
+
+author: Eden Lin
+date: 2016-05-04 21:29:32.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-05-04 21:29:38.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/8323/
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2016-05-04 21:33:55.000000000
+
+Patch Set 2: Code-Review+2
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-05-04 21:34:28.000000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/8323/ : FAILURE
+
+-------------------------------------
+author: Eden Lin
+date: 2016-05-04 21:59:37.000000000
+
+Patch Set 2: Code-Review-1
+
+> Build Failed
+ > 
+ > https://hudson.eclipse.org/jgit/job/jgit.gerrit/8323/ : FAILURE
+
+RefTreeBatch relies on its bootstrap ref database to be fast. InMemoryRepository uses the efficient InMemoryRepository.batch() when isAtomic() and the inefficient default BatchRefUpdate.execute when !isAtomic(). The default BatchRefUpdate.execute calls cmd.updateType(walk) on all its commands.
+
+Adding u.setAtomic(refdb.getBootstrap().performsAtomicTransactions()) to RefTreeBatch#updateBootstrap works around this. That's a hack.
+
+A real fix would be to make the default BatchRefUpdate smarter. That would also improve RefDirectory's performance.
+
+-------------------------------------
+author: Elise Key
+date: 2017-08-29 13:15:39.000000000
+
+Abandoned
+
+Abandoning after 1 year or more of inactivity.
+
+If this change is still needed, please restore it.
+
+-------------------------------------

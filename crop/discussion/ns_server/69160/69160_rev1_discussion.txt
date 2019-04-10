@@ -1,0 +1,142 @@
+DESCRIPTION
+
+MB-21169: Modify REST API to set clock drift threshold values.
+
+[1] Modified the REST APIs to accept drift threshold parameters. The values are
+    accepted and stored in ns_config in units of milli-seconds. But when they
+    are being submitted to ep-engine they will be converted to micro-seconds.
+
+[2] Changed the ns_memcached module to send set_param commands
+    to alter the threshold values.
+
+Change-Id: I22fe90245007be21cede0fb14a0c52dcf8d74ce1
+
+
+COMMENTS
+
+author: Noe Perry
+date: 2016-10-24 20:13:42.676000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Noe Perry
+date: 2016-10-24 20:14:34.175000000
+
+Patch Set 1: Verified+1
+
+-------------------------------------
+author: Noe Perry
+date: 2016-10-24 20:18:47.055000000
+
+Patch Set 1:
+
+I was not too sure about the default to be set for the thresholds. I have just used whatever ep-engine is setting as default.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2016-10-24 23:14:39.817000000
+
+Patch Set 1:
+
+(3 comments)
+
+See inline.
+
+Line:1392, src/ns_memcached.erl -> This becomes more and more unreadable. I'd like this to be refactored in some way.
+
+A simple way to make it more readable is to introduce some record for your values. Then you can also generalize the update logic, it's essentially the same for all stats. So you can update your record as follows:
+
+setelement(stats, #stats.field, Value)
+
+Line:209, src/menelaus_web_buckets.erl -> Indentation is broken here. Also, I don't think that Stats is the right name.
+
+Line:1015, src/menelaus_web_buckets.erl -> That won't work if you're updating existing bucket. get_conflict_resolution_type will error out. Also all of this should be enabled only when the cluster if fully 4.6.
+
+-------------------------------------
+author: Noe Perry
+date: 2016-10-24 23:49:42.327000000
+
+Patch Set 1:
+
+(3 comments)
+
+Line:1392, src/ns_memcached.erl -> Sure! Will give it a try.
+
+Line:209, src/menelaus_web_buckets.erl -> Will Fix !
+
+Line:1015, src/menelaus_web_buckets.erl -> Since this is restricted to 'lww' buckets only I skipped the check for 4.6 cluster compat. Perhaps the check should be explicit.
+
+I guess during update we should compare the conflict_resolution_type parameter passed in with the one present in the config to determine the course of action.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2016-10-24 23:54:28.602000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:1015, src/menelaus_web_buckets.erl -> I wouldn't want to pass the conflict resolution type on update at all.
+
+-------------------------------------
+author: Noe Perry
+date: 2016-10-25 02:07:42.424000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:1015, src/menelaus_web_buckets.erl -> That's how I intended to do it. The user cannot pass conflict_res_type on update at all.
+
+I check the "Params" in the create path and the "BucketConfig" in the update path to determine if the bucket is an lww type.
+
+One thing is in the update path for seqno bucket, if the user specifies drift-thresholds the code ignores it and not return back an error.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2016-10-25 02:25:51.396000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:1015, src/menelaus_web_buckets.erl -> I missed that part. You might need to combine getting conflict resolution type and drift thresholds into a single function. That way you won't need to refetch conflict resolution type from the params and there won't be a need to to atom_to_list on the value that you get from bucket config.
+
+And you're right that you don't seem to need explicit check for the version.
+
+-------------------------------------
+author: Noe Perry
+date: 2016-10-25 08:29:49.088000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:1015, src/menelaus_web_buckets.erl -> Yes, makes sense. Will combine them.
+
+-------------------------------------
+author: Noe Perry
+date: 2016-10-25 19:09:37.228000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:1392, src/ns_memcached.erl -> I am not sure how to generalize the update logic. The command returns back all the stats and hence we would still want the pattern matching logic to pick the ones that we need right? I have tried something like this:
+
+quick_stats(
+	Sock, <<>>,
+	fun(<<“ep_max_size”>>, V, Rec) ->
+		Rec#rec{max_size = V};
+	… end, #rec{})
+
+Were you suggesting to use setelement in place of “#rec{max_size=V}?
+
+-------------------------------------
+author: Roselyn Villegas Code Review
+date: 2016-10-28 19:35:09.795000000
+
+Change has been successfully cherry-picked as 6bf588fbabf284cfaae9de8840225326c0048bd3 by Meghan Vazquez
+
+-------------------------------------

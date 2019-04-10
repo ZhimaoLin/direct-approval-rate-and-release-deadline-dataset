@@ -1,0 +1,75 @@
+DESCRIPTION
+
+[goport] Revamp the way goport works.
+
+My initial motivation was to give us a cleaner way to deal with tools
+like cbsasladm that expect stdin to be closed before they return any
+results. And erlang port API doesn't let us do that. Along the way I
+decided to fix the other misfeatures of erlang ports.
+
+Here's the list of what was addressed:
+
+ - no distinction between stdout and stderr output
+
+ - misbehaving process may flood the owner erlang process with
+   messages and cause entire vm to die
+
+ - no way to half-close the port
+
+ - no way to forcefully kill the child
+
+In order to get there, I made goport smarter. Now it not only simply
+redirects the child's output and waits till its own stdin closes, but
+also communicates with its controlling process on erlang
+side. Communication is bidirectional. Messages are marshaled as
+netstrings (https://cr.yp.to/proto/netstrings.txt). I picked
+netstrings over binary packet length + message for their human
+readability.
+
+Goport can serve the following commands coming from the controlling
+process:
+
+ - write
+
+   Write data to child's stdin.
+
+ - close
+
+   Close one of the child's streams. Currently only stdin is
+   supported.
+
+ - shutdown
+
+   Terminate the process, deliver all undelivered output.
+
+ - ack
+
+   Acknowledge certain number of bytes of child's output. The
+   controlling process does that only once its owner processed the
+   data. So if the child writes too much, it will get blocked.
+
+Goport tags child's output with the name of the stream it came
+from (stdout or stderr). In addition, it keeps track of how much data
+was sent to the controlling process. And if it reaches preconfigured
+window size of unacknowledged data, it stops taking new input from the
+child.
+
+The owner process controls the delivery of messages by calling
+goport:deliver on the controlling process. That will tell the
+controlling process to deliver one message. It will be acknowledged to
+goport the next time owner requests a new message.
+
+Change-Id: Id9c70aba9e9b9df5f5dffb1e98a39863f1e4cf8c
+Reviewed-on: http://review.couchbase.org/77017
+Tested-by: Meghan Vazquez xxx@xxx.xxx
+Reviewed-by: Philip Lara xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Philip Lara
+date: 2017-04-21 21:24:31.163000000
+
+Change has been successfully cherry-picked as 6aa6191314d8b35373d0febceeb1a950a452a908 by Philip Lara
+
+-------------------------------------

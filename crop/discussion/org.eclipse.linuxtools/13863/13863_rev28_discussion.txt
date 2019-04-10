@@ -1,0 +1,195 @@
+DESCRIPTION
+
+lttng rcp: add tracing rcp "file->open" buttons
+
+there are two buttons added:
+* File-> Open Trace File...
+* File-> Open Trace Directory...
+
+The traces will be opened into the default directory and
+automatically select the trace type. If the trace viewer is
+ambiguous, it will pop-up a window to help.
+
+The trace is then opened.
+
+The reason that we have open file and open directory is since
+some traces are directories.
+
+Also, the code path of regular trace file opening has been re-routed
+through this patch to unify code.
+
+Change-Id: I28df30745bf47b64ce0ab0f15a8d425fef4dd91a
+Signed-off-by: Ivy Mitchell xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Ivy Mitchell
+date: 2013-08-06 20:47:48.000000000
+
+Uploaded patch set 28.
+
+-------------------------------------
+author: Ricky Reeves
+date: 2013-08-07 12:32:59.000000000
+
+Patch Set 28: Verified-1 Code-Review-1
+
+(19 comments)
+
+1) Code review
+Please go over all comments one by one.
+
+2) Failures
+2.1 Scenario: Open Trace directory for kernel where 1 custom text trace is defined.
+A trace type selection dialog appears with Generic CTF trace and custom text parser (not kernel) as choice. It should open as kernel trace without confirmation
+
+2.2. Adding a 2nd custom parser (Manage Custom Parser) -> Opening a Trace File for custom parser. 
+No trace type selection dialog is shown and the trace is opened with the first custom text parser. There seems to be a refresh problem of cached information.
+
+2.3. After restart there are 2 custom text parser. Now remove one or both (Manage Custom Parsers) -> Open Custom trace
+When opening custom trace both custom text parser show up in the trace type selection dialog even if they where removed. There seems to be a refresh problem of cached information.
+
+Line:144, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfTraceType.java -> I mentioned before: fCandidate can be removed. See below for how
+
+Line:700, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfTraceType.java -> Code change for the removal of fCandidate
+private TraceTypeHelper getTraceTypeToSet(List<TraceTypeHelper> candidates, Shell shell) {
+        final Map<String,String> names = new HashMap<String, String>();
+        Shell shellToShow = new Shell(shell);
+        final String candidatesToSet[] = new String[1];
+
+        for (TraceTypeHelper candidate : candidates) {
+            Button b = new Button(shellToShow, SWT.RADIO);
+            final String displayName = candidate.getCategoryName() + ':' + candidate.getName();
+            b.setText(displayName);
+            names.put(displayName, candidate.getCanonicalName());
+
+
+            b.addSelectionListener(new SelectionListener() {
+
+               xxx@xxx.xxx
+                public void widgetSelected(SelectionEvent e) {
+                    final Button source = (Button) e.getSource();
+                    candidatesToSet[0] = names.get(source.getText());
+                    source.getParent().dispose();
+                }
+
+               xxx@xxx.xxx
+                public void widgetDefaultSelected(SelectionEvent e) {
+
+                }
+            });
+        }
+        shellToShow.setLayout(new RowLayout(SWT.VERTICAL));
+        shellToShow.pack();
+        shellToShow.open();
+
+        Display display = shellToShow.getDisplay();
+        while (!shellToShow.isDisposed()) {
+            if (!display.readAndDispatch()) {
+                display.sleep();
+            }
+        }
+        return fTraceTypes.get(candidatesToSet[0]);
+    }
+
+Line:702, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfTraceType.java -> no need for this method and member variable fCandiate. See above
+
+Line:706, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfTraceType.java -> Is it on purpose the package visibility? Or should it be public? If public please add meaningful java-doc
+
+Line:22, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/messages.properties -> Refactor prefix: TmfOpenTraceHelper_
+
+Line:23, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/messages.properties -> Refactor prefix:  TmfOpenTraceHelper_
+
+Line:24, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/messages.properties -> Refactor prefix:  TmfTypeHelper_
+
+Line:25, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/messages.properties -> Refactor prefix:  TmfOpenTraceHelper_
+
+Line:26, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/messages.properties -> Refactor prefix:  TmfTraceTypeHelper_
+
+Line:23, lttng/org.eclipse.linuxtools.tracing.rcp.ui/plugin.properties -> I mentioned before: We shouldn't use numbering of properties names because not meaningful
+
+Line:54, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfOpenTraceHelper.java -> Helper class for opening trace resources and loading them to a tracing project.
+
+Line:61, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfOpenTraceHelper.java -> I'm sure there is a constant elsewhere for taht
+
+Line:64, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfOpenTraceHelper.java -> Needs a more elaborate javadoc since not fully correct and complete. 
+- dialog is only opened when necessary (i.e. multiple trace types are valid)
+- import using linking
+
+Line:180, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfOpenTraceHelper.java -> - change to TmfTraceElement
+- format the javadoc
+
+Line:181, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfOpenTraceHelper.java -> Add a link annotation for TmfTraceElement xxx@xxx.xxx TmfTraceElement})
+
+Line:191, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfOpenTraceHelper.java -> In OpenTraceHandler, there used to be a error dialog showing when this error happened. Now, the user has now feedback about the problem. Please display the error for the user as done before.
+
+Line:203, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfOpenTraceHelper.java -> In OpenTraceHandler, there used to be a error dialog showing when this error happened. Now, the user has now feedback about the problem. Please display the error for the user as done before.
+
+Line:211, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfOpenTraceHelper.java -> In OpenTraceHandler, there used to be a error dialog showing when this error happened. Now, the user has now feedback about the problem. Please display the error as done before.
+
+Line:50, lttng/org.eclipse.linuxtools.tracing.rcp.ui/src/org/eclipse/linuxtools/internal/tracing/rcp/ui/TracingRcpPlugin.java -> Mention before: Naming convention. Please be consistent in class. -> refactor to fCli
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2013-08-07 21:40:36.000000000
+
+Patch Set 28: Verified-1 Code-Review-1
+
+(19 comments)
+
+1) Code review Please go over all comments one by one.
+Done
+
+2) Failures 2.1 Scenario: Open Trace directory for kernel where 1 custom text trace is defined. A trace type selection dialog appears with Generic CTF trace and custom text parser (not kernel) as choice. It should open as kernel trace without confirmation
+
+This should be fixed with the validation patch. The problem is feature creep. :( 
+
+2.2. Adding a 2nd custom parser (Manage Custom Parser) -> Opening a Trace File for custom parser. No trace type selection dialog is shown and the trace is opened with the first custom text parser. There seems to be a refresh problem of cached information.
+
+Fixed
+
+
+2.3. After restart there are 2 custom text parser. Now remove one or both (Manage Custom Parsers) -> Open Custom trace When opening custom trace both custom text parser show up in the trace type selection dialog even if they where removed. There seems to be a refresh problem of cached information.
+
+Fixed
+
+Line:144, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfTraceType.java -> Done
+
+Line:700, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfTraceType.java -> Done
+
+Line:702, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfTraceType.java -> Done
+
+Line:706, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfTraceType.java -> Done
+
+Line:22, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/messages.properties -> Done
+
+Line:23, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/messages.properties -> Done
+
+Line:24, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/messages.properties -> Done
+
+Line:25, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/messages.properties -> Done
+
+Line:26, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/messages.properties -> Done
+
+Line:23, lttng/org.eclipse.linuxtools.tracing.rcp.ui/plugin.properties -> What do you suggest is done? these are hidden views. I think they should still be externalized.
+
+Line:54, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfOpenTraceHelper.java -> Done
+
+Line:61, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfOpenTraceHelper.java -> Done
+
+Line:64, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfOpenTraceHelper.java -> Done
+
+Line:180, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfOpenTraceHelper.java -> Done
+
+Line:181, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfOpenTraceHelper.java -> Done
+
+Line:191, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfOpenTraceHelper.java -> Done
+
+Line:203, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfOpenTraceHelper.java -> Done
+
+Line:211, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfOpenTraceHelper.java -> Done
+
+Line:50, lttng/org.eclipse.linuxtools.tracing.rcp.ui/src/org/eclipse/linuxtools/internal/tracing/rcp/ui/TracingRcpPlugin.java -> Done
+
+-------------------------------------

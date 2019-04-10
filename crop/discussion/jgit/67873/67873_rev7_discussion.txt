@@ -1,0 +1,196 @@
+DESCRIPTION
+
+[WIP] Git 2.5 worktree support
+
+This change adds full worktree support to JGit.
+
+Documentation sources:
+[1] The repository layout was verified from documentation at:
+https://git-scm.com/docs/gitrepository-layout/2.7.2
+[2] Implemented the worktree command like described here:
+https://git-scm.com/docs/git-worktree
+
+WIP status:
+* added general support for $GIT_COMMON_DIR; related to change
+"Ie6235a503591ab42b2eb55142ad3932394b40b71", but made decision to return
+$GIT_DIR with method getDirectory() without checking $GIT_COMMON_DIR
+first, because from my point of view it's better to work without flag
+and getCommonDir() should fallback to getDirectory() instead.
+* added some more constants for worktree and related, but also for other
+general directories and files, see [1]
+* like described at [1]: "This directory is ignored if $GIT_COMMON_DIR
+is set and "$GIT_COMMON_DIR/[directory]" will be used instead", the
+getCommonDir() is called for these folders or files: objects, refs,
+packed-refs, config, branches, hooks, info, remotes, logs, shallow
+* added $GIT_COMMON_DIR to environment in all places where $GIT_DIR is
+added
+* added FileUtils+getCommonDir() to evaluate commondir file if available
+* adapted RepositoryCache+isGitRepository() and resolve() and
+BaseRepositoryBuilder+setup() to handle gitdir and commondir links
+* moved BaseRepositoryBuilder#getSymRef() and isSymRef() to FileUtils,
+because needed in RepositoryCache too
+
+Next steps for this change:
+* review more getDirectory() calls and change them to getCommonDir() if
+needed
+* add tests for worktree commands and check GIT_DIR and GIT_COMMON_DIR
+handling
+
+Future steps to be addressed in later changes:
+* add API and parameter handling (pgm) for:
+  * worktree add
+  * worktree prune
+  * worktree list
+* if possible do more refactoring about the actual repository layout
+handling in JGit, because some of parameters are evaluated more then one
+and in similar ways (duplicates), so it's not that easy to add a new one
+like $GIT_COMMON_DIR at one place
+
+Bug: 477475
+Change-Id: I821a5d02a1ba12f5a518b096aec0ba75c2f631e9
+Signed-off-by: Genevieve Hudson xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Genevieve Hudson
+date: 2016-06-30 05:48:42.000000000
+
+Uploaded patch set 7: Patch Set 6 was rebased.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-06-30 05:48:49.000000000
+
+Patch Set 7:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/8586/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-06-30 05:54:52.000000000
+
+Patch Set 7: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/8586/ : FAILURE
+
+-------------------------------------
+author: Saniya Hill
+date: 2016-06-30 11:48:05.000000000
+
+Patch Set 7: Code-Review-1
+
+Stash-related commands are not properly working for worktrees. Problem is that ReflogReaderImpl should use gitCommonDir instead of gitDir for all refs except of HEAD:
+
+diff --git a/org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/ReflogReaderImpl.java b/org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/ReflogReaderImpl.java
+index 2f583b2..618d1e1 100644
+--- a/org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/ReflogReaderImpl.java
++++ b/org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/ReflogReaderImpl.java
+@@ -68,7 xxx@xxx.xxx
+ 	 xxx@xxx.xxx refname
+ 	 */
+ 	ReflogReaderImpl(Repository db, String refname) {
+-		logName = new File(db.getDirectory(), Constants.LOGS + '/' + refname);
++		logName = new File(db.getGitCommonDir(), Constants.LOGS + '/' + refname);
+ 	}
+ 
+ 	/* (non-Javadoc)
+
+-------------------------------------
+author: Saniya Hill
+date: 2016-06-30 11:49:07.000000000
+
+Patch Set 7:
+
+The correct patch is:
+
+diff --git a/org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/ReflogReaderImpl.java b/org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/ReflogReaderImpl.java
+index 2f583b2..937133b 100644
+--- a/org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/ReflogReaderImpl.java
++++ b/org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/ReflogReaderImpl.java
+@@ -68,7 xxx@xxx.xxx
+ 	 xxx@xxx.xxx refname
+ 	 */
+ 	ReflogReaderImpl(Repository db, String refname) {
+-		logName = new File(db.getDirectory(), Constants.LOGS + '/' + refname);
++		logName = new File(refname.equals(Constants.HEAD) ? db.getGitDir() : db.getGitCommonDir(), Constants.LOGS + '/' + refname);
+ 	}
+ 
+ 	/* (non-Javadoc)
+
+-------------------------------------
+author: Genevieve Hudson
+date: 2016-06-30 12:34:27.000000000
+
+Patch Set 7:
+
+> Stash-related commands are not properly working for worktrees.
+ > Problem is that ReflogReaderImpl should use gitCommonDir instead of
+ > gitDir for all refs except of HEAD:
+ > 
+ > diff --git a/org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/ReflogReaderImpl.java
+ > b/org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/ReflogReaderImpl.java
+ > index 2f583b2..618d1e1 100644
+ > --- a/org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/ReflogReaderImpl.java
+ > +++ b/org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/ReflogReaderImpl.java
+ > @@ -68,7 xxx@xxx.xxx
+ > xxx@xxx.xxx refname
+ > */
+ > ReflogReaderImpl(Repository db, String refname) {
+ > -		logName = new File(db.getDirectory(), Constants.LOGS + '/' +
+ > refname);
+ > +		logName = new File(db.getGitCommonDir(), Constants.LOGS + '/' +
+ > refname);
+ > }
+ > 
+ > /* (non-Javadoc)
+
+Thanks, so we have to check if it's HEAD first?
+
+-------------------------------------
+author: Genevieve Hudson
+date: 2016-06-30 12:36:21.000000000
+
+Patch Set 7:
+
+> The correct patch is:
+ > 
+ > diff --git a/org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/ReflogReaderImpl.java
+ > b/org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/ReflogReaderImpl.java
+ > index 2f583b2..937133b 100644
+ > --- a/org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/ReflogReaderImpl.java
+ > +++ b/org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/ReflogReaderImpl.java
+ > @@ -68,7 xxx@xxx.xxx
+ > xxx@xxx.xxx refname
+ > */
+ > ReflogReaderImpl(Repository db, String refname) {
+ > -		logName = new File(db.getDirectory(), Constants.LOGS + '/' +
+ > refname);
+ > +		logName = new File(refname.equals(Constants.HEAD) ?
+ > db.getGitDir() : db.getGitCommonDir(), Constants.LOGS + '/' +
+ > refname);
+ > }
+ > 
+ > /* (non-Javadoc)
+
+Ah, yes, here it checks if refname is HEAD. I will add this, thanks again, looking forward to work on this task again...
+
+-------------------------------------
+author: Saniya Hill
+date: 2016-06-30 12:39:02.000000000
+
+Patch Set 7: -Code-Review
+
+Copy&Paste failed. Yes, HEAD logs are present in the working tree admin area, so they have to be treated differently. My second comment from 1:49 PM should contain the corrected patch.
+
+-------------------------------------
+author: Genevieve Hudson
+date: 2016-06-30 21:53:09.000000000
+
+Patch Set 7:
+
+Thanks, see next PS.
+
+-------------------------------------

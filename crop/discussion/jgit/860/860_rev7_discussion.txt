@@ -1,0 +1,86 @@
+DESCRIPTION
+
+Start using ObjectInserter instead of ObjectWriter
+
+Some newer style APIs are updated to use the newer ObjectInserter
+interface instead of the now deprecated ObjectWriter.  In many of
+the unit tests we don't bother to release the inserter, these are
+typically using the file backend which doesn't need a release,
+but in the future should use an in-memory HashMap based store,
+which really wouldn't need it either.
+
+Change-Id: I91a15e1dc42da68e6715397814e30fbd87fa2e73
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-06-27 01:52:38.000000000
+
+Uploaded patch set 7.
+
+-------------------------------------
+author: Blake Oneal
+date: 2010-07-01 19:01:08.000000000
+
+Patch Set 7: Looks good to me, but someone else must approve
+
+(3 inline comments)
+
+
+
+Line:131, org.eclipse.jgit.test/tst/org/eclipse/jgit/merge/SimpleMergeTest.java -> Generally speaking, don't we want to put on the 'release' in the test as well?
+
+Line:822, org.eclipse.jgit.junit/src/org/eclipse/jgit/junit/TestRepository.java -> Why not pull this up inside the try{} block? Then you can push down the declaration of commitId inside the try block as well.
+
+Line:164, org.eclipse.jgit/src/org/eclipse/jgit/merge/StrategySimpleTwoWayInCore.java -> What happens if this path is called multiple times, and we keep releasing() the inserter? Won't that lead to multiple releases being called?
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-07-01 21:54:04.000000000
+
+Patch Set 7: (3 inline comments)
+
+
+
+Line:131, org.eclipse.jgit.test/tst/org/eclipse/jgit/merge/SimpleMergeTest.java -> Yes, we should release this ObjectInserter.  But that's a lot of code to change, and I plan to move most tests to an in-memory repository which won't do compression/decompression of data.  Thus we wouldn't need to worry about leaking the Inflater handle during the test.
+
+Also, the tests run in their own JVM, and do so pretty quickly right now.  Leaking Inflaters and waiting for the GC to fix things up with a finalizer isn't a big deal.  In fact, the GC might not even bother to run the finalizers, there isn't all that much garbage created during the tests that needs finalization, and the JVM might just terminate before its cleaned up.
+
+Long story short, its just not worth it given what we leak, and the amount of code that needs to change in current tests.
+
+Newer tests should however release stuff, yes, just to keep the programming style consistent.
+
+Line:822, org.eclipse.jgit.junit/src/org/eclipse/jgit/junit/TestRepository.java -> Good point, I could have moved the lookup inside the try and the variable too.  Just failed to notice it here.  I'm not going to rewrite the series to fix this minor issue, and I don't think its worth the time of writing a new commit to fix it either.  Maybe next time someone is here they'll realize this stupid mistake and correct it.
+
+Line:164, org.eclipse.jgit/src/org/eclipse/jgit/merge/StrategySimpleTwoWayInCore.java -> Yes, if this path runs multiple times, we release multiple times.  But an ObjectInserter (and an ObjectReader) are required to support using the object again after a release.  That is, the following is completely legal:
+
+  ObjectInserter oi = ....;
+  oi.insert(...);
+  oi.release();
+
+  oi.insert(...);
+  oi.release();
+
+  oi.release();
+  oi.insert(...);
+  oi.release();
+
+So even a back-to-back release without any use between them is valid.  Its just a minor CPU time waste.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-07-01 23:26:43.000000000
+
+Patch Set 7: Looks good to me, approved; IP review completed
+
+
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-07-27 16:11:55.000000000
+
+Change has been successfully pushed.
+
+-------------------------------------

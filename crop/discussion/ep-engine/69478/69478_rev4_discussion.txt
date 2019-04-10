@@ -1,0 +1,109 @@
+DESCRIPTION
+
+MB-21587: Rollback: Don't use CAS when rolling back values in HashTable
+
+When ep-engine performs a rollback, if a key needs to be reverted to a
+previous value (it has been modified since the rollbackSeqno), the
+HashTable update fails due to being called incorrectly - it uses a set
+with CAS (where the CAS used is the one for the previous item),
+whereas the element in the HashTable will have a newer CAS (by
+defintion as we are trying to roll it back).
+
+The effect of this is that after rollback, old values for keys still
+exist in memory (disk is correct) on the replica vBucket(s). In the
+event of a subsequent failover (and promotion of the replica ->
+active), incorrect values will be returned for such keys.
+
+Fix by changing the HashTable::set to a non-CAS one.
+
+As part of testing, made use of recently-added equality and output
+operators for Item and related classes:
+
+    [ RUN      ] RollbackTest.MB21587_RollbackAfterMutation
+    source/ep-engine/tests/module_tests/evp_store_rollback_test.cc:70: Failure
+    Value of: *result.getValue()
+      Actual: Item[0x10441d860] with key:a
+            value:Blob[0x104543180] with size:5 extMetaLen:1 age:0 data: <01 01 n e w>
+            metadata:ItemMetaData[0x10441d868] with cas:5407a59650006 revSeqno:2 flags:0 exptime:0
+            bySeqno:7 queuedTime:0 vbucketId:0 op:set nru:2
+    Expected: item_v1
+    Which is: Item[0x7fff5f181ce0] with key:a
+            value:Blob[0x104543160] with size:5 extMetaLen:1 age:0 data: <01 01 o l d>
+            metadata:ItemMetaData[0x7fff5f181ce8] with cas:5407a59650005 revSeqno:1 flags:0 exptime:0
+            bySeqno:6 queuedTime:0 vbucketId:0 op:set nru:2
+    Fetched item after rollback should match item_v1
+    [  FAILED  ] RollbackTest.MB21587_RollbackAfterMutation (22 ms)
+
+Change-Id: I32577afd0f6f9c79122575f84a76acd00fb6f89a
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2016-11-04 14:52:40.196000000
+
+Uploaded patch set 4: Patch Set 3 was rebased.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-04 14:52:46.564000000
+
+Patch Set 4:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/1745/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-04 14:55:56.023000000
+
+Patch Set 4:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/1333/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-04 15:01:24.062000000
+
+Patch Set 4:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/1536/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-04 15:02:40.185000000
+
+Patch Set 4:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-watson/361/ (4/4)
+
+-------------------------------------
+author: Kymani Ramirez
+date: 2016-11-04 15:04:40.381000000
+
+Patch Set 4: Code-Review+2
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-04 15:16:16.081000000
+
+Patch Set 4: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/1745/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-watson/361/ : FAILURE
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-addresssanitizer-watson/361/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/1333/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/1536/ : SUCCESS
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-11-11 02:05:37.765000000
+
+Change has been successfully cherry-picked as 9174638fa6ffc55780cf458eb6acfdc83325bee5 by Ashlee Kent
+
+-------------------------------------

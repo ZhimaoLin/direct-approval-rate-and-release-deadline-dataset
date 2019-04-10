@@ -1,0 +1,103 @@
+DESCRIPTION
+
+Add Attribute Macro Expansion
+
+Attributes MacroExpander implements macros used in git attributes. This
+is implemented inside the TreeWalk using a lazy created MacroExpander.
+In addition, the macro expander caches the global and info attributes
+node in order to provide fast merge of attributes.
+
+Change-Id: I2e69c9fc84e9d7fb8df0a05817d688fc456d8f00
+Signed-off-by: Nicolas Patterson xxx@xxx.xxx
+
+COMMENTS
+
+author: Nicolas Patterson
+date: 2016-01-07 11:45:40.000000000
+
+Uploaded patch set 8.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-01-07 11:45:48.000000000
+
+Patch Set 8:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7800/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-01-07 11:54:36.000000000
+
+Patch Set 8: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7800/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2016-01-28 14:30:40.000000000
+
+Patch Set 8:
+
+(5 comments)
+
+this should be rebased to current master and checked with current API baseline
+
+Line:62, org.eclipse.jgit/src/org/eclipse/jgit/attributes/MacroExpander.java -> Great that we have the attribute specific code in the attributes package. This class is name "MacroExpander" but it does a lot more. I deals with merging attributes, provides access to attributes. We should find a more generic name ... AttributeHandler or something like that
+
+We definitly need more javadoc here.
+
+Line:141, org.eclipse.jgit/src/org/eclipse/jgit/attributes/MacroExpander.java -> That's a possible NPE if treewalk is null. And we do have a public constructor which leaves treewalk null. I would suggest we get rid of this constructor so that we savely can assume treewalk!=null
+
+Line:146, org.eclipse.jgit/src/org/eclipse/jgit/attributes/MacroExpander.java -> why do we always do call complicated merge-method for the static InfoAttributes. If info attributes will not change during the run of one Treewalk we should cache the result. Maybe inside mergeInfoAttributes we could cache the data
+
+Line:154, org.eclipse.jgit/src/org/eclipse/jgit/attributes/MacroExpander.java -> Have you thought about the idea not merge attributes but to merge attributeNodes? Whenever you enter a new directory you would merge together all the relevant nodes into one currentAttributesNode. That node could be cached and every call to getAttributes() for a specific path could reuse the cached currentAttributesNode. That would reduce the number of merge operations. That number would be tied to the number of folders instead the number of files.
+
+Line:138, org.eclipse.jgit/src/org/eclipse/jgit/attributes/AttributesNode.java -> I love the idea to remove that from AttributesNode.
+
+I rebased this commit on the newest master. But when I work against the newest API Baseline then Eclipse is complaining that we remove this public method. Can you tryout? Rebase and download then newest release from http://www.eclipse.org/downloads/download.php?file=/egit/updates/org.eclipse.egit.repository-4.2.0.201601211800-r.zip. Configure that as your current baseline
+
+-------------------------------------
+author: Nicolas Patterson
+date: 2016-02-01 12:10:52.000000000
+
+Patch Set 8:
+
+(5 comments)
+
+Line:62, org.eclipse.jgit/src/org/eclipse/jgit/attributes/MacroExpander.java -> Done
+
+Line:141, org.eclipse.jgit/src/org/eclipse/jgit/attributes/MacroExpander.java -> Done
+
+Line:146, org.eclipse.jgit/src/org/eclipse/jgit/attributes/MacroExpander.java -> The major issue is that entryPath is the effective path of the file/dir that is to be checked against 
+all attributes rules. The merge is therefore nothing static.
+The attributes rule cannot be just merged into the child nodes. Basically it would mean to 
+1) detect for each rule (pattern) in the parent if it is used in the child node
+2) Modify the pattern of that rule (from parent) to a child node pattern. e.g. /foo/bar/*.txt would 
+be changed to /bar/*.txt in the bar sub folder but no rule is merged down to the /xyz/ subfolder. 
+However this is basically just adding these (modified) rules to the top of the child node. At that point
+we have nothing gained in performance or operation count. Only if we semantically merge attribute rules doing "similar"
+things then we can reduce the number of attribute rules.
+
+-> I see here no difference to the .gitignore rule handling which could much simpler be merged down. The question is why do we not
+also merge down git ignore rules? 
+I suggest leaving it as is until since there is no safe algorithm that merges such pattern rules together.
+
+Caching: caching would mean caching the result for every pathString, which would turn out to be a hashmap with every filename in it as a key (?)
+Note that attributes rule may handle /a/b/x.txt completely different than /a/b/c/x.txt
+
+Line:154, org.eclipse.jgit/src/org/eclipse/jgit/attributes/MacroExpander.java -> see reply before. I see no performance difference when we just add the parent rules on top of the child 
+nodes rule set unless we find a way to merge together rule patterns (left side) and their rules (right side).
+And also why do we not do that on gitignore nodes before. This would be only pattern merge.
+
+Line:138, org.eclipse.jgit/src/org/eclipse/jgit/attributes/AttributesNode.java -> Done
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-02-11 16:50:55.000000000
+
+Change has been successfully merged into the git repository by Zachary Orozco
+
+-------------------------------------

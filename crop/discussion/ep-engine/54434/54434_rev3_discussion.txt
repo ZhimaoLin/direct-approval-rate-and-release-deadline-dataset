@@ -1,0 +1,164 @@
+DESCRIPTION
+
+Handling malicious DCP packets/DCP scenarios
+
+Packets in context:
+- DCP_SNAPSHOT_MARKER
+- DCP_MUTATION
+- DCP_DELETION
+
++ Initialize last_seqno for passive stream to vbucket's
+high seqno which further ensures that malicious packets
+will be denied admission.
+
+Addresses: MB-16044, MB-16045
+
+Change-Id: I077ad5b2ca08c3d4bfb81237b46f259a60d3c4dc
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2015-08-14 02:29:16.265000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-08-14 02:29:23.257000000
+
+Patch Set 3:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-sherlock/300/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-08-14 02:33:57.293000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-sherlock/300/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-08-14 08:04:26.180000000
+
+Patch Set 3: Code-Review-1
+
+(18 comments)
+
+Please try to bear in mind previous review comments I've made - we are C++11 now and hence can use the much simpler std::to_string() for constructing strings with ints - this is something I've commented about in the past.
+
+Similary, please prefer checkeq() when testing binary expressions.
+
+Line:9290, tests/ep_testsuite.cc -> This function feels to me to be a number of different tests (there's basically the same setup / teardown code repeated. Can I suggest you break it into separate tests for each MB - this makes it easier to see which test handles which MB, and also allows better granuarity in what has failed if the test fails.
+
+Line:9301, tests/ep_testsuite.cc -> Might as tell give it a unique name so it's easy to spot in ep_engine.
+
+Line:9302, tests/ep_testsuite.cc -> just use std::string; and string.size()
+
+Line:9310, tests/ep_testsuite.cc -> Use checkeq
+
+Line:9319, tests/ep_testsuite.cc -> Use checkeq
+
+Line:9323, tests/ep_testsuite.cc -> Just use std::to_string.
+
+Line:9329, tests/ep_testsuite.cc -> Use checkeq
+
+Line:9343, tests/ep_testsuite.cc -> std::string
+
+Line:9347, tests/ep_testsuite.cc -> Use checkeq
+
+Line:9357, tests/ep_testsuite.cc -> Use checkeq
+
+Line:9364, tests/ep_testsuite.cc -> std::to_string
+
+Line:9392, tests/ep_testsuite.cc -> Use checkeq
+
+Line:7, /COMMIT_MSG -> Can you the MBs in the subject - that way it's easy to spot what patch fixes what in the single-line log.
+
+Line:980, src/dcp-stream.cc -> I think it's a bit aggressive to report as a malicious mutation - it could simply be a result of the other side getting out of sync (as per the recent ns_server bug. 
+
+If we put "malicious" in the warning (which will be logged by default) this may unnecessarily worry customers.
+
+Line:992, src/dcp-stream.cc -> Ditto.
+
+Line:996, src/dcp-stream.cc -> IMHO is't bad practice to delete an input argument from a function - the caller likely still has a pointer which is now invalid. 
+
+Given that a number of functions already use this anti-pattern it's probably pragmatic to leave for now, but a note for the future :)
+
+Line:1076, src/dcp-stream.cc -> Ditto
+
+Line:1122, src/dcp-stream.cc -> Ditto
+
+-------------------------------------
+author: Asher Vang
+date: 2015-08-14 08:18:16.126000000
+
+Patch Set 3:
+
+(2 comments)
+
+Line:980, src/dcp-stream.cc -> That kind of bug should be protected against by _only_ allowing one DCP consumer stream per vbucket... if one already exists we should either fail the new one or shut down the old one having two consumer streams on the same vbucket will just make them race...
+
+Line:999, src/dcp-stream.cc -> which packets would go into the "else-part"??? I guess I would be more comfortable with an explicit handling of all known types, and logging a message for "unknown" cases.. that way we'll see this when we're adding new types we need to handle, and won't make the same bug again..
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-08-14 15:49:42.413000000
+
+Patch Set 3:
+
+(7 comments)
+
+Line:9290, tests/ep_testsuite.cc -> Let me see what I can do about this.
+
+Line:9302, tests/ep_testsuite.cc -> Sorry, I forgot to refactor this to the C++ type : ). I had added this test case long back, and I just cherry-picked the test case along with the code.
+
+Line:9310, tests/ep_testsuite.cc -> Done
+
+Line:9323, tests/ep_testsuite.cc -> Done
+
+Line:980, src/dcp-stream.cc xxx@xxx.xxx This needs to be reported as malicious (or perhaps something lighter : )) because it is being dropped. As the server is the only possible producer for now, this log should never appear in a normal scenario. These logs would only appear in the case of an autonomous producer sending malicious packets that would essentially inject assertions, as in the test cases written by Jim, or the one unit test that I added.
+
+@Trond: We already added the code to protect the server by throwing EEXISTS if someone tries to open another consumer stream for a vbucket that already has one. As the producer in any normal scenario is another Piper Jefferson-server itself, we would never hit this scenario.
+
+Line:996, src/dcp-stream.cc -> Agreed : ), but like you mentioned, its just being done this way all over the place. I'll get this refactored in a separate change (for master perhaps).
+
+Line:999, src/dcp-stream.cc -> There are 2 other packets that go to the else part:
+
+- SET_VBUCKET_STATE
+- STREAM_END
+
+These 2 packets have nothing to do with the sequence numbers.
+I think you're right however, for it to look better, I'll convert this into a switch-case.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-08-14 15:57:46.936000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:980, src/dcp-stream.cc -> Well, we think we saw an instance like this due to a bug in ns_server. I agree it's unexpected, but I think there's a line between that and malicious.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-08-14 16:00:13.944000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:980, src/dcp-stream.cc -> Fine, I'll refactor that too then.
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-08-16 19:04:50.548000000
+
+Change has been successfully cherry-picked as d03a1335575181b932e5e6f578d2c4dbe700f882
+
+-------------------------------------

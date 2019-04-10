@@ -1,0 +1,71 @@
+DESCRIPTION
+
+Create a MergeResult for deleted/modified files during merge
+
+Change Ia2ab4f8dc95020f2914ff01c2bf3b1bc62a9d45d added merge
+support for when OURS or THEIRS was simultaneously deleted
+and modified.  That changeset however did not add create an
+entry in the conflicts table so clients would see a CONFLICTING
+result but getConflicts() would return null.
+
+This change creates a MergeResult for the conflicting file.
+
+Bug: 345684
+Change-Id: I52acb81c1729b49c9fb3e7a477c6448d8e55c317
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2011-05-13 06:00:15.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/406/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-05-13 06:03:09.000000000
+
+Patch Set 1: Build Successful
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/406/ : SUCCESS
+
+-------------------------------------
+author: Donte Alexander
+date: 2011-05-13 07:14:19.000000000
+
+Patch Set 1: Looks good to me, but someone else must approve
+
+I have verified that this works ok for my test case. On second merge we will get a conflict and that's way better than mismerge or null pointer exception. Command line git would merge this using recursive algorithm but that's another story.
+
+$ ./test-case.sh
+...
++ jgit merge d1/master
+Fast-forward
++ jgit merge d2/master
+CONFLICT(content): Merge conflict in x
+Automatic merge failed; fix conflicts and then commit the result
+
+-------------------------------------
+author: Zachary Orozco
+date: 2011-05-13 08:14:49.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:488, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> I started solving this problem with a very similar aproach. Calling mergeAlgorithm.merge() to produce the merge result. But: why should we do a full-fledged merge which does two complicated diffs (ok - one diff is not so complicated because one text is empty) although we know exactly what the merge result should look like. If OURS is the modified version and THEIRS is deleted then we expect a conflict like that:
+
+>>>> OURS
+<complete content of OUR's>
+==== THEIRS
+<<<<<
+
+My idea is to create such a mergeresult manually which is much faster than calling the merger.
+
+The more I think about it: Let's put this optimization into the mergealgorithm itself. I'll make a proposal for that. Then this code here can stay.
+
+-------------------------------------

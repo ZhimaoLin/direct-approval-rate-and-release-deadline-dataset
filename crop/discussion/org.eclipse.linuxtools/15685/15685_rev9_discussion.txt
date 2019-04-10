@@ -1,0 +1,485 @@
+DESCRIPTION
+
+BTree index on disk
+Bug: 315883
+
+Change-Id: I91be77339535a2379f4d48ab9d6e66894afb95ac
+Signed-off-by: Alivia Ritter xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Kaeden Tapia
+date: 2013-09-12 20:01:24.000000000
+
+Uploaded patch set 9.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-09-12 20:06:51.000000000
+
+Patch Set 9:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/3460/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-09-12 20:32:11.000000000
+
+Patch Set 9: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/3460/ : SUCCESS
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-09-18 23:10:44.000000000
+
+Patch Set 9: Code-Review-1
+
+(20 comments)
+
+Quick check, I haven't looked at everything yet. But looks interesting, can't wait to try it!
+
+File Comment: lttng/org.eclipse.linuxtools.tmf.ui.tests/src/org/eclipse/linuxtools/tmf/ui/tests/trace/CustomXmlIndexTest.java -> Here too, would be nice if those tests could be consolidated with the previous file
+
+Line:46, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/trace/indexer/BTreeTest.java -> could be private
+
+Line:101, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/trace/indexer/BTreeTest.java -> You call fBTree.dispose() in xxx@xxx.xxx you shouldn't need to call it in every test method.
+
+Line:33, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/location/TmfLocation.java -> nyoooo, TmfLocation is meant to be immutable (contents don't change after the object is created). This was changed some way back, as it made it more multithread-safe, gave better performance, etc.
+
+If you want to "modify" a TmfLocation, you just have to create a new one with the new value. "new" in Java is not as bad as in C++.
+
+Also, field should be private, with a protected getter if needed (preemptive Sonar warning)
+
+Line:8, /COMMIT_MSG -> empty second line in commit messages plz
+
+Line:19, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/trace/indexer/AllTests.java -> copy paste ftw! :P
+
+Line:50, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/location/ITmfLocation.java -> I'd personally find it more clear if those were called "writeToBuffer"/"readFromBuffer", but it's a matter of preference I guess
+
+Line:58, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/location/ITmfLocation.java -> Since TmfLocation is meant to be immutable, this could return a new ITmfLocation (some kind of factory class)?
+
+Line:45, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/checkpoint/TmfCheckpoint.java -> any reason why this cannot be final and set at the constructor? In most places where the constructor is called, setCheckpointRank() is called right after.
+
+Line:78, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/location/TmfLongLocation.java -> yeah something like this.
+
+Too bad you can't have static methods in an interface...
+
+Line:17, lttng/org.eclipse.linuxtools.tmf.core.tests/META-INF/MANIFEST.MF -> Doesn't seem to be used anywhere?
+
+Line:40, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/trace/indexer/AllBench.java -> could be private
+
+Line:60, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/trace/indexer/AllBench.java -> we use ".ht" for History Tree. Perhaps here you can use ".bt" ;)
+
+Line:147, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/trace/indexer/AllBench.java -> what is the scoping for?
+
+Could the code inside be functionized too? It seems really similar to the one in the method below.
+
+meh, test program, doesn't really matter...
+
+File Comment: lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/trace/indexer/FlatArrayTest.java -> If BTree and FlatArray shared a common interface, you could write some (most?) of the tests in this class only once in an abstract test class, then have 2 "real" test classes that simply implement a xxx@xxx.xxx
+
+Line:44, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/trace/indexer/FlatArrayTest.java -> could be private
+
+Line:210, lttng/org.eclipse.linuxtools.gdbtrace.core/src/org/eclipse/linuxtools/internal/gdbtrace/core/trace/GdbTrace.java -> The 1024 should be saved in a constant somewhere.
+
+Line:67, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/checkpoint/ITmfCheckpoint.java -> Maybe clarify what rank means here. Is it the rank in the whole trace? Or the "rank" within many checkpoints that happen to be at the same timestamp?
+
+Line:88, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/checkpoint/ITmfCheckpoint.java -> Here too, this could be some kind of factory method instead
+
+File Comment: lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/trace/indexer/TmfMemoryIndexTest.java -> Common interface comment also applies here
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-09-24 19:30:01.000000000
+
+Patch Set 9:
+
+(64 comments)
+
+Rest of the code review, phew, that's a big piece!
+
+Overall I think it'd be better to have serializeIn() as a constructor instead, and then serializeOut() can be renamed to simply serialize(ByteBuffer). The parameter makes it semi-obvious we're serializing into a bytebuffer.
+
+Line:25, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/TmfFlatArrayTraceIndex.java -> ctrl+shift+f to auto-wrap plz
+
+Line:32, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/TmfFlatArrayTraceIndex.java -> can be final
+
+Line:34, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/TmfFlatArrayTraceIndex.java -> can be static too
+
+Line:19, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/TmfBTreeTraceIndexer.java -> Description plz
+
+Line:27, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/TmfBTreeTraceIndexer.java -> ctrl+shift+f plz
+
+Line:31, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTree.java -> I think it has to be xxx@xxx.xxx BTreeNodeCache}
+
+Line:39, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTree.java -> public static final
+
+Line:46, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTree.java -> fields should be private with (default?) getters
+
+Line:64, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTree.java -> other classes don't seem to access this directly, maybe it should be private.
+
+Line:69, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTree.java -> Those field could be private. With the current settings, anything in BTree will still be able to access them (and if we ever want to enforce proper separation, turning on the warnings will give correctly warn us here).
+
+fVersion could also be final and set at the constructor, see below
+
+Line:71, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTree.java -> this can be private static final
+
+Line:77, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTree.java -> This could be a constructor instead, BTreeHeader. This will allow fVersion to be final.
+
+I would also personally pass the FileChannel in parameter. Eventual proper inner-class-separation warnings would prevent us from accessing fFileChannel directly. But it's really up to you.
+
+Line:78, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTree.java -> "they" recommend calling bb.clear() after .allocate(), before you start using it. I wouldn't take any chance...
+
+Line:89, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTree.java -> Here too, the FileChannel could be passed in parameter, or not.
+
+Line:110, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTree.java -> ctrl+shift+f the Javadoc
+
+Line:214, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTree.java -> I've mentioned it elsewhere, but the 1024 should be put in a constant somewhere.
+
+Line:223, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTree.java -> sucks to create a new object here when we already have one in the TimeRange. We could put serializeOut in the interface, and just do timeRange.getStartTime().serialize().
+
+Line:311, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTree.java -> haha, missing space!
+
+Line:312, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTree.java -> here too
+
+Line:334, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTree.java -> and here
+
+hat trick!
+
+Line:69, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/timestamp/TmfTimestamp.java -> as with Locations, keep those final, but change serializeIn() to a constructor
+
+Line:164, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/TmfExperiment.java -> Any specific reason you had to do this?
+
+The lack of existing comments is deplorable, but maybe there was a reason this was done in this order. Those initializations are very fragile...
+
+Line:211, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/TmfTrace.java -> do we need a setter for this? It should be done at the .initialize() (and subclasses can initialize their own).
+
+Ideally, the "initialize" could be done in the constructor and all those nasty fields could be final, but that's for much later.
+
+Line:483, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/TmfTrace.java -> not sure these should be exposed publicly (see comment in ITmfTrace)
+
+Line:269, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/ITmfTrace.java -> Do these methods need to be in the interface? Getters sure, but how to set those values, it's up to the trace itself.
+
+I assume this was for the indexer. Then the trace itself could have some kind of callbacks for when the indexer has to update those values. And some trace types could not use indexers at all.
+
+Line:434, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/ITmfTrace.java -> This seems particularly implementation-specific. Not sure it should be in the trace.
+
+Line:442, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/ITmfTrace.java -> don't put public, it's inferred since we're in an interface.
+
+also, why does this need to be in the interface? Other indexing methods could not use checkpoints at all?
+
+Line:20, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTreeCheckpointVisitor.java -> keep an empty line below the class signature
+
+Line:24, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTreeCheckpointVisitor.java -> field should be private
+
+Line:29, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTreeCheckpointVisitor.java -> ctrl+shift+f
+
+Line:57, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTreeCheckpointVisitor.java -> Have a separate description in the javadoc too, even if it's copy-pasted into xxx@xxx.xxx This ensure both columns are filled when exporting to HTML.
+
+Line:36, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/ctfadaptor/CtfTmfTimestamp.java -> don't change a file, unless you do actual changes to it. It makes it harder for Gerrit to rebase, since it won't try to rebase if a common file changed even slightly.
+
+Line:37, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/TmfBTreeTraceIndex.java -> these two fields should be final. might require some rework in the constructor.
+
+Line:39, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/TmfBTreeTraceIndex.java -> can be static too
+
+Line:51, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/TmfBTreeTraceIndex.java -> in the case both are not created from scratch, you want to rebuild both too?
+
+Line:63, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/TmfBTreeTraceIndex.java -> can be static too (if BTREE_DEGREE is static)
+
+Line:29, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTreeNodeCache.java -> Do you really gain a lot of performance with a cache of only 15 nodes (compared to no cache at all)?
+
+Would be nice if the cache was optional (like, you can change one line in BTree to enable it or not). The OS already caches hard drives accesses. Typically you want to add caching only if it's really needed (and has proved better via benchmarking), otherwise it's not worth increasing the bug surface for.
+
+Line:31, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTreeNodeCache.java -> could be final
+
+Line:33, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTreeNodeCache.java -> xxx@xxx.xxx bla#bla}
+
+Line:40, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTreeNodeCache.java -> Normally "they" recommend to use the high-level interface for the declaration (List, Map, Deque, etc.)
+
+Could be final too.
+
+Line:47, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTreeNodeCache.java -> ctrl+shift+f
+
+Line:105, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTreeNodeCache.java -> my paranoia would have me do >= CACHE_SIZE. But that's probably just me...
+
+Line:22, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/ctfadaptor/CtfLocationInfo.java -> same as the CtfLocation(?) comment, these should remain final so that a LocationInfo is immutable. Having serializeIn() be a constructor instead would fix it.
+
+Line:123, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/TmfExperimentLocation.java -> could that code be in here, and have TmfExperiment#restoreLocation call it then? It would make it more "symmetrical", and making sure a TmfExperimentLocation can be used outside of TmfExperiment (although why would one do that...)
+
+Line:19, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/TmfFlatArrayTraceIndexer.java -> Descruption
+
+Line:27, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/TmfFlatArrayTraceIndexer.java -> ctrl+shift+f
+
+Line:31, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/TmfMemoryIndex.java -> can be private final
+
+Line:21, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/ITmfTraceIndex.java -> Some description plz
+
+Line:40, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/ITmfTraceIndex.java -> How about indexes that don't use checkpoints?
+
+We could have a separate ITmfCheckpointIndex interface that extends this one... but that might be a bit overkill, for now.
+
+Line:76, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/ITmfTraceIndex.java -> s/public //
+
+Line:61, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTreeNode.java -> empty line below
+
+Line:66, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTreeNode.java -> ctrl+shift+f javadoc
+
+Line:51, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/trace/location/TmfStringLocation.java -> Why can't string locations be serialized?
+
+Line:44, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/FlatArray.java -> private
+
+Line:61, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/FlatArray.java -> could be private
+
+same comments as BTree.BTreeHeader
+
+Line:93, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/FlatArray.java -> ctrl+shift+f
+
+Line:272, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/FlatArray.java -> you can do ~insertionPoint to do the same thing, I think
+
+Line:2, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/trace/indexer/checkpoint/TmfBTreeIndexTest.java -> If this is a completely new file, you can just put 2013 and only your as contributor
+
+Line:48, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/trace/indexer/checkpoint/TmfBTreeIndexTest.java -> unless it's a very special case, try to include javadoc in test classes too, just one line describing what the test actually does can do wonders.
+
+Line:97, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/trace/indexer/checkpoint/TmfBTreeIndexTest.java -> can be removed, I guess?
+
+Line:101, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/trace/indexer/checkpoint/TmfBTreeIndexTest.java -> idem
+
+Line:141, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/trace/indexer/checkpoint/TmfBTreeIndexTest.java -> you can use fail(e.getMessage()) here, which will stop and fail the test calling this method
+
+Line:226, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/trace/indexer/checkpoint/TmfBTreeIndexTest.java -> don't keep this in the final version.
+
+For benchmark-like tests that print results, you can put those in separate "headless" test programs which are not run automatically.
+
+Eventually, we should have some continuous performance monitoring... one day...
+
+Line:141, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/timestamp/ITmfTimestamp.java -> remove it from this patch
+
+-------------------------------------
+author: Kaeden Tapia
+date: 2013-09-29 03:29:37.000000000
+
+Patch Set 9:
+
+(83 comments)
+
+File Comment: lttng/org.eclipse.linuxtools.tmf.ui.tests/src/org/eclipse/linuxtools/tmf/ui/tests/trace/CustomXmlIndexTest.java -> Done
+
+Line:25, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/TmfFlatArrayTraceIndex.java -> Done
+
+Line:32, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/TmfFlatArrayTraceIndex.java -> Done
+
+Line:34, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/TmfFlatArrayTraceIndex.java -> Done
+
+Line:19, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/TmfBTreeTraceIndexer.java -> Done
+
+Line:27, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/TmfBTreeTraceIndexer.java -> Done
+
+Line:31, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTree.java -> Done
+
+Line:39, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTree.java -> Done
+
+Line:46, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTree.java -> Done
+
+Line:64, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTree.java -> Done
+
+Line:69, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTree.java -> Done
+
+Line:71, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTree.java -> Done
+
+Line:77, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTree.java -> Done
+
+Line:78, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTree.java -> who? I'm not sure I understand why. I'd like to understand before changing it.
+
+Line:89, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTree.java -> Done
+
+Line:110, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTree.java -> Done
+
+Line:214, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTree.java -> Done
+
+Line:223, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTree.java -> The reason we create a new object is to do a ITmfTimestamp -> TmfTimestamp conversion so that we always store TmfTimestamps and nothing else derived, as per Patrick's suggestion. That allows use to only implement the newAndSerialize/serializeIn for TmfTimestamp and the only remaining thing that is trace type specific is the location (ITmfTrace.restoreLocation). If we allowed any type of time stamps, we would need something like ITmfTrace.restoreCheckpoint instead in which we assemble both a location type and timestamp type specific to that trace type which makes the code heavier. This is what I had originally but in practice, TmfTimestamp is sufficient.
+
+Line:311, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTree.java -> copy/paste of CDT ;)
+
+Line:312, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTree.java -> Done
+
+Line:334, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTree.java -> Done
+
+Line:46, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/trace/indexer/BTreeTest.java -> Done
+
+Line:101, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/trace/indexer/BTreeTest.java -> Done
+
+Line:69, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/timestamp/TmfTimestamp.java -> Done
+
+Line:33, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/location/TmfLocation.java -> Done
+
+Line:164, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/TmfExperiment.java -> because createIndexer is done part of the initialize and the type of indexer used depends on which traces are in the experiment. I do agree that this order is fragile!
+
+Line:211, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/TmfTrace.java -> The problem with overriding initialize() is that some things need to be done first in the base initialize() like setting the trace name. If a derived class overrides it and calls super.initialize() first before setting the indexer, it will have the default indexer already constructed and it will be replaced by the new one. This is not too bad for the TmfTrace since it currently constructs a TmfCheckpointIndexer by default and it's not really a heavy class since it's using the memory index. But if a class MyCtfTmfTrace further derives CtfTmfTrace, then TmfCheckpointIndexer gets constructed first, replaced by the TmfBTreeTraceIndexer from CtfTmfTrace then replaced by the new MyCtfTmfTraceIndexer from MyCtfTmfTrace.initialize. The implementor also needs to remember to dispose the previous index since it can hold resources like TmfBTreeTraceIndexer which has file handles opened. To me, it is less error prone and easier to just provide a template method "createIndexer" that will instantiate only one indexer and not have to worry about disposing or ordering.
+
+Line:483, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/TmfTrace.java -> Done
+
+Line:19, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/trace/indexer/AllTests.java -> Done
+
+Line:50, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/location/ITmfLocation.java -> It was renamed to serialize.
+
+Line:58, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/location/ITmfLocation.java -> This was removed because we're using constructors now.
+
+Line:269, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/ITmfTrace.java -> I used a signal instead.
+
+Line:434, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/ITmfTrace.java -> Moved to a new interface.
+
+Line:442, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/ITmfTrace.java -> Moved to a new interface.
+
+Line:20, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTreeCheckpointVisitor.java -> Done
+
+Line:24, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTreeCheckpointVisitor.java -> Done
+
+Line:29, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTreeCheckpointVisitor.java -> javadoc is ugly! but... done.
+
+Line:57, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTreeCheckpointVisitor.java -> Done
+
+Line:36, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/ctfadaptor/CtfTmfTimestamp.java -> sorry, just an oversight. Done.
+
+Line:37, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/TmfBTreeTraceIndex.java -> Done
+
+Line:39, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/TmfBTreeTraceIndex.java -> Done
+
+Line:51, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/TmfBTreeTraceIndex.java -> I'm not sure I understand. If only one of them is created from scratch, both should be rebuilt yes.
+
+Line:63, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/TmfBTreeTraceIndex.java -> Done
+
+Line:45, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/checkpoint/TmfCheckpoint.java -> Done
+
+Line:78, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/location/TmfLongLocation.java -> This was removed, it's a constructor now.
+
+Line:29, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTreeNodeCache.java -> Yes it's faster. The current implementation currently requires the cache but 3 compared to 15 is already a big difference: for 500 000 checkpoints, it's 6 times faster for writes, 12 times faster for linear reads. It would be nice to be able to disable the cache but I find it hard to justify working towards that good so that it can be slower.
+
+Line:31, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTreeNodeCache.java -> Done
+
+Line:33, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTreeNodeCache.java -> Done
+
+Line:40, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTreeNodeCache.java -> Done
+
+Line:47, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTreeNodeCache.java -> Done
+
+Line:105, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTreeNodeCache.java -> Done
+
+Line:22, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/ctfadaptor/CtfLocationInfo.java -> Done
+
+Line:123, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/TmfExperimentLocation.java -> This is gone now.
+
+Line:17, lttng/org.eclipse.linuxtools.tmf.core.tests/META-INF/MANIFEST.MF -> Done
+
+Line:40, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/trace/indexer/AllBench.java -> Done
+
+Line:60, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/trace/indexer/AllBench.java -> this doesn't really need an extensions anyway, removed.
+
+Line:147, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/trace/indexer/AllBench.java -> I removed the scoping at least.
+
+Line:19, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/TmfFlatArrayTraceIndexer.java -> Done
+
+Line:27, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/TmfFlatArrayTraceIndexer.java -> Done
+
+Line:31, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/TmfMemoryIndex.java -> Done
+
+Line:21, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/ITmfTraceIndex.java -> Done
+
+Line:40, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/ITmfTraceIndex.java -> Some indexes don't use checkpoints?
+
+Line:76, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/ITmfTraceIndex.java -> Done
+
+File Comment: lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/trace/indexer/FlatArrayTest.java -> Done
+
+Line:44, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/trace/indexer/FlatArrayTest.java -> Done
+
+Line:61, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTreeNode.java -> Done
+
+Line:66, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTreeNode.java -> Done
+
+Line:210, lttng/org.eclipse.linuxtools.gdbtrace.core/src/org/eclipse/linuxtools/internal/gdbtrace/core/trace/GdbTrace.java -> Done
+
+Line:51, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/trace/location/TmfStringLocation.java -> It's not being used by any type of trace and since we're getting into variable size checkpoints territory, I didn't think it was worth doing.
+
+Line:44, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/FlatArray.java -> Done
+
+Line:61, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/FlatArray.java -> Done
+
+Line:93, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/FlatArray.java -> Done
+
+Line:272, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/FlatArray.java -> I left it that way because that's how it's expressed in the Collections.binarySearch javadoc.
+
+Line:2, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/trace/indexer/checkpoint/TmfBTreeIndexTest.java -> 95% of this file is a copy paste of TmfCheckpointIndexTests. I extracted the code to a common class and added in the copyright "Extracted to a common class from TmfCheckpointIndexTest"
+
+Line:48, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/trace/indexer/checkpoint/TmfBTreeIndexTest.java -> Done. In common class.
+
+Line:97, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/trace/indexer/checkpoint/TmfBTreeIndexTest.java -> Done
+
+Line:101, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/trace/indexer/checkpoint/TmfBTreeIndexTest.java -> Done
+
+Line:141, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/trace/indexer/checkpoint/TmfBTreeIndexTest.java -> Done. In common class.
+
+Line:226, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/trace/indexer/checkpoint/TmfBTreeIndexTest.java -> Woops, I forgot to remove this.
+
+Line:67, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/checkpoint/ITmfCheckpoint.java -> Done
+
+Line:88, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/checkpoint/ITmfCheckpoint.java -> I removed this since we're using a constructor now.
+
+Line:141, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/timestamp/ITmfTimestamp.java -> Done
+
+File Comment: lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/trace/indexer/TmfMemoryIndexTest.java -> Done
+
+-------------------------------------
+author: Kaeden Tapia
+date: 2013-09-29 03:30:07.000000000
+
+Patch Set 9:
+
+(1 comment)
+
+Line:8, /COMMIT_MSG -> Done
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-09-30 19:43:23.000000000
+
+Patch Set 9:
+
+(6 comments)
+
+Line:78, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTree.java -> Some tutorial I read who was apparently written by one of the guys who worked on NIO. Sorry, can't re-find the exact link.
+
+But the Javadoc does mention "Invoke this method before using a sequence of channel-read or put operations to fill this buffer."
+
+http://docs.oracle.com/javase/7/docs/api/java/nio/Buffer.html#clear%28%29
+
+Line:223, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTree.java -> Ok, but is it gonna work with trace types that use their own types of timestamps (with crazy fScale values let's say)?
+
+Line:311, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTree.java -> Good occasion to fix them in CDT too :P
+
+Line:211, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/TmfTrace.java -> Sounds good, the current method is a mess anyway. And this is moving to a separate interface, right? So trace types that are marked as Indexable will have to implement this to specify which indexer to use? Music to my ears.
+
+Line:40, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/ITmfTraceIndex.java -> An indexer might say "I save the exact location of every single event" and not use checkpoints at all. Or "I re-read from the beginning every time, come at me bro". Or use magic to do it.
+
+Line:51, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/trace/location/TmfStringLocation.java -> Fair enough. I just noticed this is in a test plugin too, so it's not meant to be used "for real" (maybe this should have been called StringLocationStub or sumthin)
+
+-------------------------------------
+author: Kaeden Tapia
+date: 2013-09-30 20:28:28.000000000
+
+Patch Set 9:
+
+(4 comments)
+
+Line:78, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTree.java -> Done
+
+Line:223, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/trace/indexer/BTree.java -> Crazy fScale values yes. It's a trade off really. Like I explained a bit, it allows us to simplify the serialize/restore code greatly. As of now, we don't require to seek on timestamps with more than what's in TmfTimestamp (fValue / fScale / fPrecision). It is possible that we create some crazy subclass of TmfTimestamp in the future with an additional field that will need to be taken into account when seeking but this seems pretty unlikely.
+
+Line:211, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/TmfTrace.java -> It's not moving to a different interface as of now. It's an implementation detail of TmfTrace and it's subclasses. All TmfTraces are indexable by default using the memory checkpoint indexer so I don't thing we should introduce an interface for that. Subclasses can override to use a different indexer, like the BTree indexer. However, not all trace types are persistently indexable, hence the interface with the extra stuff.
+
+Line:40, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/ITmfTraceIndex.java -> I can rename this interface to ITmfTraceCheckpointIndex since it's only relevant to the checkpoint indexer.
+
+-------------------------------------

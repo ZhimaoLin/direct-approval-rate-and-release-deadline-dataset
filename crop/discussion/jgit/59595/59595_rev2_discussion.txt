@@ -1,0 +1,115 @@
+DESCRIPTION
+
+Use 'reused' bitmap to filter tip commit setup walk
+
+When garbage collecting, we decide to reuse some bitmaps in older
+history from the previous pack to save time.  The remainder of commit
+selection only involves commits not covered by those bitmaps.
+
+Currently we carry that out in two ways:
+
+1. by building a bitmap representing the already-covered commits,
+   for easy containment checks and AND-NOT-ing against
+2. by marking the reused bitmap commits as uninteresting in the
+   RevWalk that finds new commits
+
+The mechanism in (2) is less efficient than (1): rw.next() will walk
+back from reused bitmap commits to check whether the commit it is
+about to emit is an ancestor of them, when using the bitmap from (1)
+would let us perform the same check with a single contains() call.
+Add a RevFilter teaching the RevWalk to perform that same check
+directly using the bitmap from (1)
+
+The next time the RevWalk is used, a different RevFilter is installed
+so this does not break that.
+
+A later commit will drop the markUninteresting calls.
+
+No functional change intended except a possible speedup.
+
+Change-Id: Ic375210fa69330948be488bf9dbbe4cb0d069ae6
+
+
+COMMENTS
+
+author: Eden Lin
+date: 2015-11-03 20:29:21.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-11-03 20:31:10.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7378/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-11-03 20:38:33.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7378/ : SUCCESS
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2015-11-04 01:01:17.000000000
+
+Patch Set 2: Code-Review-1
+
+(3 comments)
+
+Line:315, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> This filter doesn't "exclude bitmaps", it solely limits the walk based on commits reachable from the commits provided by the "reuse" bitmap, so "NotReachableViaBitmapRevFilter" or "NotReachableViaBitmap" makes this more readable to me.
+
+Line:316, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> Only uses the "contains" method which in in the "Bitmap" superclass, so s/BitmapBuilder/Bitmap/
+
+Line:316, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> s/exlcude/commits/
+
+-------------------------------------
+author: Eden Lin
+date: 2015-11-04 01:53:53.000000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:315, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> How about NotInBitmapFilter?
+
+Line:316, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> The field represents a set of commits to exclude from the walk.
+
+How about excludedCommits? Or just bitmap?
+
+-------------------------------------
+author: Eden Lin
+date: 2015-11-04 02:07:13.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:316, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> Bitmap doesn't have contains() but BitmapBuilder does.
+
+Bitmap probably should. But it's public API, so I'm not going to approach that in this change. :/
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-11-05 21:32:34.000000000
+
+Change could not be merged because of a missing dependency.
+
+The following changes must also be submitted:
+
+* I30844134bfde0cbabdfaab884c84b9809dd8bdb8
+
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-11-05 22:08:27.000000000
+
+Change has been successfully merged into the git repository by Eden Lin
+
+-------------------------------------

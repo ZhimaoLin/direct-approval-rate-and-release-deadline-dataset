@@ -1,0 +1,136 @@
+DESCRIPTION
+
+add: Use NameConflictTreeWalk to identify file-dir changes
+
+Adding a path that already exists but is changing type such as
+from symlink to subdirectory requires a NameConflictTreeWalk to
+match up the two different entry types that share the same name.
+
+Change-Id: I61b49cbe949ca8b4b98f9eb6dbe7b1f82eabb724
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2015-12-18 22:33:34.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-12-18 23:20:04.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7764/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-12-18 23:31:09.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7764/ : SUCCESS
+
+-------------------------------------
+author: Eden Lin
+date: 2015-12-22 00:37:37.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:7, /COMMIT_MSG -> I suspect that instead of helping, this would hurt matters.
+
+Before this change, file/dir changes are treated as different entries (because pathCompare uses lastPathChar to pretend there is a '/' at the end of the directory entry). So AddCommand would separately notice that files under that a file has been added and entries under that path have been removed, resulting in a valid index.
+
+After this change, the addition of the file would be missed because as a D/F conflict entry, it is skipped in a recursive walk.
+
+I'm a little worried that no test caught this. Could AddCommandTest get tests for replacement of a dir by a file and of a file by a dir? E.g.
+
+xxx@xxx.xxx
+ public void testAddCanReplaceFileByDirectory() {
+   try (Git git = new Git(db)) {
+     writeTrashFile("df", "before replacement");
+     git.add().addFilepattern("df").call();
+     assertEquals("[df, mode:100644, content:before replacement]", indexState(CONTENT));
+
+     FileUtils.delete(new File(db.getWorkTree(), "df"));
+     writeTrashFile("df/f", "after replacement");
+     git.add().addFilepattern("df").call();
+     assertEquals("[df/f, mode:100644, content:after replacement]", indexState(CONTENT));
+   }
+ }
+
+xxx@xxx.xxx
+ public void testAddCanReplaceDirectoryByFile() {
+   try (Git git = new Git(db)) {
+     writeTrashFile("df/f", "before replacement");
+     git.add().addFilepattern("df").call();
+     assertEquals("[df/f, mode:100644, content:before replacement]", indexState(CONTENT));
+
+     FileUtils.delete(new File(db.getWorkTree(), "df"), RECURSIVE);
+     writeTrashFile("df", "after replacement");
+     git.add().addFilepattern("df").call();
+     assertEquals("[df, mode:100644, content:after replacement]", indexState(CONTENT));
+   }
+ }
+
+-------------------------------------
+author: Eden Lin
+date: 2015-12-22 00:46:36.000000000
+
+Patch Set 1: Code-Review-1
+
+I suspect the test I suggested will fail because it would notice the removal of a directory but not do anything about it (i.e., too aggressively implementing --ignore-removal semantics). The directory comes later than the file in traversal order so we can check and remove (bypassing --ignore-removal) entries below a file that has been added.
+
+I also suspect we mishandle the following case:
+
+xxx@xxx.xxx
+ public void testAddCanReplaceFileByPartOfDirectory() {
+   try (Git git = new Git(db)) {
+     writeTrashFile("df", "before replacement");
+     git.add().addFilepattern("df").call();
+     assertEquals("[df, mode:100644, content:before replacement]", indexState(CONTENT));
+
+     FileUtils.delete(new File(db.getWorkTree(), "df"));
+     writeTrashFile("df/a", "after replacement");
+     writeTrashFile("df/b", "unrelated file");
+     git.add().addFilepattern("df/a").call();
+     assertEquals("[df/a, mode:100644, content:after replacement]", indexState(CONTENT));
+   }
+ }
+
+because the removed file "df" doesn't match the pattern "df/a".
+
+-------------------------------------
+author: Eden Lin
+date: 2015-12-22 01:06:34.000000000
+
+Patch Set 1:
+
+The 'df -> df/a' case is handled in C git within the C equivalent of builder.add("df/a"). It takes an ADD_CACHE_OK_TO_REPLACE flag to determine whether the caller wants df to be removed implicitly.
+
+C git takes care of the 'df/f -> df' case in the same way because it handles added files as the last step (so it is not able to take advantage of df/f coming after df in traversal order).
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-12-24 00:07:42.000000000
+
+Abandoned
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-12-24 22:44:48.000000000
+
+Restored
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-01-01 17:58:35.000000000
+
+Change has been successfully merged into the git repository by Yoselin Hanna
+
+-------------------------------------

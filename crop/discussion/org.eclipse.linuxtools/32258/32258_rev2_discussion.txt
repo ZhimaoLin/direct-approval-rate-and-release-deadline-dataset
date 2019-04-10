@@ -1,0 +1,189 @@
+DESCRIPTION
+
+LttngKernelStateProvider: Track file description allocation
+
+This tracks file descriptors created by sys_open and closed by
+sys_close.
+
+Since the file descriptor allocation is done at the process /
+thread group level, we store one file descriptor table under the node of
+each thread group leader. For now, we only keep the filename associated
+to the fd. The layout is like this:
+
+  /Threads/1234/File_descriptors/3/filename
+
+To implement this, we need to keep some syscall arguments in the state
+system until the corresponding exit_syscall. I therefore suggest the
+following convention. We already keep the name of the current syscall in
+
+  /Threads/1234/System_call
+
+We could keep the required arguments right under System_call:
+
+  /Threads/1234/System_call/filename (for open)
+  /Threads/1234/System_call/fd (for close)
+
+When we process the exit_syscall the whole System_call subtree would be
+wiped out/nullified.
+
+During a sys_open, we remember the filename, so we can insert it at the
+right place in the file descriptor table when sys_open returns (the
+return value of the syscall being the fd value).
+
+During a sys_close, we remember the fd. If the close succeeds, we delete
+the entry corresponding to the fd from the file descriptor table.
+
+TODO that I know of:
+- What happens when a process forks? Should all file descriptors be
+  copied?
+- What happens when a process execs? Should we close those that are
+  marked as close-on-exec? This flag could come from the the sys_open
+  flags or a call to fcntl (and maybe other places too).
+
+Quick measurements for the impact on the size of the state history:
+
+Before: 97096 stateHistory.ht
+After: 103368 stateHistory.ht
+
+which is a 6.5% increase. This is on a 79M trace.
+
+Change-Id: Ibdfbc8a0728b7782d152ecf876486e4c95928abc
+Signed-off-by: Kason Bridges xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Kason Bridges
+date: 2014-08-25 18:01:26.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-08-25 18:01:32.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/8529/
+
+-------------------------------------
+author: Kason Bridges
+date: 2014-08-25 18:03:51.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:46, lttng/org.eclipse.linuxtools.lttng2.kernel.core/src/org/eclipse/linuxtools/internal/lttng2/kernel/core/Attributes.java -> The singular version is used when saving the sys_close argument temporarily.
+
+I realize that when we want to keep syscall arguments like that, it might be clearer to name the attribute exactly like the argument name in the syscall. In that case it would be "fd".
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-08-25 20:01:48.000000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/8529/ : ABORTED
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2014-08-25 20:12:44.000000000
+
+Patch Set 2:
+
+Do we want this in a separate file instead of the main one?
+
+-------------------------------------
+author: Kason Bridges
+date: 2014-08-25 20:16:15.000000000
+
+Patch Set 2:
+
+Is there already an easy way to split the provider in multiple files, or we need to make one up?
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2014-08-25 20:22:06.000000000
+
+Patch Set 2:
+
+Not that I know of... I will ask Genevieve to weigh in as she pioneered analyses
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-08-25 21:26:09.000000000
+
+Patch Set 2: -Verified
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/8538/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-08-25 23:26:20.000000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/8538/ : ABORTED
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2014-08-26 01:58:47.000000000
+
+Patch Set 2:
+
+Running org.eclipse.linuxtools.lttng2.kernel.core.tests.AllTests
+Exception in thread "LTTng Kernel Event Handler" java.lang.NullPointerException
+	at org.eclipse.linuxtools.internal.lttng2.kernel.core.stateprovider.LttngKernelStateProvider.eventHandle(LttngKernelStateProvider.java:335)
+	at org.eclipse.linuxtools.tmf.core.statesystem.AbstractTmfStateProvider$EventProcessor.run(AbstractTmfStateProvider.java:205)
+	at java.lang.Thread.run(Thread.java:744)
+Build timed out (after 120 minutes). Marking the build as failed.
+[ERROR] Failure: java.lang.InterruptedException
+Terminating xvnc.
+Finished: ABORTED
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2014-08-26 02:00:35.000000000
+
+Patch Set 2: Code-Review-1
+
+(1 comment)
+
+Line:332, lttng/org.eclipse.linuxtools.lttng2.kernel.core/src/org/eclipse/linuxtools/internal/lttng2/kernel/core/stateprovider/LttngKernelStateProvider.java -> npe is here
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-08-26 02:37:28.000000000
+
+Patch Set 2:
+
+Looks quite useful! This should be a separate analysis though (unless you use things like getCurrentState() on the current state system?) I'll look at this in details when I come back ;)
+
+-------------------------------------
+author: Kason Bridges
+date: 2014-08-26 14:23:53.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Ok, I haz no idea how to analysis.
+
+Line:332, lttng/org.eclipse.linuxtools.lttng2.kernel.core/src/org/eclipse/linuxtools/internal/lttng2/kernel/core/stateprovider/LttngKernelStateProvider.java -> Ok, it must be the same 2.0 trace that does not have child_pid.
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2014-08-27 15:39:45.000000000
+
+Patch Set 2: Code-Review-1
+
+I haven't looked at the patch yet. But Houssem Daoud at Dorsal has been working on disk I/O analysis in TMF and I'm pretty sure he keeps track of file descriptors/names per process, etc.
+
+His work is not finished yet, but I'll see if anything is ready to be merged in TMF. Instead of adding yet more information to the LTTng Kernel analysis, using separate analysis might be a better approach and greatly eases the development of corresponding views.
+
+-------------------------------------

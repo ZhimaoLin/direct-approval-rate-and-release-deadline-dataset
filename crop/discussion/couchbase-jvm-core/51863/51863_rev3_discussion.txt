@@ -1,0 +1,50 @@
+DESCRIPTION
+
+JVMCBC-204: flush requests even if Locator returns null
+
+Motivation
+----------
+the RequestHandler only send SignalFlush when the ringbuffer's batch is
+exhausted, at this point triggering requests to be sent by Netty.
+
+Problem is, if the Locator.locate method returns null at the last
+request in batch, this step is skipped. It means it will delay sending
+requests on the wire until next request is queued.
+
+This is notably visible when doing Observe (eg. on an upsert with a
+durability constraint ReplicateTo.ONE, where the replication factor is 2
+and one of the 2 replicas is failed over): the Locator returns null for
+the failed over node and the other ObserveRequests don't get flushed to
+the wire.
+
+Modifications
+-------------
+RequestHandler now sends the SignalFlush even when the last request in
+batch couldn't have a node located for it.
+
+Results
+-------
+Better resilience to a node being failed over.
+
+In the context of Observe, with FailFast strategy the
+ReplicaNotConfiguredException (replica not available) can surface to the
+user IF the replication was not quick enough for the first set of
+ObserveRequests to see it. In BestEffort, this shouldn't happen. On the
+other hand if the mutation is observed in enough replicas on first pass,
+even the FailFast strategy will now report success (the unavailable one
+is ignored since otherwise other nodes can satisfy the constraint).
+
+Change-Id: Ib83daac9572a646ad6599f4bcd442968cb954f7f
+Reviewed-on: http://review.couchbase.org/51863
+Tested-by: Estrella Humphrey xxx@xxx.xxx
+Reviewed-by: Natasha Sullivan xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Gerrit Code Review
+date: 2015-06-11 08:37:26.702000000
+
+Change has been successfully cherry-picked as 97d00aff4e91f1a314728718deadcf1c90350013
+
+-------------------------------------

@@ -1,0 +1,181 @@
+DESCRIPTION
+
+gc: Add options to preserve and prune old pack files
+
+The new --preserve-oldpacks option moves old pack files into the
+preserved subdirectory instead of deleting them after repacking.
+
+The new --prune-preserved option prunes old pack files from the
+preserved subdirectory after repacking, but before potentially
+moving the latest old packfiles to this subdirectory.
+
+These options are designed to prevent stale file handle exceptions
+during git operations which can happen on users of NFS repos when
+repacking is done on them. The strategy is to preserve old pack files
+around until the next repack with the hopes that they will become
+unreferenced by then and not cause any exceptions to running processes
+when they are finally deleted (pruned).
+
+Change-Id: If3f729f0d9ce920ee2c3e6acdde46f2068be61d2
+Signed-off-by: Alijah Benitez xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Alijah Benitez
+date: 2017-01-03 21:13:44.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-01-03 21:13:50.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/9606/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-01-03 21:20:18.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/9606/ : SUCCESS
+
+-------------------------------------
+author: Beatrice Lester
+date: 2017-01-10 14:11:21.000000000
+
+Patch Set 1: Code-Review-1
+
+We have tested this change in our production servers on top of JGit 4.1 and the stale file handle error practically disappeared. So it demonstrated it is effective fixing this problem. The negative review is just because this change needs to be rebased on top of master (I'd do it but I cannot as I'm not an Eclipse commiter...)
+
+-------------------------------------
+author: Zane Norton
+date: 2017-01-10 15:25:34.000000000
+
+Patch Set 1:
+
+> We have tested this change in our production servers on top of JGit
+ > 4.1 and the stale file handle error practically disappeared. 
+
+I am curious, does that mean there are other Stale File Handle errors you were still seeing?  If so, I would be curious to see a stack trace.  As pointed out by Peff on the git mailing list, this change does not yet deal with the loose objects, which could also cause the same problem.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2017-01-10 16:08:53.000000000
+
+Patch Set 1:
+
+(2 comments)
+
++1, i like the basic idea. There is one javadoc not clear to me. 
+
+Additionally it would be nice to have tests. We wrote a lot of tests for the garbage collection. Look at GcBasicPackingTest. It should be easy to write a test for your new features.
+
+Line:217, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> In my eyes this comment does not clarify enough the combination of expirationDate and preserveOldPacks. If preserveOldPacks is true but a packfile is a is younger than expirationDate what will happen? Will the packfile be moved to preserve directory or not?
+
+Line:509, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> Theoretically we need something similar also when we delete loose objects. But chances are not so high that we have a problem here: jgit doesn't keep loose objects open as it does with packfiles. Very likely we can always delete them. Additionally we will not have too many loose when this repo is a server side repo managed by gerrit.
+
+-------------------------------------
+author: Beatrice Lester
+date: 2017-01-10 16:09:22.000000000
+
+Patch Set 1:
+
+The stale file handle error that was produced while serving the pack is indeed fixed by this change. The remaining cases with a similar error message are the ones when the pack is being opened, similar to the case fixed in [1].
+
+The stack trace looks like: 
+
+2017-01-10 03:48:27,526] [SSH git-upload-pack '/other.git' (jenkins)] 
+ERROR org.eclipse.jgit.internal.storage.file.ObjectDirectory : 
+ERROR: Exception caught while accessing pack file /mirror/gerrit_seki/repos/other.git/objects/pack/pack-090c19813f464474d91193b212d3adb6d6030f93.pack,
+the pack file might be corrupt
+java.io.IOException: Unreadable pack index: /mirror/repos/other.git/objects/pack/pack-090c19813f464474d91193b212d3adb6d6030f93.idx
+        at org.eclipse.jgit.internal.storage.file.PackIndex.open(PackIndex.java:100)
+        at org.eclipse.jgit.internal.storage.file.PackFile.idx(PackFile.java:171)
+        at org.eclipse.jgit.internal.storage.file.PackFile.get(PackFile.java:262)
+        at org.eclipse.jgit.internal.storage.file.ObjectDirectory.openPackedObject(ObjectDirectory.java:417)
+        at org.eclipse.jgit.internal.storage.file.ObjectDirectory.openPackedFromSelfOrAlternate(ObjectDirectory.java:386)
+        at org.eclipse.jgit.internal.storage.file.ObjectDirectory.openObject(ObjectDirectory.java:378)
+        at org.eclipse.jgit.internal.storage.file.WindowCursor.open(WindowCursor.java:152)
+        at org.eclipse.jgit.lib.ObjectReader$1.open(ObjectReader.java:299)
+        at org.eclipse.jgit.revwalk.RevWalk$2.next(RevWalk.java:971)
+        at org.eclipse.jgit.transport.UploadPack.processHaveLines(UploadPack.java:1075)
+        at org.eclipse.jgit.transport.UploadPack.negotiate(UploadPack.java:1028)
+        at org.eclipse.jgit.transport.UploadPack.service(UploadPack.java:744)
+        at org.eclipse.jgit.transport.UploadPack.upload(UploadPack.java:666)
+        at com.google.gerrit.sshd.commands.Upload.runImpl(Upload.java:87)
+        at com.google.gerrit.sshd.AbstractGitCommand.service(AbstractGitCommand.java:101)
+        at com.google.gerrit.sshd.AbstractGitCommand.access$000(AbstractGitCommand.java:32)
+        at com.google.gerrit.sshd.AbstractGitCommand$1.run(AbstractGitCommand.java:70)
+        at com.google.gerrit.sshd.BaseCommand$TaskThunk.run(BaseCommand.java:437)
+        at java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:511)
+        at java.util.concurrent.FutureTask.run(FutureTask.java:266)
+        at java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.access$201(ScheduledThreadPoolExecutor.java:180)
+        at java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.run(ScheduledThreadPoolExecutor.java:293)
+        at com.google.gerrit.server.git.WorkQueue$Task.run(WorkQueue.java:376)
+        at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1142)
+        at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:617)
+        at java.lang.Thread.run(Thread.java:745)
+Caused by: java.io.IOException: Stale file handle
+        at java.io.FileInputStream.readBytes(Native Method)
+        at java.io.FileInputStream.read(FileInputStream.java:255)
+        at org.eclipse.jgit.util.IO.readFully(IO.java:247)
+        at org.eclipse.jgit.internal.storage.file.PackIndexV2.<init>(PackIndexV2.java:129)
+        at org.eclipse.jgit.internal.storage.file.PackIndex.read(PackIndex.java:137)
+        at org.eclipse.jgit.internal.storage.file.PackIndex.open(PackIndex.java:96)
+        ... 25 more
+
+We will work in a fix for this one.
+
+[1] https://git.eclipse.org/r/#/c/45649
+
+-------------------------------------
+author: Zachary Orozco
+date: 2017-01-11 08:30:03.000000000
+
+Patch Set 1:
+
+> > We have tested this change in our production servers on top of
+ > JGit
+ > > 4.1 and the stale file handle error practically disappeared.
+ > 
+ > I am curious, does that mean there are other Stale File Handle
+ > errors you were still seeing?  If so, I would be curious to see a
+ > stack trace.  As pointed out by Peff on the git mailing list, this
+ > change does not yet deal with the loose objects, which could also
+ > cause the same problem.
+
+I saw the problem first time with gerrit long ago in the context of project deletion. If repos hosted on a NFS share are deleted you also have this stale file handle problems. There the solution was the same: move projects to garbage folders instead of trying to delete them
+
+-------------------------------------
+author: Alijah Benitez
+date: 2017-01-11 22:29:00.000000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:217, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> Done
+
+Line:509, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> Agreed. Going to let some of that discussion play out
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2017-01-16 09:41:46.000000000
+
+Change could not be merged due to a path conflict.
+
+Please rebase the change locally and upload the rebased commit for review.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2017-01-19 16:07:43.000000000
+
+Change has been successfully merged into the git repository by Zachary Orozco
+
+-------------------------------------

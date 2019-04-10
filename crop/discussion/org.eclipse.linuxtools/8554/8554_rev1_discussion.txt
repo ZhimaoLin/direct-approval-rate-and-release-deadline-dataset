@@ -1,0 +1,231 @@
+DESCRIPTION
+
+Implement simultaneously opened traces in TMF.
+
+- Change all supporting views to use a generic ITmfTrace instead of a
+TmfExperiment.
+- TmfExperiment* signals removed, replaced by generic TmfTrace* signals.
+- TmfTraceOpened signal is sent when opening a trace. Views should get
+ready to receive TmfTraceRangeUpdated if they need to coalesce requests.
+It is too early to access any state system.
+- TmfTraceRangeUpdated signal is sent from the TmfTrace after receiving
+TmfTraceOpened. Request coalescing can happen handling this signal.
+- TmfTrace base class triggers its indexing on receiving
+TmfTraceRangeUpdated.
+- Removed indexing of custom traces in initTrace, now triggered by
+TmfTraceOpened in TmfTrace base class.
+- TmfExperiment initializes the streaming monitor on reception of
+TmfTraceOpened.
+- TmfTraceSelected signal is sent when the trace is initially brought to
+top or any time it becomes the active trace. Any component can also
+broadcast the signal to trigger bringing the trace to top.
+- TmfTraceClosed signal is sent when the trace is closed. All
+jobs/threads/requests related to this trace should be canceled. The
+trace will be disposed after the signal has been broadcast.
+- These signals can contain a TmfExperiment as the affected trace. Any
+view which needs to check or handle individual trace should specially
+handle an instance of TmfExperiment and examine its underlying traces.
+- Building of state system and statistics moved from initTrace to
+reception of TmfTraceOpenedSignal. This allows, in the case of a
+reopened trace, for the previous trace to be disposed and its files
+closed before the new instance initializes the state system.
+- All supporting views cancel running jobs/threads/requests on
+TmfTraceClosedSignal.
+- ControlFlow/Resources view store entry list of all opened traces in
+hash map.
+- ControlFlow/Resources view use cancelable BuildThread.
+- Cleanup the state system when disposing a CtfKernelTrace.
+- Dispose of CtfTmfTrace clears reference to CTFTrace and this is used
+to prevent NPE on getNext of disposed trace.
+- Replace Events view with editor area in LTTng Kernel and Tracing
+perspectives.
+- Updated definition of traceType extension for defaultEditor element.
+- OpenExperimentHandler opens the experiment in events editor. Default
+editor is used unless all underlying traces share a common defaultEditor
+in their respective traceType definition.
+- OpenTraceHandler opens the trace in default or specified events
+editor. It no longer uses a dummy experiment to wrap the trace.
+- Removed methods and variables related to current experiment.
+- Removed EventsViewEditor previously used as a workaround to open
+bookmarks in Events view.
+- Removed Clears Views command, made obsolete by closing all traces
+(Close All on any tab).
+- ITmfEventsFilterListener/Provider interfaces removed and replaces with
+signal handling. This removes complexity of handling multiple listeners
+and providers being added and removed.
+- Fixed missing scaling to nanoseconds of timestamps in
+AbstractStateChangeInput.
+- Fixed synchronization issue with armRequest in TmfTrace when trace is
+disposed (executor is shutdown).
+- TmfEditorInput modified to prevent lingering reference in platform.
+- TmfEventsEditor implements IPartListener to trigger broadcast of
+TmfTraceSelectedSignal, instead of at setFocus which was sometimes
+called twice by the platform.
+- TmfEventsEditor no longer needs to use inner TmfExperiment subclass to
+trigger indexing when experiment opened from bookmark.
+- UnsortedPropertySheetPage class created instead of inner class in
+TmfEventsEditor which was causing lingering reference to editor in
+platform.
+- Remove unused TmfTraceParserUpdatedSignal.
+- TmfEnvironmentView refactored to update its table on
+TmfTraceSelectedSignal.
+- Use nanosecond timestamp scale constant where appropriate.
+- Add interface to HistogramView to allow its controls to retrieve the
+current trace.
+- Implement synchronization of time range in TimeChartView.
+- Fix lingering reference to completed requests in TmfUml2SDSyncLoader.
+- Fix TmfVirtualTable setSelection allowing top rank to be too large
+when selecting near end of table.
+
+Change-Id: I357accc8fc7ea96544d32db758abff4760682304
+
+COMMENTS
+
+author: Brenden Conley
+date: 2012-11-07 00:36:22.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/sandbox/job/linuxtools/533/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-11-07 01:05:49.000000000
+
+Patch Set 1: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/linuxtools/533/ : SUCCESS
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2012-11-12 16:28:14.000000000
+
+Patch Set 1: (4 inline comments)
+
+About ~1000 lines removed overall, I like!
+
+Some comments:
+
+- There should be no period at the end of commit messages.
+
+- Holy molly, that is one hell of a commit message ;) It doesn't have to go into the fine details. Also, if you do a bullet list, it should be indented manually (3 spaces on the lines other than the ones with a '-' )
+
+Suggestions, things to discuss:
+
+- Maybe we should add a ITmfTrace.isExperiment(), instead of doing instanceof checks.
+
+- And while at it, maybe expose getTraces() in ITmfTrace too (for a single trace it would return an array with only that trace). This would avoid creating this array manually in every view.
+
+Line:54, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/editors/TmfEditorInput.java -> So that's where the dangling reference came from, wow...
+
+Line:49, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/signal/TmfTraceRangeUpdatedSignal.java -> tabs!!! yuck!
+
+Line:80, lttng/org.eclipse.linuxtools.lttng2.kernel.core/src/org/eclipse/linuxtools/lttng2/kernel/core/trace/CtfKernelTrace.java -> What's the point for this anyway? Eclipse picks up the superclass's Javadoc automatically, doesn't it just clutter the code?.
+
+Line:82, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/AbstractStateChangeInput.java -> Different trace types could decide to store the timestamps in their state histories in something other than nanoseconds.
+
+For statistics, we normalize the timestamps to nanos because we want to use it with all trace types. But I don't think it should be done in the base class.
+
+-------------------------------------
+author: Luciana Barry
+date: 2012-11-12 16:41:39.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:187, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/HistoryBuilder.java -> TmfTraceClosedSignal should be handled and call close(true), as it is possible that TmfTraceRangeUpdatedSignal is never received if the trace has no events.
+Also, in close() it is suggested to call dispose() instead of invoking TmfSignalManager.deregister() directly.
+
+-------------------------------------
+author: Ricky Reeves
+date: 2012-11-13 12:12:43.000000000
+
+Patch Set 1: (3 inline comments)
+
+
+
+Line:542, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/views/histogram/HistogramView.java -> Here a concurrency problem exists. initializeHistogram() is called for every traceSelected signal. When a request for the big histogram or (the small) histogram is still ongoing, the clear in of the models will cause problems because the same models are still being updated by the request(s). We have to make sure that the requests are cancelled before clearing the models.
+
+Line:110, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/editors/TmfEventsEditor.java -> We shouldn''t update a method parameter and use it later on. (Sonar a warning for that). It's better to store it in a local variable and do all the operations on the local variable instead.
+
+Line:687, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/TmfTrace.java -> Shouldn't we get the time of the first event and store it in the trace before we call "buildStatistics" and "buildStateSystem"? Isn't the start time needed for building the state system?
+
+-------------------------------------
+author: Ricky Reeves
+date: 2012-11-14 18:45:21.000000000
+
+Patch Set 1: (2 inline comments)
+
+
+
+Line:201, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/editors/TmfEventsEditor.java -> We shouldn't swallow the TmfTraceException. We should notify the user. This can happen when we open Eclipse, while a Trace Editor was open before and the corresponding trace resource doesn't exist anymore.
+
+Line:273, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/editors/TmfEventsEditor.java -> We shouldn't send a signal in createPartControl of a Editor or view. This is because at startup of Eclipse some views haven't been created and therefore they haven't registered as signal handlers. The loading of views/ traces will be incorrect. This can be seen in the HistogramView when restarting Eclipse. A solution is to send the traceOpendSignal in method partActivated() and have flag to make sure that it's send only once.
+
+-------------------------------------
+author: Ricky Reeves
+date: 2012-11-15 21:20:31.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:289, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/views/uml2sd/loader/TmfUml2SDSyncLoader.java -> There is an else missing to ignore the trace selected if trace of signal already processed. Also, after the if we need to cancel ongoing requests and reset the loader. Just change it to the following :
+          if (!trace.equals(fTrace)) {
+               fTrace = trace;
+          } else {
+                job.cancel();
+                return;
+            }
+
+            if (fIndexRequest != null) {
+                if (!fIndexRequest.isCompleted()) {
+                    fIndexRequest.cancel();
+                }
+                fIndexRequest = null;
+            }
+
+            cancelOngoingRequests();
+            resetLoader();
+
+-------------------------------------
+author: Luciana Barry
+date: 2012-11-15 22:29:13.000000000
+
+Patch Set 1: (12 inline comments)
+
+
+
+Line:54, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/editors/TmfEditorInput.java -> One of the dangling references...
+Also, TABS!
+
+Line:49, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/signal/TmfTraceRangeUpdatedSignal.java -> Done
+
+Line:187, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/HistoryBuilder.java -> Done
+
+Line:289, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/views/uml2sd/loader/TmfUml2SDSyncLoader.java -> Changed the solution slightly:
+Start the IndexingJob only after the if-else to prevent unnecessary schedule and cancel.
+Don't need to set fIndexRequest to null as it is set a few lines below.
+
+Line:918, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/views/uml2sd/loader/TmfUml2SDSyncLoader.java -> If the event list is empty, the cursor never gets reset. Should only toggle here if there are events.
+
+Line:80, lttng/org.eclipse.linuxtools.lttng2.kernel.core/src/org/eclipse/linuxtools/lttng2/kernel/core/trace/CtfKernelTrace.java -> Not sure why I thought this was necessary. I will remove it.
+
+Line:542, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/views/histogram/HistogramView.java -> Done
+
+Line:82, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statesystem/AbstractStateChangeInput.java -> This is required for statistics to work correctly with traces where timestamps are not in nanoseconds.
+We'll have to revisit the solution if we want to support arbitrary timestamp scaling in the state system.
+
+Line:110, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/editors/TmfEventsEditor.java -> Done
+
+Line:201, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/editors/TmfEventsEditor.java -> A PartInitException will be thrown for all cases where initTrace throws a TmfTraceException.
+
+Line:273, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/editors/TmfEventsEditor.java -> The same problem can also happen if the view is opened after the trace has been opened, while it is indexing.
+The HistogramView will be changed to restart the full range request on TmfTraceUpdated if the new trace range end time is greater than the current request range.
+
+Line:687, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/TmfTrace.java -> Indeed. It only worked for CtfTmfTrace because it updates the start time in initTrace.
+
+-------------------------------------

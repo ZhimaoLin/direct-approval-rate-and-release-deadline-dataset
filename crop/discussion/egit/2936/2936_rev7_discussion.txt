@@ -1,0 +1,146 @@
+DESCRIPTION
+
+Team project set support
+
+This is based on the previous work by Ace Duncan in change
+I800dd9f23953ad903f20289c442707e2dde08f75 ("Import a project set file").
+This change includes export support, unit tests, and can handle the
+situation where different branches of the same repository should be
+imported.
+
+A project reference string in the project set file looks like this:
+
+  1.0,git://egit.eclipse.org/egit.git,master,org.eclipse.egit
+
+Based on an array of these reference strings, GitProjectSetCapability
+does the following when importing:
+
+- Clone a repository with CloneOperation for each combination of
+  repository URL and branch name.
+- Import a project from each directory that is specified in the last
+  part of the string ("." if the repository itself is the .project).
+- Add the repository to the Repositories View.
+- Connect the projects using ConnectProviderOperation.
+
+Due to Bug 244313, import and export of project set files requires the
+org.eclipse.core.runtime.compatibility plug-in. The dependency is in a
+separate optional feature, as proposed on the old change. It's required
+for Eclipse < 3.7.
+
+Bug: 296082
+Change-Id: I1500cc376961117b39b8760e6de675a4885e5f72
+Also-by: Ace Duncan xxx@xxx.xxx
+Signed-off-by: Danika Greer xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Danika Greer
+date: 2011-04-14 20:18:45.000000000
+
+Uploaded patch set 7.
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-04-14 20:18:49.000000000
+
+Patch Set 7:
+
+Build Started https://hudson.eclipse.org/sandbox/job/egit.gerrit/387/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-04-14 20:30:45.000000000
+
+Patch Set 7: Build Successful
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/egit.gerrit/387/ : SUCCESS
+
+-------------------------------------
+author: Danika Greer
+date: 2011-04-14 20:34:19.000000000
+
+Patch Set 7:
+
+- Add the repository to the Repositories View (thanks Manuel)
+- Change separator from "|" to "," (same as CVS and Subclipse)
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2011-04-15 15:30:28.000000000
+
+Patch Set 7: I would prefer that you didn't submit this
+
+(6 inline comments)
+
+Nice work :-)
+
+I think the clone should go to the default source folder instead of the workspace. Also see the discussion thread [1].
+
+[1] http://dev.eclipse.org/mhonarc/lists/egit-dev/msg02002.html
+
+Line:58, org.eclipse.egit.core.test/src/org/eclipse/egit/core/test/GitProjectSetCapabilityTest.java -> style nit: we don't use braces around single line blocks, more occurrences throughout this patch
+
+Line:214, org.eclipse.egit.core/src/org/eclipse/egit/core/GitProjectSetCapability.java -> the timeout shouldn't be hardcoded, we have a preference for that (see GitCloneWizard) which needs to be moved to egit.core so that you can also use that here. This should be done in a separate change this one needs to depend on.
+
+Line:225, org.eclipse.egit.core/src/org/eclipse/egit/core/GitProjectSetCapability.java -> if the same repo/workspace is listed twice with different branches this will fail as you can't import the same project twice into the same workspace
+
+Line:1, org.eclipse.egit.psf-feature/build.properties -> this is incomplete, needs to also list feature.properties, license.html, see the other egit features
+
+Line:9, org.eclipse.egit.psf-feature/feature.properties -> add "(Incubation)" here as egit is still in incubation
+
+Line:23, /COMMIT_MSG -> What's the use case for cloning the same repo multiple times ? You anyway can't import the same project multiple times into the same workspace.
+
+-------------------------------------
+author: Danika Greer
+date: 2011-04-15 20:07:11.000000000
+
+Patch Set 7: (6 inline comments)
+
+Thanks for the review, Matthias!
+
+Line:58, org.eclipse.egit.core.test/src/org/eclipse/egit/core/test/GitProjectSetCapabilityTest.java -> I'll change it (still not used to it).
+
+Line:214, org.eclipse.egit.core/src/org/eclipse/egit/core/GitProjectSetCapability.java -> The preferences in egit.core use IEclipsePreferences, whereas the preferences in egit.ui use IPreferenceStore. Is there a reason for this? For example, how can a FieldEditor be used with IEclipsePreferences?
+
+Line:225, org.eclipse.egit.core/src/org/eclipse/egit/core/GitProjectSetCapability.java -> Hm, maybe we should explicitly check for that and throw a TeamException with a message. Currently it will fail with an internal exception.
+
+Line:1, org.eclipse.egit.psf-feature/build.properties -> Will do.
+
+Line:9, org.eclipse.egit.psf-feature/feature.properties -> Will do.
+
+Line:23, /COMMIT_MSG -> You can, for example then the repo includes two projects (in two toplevel directories) and you want to have one project from one branch and the other from another branch. Then the import works fine.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2011-04-20 11:50:53.000000000
+
+Patch Set 7: (3 inline comments)
+
+
+
+Line:214, org.eclipse.egit.core/src/org/eclipse/egit/core/GitProjectSetCapability.java -> I think we should use the newer API IEclipsePreferences as it is more powerful [1], AFAIK this was done in some places, obviously this wasn't done everywhere. 
+
+[1] http://dev.eclipse.org/newslists/news.eclipse.platform/msg42275.html
+
+Line:225, org.eclipse.egit.core/src/org/eclipse/egit/core/GitProjectSetCapability.java -> yes we should check this explicitly and raise a proper message
+
+Line:23, /COMMIT_MSG -> you are right
+
+-------------------------------------
+author: Danika Greer
+date: 2011-04-20 12:54:34.000000000
+
+Patch Set 7: (1 inline comment)
+
+Please see inline reply.
+
+Line:214, org.eclipse.egit.core/src/org/eclipse/egit/core/GitProjectSetCapability.java -> Hm, I read the mailing list thread and also the minimalistic Eclipse API documentation. But I still don't know how to use field editors with IEclipsePreferences.
+
+When we move the timeout preference, the namespace changes from "org.eclipse.egit.ui" to "org.eclipse.egit.core". But AFAICS, a FieldEditorPreferencePage can only work on one preference store (corresponding to one namespace). In the case of GitPreferenceRoot, this is "org.eclipse.egit.ui". I read that you can nest preference stores, but that it only works for "get", not for "set" operations.
+
+One way it may work is when both used the same namespace, "org.eclipse.egit". But that would mean we had to migrate all the existing preferences to this namespace, right?
+
+-------------------------------------

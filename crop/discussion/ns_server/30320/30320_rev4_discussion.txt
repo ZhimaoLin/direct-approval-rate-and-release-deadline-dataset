@@ -1,0 +1,162 @@
+DESCRIPTION
+
+MB-9209: enforce aggressive garbage collection in XMem
+
+We observed increasing beam memory usage during replication
+caused by inefficient Erlang garbage collection. This commit
+will enforce aggressive garbage collection for XMem.
+
+Each VBucket replicator will trigger garbage collection when
+when both following conditions are satisfied 1) report seq_done
+or work_done; 2) this vb replicator has not conducted garbage
+collection in past 5 seconds. Condition 2) is to avoid over
+garbage collection.
+
+It will enforce garbage collection at three levels: 1) "global":
+garbage collection for all processes; 2) "xdc" level: only gc
+for xdcr processes including concurrency_throttle; 3) "none":
+no garbage collection at all. By default global level gc is
+enforced.
+
+A new env parameter can be used to control the level of gc.
+
+"XDCR_GC_LEVEL" = ["global" | "xdc" | "none"]
+
+Change-Id: Ifc7437a0e0d89df23ef63f570e5ebfab7204a716
+
+
+COMMENTS
+
+author: Macie Morton
+date: 2013-11-14 18:02:53.680000000
+
+Patch Set 4: Verified+1
+
+-------------------------------------
+author: Nathalie Landry
+date: 2013-11-14 18:39:09.071000000
+
+Patch Set 4: Code-Review-1
+
+at the very least I believe global should not be default.
+
+Second, please consider grabbing this setting from ns_config_ets_dup.
+
+Third, I'd strongly prefer less invasive option. Particularly hibernating affected processes. See gen_server documentation on supported way of doing it. And erlang:hibernate documentation. And in our code it's uses can be found in menelaus_web (through request_throttler) and in master_activity_events_keeper (through timeout to avoid hibernating too often).
+
+-------------------------------------
+author: Nathalie Landry
+date: 2013-11-14 18:42:21.756000000
+
+Patch Set 4:
+
+Another bit of concern I have is that gc is triggered per vbucket, but gc itself affects processes outside current vbucket's replicator. With more xdcr's and more concurrently replicating vbuckets you'll gc more often.
+
+Also consider placing catch around garbage_collect call. There's race between getting list of processes and gc-ing them. It'll throw exception if you try to gc process that's dead
+
+-------------------------------------
+author: Macie Morton
+date: 2013-11-14 19:02:28.847000000
+
+Patch Set 4:
+
+We use global gc as default because test shows xdc level gc does not help much. In Pave's test using toybuild we have extremely aggressive global gc, there is no timed interval and gc is triggered all the time in the toybuild. In the worst case, we observe that gc works very well in controlling memory usage, and we do not see performance degradation. 
+
+Here is the plan, please let me know if it is OK with you.
+
+In this commit, I will upload new patch that
+1. make gc at bucket replicator level instead of vbucket level
+2. protect gc from race condition
+
+
+Will also investigate and see how process hibernating works. But that should not block this commit and we can put it in another commit if necessary.
+
+-------------------------------------
+author: Macie Morton
+date: 2013-11-14 19:12:53.211000000
+
+Patch Set 4:
+
+Forget to mention that in new patchset I will also move the parameter into xdc_setting  like other xdcr parameters.
+
+-------------------------------------
+author: Alex Mcmahon
+date: 2013-11-14 19:46:59.763000000
+
+Patch Set 4:
+
+Disagree with "we do not see performance degradation."
+
+First of all we can't judge by 1 run of test with very limited scope. But even in that run I observed higher CPU utilization.
+
+-------------------------------------
+author: Macie Morton
+date: 2013-11-14 19:56:06.593000000
+
+Patch Set 4:
+
+Pavel, You just run the test once and the observation (throughput and memory) is from your test result. It is not surprising that CPU usage is higher due to GC. In this commit, the GC is once every 5 seconds per vb and is much less aggressive than in that toybuild.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2013-11-14 20:16:52.762000000
+
+Patch Set 4:
+
+Junyi, I cannot agree with your logic. You have successfully provided evidence that issue is in erlang's GC.
+
+This change however is not production-worthy. We'll need to find safe way to deal with GC. This code isn't.
+
+"we'll fix it later" does not justify merging it in my opinion.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2013-11-14 20:26:33.057000000
+
+Patch Set 4:
+
+Also given we don't quite 100% understand weakness of erlang's gc it might be possible that get_workers part of your original change was significant help for toybuild's success
+
+-------------------------------------
+author: Macie Morton
+date: 2013-11-14 20:28:07.057000000
+
+Patch Set 4:
+
+Alk, please clearly define the criteria of "production worthy" and why global GC is not "production worthy". Global GC has been verified in test and also, the less invasive local GC does not work.
+
+As I said,  your major concern of the lower vbucket level GC, race condition and parameter setting will be all addressed in bucket level GC in next patchset.
+
+-------------------------------------
+author: Macie Morton
+date: 2013-11-14 20:31:58.786000000
+
+Patch Set 4:
+
+"Also given we don't quite 100% understand weakness of erlang's gc it might be possible that get_workers part of your original change was significant help for toybuild's success"
+
+Seems this is incorrect. I tried local XDC level gc in the tobyuild on VMs with these get_worker stuff, no much help in reducing beam memory usage (it is probably helpful to boost throughput though).
+
+-------------------------------------
+author: Nathalie Landry
+date: 2013-11-14 20:36:37.086000000
+
+Patch Set 4:
+
+"Production-worthy" is roughly: there's nearly no chance that it'll cause any of us to spend more time on CBSEs.
+
+There is high chance that there's better way of dealing with this erlang's bug. Particularly hibernation is likely effective treatment.
+
+And we've seen in the past how global GC may cause spikes of latencies even causing autofailover to occur.
+
+-------------------------------------
+author: Macie Morton
+date: 2013-11-14 20:45:17.150000000
+
+Patch Set 4:
+
+Thanks for explanation. Can you please be specific what processes we shall make them hibernate? I assume you mean the XMem processes.
+
+But test shows that less invasive GCing all xdc processes does not work in reducing beam memory, why making them hibernate will solve the problem? Thanks.
+
+-------------------------------------

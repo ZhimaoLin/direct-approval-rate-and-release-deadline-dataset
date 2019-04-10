@@ -1,0 +1,74 @@
+DESCRIPTION
+
+JVMCBC-278: Fix endpoint reconnect on netty error
+
+Motivation
+----------
+When a node fails, the channel is marked as inactive and the endpoint
+marks itself for reconnection once. If said reconnection fails, the
+generic handling is to schedule a reconnection retry.
+
+During this connection phase however, a few netty errors are caught
+which bypasses the scheduling of a retry (for the generic error case).
+Since 1.2.1, this includes the handling of a socket connection timeout.
+
+Effectively, the endpoint never recovers from such a situation where
+the node is unreachable, because Netty's socket timeout stops it from
+retrying the connection.
+
+Modifications
+-------------
+The problem is a balance between quickly failing at bootstrap if the
+distant IP:PORT cannot be connected to (bad IP in configuration) and
+allowing a later reconnection in case of node failure (post bootstrap).
+
+The AbstractEndpoint now calls a special version of connect() when the
+channel is signaled as inactive, where a bootstrap flag is set to false
+so that subsequently connection is still scheduled for retry even in the
+case when we detect netty errors (authentication, socket timeout, ...).
+
+During bootstrap, such errors cause the whole process to stop.
+
+Result
+------
+Even if node becomes unreachable, as long as it has been hit once
+(during bootstrap) attempts should be continuously made to reconnect
+(with the reconnect delay).
+
+Change-Id: Ie50e8f92cc6fbcbcb51f430a925819f8ef78dcdf
+
+
+COMMENTS
+
+author: Estrella Humphrey
+date: 2016-01-20 16:34:18.497000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Estrella Humphrey
+date: 2016-01-20 16:35:50.272000000
+
+Patch Set 3: Verified+1
+
+-------------------------------------
+author: Estrella Humphrey
+date: 2016-01-20 16:36:36.290000000
+
+Patch Set 3: Code-Review+2
+
+-------------------------------------
+author: Estrella Humphrey
+date: 2016-01-20 16:37:06.267000000
+
+Patch Set 3:
+
++2 as per discussion with Michael (minor modification of method scope implemented)
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-01-20 16:37:08.624000000
+
+Change has been successfully cherry-picked as 3b4605f2d7b9a114d27241d9d07dad447b7d08ac
+
+-------------------------------------

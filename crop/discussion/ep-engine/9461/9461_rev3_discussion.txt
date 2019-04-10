@@ -1,0 +1,121 @@
+DESCRIPTION
+
+Add methods to generate revision id's
+
+Change-Id: I38c9a1fd951f1db0e9b454ec59e51b3c82000c80
+
+
+COMMENTS
+
+author: Asher Vang
+date: 2011-09-08 12:29:27.194000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Abby Duran
+date: 2011-09-08 17:14:22.319000000
+
+Patch Set 3:
+
+This looks good to me. But, my concern is if this revision format is compatible to couchDB. Or, we expect mccouch to convert it to the format expected by couchDB. Adding Filipe to the reviewers.
+
+-------------------------------------
+author: Tatiana Sheppard
+date: 2011-09-09 01:13:11.531000000
+
+Patch Set 3:
+
+Some high level comments…
+
+CouchDB expects revids to be of the form "nnn-md5".
+nnn: an integer without any upper bound
+md5: a 128 bit md5 hash value of a document's contents
+
+First off, we don't need to worry about the "-" while generating and storing revids inside ep-engine. That's something that we could tag on inside mccouch just before we either read or write an item to CouchDB.
+
+Secondly, instead of using md5, I think it will be better to use a UUID. This will ensure that a conflict is detected even when two concurrent mutations cause an item to have the same value. This will be useful in the future when we intend to allow the users to provide their own custom resolution functions. For example, if an item's value is independently incremented at two data centers, then the conflict resolution function might want to merge them (using sum(), for example) rather than pick one. We cannot use md5 for this, nor will the current scheme of nodeid+seqid guarantee it (nodeids from different clusters could conflict with each other). We'd need something akin to a UUID. The downside, though, is the computation and storage overhead. Might need to think more about this.
+
+For the "nnn" part, we obviously cannot allow infinite values -- again, due to the computation and storage overhead in ep-engine. We could, however, limit the maximum value similar to how the CouchDB revs_limit parameter works, which tells CouchDB to only remember revision history as far back as the value of the parameter (by default, it's 1000). In order to not run out of values quickly, we could only increment it at the time of persisting an item to CouchDB. For all in memory mutations, we could just generate new seq/uuid numbers.
+
+-------------------------------------
+author: Noah Dean
+date: 2011-09-09 03:05:10.008000000
+
+Patch Set 3:
+
+> CouchDB expects revids to be of the form "nnn-md5"
+
+CouchDB *generates* them in that form.  It just expects to get a chain that is meaningful.  
+
+> nodeids from different clusters could conflict with each other
+
+We just need to relabel "nodeid" to "clusterid".  The individual node within a cluster doesn't matter at all and the numbers should continue to look similar as the vbucket moves around within the cluster.
+
+> In order to not run out of values quickly, we could only increment it at the time of persisting an item to CouchDB.
+
+The problem with this is that we can't have clients referring to rev numbers that never existed in the system.  We discussed having the numbers only increment when someone "looked" at them (which would be either persistence *or* a request), but that may just generalize to any mutation anyway.
+
+-------------------------------------
+author: Tatiana Sheppard
+date: 2011-09-09 04:07:47.612000000
+
+Patch Set 3:
+
+>CouchDB *generates* them in that form. It just expects to get a chain that is meaningful.
+
+Really? CouchDB seems to complain with an "Invalid rev format" error if the rev isn't of the form "<some_number>-<some_number>". This is when providing a revision number with such commands as a PUT or a DELETE. Or I could be missing something here.
+
+> We just need to relabel "nodeid" to "clusterid". The individual node within a cluster doesn't matter at all and the numbers should continue to look similar as the vbucket moves around within the cluster.
+
+Yes. "clusterid" will also work. We probably don't have a notion of a clusterid right now, do we? I guess ns_server will have to maintain that and communicate it to ep-engine during startup?
+
+-------------------------------------
+author: Asher Vang
+date: 2011-09-09 04:40:41.641000000
+
+Patch Set 3:
+
+The nodeid field I had described there would be assigned by ns_server to each node in the cluster and would be unique and and never reused if you fail out a node and replace with another one.
+
+-------------------------------------
+author: Noah Dean
+date: 2011-09-09 04:44:45.777000000
+
+Patch Set 3:
+
+> Really? CouchDB seems to complain with an "Invalid rev format" error if the rev isn't of the form "<some_number>-<some_number>". This is when providing a revision number with such commands as a PUT or a DELETE. Or I could be missing something here.
+
+  You can't supply your own numbers unless you're a replicator.  Otherwise you need to be referring to an existing rev number.
+
+  I don't know the "invalid rev" code, but we need to get that straightened out.
+
+> Yes. "clusterid" will also work. We probably don't have a notion of a clusterid right now, do we? I guess ns_server will have to maintain that and communicate it to ep-engine during startup?
+
+This is correct.
+
+-------------------------------------
+author: Noah Dean
+date: 2011-09-09 04:47:52.396000000
+
+Patch Set 3:
+
+The only problem with a node id is that we can't have two different clusters have a node with the same ID.
+
+-------------------------------------
+author: Asher Vang
+date: 2011-09-09 05:29:34.682000000
+
+Patch Set 3:
+
+Are we mixing keys from multiple clusters in the same systems? Does that mean that you can have items from multiple buckets in the same system as well?
+
+-------------------------------------
+author: Noah Dean
+date: 2011-09-09 05:35:08.588000000
+
+Patch Set 3:
+
+Yes, for XDCR, we will occasionally have concurrent writes on different clusters for the same key.
+
+-------------------------------------

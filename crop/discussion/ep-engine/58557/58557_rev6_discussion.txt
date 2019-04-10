@@ -1,0 +1,197 @@
+DESCRIPTION
+
+Save a cached state of vbucket in active stream
+
+Do not attempt to check vbucket state everytime
+while processing data in an active stream. Instead,
+save a cached copy of the vbucket state acquired
+during creation.
+
+Change-Id: Iddb518b5e94a4595c62026f797ff17ba790d180c
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2016-01-13 02:58:48.369000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-01-13 02:58:59.726000000
+
+Patch Set 6:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1219/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-01-13 03:17:29.918000000
+
+Patch Set 6: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1971/ : SUCCESS
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1219/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-01-13 09:15:16.847000000
+
+Patch Set 6: Code-Review-1
+
+I don't quite follow the purpose of this change - while I can see an advantage in not having to acquire a lock in stream (markDiskSnapshot(), etc), it seems unsafe - what would happen if the vBucket state changed after stream creation?
+
+IMHO this adds a whole bunch of complexity, and it seems unsafe.
+
+If you want to reduce lock contention while requesting the vBucket state, why not just make the state member of the vBucket an atomic variable, and then add an accessor which returns it (without a lock)? That would be always safe, just as fast and simpler.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-01-13 16:38:16.750000000
+
+Patch Set 6:
+
+This change is not any unsafer than the original code. Note that whenever the vbucket state changes all, the streams going out of the vbucket are closed.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-01-13 16:52:05.502000000
+
+Patch Set 6:
+
+> This change is not any unsafer than the original code. Note that
+ > whenever the vbucket state changes all, the streams going out of
+ > the vbucket are closed.
+
+.. it might not be any worse, but it's hence no better, and adds complexity.
+
+If you want to simply speed things up *safely* then use the suggestion I gave (atomic state variable) which will be both correct and fast
+
+Remember:
+
+correct > fast
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-01-13 16:54:08.942000000
+
+Patch Set 6:
+
+I'm still failing to see why you'd still say this is incorrect.
+
+On vbucket state change, all the active streams out of the vbucket will be closed anyway.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-01-13 16:56:12.520000000
+
+Patch Set 6:
+
+Also can you elaborate on the complexity you mention.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-01-13 17:00:43.406000000
+
+Patch Set 6:
+
+> Also can you elaborate on the complexity you mention.
+
+Examine the patch - all that new code is new complexity :)
+
+- You've now introduced an additional member variable on active stream, which users now consult instead of the real vbucket state.
+- You've introduced the possibility that the value read by the stream for the state is stale. Take for example markDiskSnapshot() - previously if another thread changed the vbucket state from replica -> something else then you'd correctly not execute the code in the if() statement (line 270). With your change that race is now possible.
+
+Same in isCurrentSnapshotCompleted().
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-01-13 17:09:34.207000000
+
+Patch Set 6:
+
+Ok in that case, here's a little pretext to why i made this change:
+
+With the upcoming merging of branches from sherlock to master, there will be a hella-lot of lock inversions that thread sanitizer will detect. This change addresses one of them. Here's that lock inversion:
+        In case of a set operation, vbucket state lock is acquired and then stream lock is acquired for notification. During markDiskSnapshot (for example), the stream lock is acquired before the vbucket state lock is acquired.
+
+So for this change your suggestion was to make the state variable of the vbucket object atomic (correct me if i'm wrong). Does this mean that I wouldn't need to grab the reader-lock for the state by making it atomic?
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-01-13 17:12:29.321000000
+
+Patch Set 6:
+
+Jim's change to revert the producer notifier to avoid the performance regression: http://review.Piper Jefferson.org/#/c/58380/ (with a combination of other older changes) will be the one(s) that will introduce all the lock inversions, but only in the master branch.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-01-13 17:23:05.027000000
+
+Patch Set 6:
+
+Also regarding your comment on the possible race in this code-
+
+"You've introduced the possibility that the value read by the stream for the state is stale. Take for example markDiskSnapshot() - previously if another thread changed the vbucket state from replica -> something else then you'd correctly not execute the code in the if() statement (line 270). With your change that race is now possible."
+
+This is not quite possible - you see before the vbucket state is flipped that way, all the streams will be marked as DEAD. See - http://src.Piper Jefferson.org/source/xref/watson/ep-engine/src/ep.cc#1293. vbucketStateChange() marks all streams DEAD before changing the vbucket state in http://src.couchbase.org/source/xref/watson/ep-engine/src/ep.cc#1296.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-01-13 17:28:51.871000000
+
+Patch Set 6:
+
+> Ok in that case, here's a little pretext to why i made this change:
+ > 
+ > With the upcoming merging of branches from sherlock to master,
+ > there will be a hella-lot of lock inversions that thread sanitizer
+ > will detect. This change addresses one of them. Here's that lock
+ > inversion:
+ > In case of a set operation, vbucket state lock is acquired and then
+ > stream lock is acquired for notification. During markDiskSnapshot
+ > (for example), the stream lock is acquired before the vbucket state
+ > lock is acquired.
+ > 
+
+Perfect - that's *exactly* the sort of thing I love to see in commit messages! I can read the code to see *what* you are doing, but without that kind of description I have no idea *why* you are making the change :)
+
+ > So for this change your suggestion was to make the state variable
+ > of the vbucket object atomic (correct me if i'm wrong). Does this
+ > mean that I wouldn't need to grab the reader-lock for the state by
+ > making it atomic?
+
+Probably. 
+
+Think of it this way - the only reason for locks is to enforce mutual exclusion - i.e. while Thread A is performing some task, ensure that no other Thread can modify the same data *in such a way which makes that data inconsistant* - i.e. so we don't break any invariants.
+
+Ultimately we are making any updates to the shared data /atomic/ - by putting a lock around them.
+
+If we are only accessing some data which is small (i.e. the CPU can atomically modify it) - then we can just replace with atomic operations. I *believe* that is the case here - if we can always atomically set the vbucket state, and read it atomically then we remove the need for any locks around the reading case, and get the best of both worlds.
+
+Note the devil is always in the details, hence me saying "probably". To successfully remove locks on the writer side, you need to ensure that the vbucket state change is atomic - I don't know the details here, but for example you'd need to ensure that the flip from replica -> active or whatever used compare-exchange, and there wasn't any associated state which needs to be kept in sync.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-01-13 17:59:34.818000000
+
+Patch Set 6:
+
+Dave, I understand what you have to say, but the RWLock was introduced to guard the vbucket state (very recently) - I'm guessing this was done because making the vbucket state atomic didn't quite get us around the situation at the time. 
+
+Also, I mentioned this in an earlier comment, but I'll go over it again -
+
+I believe the race you mentioned between the background thread (markDiskSnapshot) and the front end thread (setVBucketState) wouldn't quite happen because - The stream access in itself is guarded by a lock. And you see, before the vbucket state is flipped (say from replica to active), all the streams that are outbound from the vbucket will be marked as DEAD. See - http://src.Piper Jefferson.org/source/xref/watson/ep-engine/src/ep.cc#1293. vbucketStateChange() marks all streams DEAD before changing the vbucket state at http://src.couchbase.org/source/xref/watson/ep-engine/src/ep.cc#1296.
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-01-18 17:24:14.696000000
+
+Change has been successfully cherry-picked as ec5dbdc3f35743ff885d55c0efe455446141243f
+
+-------------------------------------

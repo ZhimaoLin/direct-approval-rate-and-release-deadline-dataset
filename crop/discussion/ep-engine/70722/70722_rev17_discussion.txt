@@ -1,0 +1,176 @@
+DESCRIPTION
+
+MB-21917: SerialisedDocKey and test code
+
+Some parts of ep-engine store a document key as part of a larger
+memory allocation, e.g. MutationLog has the key inline with other
+metadata that it wishes to put to file in a single write.
+
+SerialisedDocKey serves this purpose, it can store all data that
+DocKey/StoredDocKey carries, but exists to be allocated into a
+pre-allocated buffer.
+
+StoredValue and MutationLog make use of this key object.
+
+Change-Id: I21c8f4052b0899e753809d0cd93eb6f2cae0f963
+
+
+COMMENTS
+
+author: Jim WNathalie Landryer
+date: 2016-12-15 19:37:54.982000000
+
+Uploaded patch set 17: Patch Set 16 was rebased.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-12-15 19:38:04.996000000
+
+Patch Set 17:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/2260/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-12-15 19:38:05.357000000
+
+Patch Set 17:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2175/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-12-15 19:38:05.759000000
+
+Patch Set 17:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1016/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-12-15 19:38:05.990000000
+
+Patch Set 17:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1838/ (4/4)
+
+-------------------------------------
+author: Keira Washington
+date: 2016-12-15 20:00:57.338000000
+
+Patch Set 17:
+
+(3 comments)
+
+Line:193, src/storeddockey.h -> This doesn't rely on the internal representation so this shouldn't be a member function.
+
+Also you can probably make it so you can compare any two kinds of DocKey with something like (this would obviously belong in 'memcached/dockey.h' so maybe not worth the effort):
+
+````
+template<typename T, typename U>
+bool operator==(const DocKeyInterface<T>& lhs, const DocKeyInterface<U>& rhs) {
+    return lhs.size() == rhs.size() &&
+               lhs.getDocNamespace() == rhs.getDocNamespace() &&
+               std::memcmp(lhs.data(), rhs.data(), lhs.size()) == 0;
+}
+````
+
+Line:222, src/storeddockey.h -> Probably worth creating an alias for this
+
+Line:226, src/storeddockey.h -> I believe this is technically invoking undefined behaviour, I believe it would be better to store the pointer in a temporary of uint8_t* and placement new with that pointer instead:
+
+    auto* temp = new uint8_t[getObjectSize(key)];
+    return std::unique_ptr<SerialisedDocKey, SerialisedDocKeyDelete>(
+            new(temp) SerialisedDocKey(key));
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-12-15 20:10:22.828000000
+
+Patch Set 17: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/2260/ : ABORTED
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1016/ : FAILURE
+
+Timeout of a CTest test 28/28 Test #21: ep_testsuite_dcp.full_eviction ...........} ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-addresssanitizer-master/1016/ )
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-addresssanitizer-master/1016/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2175/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1838/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-12-15 20:20:57.393000000
+
+Patch Set 17: -Verified
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/2264/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-12-15 20:20:57.588000000
+
+Patch Set 17:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2179/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-12-15 20:20:57.725000000
+
+Patch Set 17:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1842/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-12-15 20:20:57.867000000
+
+Patch Set 17:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1020/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-12-15 20:40:32.969000000
+
+Patch Set 17: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/2264/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2179/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1842/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1020/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-12-16 10:27:16.648000000
+
+Patch Set 18: Patch Set 17 was rebased
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-12-17 15:56:21.312000000
+
+Patch Set 17:
+
+(1 comment)
+
+Line:193, src/storeddockey.h -> Agree this can be pushed up, but disagree about being a free function, it allows us to see the operators a class supports by looking at the class def, not looking elsewhere.
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-12-19 08:58:16.070000000
+
+Change has been successfully cherry-picked as 8ca2bbe46d6a1fcdef194b60e287db7a5add2b94 by Ashlee Kent
+
+-------------------------------------

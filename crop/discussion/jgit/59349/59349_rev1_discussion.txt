@@ -1,0 +1,201 @@
+DESCRIPTION
+
+Fix a potential NPE when determining system config
+
+readPipe() may return null. This will lead to an NPE.
+
+Change-Id: I97a40aea430b3808c1342b8a8d70527972e31b4d
+
+
+COMMENTS
+
+author: Zachary Orozco
+date: 2015-10-30 14:01:18.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-10-30 14:06:45.000000000
+
+Patch Set 1: Code-Review+1
+
+Funny, I've just started to debug why I always see NPE if running jgit main from Eclipse...
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-10-30 14:22:07.000000000
+
+Patch Set 1: Code-Review-1
+
+Christian, the commit has no "signed-off" attribute - I guess this is not OK.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-10-30 14:50:09.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7352/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-10-30 14:57:56.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7352/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2015-10-30 18:29:16.000000000
+
+Patch Set 1: Code-Review+2
+
+> Christian, the commit has no "signed-off" attribute - I guess this
+ > is not OK.
+
+that's no problem, contributor changes will be rejected by the foundation's CLA check hook if they aren't signed off but sign-off is not required for committer changes
+
+What we didn't yet understand is why sometimes calling git --version returns null despite the fact that git executable was found. When debugging the problem it most often worked, so maybe some race condition in handling the external process ?
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-10-30 18:37:49.000000000
+
+Patch Set 1:
+
+> What we didn't yet understand is why sometimes calling git
+ > --version returns null despite the fact that git executable was
+ > found. When debugging the problem it most often worked, so maybe
+ > some race condition in handling the external process ?
+Definitly. Running jgit from command line always caused NPE
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-10-30 18:38:02.000000000
+
+Patch Set 1: Code-Review+1
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-10-30 22:41:56.000000000
+
+Patch Set 1:
+
+I was able to reproduce NPE's on RHEL7 Linux, but I can't do it on Windows 10. 
+
+The only way to get a NPE is that the code in readPipe() throws an exception (something obscure, may be in Gobbler.run() while reading from already closed error stream). The exception is silently eaten by the LOG.debug() at line 480 or in logError(), because default slf4j level is info and logError() logs with debug level.
+
+Because it does not happen if I run it in the debugger it must be a thread creation related timing issue on Linux. I guess "git --version" it is just too fast on Linux.
+
+I will try to debug it later, but shouldn't we report errors in FS with LOG.error()???
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-10-30 23:10:30.000000000
+
+Patch Set 1:
+
+See also https://git.eclipse.org/r/59392.
+
+What surprises me, is that if no slf4j binding is on classpath (Eclipse?), all jgit errors are logged to /dev/null, as documented in  http://www.slf4j.org/manual.html.
+
+Shouldn't we somehow change this?
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-11-01 10:22:40.000000000
+
+Patch Set 1:
+
+With the https://git.eclipse.org/r/59392/ and additionally installed SLF4J simple binding I see this error on Linux:
+
+[Thread-1] ERROR org.eclipse.jgit.util.FS - Exception caught during execution of command [git, --version] in /bin
+java.io.IOException: Stream closed
+	at java.io.BufferedInputStream.getBufIfOpen(BufferedInputStream.java:162)
+	at java.io.BufferedInputStream.fill(BufferedInputStream.java:206)
+	at java.io.BufferedInputStream.read(BufferedInputStream.java:254)
+	at org.eclipse.jgit.util.FS$GobblerThread.run(FS.java:505)
+java.lang.NullPointerException
+	at org.eclipse.jgit.util.FS.discoverGitDiya Villanueva(FS.java:549)
+	at org.eclipse.jgit.util.FS.getGitDiya Villanueva(FS.java:575)
+	at org.eclipse.jgit.util.SystemReader$Default.openDiya Villanueva(SystemReader.java:97)
+	at org.eclipse.jgit.internal.storage.file.FileRepository.<init>(FileRepository.java:171)
+	at org.eclipse.jgit.lib.BaseRepositoryBuilder.build(BaseRepositoryBuilder.java:579)
+	at org.eclipse.jgit.pgm.Main.openGitDir(Main.java:249)
+	at org.eclipse.jgit.pgm.Main.execute(Main.java:219)
+	at org.eclipse.jgit.pgm.Main.run(Main.java:124)
+	at org.eclipse.jgit.pgm.Main.main(Main.java:98)
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-11-01 10:36:20.000000000
+
+Patch Set 1:
+
+Even better, after enough attempts I get git execution so fast that it throws exceptions not only in "git --version" but also in "git config":
+
+[Thread-1] ERROR org.eclipse.jgit.util.FS - Exception caught during execution of command [git, --version] in /bin
+java.io.IOException: Stream closed
+	at java.io.BufferedInputStream.getBufIfOpen(BufferedInputStream.java:162)
+	at java.io.BufferedInputStream.fill(BufferedInputStream.java:206)
+	at java.io.BufferedInputStream.read(BufferedInputStream.java:254)
+	at org.eclipse.jgit.util.FS$GobblerThread.run(FS.java:505)
+[Thread-2] ERROR org.eclipse.jgit.util.FS - Exception caught during execution of command [git, config, --system, --edit] in /bin
+java.io.IOException: Stream closed
+	at java.io.BufferedInputStream.getBufIfOpen(BufferedInputStream.java:162)
+	at java.io.BufferedInputStream.fill(BufferedInputStream.java:206)
+	at java.io.BufferedInputStream.read(BufferedInputStream.java:254)
+	at org.eclipse.jgit.util.FS$GobblerThread.run(FS.java:505)
+
+I have a fix.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2015-11-01 10:39:41.000000000
+
+Patch Set 1:
+
+> Even better, after enough attempts I get git execution so fast that
+ > it throws exceptions not only in "git --version" but also in "git
+ > config":
+ > 
+ > [Thread-1] ERROR org.eclipse.jgit.util.FS - Exception caught during
+ > execution of command [git, --version] in /bin
+ > java.io.IOException: Stream closed
+ > at java.io.BufferedInputStream.getBufIfOpen(BufferedInputStream.java:162)
+ > at java.io.BufferedInputStream.fill(BufferedInputStream.java:206)
+ > at java.io.BufferedInputStream.read(BufferedInputStream.java:254)
+ > at org.eclipse.jgit.util.FS$GobblerThread.run(FS.java:505)
+ > [Thread-2] ERROR org.eclipse.jgit.util.FS - Exception caught during
+ > execution of command [git, config, --system, --edit] in /bin
+ > java.io.IOException: Stream closed
+ > at java.io.BufferedInputStream.getBufIfOpen(BufferedInputStream.java:162)
+ > at java.io.BufferedInputStream.fill(BufferedInputStream.java:206)
+ > at java.io.BufferedInputStream.read(BufferedInputStream.java:254)
+ > at org.eclipse.jgit.util.FS$GobblerThread.run(FS.java:505)
+ > 
+ > I have a fix.
+
+looking forward to your patch for this nasty problem
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-11-01 12:41:00.000000000
+
+Patch Set 1: Code-Review-2
+
+Please see the full fix at https://git.eclipse.org/r/59434 which fixes the root cause for the NPE.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-11-02 11:31:20.000000000
+
+Abandoned
+
+Great work, Andrey. I think you found/fixed the problem in your change and we don't need this anymore.
+
+-------------------------------------

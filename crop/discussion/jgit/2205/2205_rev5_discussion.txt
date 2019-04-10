@@ -1,0 +1,95 @@
+DESCRIPTION
+
+Use heap based stack for PackFile deltas
+
+Instead of using the current thread's stack to recurse through the
+delta chain, use a linked list that is stored in the heap.  This
+permits the any thread to load a deep delta chain without running out
+of thread stack space.
+
+Despite needing to allocate a stack entry object for each delta
+visited along the chain being loaded, the object allocation count is
+kept the same as in the prior version by removing the transient
+ObjectLoaders from the intermediate objects accessed in the chain.
+Instead the byte[] for the raw data is passed, and null is used as a
+magic value to signal isLarge() and enter the large object code path.
+
+Like the old version, this implementation minimizes the amount of
+memory that must be live at once.  The current delta instruction
+sequence, the base it applies onto, and the result are the only live
+data arrays.  As each level is processed, the prior base is discarded
+and replaced with the new result.
+
+Each Delta frame on the stack is slightly larger than the standard
+ObjectLoader.SmallObject type that was used before, however the Delta
+instances should be smaller than the old method stack frames, so total
+memory usage should actually be lower with this new implementation.
+
+Change-Id: I6faca2a440020309658ca23fbec4c95aa637051c
+
+
+COMMENTS
+
+author: Kendrick Carrillo
+date: 2011-01-05 23:43:51.000000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-01-06 17:41:00.000000000
+
+Patch Set 5: I would prefer that you didn't submit this
+
+(5 inline comments)
+
+
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-01-06 17:40:59.000000000
+
+MISMATCHED INLINE COMMENT
+Line:660, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/PackFile.java -> I dislike this approach because on delta cases (which are insanely common, most objects are deltas) we need to perform two compares to determine the type of delta.
+
+Duplicating the code under both branches meant yea, its duplicated instructions, but at least we only had one branch to carry out instead of two.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-01-06 17:40:59.000000000
+
+MISMATCHED INLINE COMMENT
+Line:687, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/PackFile.java -> I don't like this because the entire delta chain *and* the root base object are held for the entire chain being applied.  There is now way to clear those variables out until after the entire chain is applied.
+
+The delta chain frames aren't very big, so the fact that they cannot be discarded as the deltas are applied is probably not a big deal.
+
+But the root base... that's probably large, and we should be able to discard it as soon as we have patched the delta onto it.  
+
+There is no assurance that the runtime will discard delta and data from this method frame as being non-live when the applyDeltas method is invoked.  Because of that we need to assume the runtime is doing the simple thing, keeping these live until after applyDeltas returns, in which case the root base is still live... and we need to clear it ourselves when its dead.
+
+The only way I can think to do that is to keep it all in one method like I did in patch set 4.  Or allocate a new little helper object that holds these variables in it, and gets passed into applyDeltas by reference, so the variables are in the heap rather than on the stack.
+
+I'd like to avoid an allocation for the somewhat common case of a delta that gets a hit for its base in the DeltaBaseCache, so that means the longer load method like I had in patch set 4.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-01-06 17:40:59.000000000
+
+MISMATCHED INLINE COMMENT
+Line:701, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/PackFile.java -> Style-nit: No point in assigning to the argument when we are just going to return this as the result.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-01-06 17:40:59.000000000
+
+MISMATCHED INLINE COMMENT
+Line:720, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/PackFile.java -> Style-nit: Trailing whitespace.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-01-06 17:40:59.000000000
+
+MISMATCHED INLINE COMMENT
+Line:743, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/PackFile.java -> This is catching an OOM incurred while trying to allocate an IllegalArgumentException if the base doesn't match the command stream.  That's a really serious error that I don't want caught (see my comments on patch set 4).
+
+-------------------------------------

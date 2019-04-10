@@ -1,0 +1,147 @@
+DESCRIPTION
+
+Added merge support to CommitCommand
+
+The CommitCommand should take care to create a merge commit if the file
+$GIT_DIR/MERGE_HEAD exists. It should then read the parents for the merge
+commit out of this file. It should also take care that when commiting
+a merge and no commit message was specified to read the message from
+$GIT_DIR/MERGE_MSG.
+Finally the CommitCommand should remove these files if the commit
+succeeded.
+
+Change-Id: 	I4e292115085099d5b86546d2021680cb1454266c
+Signed-off-by: Zachary Orozco xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Zachary Orozco
+date: 2010-05-19 08:11:18.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-05-19 08:14:52.000000000
+
+Patch Set 2: Looks good to me, but someone else must approve; IP review completed
+
+fixed two typos and Renamed an exception class
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2010-05-19 08:39:02.000000000
+
+Patch Set 2: Looks good to me, but someone else must approve; No score
+
+
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-05-20 01:26:32.000000000
+
+Patch Set 2: I would prefer that you didn't submit this; No score
+
+
+
+Line:118, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> We're losing the safety that ensured HEAD was actually a commit.  Its been seen in real-world cases that users have managed to do something stupid and set HEAD to a tag or a tree.  Blindly assuming HEAD is a commit can only lead to data corruption when things go bad.
+
+Either keep the repo.resolve call, or do some sort of object lookup on the ObjectId to verify its actually a commit.  E.g.:
+
+  if (headId != null) {
+    ObjectLoader ldr = repo.openObject(headId);
+    if (ldr == null)
+      throw new MissingObjectException(headId, Constants.OBJ_COMMIT);
+    if (ldr.getType() != Constants.OBJ_COMMIT)
+      throw new IncorrectObjectTypeException(headId, Constants.OBJ_COMMIT);
+    parents.add(0, headId);
+  }
+
+Line:123, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> Please rebase onto master and translate the new message.
+
+Line:134, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> Style-nit: Spaces around operator.
+
+Line:135, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> See my note above on the old version.  We need to add headId to the *front* of parents.  The current branch goes first in the parent list, then the values of MERGE_HEAD, in order.  This is necessary to preserve the behavior of --first-parent logic during revision traversal.
+
+Line:153, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> parents should not be null.  So why this test?
+
+Line:148, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/CommitAndLogCommandTests.java -> Please add an assert to verify that the parent order is as-expected.  In this case that is side, master because you have merged the master branch into the current branch, which is side.
+
+Line:1354, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> I would prefer instead:
+
+  File msg = new File(gitDir, Constants.MERGE_MSG);
+  try {
+    return new String(IO.readFully(msg));
+  } catch (FileNotFoundException notFound) {
+    return null;
+  }
+
+It ensures the file will fit in memory, ensures we actually read all of it and didn't abort in the middle due to a short read, and ensures the file descriptor is closed at the end.  And, like the FileReader case you used, it uses the platform default encoding.
+
+Line:1378, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> I think I mentioned in CommitCommand that we should make sure parents is never null.  So perhaps here we return a new empty list instead of null when the file isn't present?
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-05-20 14:26:02.000000000
+
+MISMATCHED INLINE COMMENT
+Line:118, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> convinced. I'll keep the resolve call
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-05-20 14:26:02.000000000
+
+MISMATCHED INLINE COMMENT
+Line:123, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> Done
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-05-20 14:26:02.000000000
+
+MISMATCHED INLINE COMMENT
+Line:134, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> Done
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-05-20 14:26:02.000000000
+
+MISMATCHED INLINE COMMENT
+Line:135, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> Done
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-05-20 14:26:02.000000000
+
+MISMATCHED INLINE COMMENT
+Line:153, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> Done
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-05-20 14:26:02.000000000
+
+MISMATCHED INLINE COMMENT
+Line:148, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/CommitAndLogCommandTests.java -> Done
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-05-20 14:26:02.000000000
+
+MISMATCHED INLINE COMMENT
+Line:1354, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> ahh, very useful method. Didn't know about it and will use it from now on.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-05-20 14:26:02.000000000
+
+MISMATCHED INLINE COMMENT
+Line:1378, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> I was not sure whether we could have an empty MERGE_HEAD file. And I wanted to return and empty list in this case and null when this file doesn't exist (e.g. because you are currently not merging at all)
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-05-20 16:13:20.000000000
+
+MISMATCHED INLINE COMMENT
+Line:1378, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> An empty MERGE_HEAD shouldn't happen.  If the file exists but has no content, its a bug in the program that produced it.  We probably want to abort under that condition and refuse to operate further, claiming a type of repository corruption.  That is better signaled by an exception than by a return code.
+
+-------------------------------------

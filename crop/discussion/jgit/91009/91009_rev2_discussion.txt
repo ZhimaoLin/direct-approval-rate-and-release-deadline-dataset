@@ -1,0 +1,84 @@
+DESCRIPTION
+
+Refactor skip garbage pack logic into a method
+
+There are multiple places in DfsReader to skip garbage pack if both of
+the following conditions satisfied:
+
+* AvoidUnreachable flag is set
+* The pack is a garabge pack
+
+Refactor them into a shared private method.
+
+Change-Id: I67d6bb601db55f904437c807c6a3c36f0a723265
+Signed-off-by: Paloma Kennedy xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Paloma Kennedy
+date: 2017-02-13 23:34:44.000000000
+
+Uploaded patch set 2: Commit message was updated.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-02-13 23:34:51.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/9811/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-02-13 23:44:05.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/9811/ : SUCCESS
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2017-02-13 23:48:09.000000000
+
+Patch Set 2: Code-Review+2
+
+Nice refactoring.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2017-02-13 23:48:24.000000000
+
+Change has been successfully merged into the git repository by Ariel Sawyer
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2017-02-14 00:17:22.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:354, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsReader.java -> I did it this way before to make it very obvious to the JIT that the noGarbage value can be allocated in a register and assumed to never change during execution of this loop, which is heavily used by PackWriter for many phases of its execution across a large number of objects.
+
+When its moved to a helper method accessing a field its virtually impossible for the JIT to prove the avoidUnreachable field cannot be changed during execution of the loop. There is a setter method visible to the world outside of this class and the amount of method calls made by this loop is high enough that following the data flow to prove the setter cannot be invoked is nearly impossible. So the JIT must constantly load the current value of the field from the object into register to test it in the conditional. Even though its never changing.
+
+I'm curious if packing, especially the finding sizes and searching for reuse phases, is slower because of this change.
+
+-------------------------------------
+author: Paloma Kennedy
+date: 2017-02-14 00:45:58.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:354, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsReader.java -> Thanks for the explanation. That makes some sense to me now.
+
+Before making this change, I did look at your initial change (https://git.eclipse.org/r/#/c/11005/), I realized the local variable was introduced on purpose, but I didn't realize the JIT part neither from myself nor the commit message.
+
+I will keep an eye on the performance impact of the change. If thing gets noticable worse, I will revert the change.
+
+-------------------------------------

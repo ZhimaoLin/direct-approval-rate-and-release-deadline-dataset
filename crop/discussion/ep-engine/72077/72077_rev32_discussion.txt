@@ -1,0 +1,220 @@
+DESCRIPTION
+
+Add pre-expiry hook in order to strip off system xattrs
+
+Implement a pre-expiry hook to retain the system extended
+attributes in case a document containing xattrs is being expired.
+
+Change-Id: I1cb821d30ed4bb9131e28ce55944118c5147dd32
+
+
+COMMENTS
+
+author: Bobby Buck
+date: 2017-01-30 20:22:44.292000000
+
+Uploaded patch set 32.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-30 20:22:50.641000000
+
+Patch Set 32:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/3394/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-30 20:23:10.120000000
+
+Patch Set 32:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/3222/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-30 20:23:15.970000000
+
+Patch Set 32:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2830/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-30 20:23:27.673000000
+
+Patch Set 32:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/2048/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-30 20:36:26.089000000
+
+Patch Set 32: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/3222/ : FAILURE
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/3222/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2830/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/2048/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/3394/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-30 21:23:52.169000000
+
+Patch Set 32: -Verified
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/3227/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-30 21:31:43.092000000
+
+Patch Set 32: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2830/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/2048/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/3394/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/3227/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-01-31 10:19:45.197000000
+
+Patch Set 32: Code-Review-1
+
+(9 comments)
+
+Line:404, src/vbucket.cc -> This seems inefficient / overly complex - the only thing getItemInfo() needs `engine` for is to lookup the correct VBucket - but we already have the VBucket here.
+
+Suggest you refactor  getItemInfo() to mostly be implemented in VBucket, and then handlePreExpiry() can simply call the new VBucket::getItemInfo() method, without having to manipulate ref-counted pointers.
+
+Line:417, src/vbucket.cc -> I don't believe you need any of this - the `old_item` you created above has already had it's value updated as necessary by pre_expiry(). 
+
+If pre_expiry() returns true, you just need to call setDeleted() on the passed in item, and then call v.setValue().
+
+Line:423, src/vbucket.cc -> Prefer a owning pointer (unique_ptr).
+
+Line:800, tests/ep_testsuite.cc -> Looks like these were copied from xattr_blob_test.cc Should instead move them to a common place where both tests can use them.
+
+Line:818, tests/ep_testsuite.cc -> You can just use the to_string() method above.
+
+Line:859, tests/ep_testsuite.cc -> You can just directly compare the two strings:
+
+ checkeq(cas_str, to_string(blob.get(to_const_byte_buffer("_sync"))
+
+Line:5580, tests/ep_testsuite.cc -> Just use to_const_byte_buffer() from above.
+
+Line:7152, tests/ep_testsuite.cc -> I think we also need a test that the expiry pager correctly calls the pre_expiry hook. That might be better implemented using evp_store_single_threaded_test.cc - you can Adrianna Holmesally trigger the expiry pager to run (synchronously), and then verify that the pre_expiry hook is called.
+
+Line:296, src/vbucket.h -> Please document this method.
+
+-------------------------------------
+author: Bobby Buck
+date: 2017-01-31 20:27:58.557000000
+
+Patch Set 32:
+
+(1 comment)
+
+Line:417, src/vbucket.cc -> I believe the pre-expiry callback updated the iov_base and iov_len. The value didn't seem to get updated. Hence the new_item.
+
+-------------------------------------
+author: Bobby Buck
+date: 2017-02-01 19:38:27.433000000
+
+Patch Set 32:
+
+(1 comment)
+
+Line:404, src/vbucket.cc -> getItemInfo is also called from the engine API and is expected to return appropriate values even if the vbucket is not present. Hence, the idea of placing it in the engine object.
+
+-------------------------------------
+author: Bobby Buck
+date: 2017-02-01 20:11:20.893000000
+
+Patch Set 32:
+
+(7 comments)
+
+Line:423, src/vbucket.cc -> Done
+
+Line:800, tests/ep_testsuite.cc -> Done
+
+Line:818, tests/ep_testsuite.cc -> Done
+
+Line:859, tests/ep_testsuite.cc -> Done
+
+Line:5580, tests/ep_testsuite.cc -> Done
+
+Line:7152, tests/ep_testsuite.cc -> Done
+
+Line:296, src/vbucket.h -> Done
+
+-------------------------------------
+author: Bobby Buck
+date: 2017-02-02 21:19:24.953000000
+
+Patch Set 32:
+
+(1 comment)
+
+Line:417, src/vbucket.cc -> The iov_base and iov_len are updated with the expected value. But, the value in old_item isn't updated in the callback. So, the old_item, by itself, doesn't seem to be readily usable (I tried to get old_item->getData() and it still contained user attributes). Thus, creating a new object with iov_base and iov_len and calling v.setValue() to get the desired result.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-02-02 12:06:18.889000000
+
+MISMATCHED INLINE COMMENT
+Line:404, src/vbucket.cc -> Not sure I follow you. 
+
+The point I was trying to make is that the implementation of EPEngine::getItemInfo has to lookup a VBucket from the Id in Stored value, increment a ref-counted pointer on it, just to get the UUID.
+
+In this context, we already know the VBucket and hence that's unnecessary work. Given we'll potentially be calling this method many many times in expiration it should aim to be as efficient as we can - not to mention the fact it makes this code more complex than it needs to be.
+
+For example, create a new Item::toItemInfo() method along the lines of:
+
+ item_info Item::toItemInfo(uint64_t vb_uuid) {
+     item_info info;
+     info.seqno = it.getBySeqno();
+     info.exptime = it.getExptime();
+     ...
+     return info;
+ }
+
+Then call that from here as:
+
+ auto itm_info = itm->toItemInfo(failovers->getLatestUUID());
+
+And then in EPEngine::getItemInfo (or maybe EVPGetItemInfo directly) as:
+
+    RCPtr<VBucket> vb = kvBucket->getVBucket(it.getVBucketId());
+    uint64_t vb_uuid = vb ? vb->failovers->getLatestUUID() : 0;
+    auto itm_info = ot->toItemInfo(vb_uuid);
+
+This means we only pay for the VBucket lookup / ref-counting cost where we need to.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-02-02 12:06:18.889000000
+
+MISMATCHED INLINE COMMENT
+Line:417, src/vbucket.cc -> Sure - so the memcached callback will update the iov_base and len (within the original byte buffer they gave us) - but we can just use the same item we passed them to pass into v.setValue().
+
+To phrase another way - an ItemInfo object is just a proxy which is passed between memcached and ep-engine so we never "expose" the real StoredValue to memcached.  We've created one proxy object `itm_info` here, which memcached is allowed to modify as it desires (e.g. adjusting the iov). We can then just use the same object (assuming the pre_expiry callback returned true) to pass into v.setValue to update it's value. 
+
+I don't believe we need a second temporary copy which is only going to get discarded at the end of this scope.
+
+-------------------------------------

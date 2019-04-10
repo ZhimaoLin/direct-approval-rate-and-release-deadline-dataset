@@ -1,0 +1,103 @@
+DESCRIPTION
+
+Adding micro benchmarks for DCP compression during in-memory streaming
+
+=== DCP In-memory Stream Latency [As_is vs. Compress] - 10000 items (µs) =====
+
+                         Percentile
+           Median     95th     99th  Std Dev  Histogram of samples
+
+As_is       3.232   31.197   36.623   10.337  ▁█▄▅▃▂▂▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+Compress   15.427   39.599   60.457   12.235  ▁▃▂▄▆▄▆▆▆▇▇█▆▆▇▇▇▆▅▄▃▃▂▃▂▂▂▂▂▂▂▂
+                                              0              µs              39
+
+=== DCP In-memory Bytes received [As_is vs. Compress] - 10000 items (KB) ======
+
+                         Percentile
+           Median     95th     99th  Std Dev  Histogram of samples
+
+As_is      50.069   95.069   99.069   28.869  ▁▇██████████████████████████████
+Compress    2.409    4.520    4.706    1.355  ▁█▅▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+                                              0              KB              95
+
+Change-Id: I4741628a3dad3b43f03ba96a170355affe5e8a72
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2015-08-28 01:37:17.751000000
+
+Uploaded patch set 7.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-08-28 01:37:26.184000000
+
+Patch Set 7:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/886/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-08-28 01:45:00.141000000
+
+Patch Set 7: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/886/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-08-28 07:24:29.608000000
+
+Patch Set 7: Code-Review-1
+
+(3 comments)
+
+My main concern is the code duplication in your new print_sizes() function. The more representative / less compressible payload can be deferred to a follow-up patch if you're adding more workloads.
+
+Line:133, tests/ep_perfsuite.cc -> This looks virtually identical to the print_timings() function. I suggest you refactor to make them common and remove all the code duplication. One possibility is to change Stats to be a class templated on the type of the statistic, removing the new 'siz' member and renaming the current vector to 'value'. 
+
+Something like:
+
+ template<typename T>
+ struct Stats {
+     ...
+     std::vector<T>* values;
+ }
+ ...
+ template<typename T>
+ void print_values(std::vector<std::pair<std::string,
+                                         std::vector<T>*> > values)
+
+Line:471, tests/ep_perfsuite.cc -> You can also use an initializer list in a copy-constructor.
+
+Line:506, tests/ep_perfsuite.cc -> I'm unsure about such a simple value - while for some workloads it might be reasonable, a string of just 'x's will compress extremely well (most likely better than any real data would).
+
+This is maybe ok for a 'baseline' test to determine the best possible outcome, but we should add some additional tests with more realistic data.
+
+You could do something like commit a sample of /usr/share/dict/words (say a thousand), load them into a std::vector<std::string> and then pseudo-randomly select ones to make up the payload.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-08-28 22:15:33.289000000
+
+Patch Set 7:
+
+(3 comments)
+
+Line:133, tests/ep_perfsuite.cc -> This was in queue for the next patch : ), thank you for the comment though.
+
+Line:471, tests/ep_perfsuite.cc -> Done
+
+Line:506, tests/ep_perfsuite.cc -> Makes sense, I'll add a couple of other variants with this patch, and will add more sensible payloads later.
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-09-02 18:22:52.618000000
+
+Change has been successfully cherry-picked as 37dfc37198cdfdc1388e0e8ff1003f9b6e9d8b9d
+
+-------------------------------------

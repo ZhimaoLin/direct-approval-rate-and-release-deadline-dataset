@@ -1,0 +1,46 @@
+DESCRIPTION
+
+MB-20153 scanner: Fix race condition in pipeline shutdown
+
+When an error occurs in IndexScanWriter (sink), the pipeline
+the sink routine will terminate and pipeline supervisor will
+call kill() for source and filters. If source or sink is already
+processing another error it will call CloseWithError(). During
+the processig of CloseWithError(), it will see that supervisor
+has requested termination. CloseWithError() frees the current
+buffer block back to the sync.Pool without marking it as freed.
+The default destructor for the sink or source calls CloseWrite().
+As current buffer block is not marked as freed, it would free the
+buffer block again to sync.Pool causing invalid blocks to be passed
+across sync.Pool leading to crash.
+
+Steps for repro:
+1. Run many cbindexperf or gsiclients with requests cancel
+(leads to source and sink shutdown with error)
+2. Kill some of the cbindexperf instances\
+(leads to error in sink due to network write and sink termination)
+
+Change-Id: I9755bff41de4ddef8128eb403f89f21ffe1fbe8b
+(cherry picked from commit 5ddb5cef06353e76dab4b3857298ba0d8e71b473)
+
+
+COMMENTS
+
+author: Justice Schneider
+date: 2016-07-14 06:41:19.854000000
+
+Patch Set 1: Cherry Picked from branch 4.5.0.
+
+-------------------------------------
+author: Justice Schneider
+date: 2016-07-14 06:41:26.885000000
+
+Patch Set 1: Code-Review+2 Verified+1
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-07-14 06:41:29.575000000
+
+Change has been successfully merged into the git repository by Justice Schneider
+
+-------------------------------------

@@ -1,0 +1,155 @@
+DESCRIPTION
+
+JCBC-933: FTS, RFC 10 compliant (fts iteration2)
+
+Motivation:
+-----------
+FTS, or Full Text Search, is a new mean of querying Couchbase introduced
+in 4.5.0 as a BETA feature. RFC10 aims at providing support of FTS in
+the SDKs.
+
+Modifications:
+--------------
+Added a SearchUtils class with ISO 822 to RFC 3339 date conversion.
+
+Added the FTS query API under package
+com.couchbase.client.java.fts.SearchParams and at the Bucket level.
+
+Response parsing is still based on 4.5.0 state of FTS and is not using
+a streaming parser, but rather converting the whole response JSON into
+the SDK's objects.
+
+Added AssertJ test dependency for more expressive tests.
+
+Results:
+--------
+RFC 10 is implemented, allowing FTS queries to be made.
+
+Change-Id: I1532ca9af116c00bd3d8fd3c43c6d6859132d287
+
+
+COMMENTS
+
+author: Estrella Humphrey
+date: 2016-05-10 16:37:29.731000000
+
+Uploaded patch set 21: Patch Set 20 was rebased.
+
+-------------------------------------
+author: Estrella Humphrey
+date: 2016-05-11 18:19:25.623000000
+
+Patch Set 21: Verified+1
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2016-05-12 06:49:59.833000000
+
+Patch Set 21: Code-Review-1
+
+(19 comments)
+
+lots of nits, overall awesome :)
+
+Line:54, src/main/java/com/couchbase/client/java/fts/facet/NumericRangeFacet.java -> does this need to be public?
+
+Line:18, src/main/java/com/couchbase/client/java/fts/result/facets/AbstractFacetResult.java -> space ;)
+
+Line:32, src/main/java/com/couchbase/client/java/fts/facet/SearchFacet.java -> AbstractSearchFacet?
+
+Line:44, src/main/java/com/couchbase/client/java/fts/result/hits/DefaultHitLocations.java -> make this CHM just to be sure?
+
+Line:54, src/main/java/com/couchbase/client/java/fts/result/hits/DefaultHitLocations.java -> fixme?
+
+Line:99, src/main/java/com/couchbase/client/java/fts/result/impl/DefaultAsyncSearchQueryResult.java -> holy crap this is a beast - i think lets keep it since we need to rework it for streaming later anyways, but.. wow :D
+
+Line:32, src/main/java/com/couchbase/client/java/fts/result/facets/FacetResult.java -> javadocs?
+
+Line:40, src/main/java/com/couchbase/client/java/fts/SearchQuery.java -> fixme :)
+
+Line:48, src/main/java/com/couchbase/client/java/fts/SearchQuery.java -> does it makes sense to make it abstract too?
+
+Line:54, src/main/java/com/couchbase/client/java/fts/SearchQuery.java -> since all the others extend from here does it make sense to make those constructors protected?
+
+Line:45, src/main/java/com/couchbase/client/java/fts/queries/PhraseQuery.java -> I'm confused - wouldn't a plain ArrayList also preserve ordering?
+
+Line:76, src/main/java/com/couchbase/client/java/Bucket.java -> ?
+
+Line:35, src/main/java/com/couchbase/client/java/fts/result/hits/HitLocations.java -> ws
+
+Line:98, src/main/java/com/couchbase/client/java/fts/queries/NumericRangeQuery.java -> nice! :) I was looking for that one ;)
+
+Line:38, src/main/java/com/couchbase/client/java/fts/result/SearchQueryResult.java -> what do you think about implementing iterable here too to get the rows?
+
+would this allow us to throw an exception when iterating instead of manually checking the errors? Then it could mirror the Async behaviour as close as possible
+
+Line:32, src/main/java/com/couchbase/client/java/fts/queries/AbstractFtsQuery.java -> Should this be AbstractSearchQuery ? (Fts/Search)
+
+Line:73, src/main/java/com/couchbase/client/java/fts/queries/TermQuery.java -> can the prefix length be only set if fuzziness is set?
+
+Line:35, src/main/java/com/couchbase/client/java/fts/queries/DisjunctionQuery.java -> should this be always 1 or is there a server default that we can use? I don't remember exactly
+
+Line:46, src/main/java/com/couchbase/client/java/fts/facet/DateRangeFacet.java -> does this need to be public?
+
+-------------------------------------
+author: Estrella Humphrey
+date: 2016-05-12 09:51:51.997000000
+
+Patch Set 21: -Verified
+
+(19 comments)
+
+Line:54, src/main/java/com/couchbase/client/java/fts/facet/NumericRangeFacet.java -> same as for daterange, not in the absolute but doesn't hurt IMHO
+
+Line:18, src/main/java/com/couchbase/client/java/fts/result/facets/AbstractFacetResult.java -> Done
+
+Line:32, src/main/java/com/couchbase/client/java/fts/facet/SearchFacet.java -> yeah it is abstract, but at the same time it'll be used to instantiate the various facets (through static factory methods), so I'd prefer to keep the name without a prefix (and maybe clarify this in the javadoc?).
+That said the only similar existing thing I could find in a quick search is JsonValue (with the much unused jo() and ja() methods).
+
+Line:44, src/main/java/com/couchbase/client/java/fts/result/hits/DefaultHitLocations.java -> actually after thinking of it, it is not expected that concurrent threads update the hitLocations (it'll be parsed within the parsing of a single hit)
+
+Line:54, src/main/java/com/couchbase/client/java/fts/result/hits/DefaultHitLocations.java -> removed (see above)
+
+Line:99, src/main/java/com/couchbase/client/java/fts/result/impl/DefaultAsyncSearchQueryResult.java -> Done
+
+Line:32, src/main/java/com/couchbase/client/java/fts/result/facets/FacetResult.java -> Done
+
+Line:40, src/main/java/com/couchbase/client/java/fts/SearchQuery.java -> Done
+
+Line:48, src/main/java/com/couchbase/client/java/fts/SearchQuery.java -> see below
+
+Line:54, src/main/java/com/couchbase/client/java/fts/SearchQuery.java -> no, the SearchQuery is not the base class for termQuery, phraseQuery, etc... but rather the API's entry point. What you pass in to Bucket.query and also the spot where you can find factory methods for all sorts of querie s (so that you only have to use 1 class). The base class for query types is AbstractFtsQuery.
+
+Line:45, src/main/java/com/couchbase/client/java/fts/queries/PhraseQuery.java -> correct, don't remember why LinkedList would be a better candidate...
+
+Line:76, src/main/java/com/couchbase/client/java/Bucket.java -> Done
+
+Line:35, src/main/java/com/couchbase/client/java/fts/result/hits/HitLocations.java -> Done
+
+Line:98, src/main/java/com/couchbase/client/java/fts/queries/NumericRangeQuery.java -> Done
+
+Line:38, src/main/java/com/couchbase/client/java/fts/result/SearchQueryResult.java -> done! iterator() will call hitsOrFail().iterator()
+
+Line:32, src/main/java/com/couchbase/client/java/fts/queries/AbstractFtsQuery.java -> There's the SearchQuery that is comparable to N1qlQuery and ViewQuery (top-level, bucket entry point to the API)
+
+and then there's this hierarchy of classes, with a base class that is only useful for type safety and the boost parameter
+and bleve/FTS refers to elements in this hierarchy as "queries" :( :( :(
+so naturally we both adopted the term in the naming like TermQuery, MatchQuery
+
+but it's a bit confusing: is a MatchQuery related to a SearchQuery? no more than it is related to a ViewQuery...
+
+so I decided on AbstractFtsQuery for the base so that this confusion is not made
+
+Line:73, src/main/java/com/couchbase/client/java/fts/queries/TermQuery.java -> yes, the prefixLength is tied to fuzzyness: it forces the fuzzyness to only apply beyond the prefixLength in the original term
+
+Line:35, src/main/java/com/couchbase/client/java/fts/queries/DisjunctionQuery.java -> there's a server default of 1. will change to -1 and not include the min in payload if < 1 (could still make sense to force to 1 if in the future the server default changes)
+
+Line:46, src/main/java/com/couchbase/client/java/fts/facet/DateRangeFacet.java -> not absolutely, though it doesn't hurt IMHO.
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-05-13 09:19:16.962000000
+
+Change has been successfully cherry-picked as 0057d2b09513d41c64772b4e26f4297a4563730f by Estrella Humphrey
+
+-------------------------------------

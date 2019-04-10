@@ -1,0 +1,100 @@
+DESCRIPTION
+
+Fix cleanup of SimplePauseDetector threads
+
+Motivation:
+-----------
+Previously, the SimplePauseDetector threads were shut down by a JVM shutdown
+hook. Both this hook and the threads themselves induce a classloader leak,
+which can be an issue when used in environments such as application servers
+where an application is undeployed and the JVM is not necessarily shut down.
+
+Modifications:
+--------------
+In keeping with the goals of all of JVMCBC-230, JVMCBC-251 and JVMCBC-331,
+there is still a static PauseDetector (so the same detector will be shared
+across multiple metrics collectors within the same classloader), but it is
+started up and shut down according to a reference count in
+AbstractLatencyMetricsCollector. This is justified by the fact that threads
+in Java are not automatically collected resources.
+
+Results:
+--------
+There are no longer any SimplePauseDetector threads or shutdown hooks
+referring to the classloader upon successful shutdown of all CBC resources.
+
+Change-Id: I2f6ded291e641b260c01efe2f7ab1d1907612bda
+
+
+COMMENTS
+
+author: Lewis Roach
+date: 2016-09-15 22:40:24.584000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2016-09-20 07:03:55.230000000
+
+Patch Set 1:
+
+Thanks for your PR I'll take a look shortly!
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2016-09-20 07:12:19.739000000
+
+Patch Set 1:
+
+Do we really need the locking if we just use a volatile int for the refcounting?
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2016-09-20 07:12:44.930000000
+
+Patch Set 1:
+
+or if you want to be more explicit use the helper methods on an AtomicInteger?
+
+-------------------------------------
+author: Lewis Roach
+date: 2016-09-20 07:50:50.630000000
+
+Patch Set 1:
+
+> Do we really need the locking if we just use a volatile int for the
+ > refcounting?
+
+At some point, yes.
+If the volatile int were updated atomically (using AtomicIntegerFieldUpdater), the thread that changes it from 0 to 1 would start the PauseDetector and another thread that changes it from 1 to 2 would have to wait (somehow) for that first initialisation to finish before it has the PauseDetector to pass to the LatencyStats builder.
+
+The alternative would be holding some sort of atomic reference (AtomicReference or volatile field with AtomicReferenceFieldUpdater) to an object containing both a PauseDetector and a reference count, and multiple users would optimistically create PauseDetectors and the ones that fail to do the update of that reference would be responsible for shutting down the unnecessarily created ones. This would just involve useless thread creation/destroying and would certainly involve far more synchronisation than the current patch set.
+
+It should probably be noted that this normally only happens during initialisation of a CoreEnvironment; it shouldn't add any extra synchronisation within requests.
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2016-09-20 08:33:10.979000000
+
+Patch Set 1:
+
+(1 comment)
+
+Okay makes sense. 
+
+two things:
+ - can you add JVMCBC-368: to the prefix before "fix cleanup"
+ - fix the nit around {} for single line statements?
+
+Thanks
+
+Line:105, src/main/java/com/couchbase/client/core/metrics/AbstractLatencyMetricsCollector.java -> please use  { }
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-09-28 06:42:27.865000000
+
+Change has been successfully cherry-picked as 92f20d79235011b39a68f11a4d7ab3f2a23be6a4 by Natasha Sullivan
+
+-------------------------------------

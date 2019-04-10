@@ -1,0 +1,181 @@
+DESCRIPTION
+
+MB-22123 - improve DCP rollback log message
+
+Hoping to make the DCP rollback log message slightly more informative,
+now gives a reason for the rollback.
+
+For example,
+
+2016-12-28T06:27:00.946484Z WARNING (default) DCP (Producer)
+eq_dcpq:xdcr:dcp_5ce87... - (vb 543) Stream request requires rollback to
+seqno:0 because vBucket UUID not found in failover table, consumer and
+producer have no common history. Client requested seqnos:{10,1000}
+snapshot:{0,10} uuid:158138309967234
+
+Other possible cases:
+
+... rollback to X required because ...
+ purge seqno (20) is greater than snapshot start - items may have been
+deleted and purged and could be missed
+ consumer ahead of producer - producer upper at 0
+
+Change-Id: Idd171840076fc4d6cf95a71232a865edb58efc31
+
+
+COMMENTS
+
+author: Jace Townsend
+date: 2017-01-24 13:48:09.351000000
+
+Uploaded patch set 7.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-24 13:48:14.737000000
+
+Patch Set 7:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2593/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-24 13:48:14.892000000
+
+Patch Set 7:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1798/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-24 13:48:15.055000000
+
+Patch Set 7:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2967/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-24 13:48:15.218000000
+
+Patch Set 7:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/3131/ (4/4)
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-01-24 13:54:46.120000000
+
+Patch Set 7: Code-Review+1
+
+Code looks good. Letting PV review before giving +2.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-24 14:03:16.168000000
+
+Patch Set 7: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2967/ : FAILURE
+
+ThreadSanitizer issue: data race ??:0 operator delete(void*)  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/2967/ )
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/2967/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2593/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1798/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/3131/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-24 16:42:10.379000000
+
+Patch Set 7: -Verified
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2976/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-24 16:52:02.451000000
+
+Patch Set 7: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2593/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1798/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/3131/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2976/ : SUCCESS
+
+-------------------------------------
+author: Darian Blanchard
+date: 2017-01-25 01:11:38.870000000
+
+Patch Set 7: Code-Review-1
+
+(1 comment)
+
+Line:280, src/dcp/producer.cc -> (Nitpicking): I would suggest trying to get the logging uniformed/common from left to right. This makes it easier to read the logs especially when the lines are together (think about grep'ing the log files). In this case the reason should be at the end as that is the part that could change.
+
+Looks at my lines together compare to yours:
+
+WARNING (default) DCP (Producer) eq_dcpq:xdcr:dcp_5ce87... - (vb 543) Stream request (seqnos:{10,1000} snapshot:{0,10} uuid:158138309967234) requires rollback to seqno:0 because vBucket UUID not found in failover table, consumer and producer have no common history.
+WARNING (default) DCP (Producer) eq_dcpq:xdcr:dcp_5ce87... - (vb 543) Stream request (seqnos:{10,1000} snapshot:{0,10} uuid:158138309967234) requires rollback to seqno:0 because purge seqno (20) is greater than snapshot start - items may have been deleted and purged and could be missed
+
+It also makes it easier to write a parser.
+
+Might be worth having a read over: http://www.masterzen.fr/2013/01/13/the-10-commandments-of-logging/
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-01-25 10:48:52.938000000
+
+Patch Set 7:
+
+(1 comment)
+
+Line:280, src/dcp/producer.cc -> I agree with the principle, but I actually disagree with the outcome - In the current implementation the lines /are/ common *up to the point where they differ*. 
+
+For example you see the same common prefix for a rollback ("Stream request requires a rollback to seqno:") so easy to spot, but when the reason differs ("because <REASON>" that's easy to see differently.
+
+The extra client context (start/end snap_start/end) comes later, and the reader only needs to read it if they actually care about the numbering.
+
+To phrase in another way, with the current code the reader essentially gets the most important information first, then with more detail later on (which they scan ignore if they aren't interested:
+
+> (vb 543) Stream request requires rollback to
+seqno:0 because vBucket UUID not found in failover table, consumer and
+producer have no common history.  <line noise I might not care about>
+
+However in your example the eye explicitly /has/ to parse and skip over the extra details if you don't care about it:
+
+> (vb 543) Stream request <line noise I might not care about> requires rollback to seqno:0 because vBucket UUID not found in failover table, consumer and
+producer have no common history
+
+-------------------------------------
+author: Darian Blanchard
+date: 2017-01-25 17:07:16.207000000
+
+Patch Set 7: -Code-Review
+
+I can see it from both side removing my -1.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-01-25 17:12:38.568000000
+
+Patch Set 7: Code-Review+2
+
+-------------------------------------
+author: Tate Garrett
+date: 2017-01-25 17:13:03.848000000
+
+Change has been successfully cherry-picked as 0a81d315bd13d3c8f99354abcc72a817559b984d by Ashlee Kent
+
+-------------------------------------

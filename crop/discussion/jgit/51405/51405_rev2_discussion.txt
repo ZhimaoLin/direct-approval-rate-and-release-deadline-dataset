@@ -1,0 +1,198 @@
+DESCRIPTION
+
+WIP: first attempt at adding support for 'NO_GITLINKS'
+
+Bug: 436200
+Change-Id: Ifeb020f26da8352614e8866e18e3342b34605191
+Signed-off-by: Renee Levy xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Renee Levy
+date: 2015-07-06 11:39:49.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-07-06 11:45:15.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/6832/
+
+-------------------------------------
+author: Renee Levy
+date: 2015-07-06 11:49:32.000000000
+
+Patch Set 2:
+
+(6 comments)
+
+Line:4, org.eclipse.jgit/src/org/eclipse/jgit/lib/DirectoryFlags.java -> Not really sure what this class should be called or where it should live. I called it 'DirectoryFlags' for now, to try to model it off of the enumerated values in the C code... but since I've only implemented a single one of those flags, I'm not sure if that makes sense.
+
+Line:142, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/FileTreeIterator.java -> In its current form this patch introduces several new signatures for existing methods. I'm not really pleased with how that came out, but didn't see another obvious way to achieve this w/o breaking compatibility with the existing signatures.
+
+Line:194, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/FileTreeIterator.java -> As mentioned in the comments on the bug tracker, this logic is not quite as sophisticated as what native git does here, and it might be preferable to extend it to match that logic more closely. However, I think that in order to do that, it might be necessary to have access to the current state of the index for the working tree from this spot in the code, and that seemed like it might be challenging to achieve.
+
+Line:222, org.eclipse.jgit.junit/src/org/eclipse/jgit/junit/LocalDiskRepositoryTestCase.java -> This method was just pushed down from RepositoryTestCase, because it was not really using any member variables from the child class, and was useful for writing tests. This should probably be broken into a separate commit and proposed as a distinct patch.
+
+Line:20, org.eclipse.jgit.test/tst/org/eclipse/jgit/lib/DirectoryFlagsTest.java -> I think these tests are probably headed in the right direction, but the package/class names are probably not. Will depend on what is determined to be the appropriate place in the API to expose the new setting.
+
+Line:251, org.eclipse.jgit.junit/src/org/eclipse/jgit/junit/RepositoryTestCase.java -> Just pushed this down into LocalDiskRepository test case. This should probably be submitted as a separate patch.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-07-06 11:52:51.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/6832/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-07-07 00:11:40.000000000
+
+Patch Set 2:
+
+(9 comments)
+
+File Comment: org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> Not sure whether we have to tell the Repository about this low-level flag never exposed in porcellain. See my comments in FileTreeIterator
+
+Line:4, org.eclipse.jgit/src/org/eclipse/jgit/lib/DirectoryFlags.java -> My attempt as a lazy guy would have been to to put this flag in the already existing WorkingTreeOptions. Seems to fit and we don't need a new type, deal with correct propagation of flags to subwalks.
+
+Line:142, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/FileTreeIterator.java -> One solution would be to add the a no_gitlinks attribute to WorkingTreeOptions. Maybe not even change the repository class to know something about DirectoryFlags. Whoever needs such a special FileTreeIterator has to call the constructor which takes the explicit workingTreeOptions and has to take care the the no_gitlinks is set. All other constructors construct a iterator which doesn't know this flag.
+
+Just a thought which would lead to a very small change (and no API change). I am myself not sure whether it is wise not to let the Repository know about the default setting for this flag.
+
+Line:194, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/FileTreeIterator.java -> Right. But I think it's crucial. Otherwise we silently delete stuff from the next commit (already existing submodule entries). You can easily see inconsistencies when during calls to status, add, diff you use different values for NO_GITLINKS. By doublechecking with the index the problems are much less.
+
+If we want a functionality which has to check workingtree and dircache ... then why don't we put that into a TreeWalk. The TreeWalk nows about multiple iterators and makes sure WorkingTreeIterator and DirCacheIterator are in sync. When using a treewalk and adding iterators we could detect that we have a workingtree and a dircache and let him call the already existing WorkingTreeIterator.setDirCacheIterator(). Now WorkingTreeIterators nows about a DirCacheIterator and can make use of it.
+
+Line:222, org.eclipse.jgit.junit/src/org/eclipse/jgit/junit/LocalDiskRepositoryTestCase.java -> I agree. Feel free to propose the refactoring in a seperate predecessor commit.
+
+Line:20, org.eclipse.jgit.test/tst/org/eclipse/jgit/lib/DirectoryFlagsTest.java -> +1
+
+Line:59, org.eclipse.jgit.junit/src/org/eclipse/jgit/junit/RepositoryTestCase.java -> this unneeded import has to be removed. Otherwise eclipse complains.
+
+Line:63, org.eclipse.jgit.junit/src/org/eclipse/jgit/junit/RepositoryTestCase.java -> this unneeded import has to be removed. Otherwise eclipse complains.
+
+Line:195, org.eclipse.jgit.junit/src/org/eclipse/jgit/junit/RepositoryTestCase.java -> This should be move also to the parent class. Doesn't make sense to move only one of the indexState methods
+
+-------------------------------------
+author: Renee Levy
+date: 2015-07-07 11:24:19.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:195, org.eclipse.jgit.junit/src/org/eclipse/jgit/junit/RepositoryTestCase.java -> This one *does* use a member variable, though: `db`.  That variable is not accessible from the parent class.
+
+-------------------------------------
+author: Renee Levy
+date: 2015-07-07 11:55:01.000000000
+
+Patch Set 2:
+
+(5 comments)
+
+File Comment: org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> Fair enough.  I'm happy to put it on `WorkTreeOptions`.
+
+Line:4, org.eclipse.jgit/src/org/eclipse/jgit/lib/DirectoryFlags.java -> That was my original thought as well, but I wasn't certain whether or not everyone would agree that that was a broadly-accessible enough spot in the API to surface it.  I can move it back over there.
+
+Line:142, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/FileTreeIterator.java -> Sounds good.
+
+Line:194, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/FileTreeIterator.java -> I agree with you about the importance.  I'm not yet familiar with `DirCacheIterator` or how it fits into the object model.  I'll spend some time looking into that.
+
+Line:222, org.eclipse.jgit.junit/src/org/eclipse/jgit/junit/LocalDiskRepositoryTestCase.java -> Great, I've created a branch that shows one very minor change that I made to this method (change `db` to `repo` on line 213 above), just to make sure that my assumptions about that are correct.  Assuming that is merged then I have another follow-up ready that moves it to the parent class, and then I will rebase this branch once those are merged.
+
+-------------------------------------
+author: Renee Levy
+date: 2015-07-07 12:05:49.000000000
+
+Patch Set 2:
+
+One other thing I've been thinking about in terms of building out the more complete implementation that looks at the index in addition to the DIR_NO_GITLINKS flag... I think it would probably be helpful to write out all the test cases that I need to cover first.  So, with a test directory structure like this:
+
+??? foo
+    ??? bar
+        ??? .git
+        ?   ??? ...
+        ??? README1.md
+        ??? README2.md
+
+Off of the top of my head, here are the tests I can think of:
+
+* new repo in foo, `git add bar`, verify that we get a GITLINK, verify that 'status' doesn't show any other files
+* new repo in foo, `git add bar/README1.md`, verify that we get a regular file, no GITLINKs, verify that `status` shows README2.md as unstaged
+* new repo in foo, set DIR_NO_GITLINKS on workTreeOptions, `git add bar`, verify that `status` both README1 and README2 are added, no GITLINKs?  And maybe do another `git add bar` *without* setting DIR_NO_GITLINKS after that, and validate that it still doesn't create a GITLINK?
+
+Other things we should make sure we cover?
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-07-10 07:39:24.000000000
+
+Patch Set 2: Code-Review+2
+
+> One other thing I've been thinking about in terms of building out
+ > the more complete implementation that looks at the index in
+ > addition to the DIR_NO_GITLINKS flag... I think it would probably
+ > be helpful to write out all the test cases that I need to cover
+ > first.  So, with a test directory structure like this:
+ > 
+ > ??? foo
+ > ??? bar
+ > ??? .git
+ > ?   ??? ...
+ > ??? README1.md
+ > ??? README2.md
+ > 
+ > Off of the top of my head, here are the tests I can think of:
+ > 
+ > * new repo in foo, `git add bar`, verify that we get a GITLINK,
+ > verify that 'status' doesn't show any other files
+ > * new repo in foo, `git add bar/README1.md`, verify that we get a
+ > regular file, no GITLINKs, verify that `status` shows README2.md as
+ > unstaged
+ > * new repo in foo, set DIR_NO_GITLINKS on workTreeOptions, `git add
+ > bar`, verify that `status` both README1 and README2 are added, no
+ > GITLINKs?  And maybe do another `git add bar` *without* setting
+ > DIR_NO_GITLINKS after that, and validate that it still doesn't
+ > create a GITLINK?
+ > 
+ > Other things we should make sure we cover?
+
+Exactly such test I also had in mind. Please add them.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-07-10 07:41:22.000000000
+
+Patch Set 2:
+
+> Other things we should make sure we cover?
+
+Maybe. I think it's faster to propose first set of test and then find out whats missing. I sometimes use e.g. code coverage tools to see what areas are not touched.
+
+-------------------------------------
+author: Renee Levy
+date: 2015-07-14 09:06:05.000000000
+
+Patch Set 2:
+
+I rebased this to reflect the fact that the LocalDiskRepositoryTestCase changes had already been merged and tried to push that up to Gerritt, but it seems to have showed up as a new "change" rather than supplementing this one.  So I will close this one out in favor of the new one and continue to do work there:
+
+https://git.eclipse.org/r/#/c/51906/
+
+-------------------------------------
+author: Renee Levy
+date: 2015-07-14 09:07:52.000000000
+
+Abandoned
+
+-------------------------------------

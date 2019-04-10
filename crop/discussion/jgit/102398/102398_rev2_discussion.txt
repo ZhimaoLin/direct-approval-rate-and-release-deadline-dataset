@@ -1,0 +1,67 @@
+DESCRIPTION
+
+Align core.logAllRefUpdates={true,false} with C git
+
+There are two separate ways C git sets the "default" for
+core.logAllRefUpdates.
+
+First, when initializing a repo, "git init" prepopulates the value in
+the config file as "true" if non-bare, and leaves it unset otherwise:
+
+  $ git init -q nonbare && cat nonbare/.git/config
+  [core]
+          repositoryformatversion = 0
+          filemode = true
+          bare = false
+          logallrefupdates = true
+  $ git init -q --bare bare.git && cat bare.git/config
+  [core]
+          repositoryformatversion = 0
+          filemode = true
+          bare = true
+
+Fix FileRepository#create to match this behavior.
+
+Second, separate from prepopulating the config file,
+refs/files-backend.c:2055 treats an unset value as "false" if the repo
+is bare and "true" otherwise:
+
+  if (log_all_ref_updates == LOG_REFS_UNSET)
+    log_all_ref_updates = is_bare_repository() ? LOG_REFS_NONE : LOG_REFS_NORMAL;
+
+Fixing CoreConfig to match this behavior is ugly, because until now
+there was a constant SectionParser KEY, and SectionParser can only read
+a Config, it can't take into account any properties of the containing
+repo that are not part of the Config. Deprecate the constant KEY and
+replace it with a method key(Repository), using the new method (almost)
+everywhere in JGit itself.
+
+Change-Id: Ib5c2ff8650b67d889ad7af0329376f8700dea5a8
+
+
+COMMENTS
+
+author: Santos Moore
+date: 2017-08-02 17:44:25.000000000
+
+Uploaded patch set 2: Patch Set 1 was rebased.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-08-02 19:10:27.000000000
+
+Patch Set 2:
+
+Build Started https://ci.eclipse.org/jgit/job/jgit.gerrit/10786/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-08-02 19:27:15.000000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+https://ci.eclipse.org/jgit/job/jgit.gerrit/10786/ : FAILURE
+
+-------------------------------------

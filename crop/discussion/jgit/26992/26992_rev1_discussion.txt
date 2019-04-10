@@ -1,0 +1,109 @@
+DESCRIPTION
+
+Fix reading past FileTreeIterator EOF in FileTreeIteratorJava7Test
+
+Stepping past the '.git' entry with `fti.next(1)` is unnecessary and in
+fact a bug, as the subsequent access to FileTreeIterator is past it's
+end-of-file - it has only 1 valid entry ('link').
+
+This bug is only visibly exposed in certain environments depending on the
+(unguaranteed) return order of `java.io.File.listFiles()`. On my box
+FileTreeIteratorJava7Test would fail consistently for these 3 tests:
+
+* testSymlinkActuallyModified
+* testSymlinkNotModifiedThoughNormalized
+* testSymlinkModifiedNotNormalized
+
+They all failed in the same way:
+
+testSymlinkActuallyModified(org.eclipse.jgit.treewalk.FileTreeIteratorJava7Test)  Time elapsed: 0.063 sec  <<< ERROR!
+org.eclipse.jgit.api.errors.JGitInternalException: /home/Jacob Stuart/development/jgit/org.eclipse.jgit.java7.test/target/jgit_test_9202429389985749040_tmp
+/tmp_807992722429349842/.git (Is a directory)
+        at java.io.FileInputStream.open(Native Method)
+        at java.io.FileInputStream.<init>(FileInputStream.java:146)
+        at org.eclipse.jgit.treewalk.FileTreeIterator$FileEntry.openInputStream(FileTreeIterator.java:210)
+        at org.eclipse.jgit.treewalk.WorkingTreeIterator.readContentAsNormalizedString(WorkingTreeIterator.java:984)
+        at org.eclipse.jgit.treewalk.WorkingTreeIterator.contentCheck(WorkingTreeIterator.java:924)
+        at org.eclipse.jgit.treewalk.WorkingTreeIterator.isModified(WorkingTreeIterator.java:860)
+        at org.eclipse.jgit.treewalk.WorkingTreeIterator.isModified(WorkingTreeIterator.java:815)
+        at org.eclipse.jgit.treewalk.FileTreeIteratorJava7Test.testSymlinkActuallyModified(FileTreeIteratorJava7Test.java:198)
+
+Theses tests are all working with a small repo that has just two entries:
+'.git' and 'link' (a symbolic link that's being tested on). `listFiles()`
+is called by FileTreeIterator to get a preliminary list of FileEntry
+objects:
+
+https://github.com/eclipse/jgit/blob/6d724dcd/org.eclipse.jgit/src/org/eclipse/jgit/treewalk/FileTreeIterator.java#L139
+
+Whether your tests appeared to pass or fail was dependent on the returned
+order of files from `listFiles()`:
+
+* ['.git', 'link'] - PASS (Eclipse Hudson appears to get this ordering)
+* ['link', '.git'] - FAIL (My env, Ubuntu 14.04/Java 1.7.0_55)
+
+The tree-iterator passes the resulting `FileEntry`s to it's init() method:
+
+https://github.com/eclipse/jgit/blob/6d724dcd/org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java#L639-L665
+
+... where a count of valid entries is made (`entryCnt`), the 'invalid'
+entries (like'.git') being left in the hinterland of the `entries` array.
+The rearrangement in the entries array for our tests looks like this:
+
+* ['.git', 'link'] -> ['link', 'link']
+* ['link', '.git'] -> ['link', '.git']
+
+In both cases, `entryCnt` is set to 1, meaning that the _valid_ portion of
+the iterator is the same (ie ['link']), but that the portion after EOF,
+which we reach by calling `fti.next(1)`, is _different_ depending on your
+environment. The entry used by the iterator at that point will be either
+'link' (if you're lucky) or '.git', which will blow up the test.
+
+Note that somewhat ironically, the 'self-check' assertions don't catch
+this bug, as 'path' data is only parsed _before_ EOF - so
+`fti.getEntryPathString()` returns the string "link" (and the assertion
+passes) regardless of whether you're about to read the '.git' entry or not.
+
+Change-Id: Ie58a7bc76b740ee52881ebf555564a74379028d6
+Signed-off-by: Kendrick Carrillo <Jacob xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Kendrick Carrillo
+date: 2014-05-21 11:37:01.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-05-21 11:37:07.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/egit/job/jgit.gerrit/5146/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-05-21 11:53:08.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/jgit.gerrit/5146/ : SUCCESS
+
+-------------------------------------
+author: Juliet Cantu
+date: 2014-05-24 10:10:32.000000000
+
+Patch Set 1: Code-Review+2
+
+Good catch. Thanks.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2014-05-24 10:10:38.000000000
+
+Change has been successfully merged into the git repository.
+
+-------------------------------------

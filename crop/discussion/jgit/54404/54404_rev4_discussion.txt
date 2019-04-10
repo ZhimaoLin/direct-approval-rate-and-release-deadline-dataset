@@ -1,0 +1,165 @@
+DESCRIPTION
+
+$GIT_COMMON_DIR support (work in progress)
+
+Change-Id: Ie6235a503591ab42b2eb55142ad3932394b40b71
+Signed-off-by: Saniya Hill xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Saniya Hill
+date: 2015-12-21 15:51:03.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-12-21 15:51:09.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7770/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-12-21 16:02:56.000000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7770/ : SUCCESS
+
+-------------------------------------
+author: Genevieve Hudson
+date: 2016-02-24 14:18:12.000000000
+
+Patch Set 4:
+
+(5 comments)
+
+Hello Marc,
+as discussed via E-Mail: i will try to create a change that is based at yours, but i did not managed it now. I'm learning how to use Gerrit properly :)
+
+Here are my comments and patches, just if you want/can integrate. I need these changes for full work-tree support. We've tested it now for some days in our team.
+
+Because i've enabled API checks (target platform) etc. i had to fix some comments first. My version is based at newest master (23.02.2016). May be you can rebase again.
+
+Thanks,
+Andre
+
+Some comments in files not changed by you, but needed:
+
+RepositoryCache.java, L. 166:
+* repository's xxx@xxx.xxx Repository#getGitDir(boolean)} is used to index the
+
+RepositoryCache.java, L. 385:
+		public static boolean isGitRepository(final File dir, FS fs) {
+			/*
+			 * Bug 477475 - git 2.5 worktree support
+                         * 
+                         * Genevieve Hudson xxx@xxx.xxx
+                         *
+			 * https://bugs.eclipse.org/bugs/show_bug.cgi?id=477475
+			 * based at: https://git.eclipse.org/r/#/c/54404/
+			 * 
+			 * TODO: this code tries to check for valid repo but has only GIT_DIR path
+			 * for worktree support we need the GIT_COMMON_DIR to and check objects and refs there
+			 * HEAD should be checked in GIT_DIR of worktree
+			 * 
+			 * we need complete FileRepository here with setup() called to have the GIT_COMMON_DIR
+			 * and other parameters.
+			 * 
+			 * TODO: question: do we have bad performance, because Cache creates full FileRepository ??? 
+			 * 
+			 */
+
+			/* REMOVE
+			return fs.resolve(dir, "objects").exists() //$NON-NLS-1$
+					&& fs.resolve(dir, "refs").exists() //$NON-NLS-1$
+					&& isValidHead(new File(dir, Constants.HEAD));
+		    */
+			try {
+				FileRepository fileRep = new FileRepository(dir);
+				return fs.resolve(fileRep.getGitDir(true), "objects").exists() //$NON-NLS-1$
+						&& fs.resolve(fileRep.getGitDir(true), "refs").exists() //$NON-NLS-1$
+						&& isValidHead(new File(fileRep.getGitDir(false),
+								Constants.HEAD));
+			} catch (IOException e) {
+				return false;
+			}
+		}
+
+		/**
+		 xxx@xxx.xxx dir
+		 *            the GIT_DIR path
+		 xxx@xxx.xxx the FileRepository builded
+		 xxx@xxx.xxx IOException
+		 xxx@xxx.xxx 4.3
+		 */
+		private static FileRepository getGitRepository(final File dir)
+				throws IOException {
+			return new FileRepository(dir);
+		}
+
+Line:192, org.eclipse.jgit/src/org/eclipse/jgit/lib/BaseRepositoryBuilder.java -> API check: only build able with:
+/**
+ * Set $GIT_COMMON_DIR.
+ *
+ xxx@xxx.xxx gitCommonDir
+ *            xxx@xxx.xxx GIT_DIR}, the repository meta directory.
+ * @return xxx@xxx.xxx this} (for chaining calls).
+ xxx@xxx.xxx 4.3
+ */
+
+Line:205, org.eclipse.jgit/src/org/eclipse/jgit/lib/BaseRepositoryBuilder.java -> API check: only build able with:
+/**
+ xxx@xxx.xxx $GIT_COMMON_DIR; null if not set.
+ xxx@xxx.xxx 4.3
+ */
+
+Line:759, org.eclipse.jgit/src/org/eclipse/jgit/lib/BaseRepositoryBuilder.java -> /*
+ * Bug 477475 - git 2.5 worktree support
+ * 
+ * Genevieve Hudson xxx@xxx.xxx
+ *
+ * https://bugs.eclipse.org/bugs/show_bug.cgi?id=477475
+ * based at: https://git.eclipse.org/r/#/c/54404/
+ * 
+ * we are in .git ($GIT_DIR) folder of the worktree
+ *       "...\.git\worktrees\<worktree-name>"
+ * and want to get the worktree path
+ * so here we have an opposite link "gitdir" showing to
+ * the ".git" file located in the worktree
+ * read it and convert it to absolute path if it's relative
+ */
+if (getGitDir() != null) {
+  File gitDirFile = new File(getGitDir(), "gitdir");
+  if (gitDirFile.isFile()) {
+    String workDirPath = new String(IO.readFully(gitDirFile)).trim();
+    File workTreeDotGitFile = new File(workDirPath);
+    if (!workTreeDotGitFile.isAbsolute()) {
+      workTreeDotGitFile = new File(getGitDir(), workDirPath).getCanonicalFile();
+    }
+    if (workTreeDotGitFile != null) {
+      return workTreeDotGitFile.getParentFile();
+    }
+  }
+}
+
+Line:207, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> API check: only buildable with:
+/**
+ xxx@xxx.xxx preferCommonDir
+ *            should $GIT_COMMON_DIR be prefered instead of $GIT_DIR
+ xxx@xxx.xxx local metadata directory; null if repository isn't local.
+ xxx@xxx.xxx 4.3
+ */
+
+Line:213, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> API check: only build able with:
+/**
+ xxx@xxx.xxx $GIT_COMMON_DIR
+ xxx@xxx.xxx 4.3
+ */
+
+-------------------------------------

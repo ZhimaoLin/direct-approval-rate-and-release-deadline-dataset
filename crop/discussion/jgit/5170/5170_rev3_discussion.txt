@@ -1,0 +1,151 @@
+DESCRIPTION
+
+Allow sending raw bytes over ReceivePack's message output
+
+Callers may want to format their own output, for example in a
+PreReceiveHook that creates its own TextProgressMonitor.
+
+Change-Id: I57b6d6cad2542aaa93dcadc06cb3e933e81bcd3d
+
+
+COMMENTS
+
+author: Santos Moore
+date: 2012-03-01 00:36:03.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-03-01 00:36:07.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1470/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-03-01 00:39:25.000000000
+
+Patch Set 3: Verified
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1470/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2012-03-01 00:47:51.000000000
+
+Patch Set 3: Looks good to me, approved; IP review completed
+
+
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2012-03-01 00:50:30.000000000
+
+Patch Set 3: I would prefer that you didn't submit this; No score
+
+(1 inline comment)
+
+
+
+Line:593, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceivePack.java -> Maybe what we should do is export an OutputStream the caller can ask for:
+
+  OutputStream getSidebandOutputStream() {
+    if (msgOut == null)
+      return NullOutputStream.INSTANCE;
+    return new FilterOutputStream(msgOut) {  
+      public void close() {}
+    };
+  }
+
+This way they can also control flush behavior and force the underlying side band to flush. Right now I think the messages get stuck in the side band buffer and don't head out to the client until its either full, or "later" when ReceivePack forces a flush at the end.
+
+-------------------------------------
+author: Santos Moore
+date: 2012-03-01 00:57:53.000000000
+
+Patch Set 3: (1 inline comment)
+
+
+
+Line:593, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceivePack.java -> I agree that this will probably get buffered and should be fixed.
+
+This interacts weirdly with the way msgOut changes over ReceivePack's lifetime. msgOut starts out as null, then gets set at the beginning of receive(), and gets reset as soon as it determines the client wants a sideband.
+
+Which is not to say it's impossible. It's just that if a caller calls getSidebandOutputStream() followed by receive(), they might reasonably expect there to be a relationship between the stream returned by the former and the stream actually used by the latter.
+
+-------------------------------------
+author: Santos Moore
+date: 2012-03-01 01:07:45.000000000
+
+Patch Set 3: (1 inline comment)
+
+
+
+Line:593, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceivePack.java -> That said, note that this buffering behavior is already present and not changing due to this change.
+
+In my downstream work I'm not using sendBytes (except where sendMessage was already being used), so I don't think this is an issue. If you think otherwise after seeing my downstream code, let me know.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2012-03-01 01:22:41.000000000
+
+Patch Set 3: (2 inline comments)
+
+
+
+Line:593, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceivePack.java -> I didn't say get rid of the buffering entirely. I just suggested making flush available so the caller could get to flush and force output of the buffer if they wanted to.
+
+Line:593, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceivePack.java -> Don't use a FilterOutputStream. Implement the output yourself:
+
+  public OutputStream getSidebandOutputStream() {
+    return new OutputStream() {
+      public void write(int ch) {
+        if (msgOut != null)
+          msgOut.write(ch);
+      }
+      public void write(byte[] buf, int pos, int len) {
+        if (msgOut != null)
+          msgOut.write(buf, pos, len);
+      }
+      public void flush() {
+        if (msgOut != null)
+          msgOut.flush();
+      }
+    };
+  }
+
+Done.
+
+-------------------------------------
+author: Santos Moore
+date: 2012-03-01 01:55:46.000000000
+
+Patch Set 3: (1 inline comment)
+
+
+
+Line:593, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceivePack.java -> I'll try that. Should those methods be synchronized, or is that too paranoid? Paranoid because e.g. if the caller is a PreReceiveHook, obviously they won't be calling methods on the returned output stream until msgOut has settled into its final state.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2012-03-01 02:06:15.000000000
+
+Patch Set 3: (1 inline comment)
+
+
+
+Line:593, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceivePack.java -> Too parnaoid. Don't synchronize. The caller is responsible for using synchronization here if they are swapping stuff back and forth across threads. Most of JGit is not thread safe. There are a few special places that are (e.g. Repository, ObjDatabase, RefDatabase) that makes the rest not being thread safe actually OK for any common usage. Fancier things that are starting their own threads are on their own.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2012-03-01 03:07:31.000000000
+
+Your change could not be merged due to a path conflict.
+
+Please merge (or rebase) the change locally and upload the resolution for review.
+
+-------------------------------------

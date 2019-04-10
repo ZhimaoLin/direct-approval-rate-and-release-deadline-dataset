@@ -1,0 +1,122 @@
+DESCRIPTION
+
+Pack bitmaps: improve readability
+
+Add comments and rename variables in PackWriterBitmapPreparer to improve
+readability.
+
+Change-Id: I49e7a1c35307298f7bc32ebfc46ab08e94290125
+Signed-off-by: Ariel Sawyer xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Ariel Sawyer
+date: 2015-10-28 06:08:09.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-10-28 06:08:15.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7308/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-10-28 06:16:18.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7308/ : SUCCESS
+
+-------------------------------------
+author: Eden Lin
+date: 2015-10-28 19:59:09.000000000
+
+Patch Set 1: Code-Review-1
+
+(1 comment)
+
+Line:268, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> I'm having trouble understanding this. Why does sorting lead to better compression?
+
+c is a commit we want to build a bitmap for.
+
+fullBitmap lists its ancestors that are not ancestors of one of the reusedCommits.
+
+mergedBranches is a collection of lists of bitmaps. We want to add c to one of them.
+
+matchedBranches is created by filtering mergedBranches to ancestors of c.
+
+We are going to add c to the longest one of those. The reuseWalker flag indicates whether it's at the beginning of the list.
+
+Then they'll be concatenated to produce the part of the output of selectCommits corresponding to entry.
+
+So the resulting list of BitmapCommits looks like this:
+
+ (reused commits)
+ C, reuseWalker == false, FLAG_REUSE
+
+ (for each want)
+ C1, reuseWalker == false, (FLAG_REUSE if and only if distant)
+ C2, reuseWalker == true, ...
+ ...
+ D1, reuseWalker == false, ...
+ D2, reuseWalker == true, ...
+ ...
+
+ (for each want that wasn't selected in the above loop)
+ C, reuseWalker == false, 0
+
+When reuseWalker is true, the PackWriterBitmapWalker can start from the previous bitmap because the previous commit is an ancestor of the next one. So at first glance this seems to be about efficiency of generating bitmaps instead of being about compression.
+
+-------------------------------------
+author: Eden Lin
+date: 2015-10-28 20:08:20.000000000
+
+Patch Set 1:
+
+(3 comments)
+
+Line:184, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> How about something like 'chains', since these are chains in the partially ordered set of commits under the ancestry relation? <https://en.wikipedia.org/wiki/Total_order#Chains>
+
+More importantly, this probably deserves a comment explaining its purpose. ;-)
+
+Line:269, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> This is a filtered subset of the chains in mergedBranches. How about something like 'candidateChains' (with a comment explaining that we are looking for those chains where the last item is an ancestor of c so we can append c to it)?
+
+Line:278, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> This is the chain we will append to. 'longestCandidate'?
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2015-10-28 22:18:01.000000000
+
+Patch Set 1:
+
+(4 comments)
+
+Line:184, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> I was struggling with vocabulary for this. "Chains" is great.
+
+Line:268, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> It is about run-length encoding the result of xor compression between subsequent commits.
+
+Ascii art:
+            o--o...o--o
+           /           \
+master o--o--o...o--o---o--o...o
+
+If you do a strict historical ordering then commits from the top "chain" are interspersed with all other chains, meaning that the nearest ancestor may be a long way back in history, creating a "busier" xor result and poorer run-length encoding.
+
+Line:269, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> Done. I'll refactor this variable away in a subsequent patch, so no need to document now.
+
+Line:278, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> Use "longestAncestorChain"
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-10-29 18:11:42.000000000
+
+Change has been successfully merged into the git repository by Eden Lin
+
+-------------------------------------

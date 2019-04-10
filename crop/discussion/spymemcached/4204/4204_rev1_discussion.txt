@@ -1,0 +1,158 @@
+DESCRIPTION
+
+Do not write timedout operations to the MemcachedNode.
+
+This commit and related ones add support to an operation to
+have new methods and a state of TIMEDOUT.  The intent is to
+keep track of when an operation is created and if it either
+times out due to a latch timeout expiration or it is found
+to be already too old when thinking about sending the op
+to the network, just consider it timed out then and there.
+
+Note, object creation time is actually possibly quite a bit
+after when the request is made, depending on how that request
+is made.  Any number of things could have happened in
+between with GC, JIT, scheduling, etc.
+
+Change-Id: I60228433bfa121ed031dd81fc05a9d65cae5bf20
+
+
+COMMENTS
+
+author: Noah Dean
+date: 2011-01-03 02:14:28.453000000
+
+Patch Set 1: Looks good to me, but someone else must approve
+
+(3 inline comments)
+
+I think this looks just about right.  I had a couple of minor issues.  I could go ahead if it's a pain to update.
+
+Line:162, src/main/java/net/spy/memcached/protocol/BaseOperationImpl.java -> {}
+
+Line:62, src/main/java/net/spy/memcached/internal/OperationFuture.java -> I'm generally opposed to omitting {}
+
+Line:84, src/main/java/net/spy/memcached/ops/Operation.java -> Perhaps this should be called timeOut()?  I read this kind of as a question.
+
+-------------------------------------
+author: Andreas Short
+date: 2011-01-03 02:16:57.011000000
+
+Patch Set 1:
+
+Nope, not a pain, and I agree.  I'll give it a bit more time for feedback and then loop back through for cleanup.
+
+-------------------------------------
+author: Noah Dean
+date: 2011-01-03 02:41:31.265000000
+
+Patch Set 1: Fails
+
+This doesn't actually build for me:
+
+
+    src/main/java/net/spy/memcached/protocol/BaseOperationImpl.java:162: cannot find symbol
+    symbol  : variable creationTime
+    location: class net.spy.memcached.protocol.BaseOperationImpl
+    		if (elapsed - creationTime > ttlNanos)
+    		              ^
+    src/main/java/net/spy/memcached/protocol/BaseOperationImpl.java:158: method does not override or implement a method from a supertype
+    xxx@xxx.xxx
+    	^
+    src/main/java/net/spy/memcached/protocol/TCPMemcachedNodeImpl.java:161: cannot find symbol
+    symbol  : variable defaultOpTimeout
+    location: class net.spy.memcached.protocol.TCPMemcachedNodeImpl
+    			if (o != null && o.isTimedOut(defaultOpTimeout)) {
+    			                              ^
+    Note: src/main/java/net/spy/memcached/MemcachedClient.java uses unchecked or unsafe operations.
+    Note: Recompile with -Xlint:unchecked for details.
+    3 errors
+    Buildr aborted!
+
+-------------------------------------
+author: Noah Dean
+date: 2011-01-03 02:41:53.146000000
+
+Patch Set 1:
+
+(note that I get the same in eclipse)
+
+-------------------------------------
+author: Andreas Short
+date: 2011-01-03 03:20:35.531000000
+
+Patch Set 1:
+
+Ooops.  I guess all of my rebasing and squashing lead to this.  I was struggling for shoving it all in this commit and breaking it up a bit.  
+
+I'll get this fixed sometime tomorrow.
+
+-------------------------------------
+author: Jakob Lozano
+date: 2011-01-03 03:26:01.391000000
+
+Patch Set 1: (6 inline comments)
+
+
+
+Line:32, src/main/java/net/spy/memcached/protocol/BaseOperationImpl.java -> Setting an initial value of false matches the rest of the code.
+
+Line:159, src/main/java/net/spy/memcached/protocol/BaseOperationImpl.java -> What happens if you call it with isTimedOut(very large number) and then call it again with very small number, then timedout will not go to false.  Do you want to always set the timedout value?
+
+Line:28, src/main/java/net/spy/memcached/protocol/ascii/BaseGetOpImpl.java -> Adding an initial value here matches the rest of the values.
+
+Line:72, src/main/java/net/spy/memcached/internal/OperationFuture.java -> Wouldn't it be better to wrap a CancellationException instead?  I don't like that if you want to distinguish between the isCancelled() and isTimedOut() cases, you have to examine the exception string instead of using types.
+
+Line:77, src/main/java/net/spy/memcached/internal/OperationFuture.java -> Here you could wrap a TimeoutException instead.
+
+Line:84, src/main/java/net/spy/memcached/ops/Operation.java -> Also adding some Javadoc on what this does would be good.
+
+-------------------------------------
+author: Asher Vang
+date: 2011-01-03 06:55:08.023000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(9 inline comments)
+
+See inline comments...
+
+Line:161, src/main/java/net/spy/memcached/protocol/TCPMemcachedNodeImpl.java -> I could not find defaultOpTimeout in the sources? why not use nano secs for that to avoid converting from ms to ns each time in isTimedOut?
+
+Line:32, src/main/java/net/spy/memcached/protocol/BaseOperationImpl.java -> One should not initialize members to the default value, so the correct fix here would be to remove initialization of default values....
+
+Line:161, src/main/java/net/spy/memcached/protocol/BaseOperationImpl.java -> It would be better if we use nanosecs internally all over to avoid conversion each time... From what I can see you're only calling this method from TCPMemcachedNodeImpl with an undefined constant ;)
+
+Line:65, src/main/java/net/spy/memcached/protocol/binary/OperationImpl.java -> Isn't this inherited from BaseOperationImpl?
+
+Line:300, src/main/java/net/spy/memcached/protocol/binary/OperationImpl.java -> See above
+
+Line:305, src/main/java/net/spy/memcached/protocol/binary/OperationImpl.java -> See above
+
+Line:28, src/main/java/net/spy/memcached/protocol/ascii/BaseGetOpImpl.java -> Isn't this inherited from BaseOperationImpl?
+
+Line:155, src/main/java/net/spy/memcached/protocol/ascii/BaseGetOpImpl.java -> See above
+
+Line:160, src/main/java/net/spy/memcached/protocol/ascii/BaseGetOpImpl.java -> See above
+
+-------------------------------------
+author: Andreas Short
+date: 2011-01-04 17:22:36.624000000
+
+Patch Set 1: (5 inline comments)
+
+Fixing these shortly
+
+Line:161, src/main/java/net/spy/memcached/protocol/TCPMemcachedNodeImpl.java -> It's called dt and comes from the constructor.  Existing spy code uses ms everywhere and I don't really want to allow someone to set a timeout less than 1ms, so I think it's correct to have it this way.
+
+Line:159, src/main/java/net/spy/memcached/protocol/BaseOperationImpl.java -> I can't currently forsee this happening and it would cause other issues as it would no longer be part of the queue for that MemcachedNode.
+
+I guess perhaps the best approach is to throw an exception if the ttl would cause it to become true.
+
+Line:65, src/main/java/net/spy/memcached/protocol/binary/OperationImpl.java -> Good catch.  I later pushed this down.
+
+Line:28, src/main/java/net/spy/memcached/protocol/ascii/BaseGetOpImpl.java -> Whoops, you're quite right.  I later pushed this down.
+
+Line:84, src/main/java/net/spy/memcached/ops/Operation.java -> Yes, sorry for the lack of doc.  I knew I needed to do that but wanted to get my freshly squashed code up for some review.
+
+-------------------------------------

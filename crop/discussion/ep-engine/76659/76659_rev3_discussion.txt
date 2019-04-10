@@ -1,0 +1,63 @@
+DESCRIPTION
+
+MB-23767: Notify vb high priority requests in a separate task
+
+Vbucket high priority requests are made by ns server during rebalance
+wherein it expects a notification when the vbucket receives upto a
+particular seqno.
+
+We must send this notification in a separate task rather than in
+front end thread to avoid deadlocks due to lock inversion.
+That is, a front end thread generally makes call down the stack and
+acquires locks in the order top to down (in our software stack).
+But a notification path is up the software stack and hence must be
+done as a separate task.
+
+Also, this commit is careful NOT to create a task per front end
+mutation. It creates a task only after it is decided that a
+notification is necessary. Hence we will 1 task per vb high priority
+request.
+
+The current deadlock that was hit is captured in MB-23767.
+
+Change-Id: Id114bedb5cd4de8b493ae6885734c3d440c8bea3
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2017-04-12 06:35:27.920000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-04-12 06:52:24.426000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4496/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/5717/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5214/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/5950/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-12 09:37:58.850000000
+
+Patch Set 3: Code-Review-1
+
+(1 comment)
+
+How is this notification handled for Persistent buckets?
+
+Line:221, src/ephemeral_vb.cc -> What happens if there's already a task of this type scheduled (and running?).
+
+I think it would be better to have a long-lived task (per Bucket) which consumes from a queue of notifications (i.e. EphemeralVBucket::notifyHighPriorityRequests() pushes to the queue and wakes up the Task, the task in it's run() method consumes it's queue and notifies each element (and then sleeps).
+
+-------------------------------------

@@ -1,0 +1,104 @@
+DESCRIPTION
+
+Do not extend delta chains longer than limit
+
+When considering an object that is already used as a delta base
+for other objects, limit the maximum depth it can accept to be the
+remainder of the delta chain length.
+
+Given the situation:
+
+  R <- S <- T
+
+  R is not a delta, and wants to delta compress;
+  S and T were already chosen for reuse as-is;
+  S is a delta based on R;
+  T is a delta based on S.
+
+If the configured delta depth is 4, R can only be delta compressed
+against a non-delta. Compressing on a delta would cause T to exceed
+the configured chain length, resulting in longer unpacking times.
+
+Change-Id: I5989d8de1849ebb85e64d7c24d7fca373f0f86ef
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2013-04-04 22:26:09.000000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-04-04 22:26:16.000000000
+
+Patch Set 5:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3298/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-04-04 22:31:11.000000000
+
+Patch Set 5: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3298/ : SUCCESS
+
+-------------------------------------
+author: Eden Lin
+date: 2013-04-04 23:31:01.000000000
+
+Patch Set 5: (3 inline comments)
+
+
+
+Line:209, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/ObjectToPack.java -> chainLength and deltaDepth share storage and seem to be live at the same time (in search()). How are they meant to relate to each other?
+
+Line:185, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/DeltaWindow.java -> This would be clearer inlined explicitly:
+
+ resMaxDepth = maxDepth - res.object.getChainLength();
+ res.object.setChainLength(0);
+
+Line:1258, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriter.java -> Can the "base == otp" case trip? If so, what prevents cycles that don't involve otp?
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2013-04-05 00:43:30.000000000
+
+Patch Set 5: I would prefer that you didn't submit this
+
+(3 inline comments)
+
+
+
+Line:209, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/ObjectToPack.java -> Before an object enters the delta window chainLength is the value here, and its the longest distance from this object to its furthest child/leaf node that uses this object as a base directly or indirectly.
+
+When an object enters the delta window, this switches to deltaDepth and becomes the distance from this object to the non-delta base that is used to inflate the content. If the object is not a delta its depth is 0. If the object was delta compressed and is in the window, its just the base's depth + 1.
+
+Line:185, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/DeltaWindow.java -> That may be true but I wanted to avoid calling setChainLength() unless getChainLength returned > 0. I think in the common case objects have 0 for a chain length, I wanted to avoid the bit shifting logic inside of setChainLength() to clear the field when it was already clear.
+
+Doing that test here without calling getChainLength() twice (as that also does bit shifting) means I need to declare a new local variable in scope. I didn't want to do that either because its lifespan is so short.
+
+Line:1258, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriter.java -> Yes base==otp can trip. Consider two packs in a repository:
+
+  newest:  A delta -> B base
+  oldest:  A base <- B delta
+
+How does this arise? We have pack oldest already in the repository. A is lets say a newer object and B is a delta to it. Now a client pushes newest to us as a thin pack with A as a REF_DELTA to B. We append B to complete the thin pack.
+
+During reuse search PackWriter is going to schedule a cycle of A->B->A because its trying to use the two delta forms to save pack space. The cycle gets broken during output. If graph enumeration says A comes first we'll try to write that as a delta, realize we need its base B, try to write B, B needs A, so we try to write A again... at which point the writer realizes its in a cycle and writes a non-delta form of A to the pack.
+
+However that cycle breaking is done late at writing time. So we need to guard against it here.
+
+Fortunately reference equality also means Git object equality, as these objects all come from a single ObjectIdOwnerMap that keyed them by SHA-1. So if otp == base we have a cycle.
+
+Unfortunately you are right, I missed the case of a different cycle:
+
+  A -> B -> C -> B
+
+traversing this chain from A will never terminate.
+
+-------------------------------------

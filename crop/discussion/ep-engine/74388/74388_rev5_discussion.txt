@@ -1,0 +1,67 @@
+DESCRIPTION
+
+MB-22451: Backfill task leave stream state unchanged
+
+The backfill task must not change the state machine of the active
+stream that it is associated with.  In particular:
+1) In ActiveStream::markDiskSnapshot if a vbucket is not found then
+   it should just return, leaving the entity deleting the vbucket to
+   set the stream to dead.
+2) ActiveStream::completeBackfill should not call
+   scheduleBackfill_UNLOCKED as this can move the stream into the
+   STREAM_IN_MEMORY state.
+
+State machine changes should only be driven by ActiveStream::next,
+which is invoked by DcpProducer::getNextItem.
+
+The call to scheduleBackfill_UNLOCKED that was invoked in
+ActiveStream::completeBackfill when the pendingBackfill flag was true
+has been moved to the ActiveStream::backfillPhase function and is
+invoked once the current backfill has completed and the pendingBackfill
+flag is set to true.
+
+Change-Id: Idcbf8164792f4fd09898fe90748424687c60fb6a
+
+
+COMMENTS
+
+author: Kymani Ramirez
+date: 2017-02-28 15:06:13.008000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-02-28 15:15:10.348000000
+
+Patch Set 5: Code-Review-1
+
+(5 comments)
+
+Line:316, src/dcp/stream.cc -> Maybe make this log more explicit that this is an unexpected transition (so in the context of a whole file of log messages it's more obvious this is not expected to happen).
+
+Line:425, src/dcp/stream.cc -> Similary here.
+
+Line:507, src/dcp/stream.cc -> Is this under lock? If not this is racy, as you could read the pendingBackfill flag, and then if it gets set to true again (by another thread) after calling scheduleBackfill_UNLOCKED(), then you'll miss an update as it's then unconditionally cleared at line 506.
+
+Line:508, src/dcp/stream.cc -> Style - else should be on same line as the closing if.
+
+Line:167, tests/module_tests/evp_store_single_threaded_test.cc -> GTest will already print the expected and actual values, prefer to use the message to explain "why" a given value was expected.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-02-28 15:27:07.689000000
+
+Patch Set 5: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/2921/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/4099/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/3674/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/4297/ : SUCCESS
+
+-------------------------------------

@@ -1,0 +1,64 @@
+DESCRIPTION
+
+JVMCBC-312: use the same logical connection for all DCP nodes
+
+Motivation
+----------
+DCP connection have to be opened on each node separately, but from the
+SDK perspective, there is only one logical connection and stream. But
+current implementation was creating logical connection for every node,
+and only first connection was actually visible to the consumer.
+
+Modification
+------------
+Refactor DCPConnection class and remove complicated
+BucketStreamAggregator to make DCP subsystem more straightforward, and
+easier to maintain
+
+Result
+------
+Flow control buffers are bound to the channels now, so they won't stall.
+
+Change-Id: Iedd8268eddd898677844a80c32cb184c5db9a7ad
+
+
+COMMENTS
+
+author: Estrella Humphrey
+date: 2016-03-24 11:17:15.538000000
+
+Patch Set 7: Code-Review-1
+
+(3 comments)
+
+Line:206, src/main/java/com/couchbase/client/core/endpoint/dcp/DCPConnection.java -> I still don't see how the response's header status field (eg. SUCCESS) can map to a partition when consuming a memcache response like that... You are effectively saying that all SUCCESS messages that you would consume would participate in the consumedBytes of partition 0?
+
+The row you pointed to in protocol_binary.h isn't very useful, yes response.getStatus() is the response status... What I don't understand is how can it be considered, generically like that, as the partition and the key to get the correct DCP context?
+
+Line:79, src/main/java/com/couchbase/client/core/endpoint/dcp/DCPConnectionHandler.java -> SASL again
+
+Line:91, src/main/java/com/couchbase/client/core/endpoint/dcp/DCPConnectionHandler.java -> SASL again
+
+-------------------------------------
+author: Cory Peck
+date: 2016-03-24 11:33:26.263000000
+
+Patch Set 7:
+
+(3 comments)
+
+Line:206, src/main/java/com/couchbase/client/core/endpoint/dcp/DCPConnection.java -> Yeah, you are right, it is response, so I will pass partition directly in this case.
+
+I assume here that because the buffer counters should be bound to sockets, I can use channel contexts to put the metric in it. And the contexts itself bound to partition index. So when I've got signaled about consumed message, I can pull the correct context and update metric
+
+Line:79, src/main/java/com/couchbase/client/core/endpoint/dcp/DCPConnectionHandler.java -> Done
+
+Line:91, src/main/java/com/couchbase/client/core/endpoint/dcp/DCPConnectionHandler.java -> Done
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-03-30 07:02:23.834000000
+
+Change has been successfully cherry-picked as bddbdae7e92e13112e649eca4d35f786599f4493
+
+-------------------------------------

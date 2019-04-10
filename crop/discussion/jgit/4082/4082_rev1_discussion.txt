@@ -1,0 +1,110 @@
+DESCRIPTION
+
+Enable full Transport configuration for JGit API commands
+
+Add a TransportConfigCallback parameter to JGit API commands to allow
+transport-type-specific configuration to be set on the Transport
+after it's been created.
+
+My specific use-case is configuring additional properties on
+SshTransport - I need to take over the SshSessionFactory used by the
+transport. Using the TransportConfigCallback parameter I can simply
+do this (rather than reimplement the commands):
+
+public void configure(Transport tn) {
+  if (tn instanceof SshTransport) {
+    ((SshTransport) tn).setSshSessionFactory(factoryProvider.get());
+  }
+}
+
+The Transport type is only known once the remote has been resolved
+and the URI parsed, which is why it makes sense to have this as a
+callback- passing the generated Transport object back to the user
+allows them to easily configure it without restriction.
+
+Alternatives to this approach:
+
+- Specifically add a SshSessionFactory parameter to JGit API
+commands, which would add nasty transport-specific code to the API
+and set a bad precedent for ballooning the API with other transport-
+specific parameters.
+
+- Allow users to pre-create the Transport and set it on the command.
+Not good: the user has to resolve the remote for themselves.
+
+- A non-static Transport-factory approach, letting user supply the
+command a TransportFactory. A larger change (removing all the static
+'open()' methods from Transport) and more than I need for this use
+case at least - I'm happy enough with the transport resolution, I
+just want to configure the transport once it's generated.
+
+-so the callback is the best option in my view.
+
+A note about where this leaves the API - there are now 4 commands:
+
+CloneCommand
+PullCommand
+FetchCommand
+PushCommand
+
+-that share 3 identical transport-related parameters:
+
+timeout
+credentialsProvider
+transportConfigurator
+
+I think there's potential for introducing an interface or val-object
+to identify/encapsulate this repetition, which I'd be happy to do in
+a subsequent commit.
+
+Change-Id: I8983c3627cdd7d7b2aeb0b6a3dadee553378b951
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2011-08-29 10:54:10.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/775/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-08-29 10:58:40.000000000
+
+Patch Set 1: Build Successful
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/775/ : SUCCESS
+
+-------------------------------------
+author: Jaidyn Nichols
+date: 2011-09-11 23:40:22.000000000
+
+Patch Set 1: (10 inline comments)
+
+Added some minor style and formatting comments
+
+Line:46, org.eclipse.jgit/src/org/eclipse/jgit/api/TransportConfigCallback.java -> The license should be above the package declaration
+
+Line:48, org.eclipse.jgit/src/org/eclipse/jgit/api/TransportConfigCallback.java -> Please add a header comment to this interface describing how to use it and why it would be used.
+
+Line:49, org.eclipse.jgit/src/org/eclipse/jgit/api/TransportConfigCallback.java -> Please add a comment describing this method
+
+Line:106, org.eclipse.jgit/src/org/eclipse/jgit/api/CloneCommand.java -> Add a new line before the new  transportConfigCallback field
+
+Line:97, org.eclipse.jgit/src/org/eclipse/jgit/api/PushCommand.java -> Add a new line before the new  transportConfigCallback field
+
+Line:438, org.eclipse.jgit/src/org/eclipse/jgit/api/PushCommand.java -> Add method comment with appropriate tags
+
+Line:90, org.eclipse.jgit/src/org/eclipse/jgit/api/PullCommand.java -> Add a new line before the new  transportConfigCallback field
+
+Line:131, org.eclipse.jgit/src/org/eclipse/jgit/api/PullCommand.java -> Add method comment with appropriate tags
+
+Line:95, org.eclipse.jgit/src/org/eclipse/jgit/api/FetchCommand.java -> Add a new line before the new  transportConfigCallback field
+
+Line:360, org.eclipse.jgit/src/org/eclipse/jgit/api/FetchCommand.java -> Add method comment with appropriate tags
+
+-------------------------------------

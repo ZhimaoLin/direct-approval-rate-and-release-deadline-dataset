@@ -1,0 +1,123 @@
+DESCRIPTION
+
+MB-20105: Ensure purge_seq is not reset when no items are purged in a compaction
+
+When a compaction request is made, we initially set the purge_seqno in the req
+to 0, hoping to update it when we purge items. However, if there are no purged
+items in a compaction call, then we end up reseting the purge_seqno
+(correct one) set by the previous compaction call.
+
+This commit addresses the problem by setting the purge seqno in the request
+to current purge seqno in the ep-engine.
+
+Change-Id: I9581abe7a4cb9d7cd84c1bf5563b98c91dc67525
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2016-07-08 19:03:45.922000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-07-08 19:03:53.260000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-3.0.x/340/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-07-08 19:03:53.953000000
+
+Patch Set 2:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/725/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-07-08 19:03:55.970000000
+
+Patch Set 2:
+
+Branch restricted. PLEASE READ this URL: 
+
+http://server.jenkins.Piper Jefferson.com/job/restricted-branch-check/18373/artifact/restricted.html : FAILURE
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-07-08 19:17:55.655000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/725/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-07-08 19:51:46.705000000
+
+Patch Set 2: Code-Review-1
+
+(2 comments)
+
+Line:2630, tests/ep_testsuite.cc -> This test is now getting pretty long (over 100 lines). It would be preferred to split this into two cases - the original case, and a second "compact when nothing is purged" case. 
+
+(In general a single testcase could try to test just one thing).
+
+Final note: We /do/ now have the class-level unit tests - evp_store_test - in 3.0.x. If you wish (I'll let you decide) you could instead make the new test use that. This would givie you richer GTest-style tests, and will probably be faster to execute also...
+
+Line:1225, src/ep.cc -> I think it would be better (have weaker coupling) if we modified VBucket::setPurgeSeqno() to only update if the new value is higher - i.e. rename to `updatePurgeSeqno` and make it set `purge_seqno` to std::max(current_purge_seqno, new_value).
+
+I think this is especially true when considering forward-merges (and forestDB), as in master there isn't a single max_purge_seqno the compaction_ctx, but instead one per vbucket_id.
+
+(Or another way to look at it - the compaction process itself *is* correctly reporting the maximum purge seqno it happened to find during a single compaction scan - but we should interpret that value correctly when updating the running total per vBucket).
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-07-08 20:03:56.392000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-3.0.x/340/ : ABORTED
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2016-07-08 22:04:38.981000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:1225, src/ep.cc -> This has one caveat.
+http://10.5.2.251/source/xref/3.x/ep-engine/src/couch-kvstore/couch-kvstore.cc#720
+We will have to update the correct max_purged_seqno in the db header here. Otherwise after compaction_with_purge ==> compaction_without_purge ==> warmup, we will end up resetting the purge_seqno of a particular vb.
+
+That can be fixed in 
+1) Have another callback to ep_store/vbucket and get correct purge_seqno
+2) Modify couchstore (http://10.5.2.251/source/xref/3.x/couchstore/src/db_compact.cc#312) appropriately so that there is no decrease in the purge seqno.
+
+Should we go with (1) or (2) or with the currently proposed way ?
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2016-07-11 21:07:54.895000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:2630, tests/ep_testsuite.cc -> Done
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-07-11 21:56:11.739000000
+
+Change has been successfully cherry-picked as 6e10f8a2c0c45f256a81a658f05c212591706f38 by Adrianna Holmes
+
+-------------------------------------

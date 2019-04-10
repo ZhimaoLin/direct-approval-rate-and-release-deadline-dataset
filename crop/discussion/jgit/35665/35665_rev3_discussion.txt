@@ -1,0 +1,300 @@
+DESCRIPTION
+
+[342372] Ident attribute implementation
+
+
+The implementation follow the specification defined by the git-attribute
+page [1] and some investigation made with CGit. One of the major
+difference with CGit implementation is that on checkin it only converts
+the pattern $Id: BLOB_NAME $ to $Id$ if only the blob name is exactly 40
+charactere long.
+
+[1]
+https://www.kernel.org/pub/software/scm/git/docs/gitattributes.html#_tt_ident_tt 
+
+Bug: 342372
+Change-Id: Ia0ff2775223b028dfc54b6733f46eabb2520149c
+Signed-off-by: Bernard Hawkins xxx@xxx.xxx
+
+COMMENTS
+
+author: Bernard Hawkins
+date: 2014-10-31 17:32:10.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-10-31 17:32:16.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/5633/
+
+-------------------------------------
+author: Bernard Hawkins
+date: 2014-10-31 17:33:06.000000000
+
+Patch Set 3:
+
+Takes into account some relevant advices made on the previous review (missing since tag, trailing space etc...)
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-10-31 17:40:18.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/5633/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2014-11-02 13:54:21.000000000
+
+Patch Set 3: Code-Review-1
+
+I am interested in the performance effects of gitattributes support and this ident support. Since jgit is also used on server side on repos without attributes I want to make sure we don't destroy performance here.
+
+I took a clean, non-bare linux repo as test repo. I compared the performance of "git status" of native git and mulitple jgit versions (plain vanilla, basic attributes support, ident support). I also counted with the strace utility on a linux box how many filesystem calls we do.
+
+The bottom line: In a repo without gitattributes these changes don't influence performance. That's great! Good job.
+On a linux repo with gitattributes and a "*.c ident" rule the performance of git status raises by factor 4. We are opening  20000 more files. And we are reporting files as dirty which native git thinks which are clean. So, this change here needs improvement. But basic gitattributes support behaves well.
+
+Here is the output of my testscript downloadable at https://gist.github.com/b2f67f9ee921bb5e31bc.git
+Some lines I commented. Check for lines which start with '#'
+I deleted some lines because they contained duplicate, unrelevant data. I put "..." at this places
+
+
+  ># we are working against linux repo (50000 versioned files), measure time of native git status
+  >cd ../linux
+  >git ls-files | wc -l
+  47982
+  >git remote -v
+  origin	https://github.com/torvalds/linux.git (fetch)
+  origin	https://github.com/torvalds/linux.git (push)
+  >git log --oneline -1
+  12d7aac Merge tag 'staging-3.18-rc3' of git://git.kernel.org/pub/scm/linux/kernel/git/gregkh/staging
+  >git status
+  HEAD detached from 7c3f0d3
+  nothing to commit, working directory clean
+  >time git status
+  HEAD detached from 7c3f0d3
+  nothing to commit, working directory clean
+  
+  real	0m0.128s
+  user	0m0.043s
+  sys	0m0.082s
+  >
+  ># checkout jgit before gitattribute changes and build it, measure time of jgit status and which system calls we do
+  >cd ../jgit
+  >git checkout 13ffda0
+  Previous HEAD position was 374c220... [342372] Ident attribute implementation
+  HEAD is now at 13ffda0... Fix ResetCommand to default to mixed reset
+  >mvn -q clean install -DskipTests
+  >cd ../linux
+  >java -jar ../jgit/org.eclipse.jgit.pgm/target/jgit-cli.jar status
+  Not currently on any branch.
+  >time java -jar ../jgit/org.eclipse.jgit.pgm/target/jgit-cli.jar status
+  Not currently on any branch.
+  
+  real	0m2.783s
+  user	0m4.132s
+  sys	0m1.665s
+  >strace -f -e trace=file -c java -jar ../jgit/org.eclipse.jgit.pgm/target/jgit-cli.jar status
+  ...
+  Not currently on any branch.
+  % time     seconds  usecs/call     calls    errors syscall
+  ------ ----------- ----------- --------- --------- ----------------
+   80.65    1.195018          23     51203         1 lstat
+    7.08    0.104949      104949         1           futex
+    5.26    0.077959          24      3225      3120 stat
+    4.81    0.071202          23      3084         2 openat
+    2.07    0.030707          60       511       375 open
+    0.11    0.001570          68        23        22 access
+    0.01    0.000221          74         3           readlink
+    0.01    0.000082          82         1           execve
+    0.01    0.000082          82         1         1 mkdir
+    0.00    0.000000           0         2           getcwd
+    0.00    0.000000           0         1           unlink
+    0.00    0.000000           0         2         2 statfs
+  ------ ----------- ----------- --------- --------- ----------------
+  100.00    1.481790                 58057      3523 total
+  ># we are much slower ... but that's expected 
+  ># 51203 lstat calls for 47982 files ... that sounds ok
+  >
+  ># checkout jgit with basic gitattribute support and build it, measure time of jgit status and which system calls we do
+  >cd ../jgit
+  >git checkout b04db8e
+  Previous HEAD position was 13ffda0... Fix ResetCommand to default to mixed reset
+  HEAD is now at b04db8e... [342372] Adds the git attributes computation on the treewalk.
+  >mvn -q clean install -DskipTests
+  >cd ../linux
+  >java -jar ../jgit/org.eclipse.jgit.pgm/target/jgit-cli.jar status
+  Not currently on any branch.
+  >time java -jar ../jgit/org.eclipse.jgit.pgm/target/jgit-cli.jar status
+  Not currently on any branch.
+  
+  real	0m2.888s
+  user	0m4.286s
+  sys	0m1.492s
+  >strace -f -e trace=file -c java -jar ../jgit/org.eclipse.jgit.pgm/target/jgit-cli.jar status
+  ...
+  Not currently on any branch.
+  % time     seconds  usecs/call     calls    errors syscall
+  ------ ----------- ----------- --------- --------- ----------------
+   88.19    1.243309          24     51203         1 lstat
+    5.32    0.075011          23      3225      3120 stat
+    5.23    0.073764          24      3084         2 openat
+    1.18    0.016585          32       511       375 open
+    0.05    0.000677          29        23        22 access
+    0.01    0.000119         119         1           unlink
+    0.01    0.000110          37         3           readlink
+    0.01    0.000098          98         1           execve
+    0.01    0.000082          41         2           getcwd
+    0.00    0.000000           0         1         1 mkdir
+    0.00    0.000000           0         2         2 statfs
+  ------ ----------- ----------- --------- --------- ----------------
+  100.00    1.409755                 58056      3523 total
+  ># not much different from jgit without git attributes support. That's impressing. Great job. 
+  >
+  ># checkout jgit with ident support and build it, measure time of jgit status and which system calls we do
+  >cd ../jgit
+  >git checkout 374c220
+  Previous HEAD position was b04db8e... [342372] Adds the git attributes computation on the treewalk.
+  HEAD is now at 374c220... [342372] Ident attribute implementation
+  >mvn -q clean install -DskipTests
+  >cd ../linux/
+  >java -jar ../jgit/org.eclipse.jgit.pgm/target/jgit-cli.jar status
+  Not currently on any branch.
+  >time java -jar ../jgit/org.eclipse.jgit.pgm/target/jgit-cli.jar status
+  Not currently on any branch.
+  
+  real	0m2.749s
+  user	0m3.981s
+  sys	0m1.552s
+  >strace -f -e trace=file -c java -jar ../jgit/org.eclipse.jgit.pgm/target/jgit-cli.jar status
+  ...
+  Not currently on any branch.
+  % time     seconds  usecs/call     calls    errors syscall
+  ------ ----------- ----------- --------- --------- ----------------
+   87.32    1.200320          23     51203         1 lstat
+    5.18    0.071265          23      3084         2 openat
+    4.76    0.065452          20      3229      3122 stat
+    2.54    0.034913          68       511       375 open
+    0.16    0.002184          95        23        22 access
+    0.02    0.000210          70         3           readlink
+    0.01    0.000117         117         1         1 mkdir
+    0.01    0.000088          88         1           execve
+    0.00    0.000000           0         2           getcwd
+    0.00    0.000000           0         1           unlink
+    0.00    0.000000           0         2         2 statfs
+  ------ ----------- ----------- --------- --------- ----------------
+  100.00    1.374549                 58060      3525 total
+  >
+  ># commit a .gitattributes with ident rule, make sure we checkout fresh, measure time of git status
+  >echo '*.c ident' >.gitattributes
+  >git add -f .gitattributes
+  >git commit -m "add gitattributes"
+  [detached HEAD e66f34c] add gitattributes
+   1 file changed, 1 insertion(+)
+   create mode 100644 .gitattributes
+  >rm .git/index 
+  >git reset --hard
+  Checking out files: 100% (47983/47983), done.
+  HEAD is now at e66f34c add gitattributes
+  >git status
+  HEAD detached from 7c3f0d3
+  nothing to commit, working directory clean
+  >time git status
+  HEAD detached from 7c3f0d3
+  nothing to commit, working directory clean
+  
+  real	0m0.172s
+  user	0m0.102s
+  sys	0m0.067s
+  >
+  ># how does jgit with ident support behave
+  >java -jar ../jgit/org.eclipse.jgit.pgm/target/jgit-cli.jar status
+  Not currently on any branch.
+  Changes not staged for commit:
+  
+  	modified:   drivers/scsi/aic7xxx/aic7770.c
+  	modified:   drivers/scsi/aic7xxx/aic7770_osm.c
+  	modified:   drivers/scsi/aic7xxx/aic79xx_core.c
+  	modified:   drivers/scsi/aic7xxx/aic79xx_osm.c
+  	modified:   drivers/scsi/aic7xxx/aic79xx_osm_pci.c
+  	modified:   drivers/scsi/aic7xxx/aic79xx_proc.c
+  	modified:   drivers/scsi/aic7xxx/aic7xxx_93cx6.c
+  	modified:   drivers/scsi/aic7xxx/aic7xxx_core.c
+  	modified:   drivers/scsi/aic7xxx/aic7xxx_osm.c
+  	modified:   drivers/scsi/aic7xxx/aic7xxx_osm_pci.c
+  	modified:   drivers/scsi/aic7xxx/aic7xxx_proc.c
+  	modified:   drivers/scsi/aic7xxx/aicasm/aicasm.c
+  	modified:   drivers/scsi/aic7xxx/aicasm/aicasm_symbol.c
+  	modified:   drivers/scsi/aic94xx/aic94xx_dev.c
+  	modified:   drivers/scsi/wd7000.c
+  >time java -jar ../jgit/org.eclipse.jgit.pgm/target/jgit-cli.jar status
+  ...
+  real	0m9.158s
+  user	0m10.788s
+  sys	0m2.004s
+  >strace -f -e trace=file -c java -jar ../jgit/org.eclipse.jgit.pgm/target/jgit-cli.jar status
+  ...
+  Not currently on any branch.
+  Changes not staged for commit:
+  ...
+  % time     seconds  usecs/call     calls    errors syscall
+  ------ ----------- ----------- --------- --------- ----------------
+   69.91    1.835427          25     74450         1 lstat
+   24.20    0.635342          27     23755       376 open
+    3.09    0.081028          25      3234      3122 stat
+    2.71    0.071167          23      3084         2 openat
+    0.07    0.001745          76        23        22 access
+    0.02    0.000515          57         9           readlink
+    0.00    0.000122         122         1         1 mkdir
+    0.00    0.000078          78         1           execve
+    0.00    0.000016           8         2           getcwd
+    0.00    0.000000           0         1           unlink
+    0.00    0.000000           0         2         2 statfs
+  ------ ----------- ----------- --------- --------- ----------------
+  100.00    2.625440                104562      3526 total
+  # 4 times slower now. 20000 more open calls. 15 files dirty which native git thinks are clean. Hmmmm
+  >
+  ># go back to a jgit without ident support (but with basic gitattributes support)
+  >cd ../jgit
+  >git checkout b04db8e
+  Previous HEAD position was 374c220... [342372] Ident attribute implementation
+  HEAD is now at b04db8e... [342372] Adds the git attributes computation on the treewalk.
+  >mvn -q clean install -DskipTests
+  >cd ../linux
+  >java -jar ../jgit/org.eclipse.jgit.pgm/target/jgit-cli.jar status
+  Not currently on any branch.
+  >time java -jar ../jgit/org.eclipse.jgit.pgm/target/jgit-cli.jar status
+  Not currently on any branch.
+  
+  real	0m2.595s
+  user	0m3.998s
+  sys	0m1.369s
+  >strace -f -e trace=file -c java -jar ../jgit/org.eclipse.jgit.pgm/target/jgit-cli.jar status
+  ...
+  Not currently on any branch.
+  % time     seconds  usecs/call     calls    errors syscall
+  ------ ----------- ----------- --------- --------- ----------------
+   85.56    1.258843          24     52213         1 lstat
+    5.54    0.081472          25      3229      3120 stat
+    5.42    0.079715          26      3084         2 openat
+    3.34    0.049095          32      1517       376 open
+    0.11    0.001576          69        23        22 access
+    0.03    0.000436          48         9           readlink
+    0.01    0.000150         150         1         1 mkdir
+    0.00    0.000069          69         1           execve
+    0.00    0.000000           0         2           getcwd
+    0.00    0.000000           0         1           unlink
+    0.00    0.000000           0         2         2 statfs
+  ------ ----------- ----------- --------- --------- ----------------
+  100.00    1.471356                 60082      3524 total
+  # still ok
+
+-------------------------------------

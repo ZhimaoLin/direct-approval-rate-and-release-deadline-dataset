@@ -1,0 +1,62 @@
+DESCRIPTION
+
+JVMCBC-136: Automatically release not subscribed ByteBufs on View and Query
+
+Motivation
+----------
+When View or N1Ql queries are run and then not all subjects are properly subscribed
+to (which can easily happen if for example an error happens and one only listens to
+rows) then the code leaks bytebuffers.
+
+Modifications
+-------------
+The changeset borrows a unicast auto release subject from RxJava which handles
+autoreleasing after some peroid, which is set to the maxRequestLifetime of the
+environment.
+
+Result
+------
+Avoid leaking even if requested but not subscribed.
+
+Change-Id: I66f13a565d59898ec03ecbefd0a9c8a9aead3622
+
+
+COMMENTS
+
+author: Natasha Sullivan
+date: 2015-02-24 14:52:54.919000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Estrella Humphrey
+date: 2015-02-25 09:26:41.335000000
+
+Patch Set 5:
+
+(7 comments)
+
+pending finalization, see my comments
+
+Line:217, src/main/java/com/couchbase/client/core/env/CoreEnvironment.java -> would change to "after which"
+
+Line:123, src/main/java/com/couchbase/client/core/endpoint/query/QueryHandler.java -> no need for an Unicast here, the byteBuf is consumed for the status
+
+Line:18, /COMMIT_MSG -> typo: period
+
+Line:185, src/main/java/com/couchbase/client/core/utils/UnicastAutoReleaseSubject.java -> would group these at the beginning of the class with other fields
+
+Line:188, src/main/java/com/couchbase/client/core/utils/UnicastAutoReleaseSubject.java -> don't think the rawtypes warning is necessary (newUpdater should produce a generified AtomicIntegerFieldUpdater)
+
+Line:193, src/main/java/com/couchbase/client/core/utils/UnicastAutoReleaseSubject.java -> same as above, is the suppressWarnings necessary?
+
+Line:290, src/main/java/com/couchbase/client/core/utils/UnicastAutoReleaseSubject.java -> should we stop retaining once there's a subscriber?
+imagine the following scenario: 3 items are emitted, a subscriber registers between emission of item 2 and 3. This would cause item 1 and 2 being replayed from the cache and fully released, but then item 3 is never replayed, passed through to the subscriber and thus released only once while it still has been retained?
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-02-26 10:56:06.579000000
+
+Change has been successfully cherry-picked as 1b3d0ab961d01a2efc582484eaf1de7e4b2a74fd
+
+-------------------------------------

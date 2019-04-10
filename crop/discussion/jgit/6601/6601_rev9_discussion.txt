@@ -1,0 +1,112 @@
+DESCRIPTION
+
+Add manager to control multiple subscribers
+
+Change-Id: I98436066a0b5e23fe0f1299b81f60af10f83044b
+
+
+COMMENTS
+
+author: Karlee Dorsey
+date: 2012-08-01 02:52:32.000000000
+
+Uploaded patch set 9.
+
+-------------------------------------
+author: Warren Watkins
+date: 2012-08-01 18:20:35.000000000
+
+Patch Set 9: I would prefer that you didn't submit this
+
+(14 inline comments)
+
+I am going to walk over to your office so we can clean this up together.
+
+Line:69, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribeProcess.java -> all of the fields and functions should be private.
+
+Line:78, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribeProcess.java -> units?
+
+Line:105, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribeProcess.java -> I usually prefer
+ TimeUnit.NANOS.toMillis(System.nanoTime())
+
+Line:143, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribeProcess.java -> nit: sync is unclear. I would say syncConfig or applyConfig.
+
+Line:238, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribeProcess.java -> this should be private.
+
+Line:251, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribeProcess.java -> remove this too if it is not used.
+
+Line:260, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribeProcess.java -> is this used anywhere? if not, remove.
+
+Line:265, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribeProcess.java -> remove this
+
+Line:71, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscriptionExecutor.java -> the name should be set here, since it doesn't change.
+
+Line:104, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscriptionExecutor.java -> let's change the semantics of this class so it is not crossing thread boundaries unnecessarily, otherwise you need to worry about the SubscribeProcessor synchronization. I would add the following fields:
+
+private Publisher pub;
+private List<SubscribeCommand> cmds;
+AtomicBoolean exit = new AtomicBoolean();
+
+Then the methods on the task become:
+
+private void setData(Publisher pub, List<SubscribeCommand>> cmds) {
+  // TODO: check not null
+  synchronized (this) {
+    this.pub = pub;
+    this.cmds = cmds;
+  }
+  thread.interrupt();
+}
+
+private void exit() {
+  exit.set(true);
+  thread.interrupt();
+}
+
+private boolean isRunning() {
+  return (thread != null) && !exit.get();
+}
+
+none of the other operations are needs anymore and then your run() method becomes a loop:
+
+try {
+  while (!exit.get()) {
+    try {
+      Publisher p;
+      List<SubscribeCommand>> c;
+      synchronized (SubscribeTask.this) {
+         p = pub;
+         c = cmds;
+      }
+      // execute
+      ....
+    } catch (InterruptedException e) {
+      // re-execute with the updated commands
+    }
+    ...
+  }
+} finally {
+  process.close();
+}
+
+Line:139, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscriptionExecutor.java -> nit: i think it is clearer to inline p.getKey() everywhere
+
+Line:151, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscriptionExecutor.java -> remove this (see below)
+
+Line:155, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscriptionExecutor.java -> this should be done in the run loop (and update the logic accordingly).
+
+Line:163, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscriptionExecutor.java -> this block should be:
+
+if (syncCommands.size() > 0) {
+  if (task.isRunning()) {
+    task.update(p, syncCommands);
+  } else {
+    task.start(p, syncCommands);
+    subscribers.put(key, task);
+  }
+} else if (task.isRunning()) {
+  task.exit();
+  subscribers.remove(key);
+}
+
+-------------------------------------

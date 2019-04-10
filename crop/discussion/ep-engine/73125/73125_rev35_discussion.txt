@@ -1,0 +1,106 @@
+DESCRIPTION
+
+MB-16181: Flusher integration with set/get support
+
+This commit ties together collections code so that system events
+and manifest updates are now applied to storage.
+
+This commit updates the threading model to ensure concurrent sets and
+collection manifest changes are interlocked.
+
+All keys read and written belong to the default collection and because
+the $default collection is pre-allocated, get and set with this patch
+are successful, even with the collection policing in place.
+
+Test code can now make use of new VBucket methods so that the
+collection state can be changed and we can write tests that drive
+data into collections (and check the collections policing).
+
+A new class, SystemEventFlush, captures the extra state a single
+run of the flusher needs for the handling of SystemEvents (the writing
+special documents and _local docs)
+
+This commit enables set/get only to be collection aware - each
+datapath in/out method will need similar "isValid" checks.
+
+Change-Id: Ia6e6cb14d7e0fa2c418e0f52d9ab38ab36baf12d
+
+
+COMMENTS
+
+author: Jim WNathalie Landryer
+date: 2017-02-27 11:51:03.572000000
+
+Uploaded patch set 35: Patch Set 34 was rebased.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-02-27 12:22:55.965000000
+
+Patch Set 35: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/2853/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/4029/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/4228/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/3610/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-02-27 15:58:22.591000000
+
+Patch Set 35: Code-Review-1
+
+(6 comments)
+
+Bunch of minor comments / suggestions.
+
+Line:187, src/collections/vbucket_manifest.h -> Style: I quite like the terseness of folly's implementation of this (https://github.com/facebook/folly/blob/master/folly/docs/Synchronized.md) :-
+
+ ReadHandle lock();
+ WriteHandle wlock();
+
+Maybe consider a similar shorter name?
+
+Line:1928, src/couch-kvstore/couch-kvstore.cc -> Is there any atomicity issue here (i.e. another thread sets a new collectionsManifestItem?
+
+Might be nicer / more explicit to change to an atomic swap and store - e.g.
+
+ auto manifest = collectionsManifestItem;
+ if (manifest) {
+  ...
+ }
+ // optional - explicit manifest.reset(), or just wait 
+ // until it goes out of scope.
+
+Line:2188, src/couch-kvstore/couch-kvstore.cc -> Would be useful to document the "magic" `- 1`, or maybe encapsulate the size calculation in a helper method.
+
+Line:2205, src/couch-kvstore/couch-kvstore.cc -> Does this include the vbucket ID? If not, would be useful to include.
+
+Line:632, src/kv_bucket.cc -> Given these are essentially locks it might be nicer to add a new scope here to make the lifetime more explicit (similarly below). 
+
+(Related - see discussions of opening explicit scopes in https://github.com/facebook/folly/blob/master/folly/docs/Synchronized.md).
+
+Line:218, src/collections/vbucket_serialised_manifest_entry.h -> Can we static_assert this? Something like offsetof(collectionName)+1 == sizeof(object) ?
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2017-02-28 20:23:21.101000000
+
+Patch Set 35:
+
+(4 comments)
+
+Line:1928, src/couch-kvstore/couch-kvstore.cc -> Yes and no, we're kind locked by the bucket flusher only flushing one VB at a time and the data-model is a bit broken.  1 shard/1 KVStore yet many VBs, but only 1 VB at a time...
+
+CHanged it now to be passed through commit!
+
+Line:2188, src/couch-kvstore/couch-kvstore.cc -> I'll pre-compute in types.h
+
+Line:2205, src/couch-kvstore/couch-kvstore.cc -> There isn't a convenient vbid available for KVStore/CouchKVStore as the object is associated with the shard and no VB context is passed through whilst flushing
+
+-------------------------------------

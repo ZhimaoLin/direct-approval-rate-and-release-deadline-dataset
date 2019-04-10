@@ -1,0 +1,82 @@
+DESCRIPTION
+
+[Ephemeral Bucket]: Add point-in-time snapshot rangeRead on LinkedList
+
+Monotonically point-in-time snapshots which can be used for
+incremental DCP. This is implemented in the sequential data structure
+'BasicLinkedList' in EphemeralVBuckets. This is equivalent to DCP disk
+backfill in Couchbase buckets.
+
+To get a point-in-time snapshot from the list, the main requirement is
+no de-deduplication be allowed on the list in the range where the read
+for the snapshot is happening. We achieve it by not blocking
+the writes on the list during the time of the range read.
+
+This commit implements only the range read part. The non-blocking
+write during a range read will be evident with implementation of
+updateListElem in an upcoming commit.
+
+Change-Id: I80eeb760e94730645f4d20ec6a8de5ce81da7d26
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2017-03-08 02:17:14.890000000
+
+Uploaded patch set 9.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-03-08 02:27:04.200000000
+
+Patch Set 9: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/3293/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/4475/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/4045/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/4697/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-03-08 12:15:16.575000000
+
+Patch Set 9: Code-Review-1
+
+(4 comments)
+
+Line:55, src/linked_list.h -> I think we /should/ throw an exception as that highlights any coding errors. Please flip to an exception (invalid_argument is probably most accurate).
+
+Line:66, src/linked_list.h -> This shouldn't be possible - it would invalidate the invariant of the class (that end must be >= to begin).
+
+If you're going to check for this, should probably make it throw an exception - or just ensure that any methods to mutate a SeqRange check the input and then you can assume that other is valid.
+
+Line:97, src/linked_list.h -> 1. Suggest this is named setBegin() - that's more consistent with general mutator naming.
+
+2. The exception should be `invalid_argument`, as it's the input value which is incorrect.
+
+Line:47, src/linked_list.cc -> Isn't it valid to have start == 0?
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-03-08 19:51:39.631000000
+
+Patch Set 9:
+
+(4 comments)
+
+Line:55, src/linked_list.h -> Done
+
+Line:66, src/linked_list.h -> I think we do not need a check here. The input is a SeqRange ref which will hold the invariant
+
+Line:97, src/linked_list.h -> Done
+
+Line:47, src/linked_list.cc -> Want to remove the confusion by making ranges closed intervals. When we say start from 1, we start from 1. (our seqos start from 1).
+We can modify this later if we need to have 0 as valid
+
+-------------------------------------

@@ -1,0 +1,185 @@
+DESCRIPTION
+
+tmf : queryHistoryRange performance fix
+
+This patch fix an unnecessary loop for the small resolution and increase the performance.
+
+Benchmark :
+
+Before :
+Query resolution 1022444670: 0.245s
+Query resolution 102244467: 1.167s
+Query resolution 10224446: 3.390s
+Query resolution 1022444: 4.028s
+Query resolution 102244: 4.285s
+Query resolution 10224: 5.451s
+Query resolution 1022: 10.970s
+Query resolution 102: 37.396s
+Query resolution 10: 306.308s
+
+Patch Set 1 :
+Query resolution 1022444670: 0.278s
+Query resolution 102244467: 1.138s
+Query resolution 10224446: 3.373s
+Query resolution 1022444: 3.976s
+Query resolution 102244: 4.329s
+Query resolution 10224: 5.309s
+Query resolution 1022: 8.001s
+Query resolution 102: 8.145s
+Query resolution 10: 8.231s
+
+Patch Set 2 :
+Query resolution 1022444670: 0.253s
+Query resolution 102244467: 1.084s
+Query resolution 10224446: 3.488s
+Query resolution 1022444: 4.262s
+Query resolution 102244: 4.651s
+Query resolution 10224: 5.428s
+Query resolution 1022: 8.073s
+Query resolution 102: 8.065s
+Query resolution 10: 8.156s
+
+Reference :
+Performance with queryHistoryRange without resolution : 8.414s
+
+Change-Id: I6022dc6c562d994310f9419c362dd1f06a414036
+Signed-off-by: Ayanna Reed xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Ayanna Reed
+date: 2014-02-06 17:21:57.000000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-02-06 17:32:38.000000000
+
+Patch Set 5:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/5360/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-02-06 18:22:45.000000000
+
+Patch Set 5: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/5360/ : SUCCESS
+
+-------------------------------------
+author: Ricky Reeves
+date: 2014-03-04 20:01:23.000000000
+
+Patch Set 5:
+
+Alex, 
+could you please have look?
+Thanks
+Meredith Scott
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-03-04 20:25:51.000000000
+
+Patch Set 5: Code-Review-1
+
+I don't mind a behavior change per se, but what exactly is changing? It's not very clear at first glance. This should be documented, with perhaps an update to the Javadoc (in ITmfStateSystem).
+
+Right now we return "all the intervals, but with at most one update per 'resolution'". Why does this need to change? There is not much difference in the performance of PS1 and PS2 anyway.
+
+The benchmark results do belong in the commit message, that's exactly the kind of information you have there. But there should only be the "before" and the final versions.
+
+-------------------------------------
+author: Ayanna Reed
+date: 2014-03-05 17:43:19.000000000
+
+Patch Set 5:
+
+>Right now we return "all the intervals, but with at most one update per 'resolution'".
+
+In the two PS, we return "all the intervals, but with at most one update per 'resolution'"
+The difference between PS1 and PS2 is :
+- in PS1 we query at every step (multiple of resolution).
+- in PS2 the difference between two steps is at mininum the resolution time (so the step are NOT a multiple of resolution).
+
+The global behaviour is the same, the difference is more about the local discontinuities. 
+
+I rebase and correct the commit message when we decide which solution we want.
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-03-05 17:49:24.000000000
+
+Patch Set 5:
+
+> in PS2 the difference between two steps is at mininum the resolution time (so the step are NOT a multiple of resolution).
+
+So this means the "distance" between queries should increase on average, and you should do less queries overall then, right? Then why does the number of returned intervals *increases* in the modified test case?
+
+-------------------------------------
+author: Ayanna Reed
+date: 2014-03-05 18:05:23.000000000
+
+Patch Set 5:
+
+Example :
+Interval 1 : [1,15]
+Interval 2 : [16,19]
+Interval 3 : [20,35]
+
+Resolution = 10
+
+End of the interval 1 = 15
+With PS1 we query the next multiple of resolution : here 20, so we have Interval 3. The list have 2 intervals (1,3)
+With PS2 if interval length > resolution, we query end+1, here 16. After that as interval length < resolution, we query begin+resolution = 16+10 = 26. The list have 3 intervals (1,2,3).
+
+The worst case is for : 
+Interval 1 : [0,17]
+Interval 2 : [18,19]
+Interval 3 : [20,37]
+Interval 4 : [38,39]
+
+With PS1 (1,3)
+With PS2 (1,2,3,4)
+But in the 2 cases we have at maximum 1 interval per resolution.
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-03-05 18:23:14.000000000
+
+Patch Set 5:
+
+Ok I see. Thanks for the explanation. Surprising how querying more intervals is actually faster! (but that's really dependent on the backend at that point).
+
+But to be honest, I think I prefer the current behavior. The existential goal of "queryHistoryRangeWithResolution" is to avoid doing more than one query per pixel in the view when you are zoomed out very far, and there could be more that one state at a given pixel. The "resolution" parameter here really stands for "screen resolution", and should represent the distance that "one pixel" means in terms of time at the current zoom level.
+
+So when doing such a query, the view should display every single interval that is returned by the method (every interval is one pixel long, or more). If we change it to return more intervals, then the view has to check the time ranges to determine if it should display a given interval or not.
+
+We don't really "help" the view any more that way. The query itself may be faster, but we would have to do additional checks in the view, which would probably negate the small difference (between PS1 and 2).
+
+So all things considered, I prefer the change from Patch Set 1. What do you think?
+
+-------------------------------------
+author: Ayanna Reed
+date: 2014-03-05 19:51:46.000000000
+
+Patch Set 5:
+
+For me, the main purpose of this patch is to remove the unnecessary loop iterations. For this objective, the two PS are equal.
+
+PS1 don't change the behaviour of the query, so it's a trivial patch.
+
+-------------------------------------
+author: Luciana Barry
+date: 2014-03-06 00:47:35.000000000
+
+Patch Set 5:
+
+I'm fine with PS1 too but please confirm if the -1 check on interval end time is necessary.
+
+-------------------------------------

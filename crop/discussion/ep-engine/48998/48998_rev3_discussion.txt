@@ -1,0 +1,98 @@
+DESCRIPTION
+
+MB-14205: Delete backfill tasks upon closeStream
+
+When a stream is created and closed continuously with
+the connection kept alive, I observed a memory leak, as the
+backfill task for the stream was never deleted.
+
+Scenario:
+Step1: Create a connection
+Step2: Open a stream and close 500 times
+Track memUsed, before step2 and after step2:
+
+Without Change:
+memUsed before: 44015152
+memUsed after: 53081456
+
+With Change:
+memUsed before: 44013520
+memUsed after: 44131608
+
+Change-Id: I1e823bb0f151da2c16ed6b94bd989134683b3fc6
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2015-04-01 00:08:39.574000000
+
+Uploaded patch set 3: Commit message was updated.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-04-01 00:16:34.283000000
+
+Patch Set 3:
+
+Mike, the above results i have are from a test that I wrote and was able to run locally. Now, I noticed the leak, with the ref counting change you made with DcpProducer, and saw it go away with this change. I understand that this would need sufficient testing done before merging.
+
+Here's my test case: http://review.Piper Jefferson.org/#/c/48999/
+
+-------------------------------------
+author: Kenny Maynard
+date: 2015-04-01 00:18:32.385000000
+
+Patch Set 3:
+
+Can you explain how the leak occurred?
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-04-01 00:21:11.321000000
+
+Patch Set 3:
+
+By leak, I mean that a closed stream's backfill still consumed a bit of the memory. If the connection were dropped, the backfill will be deleted, but as long as the connection stays alive, there would be this additional memory consumed.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2015-04-01 00:43:36.533000000
+
+Patch Set 3:
+
+A few things. First off, the backfill should run to completion even if the stream is dead. I just looked in the dcp-backfill.cc file and one issue I saw is that we don't avoid doing unnecessary disk reads in the case of a dead stream. We could however easily add a check in the scan() function to make sure we don't do this.
+
+Second, the backfill manager should always run its backfill tasks to completion. We don't have a cancel api, but I think it would be good to have one in the future. In any case if we have one we need to address all cases where a stream needs to stop and not just the close stream case. I'm also concerned about adding this now due to problems I had with deadlocks while trying to add one in the past.
+
+Also, if backfill tasks don't run to completion for some reason then we should figure out why that is happening since that would be the real bug to me. It would be one thing if there was temporary memory overhead, but another thing if it lasted longer than 30 seconds or so.
+
+I'd like to make as small of a change as possible to the sherlock branch. If this turns out to be the only way to solve the issue then we can add it, but I think there might be simpler things that can be done in the short term.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2015-04-01 00:43:53.250000000
+
+Patch Set 3: Code-Review-1
+
+-------------------------------------
+author: Abby Duran
+date: 2015-04-01 05:59:36.132000000
+
+Patch Set 3: Code-Review-1
+
+I will take a look at this change to see if it is necessary for the sherlock or we can make a simpler fix.
+
+-------------------------------------
+author: Abby Duran
+date: 2015-04-01 18:27:47.942000000
+
+Patch Set 3: Code-Review-1
+
+Abhinav,
+
+Does this fix resolve MB-14205?
+
+IMO, we need to stop and terminate all the backfill tasks if a given stream is closed due to whatever reasons.
+
+-------------------------------------

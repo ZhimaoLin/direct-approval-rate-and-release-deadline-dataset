@@ -1,0 +1,81 @@
+DESCRIPTION
+
+Break dissimilar file pairs during diff
+
+File pairs that are very dissimilar during a diff were not being
+broken apart into their constituent ADD/DELETE pairs. The leads to
+sub-optimal rename detection. Take, for example, this situation:
+
+A file exists at src/a.txt containing "foo". A user renames src/a.txt
+to src/b.txt, then adds a new src/a.txt containing "bar".
+
+Even though the old a.txt and the new b.txt are identical, the
+rename detection algorithm would not detect it as a rename since it
+was already paired in a MODIFY. I added code to split all MODIFYs
+below a certain score into their constituent ADD/DELETE pairs. This
+allows situations like the one I described above to be more
+correctly handled.
+
+Change-Id: I22c04b70581f206bbc68c4cd1ee87a1f663b418e
+
+
+COMMENTS
+
+author: Eliezer Sellers
+date: 2010-07-22 20:59:05.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-07-23 16:56:52.000000000
+
+Patch Set 2: I would prefer that you didn't submit this
+
+(9 inline comments)
+
+
+
+Line:175, org.eclipse.jgit/src/org/eclipse/jgit/diff/RenameDetector.java -> I would call this a breakScore.
+
+Line:339, org.eclipse.jgit/src/org/eclipse/jgit/diff/RenameDetector.java -> This is horribly slow when entries is an ArrayList, because you have to shift every later cell down on each split.  Worse you are splitting everything in this particular case.
+
+Make a newEntries that you add items you aren't going to break into, and that way you don't have to modify and shift down the existing entries array.
+
+Line:371, org.eclipse.jgit/src/org/eclipse/jgit/diff/RenameDetector.java -> Same comment as above with entries.  Shifting the arrays down is slow.
+
+Line:637, org.eclipse.jgit/src/org/eclipse/jgit/diff/RenameDetector.java -> This isn't really worth a new method.  Its used exactly once.  We might as well just inline it in the call site.
+
+Line:638, org.eclipse.jgit/src/org/eclipse/jgit/diff/RenameDetector.java -> Yes.  Save the similarity score in the deleted node when you broke the pair.  When you recombine them as a modify, set the score to the score from the deleted side.
+
+DiffFormatter should be updated to add a dissimilarity line to the header which shows the inverse of the score when the modify score is non-zero.  So a score of 15 is displayed as 85%.
+
+Line:61, org.eclipse.jgit/src/org/eclipse/jgit/diff/DiffEntry.java -> Why is this now public?  I see nobody needs it as part of this change.
+
+Line:358, org.eclipse.jgit/src/org/eclipse/jgit/diff/DiffEntry.java -> Why do we need to introduce equals as part of this change?  And anytime you introduce equals you should also implement hashCode so the object can be used in a HashMap or HashSet.
+
+Line:366, org.eclipse.jgit/src/org/eclipse/jgit/diff/DiffEntry.java -> Use .equals here.
+
+Line:369, org.eclipse.jgit/src/org/eclipse/jgit/diff/DiffEntry.java -> Use .equals here.
+
+-------------------------------------
+author: Eliezer Sellers
+date: 2010-07-23 18:03:13.000000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:358, org.eclipse.jgit/src/org/eclipse/jgit/diff/DiffEntry.java -> It's being used in RenameDetectorTest on line 484. Basically, I needed a way to assert that the modify I started with was the same as the modify I ended up with, even though the modify was split apart and recombined. AssertSame couldn't do that, so I added a .equals and used assertEquals. That being said, since recombined modifys will now have a score associated with them, calling .equals will no longer work. I can remove the method if you wish, or I could keep it an implement hashCode.
+
+-------------------------------------
+author: Eliezer Sellers
+date: 2010-07-26 18:52:59.000000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:61, org.eclipse.jgit/src/org/eclipse/jgit/diff/DiffEntry.java -> It was used in RenameDetectorTest line 570 in the assertAdd method. I needed it to check that the oldId on an ADD is zeroed.
+
+-------------------------------------

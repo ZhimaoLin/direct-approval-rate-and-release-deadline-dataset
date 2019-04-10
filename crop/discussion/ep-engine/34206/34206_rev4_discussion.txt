@@ -1,0 +1,73 @@
+DESCRIPTION
+
+MB-9715: Add UPR Producer connection pausing
+
+In the current code the upr thread continually calls the step
+function for any producer connection. This change allows an UPR
+Producer to notify the memcached layer when it does and does not
+have data ready. It will fix the 100% cpu issue that occurs when
+using an UPR Producer
+
+Change-Id: I68f6cbd098ad3ed26ef2024ae2af7c032325da64
+
+
+COMMENTS
+
+author: Kenny Maynard
+date: 2014-03-06 01:18:24.493000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2014-03-06 03:10:04.971000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-300/227/ : SUCCESS
+
+-------------------------------------
+author: Abby Duran
+date: 2014-03-07 00:37:18.641000000
+
+Patch Set 4: Code-Review-1
+
+(3 comments)
+
+Line:216, src/upr-stream.cc -> Is this flag set to true for only backfill items?
+
+Shouldn't we have like
+
+itemsReady = response ? true : false;
+
+Line:1019, src/tapconnmap.cc -> Using a single lock will cause high lock contention among memcached worker threads, which consequently causes higher latency and lower thoughput for SET operations. That's what I observed in my previous tests. Please refer to TapConnMap::notifyVBConnections. You may want to have something similar or better approach.
+
+Line:355, src/upr-producer.cc -> This might cause too many notifications. Shouldn't we notify iff the producer is idle or "ready" list is empty?
+
+-------------------------------------
+author: Abby Duran
+date: 2014-03-07 21:13:42.673000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:1019, src/tapconnmap.cc -> If you think it will require a fair amount of changes to address the above comment, let's address it in a separate commit and merge this change at this time. I will leave up to you.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2014-03-08 00:00:56.468000000
+
+Patch Set 4:
+
+(3 comments)
+
+Line:216, src/upr-stream.cc -> Yes, your correct here. This needs to be done for checkpoint items.
+
+Line:1019, src/tapconnmap.cc -> I think it might and I was going to ask if I could do this in another change. When I went over this I even mentioned to Abhinav that I would likely need to use something similar to what you did for tap. I would prefer to merge this so QE can start testing and work on improving this in parallel.
+
+Line:355, src/upr-producer.cc -> This was commented out by mistake. I'll fix this.
+
+-------------------------------------

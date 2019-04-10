@@ -1,0 +1,138 @@
+DESCRIPTION
+
+Fix LockFile semantics when running on NFS
+
+When running on NFS there was a chance that JGits LockFile
+semantic is broken because File#createNewFile() may allow
+multiple clients to create the same file in parallel. This
+change provides a fix which is only used when the new config
+option core.supportsAtomicCreateNewFile is set to false. The
+default for this option is true.
+
+If the config option core.supportsAtomicCreateNewFile is true
+then File#createNewFile() is trusted and the behaviour doesn't
+change.
+
+But if core.supportsAtomicCreateNewFile is set to false then after
+successful creation of the lock file a hardlink to that lock file is
+created and the attribute nlink of the lock file is checked to be 2. If
+multiple clients manage to create the same lock file nlink would be
+greater than 2 showing the error.
+
+This expensive workaround is described in
+ https://www.time-travellers.org/shane/papers/NFS_considered_harmful.html
+section III.d) "Exclusive File Creation"
+
+Change-Id: I3d2cc48d8eb280d5f7039eb94da37804f903be6a
+
+
+COMMENTS
+
+author: Zachary Orozco
+date: 2017-11-21 20:31:56.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-11-21 20:41:14.000000000
+
+Patch Set 2:
+
+Build Started https://ci.eclipse.org/jgit/job/jgit-stable.gerrit/11/ (1/2)
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-11-21 20:41:59.000000000
+
+Patch Set 2:
+
+Build Started https://ci.eclipse.org/jgit/job/jgit.gerrit/11637/ (2/2)
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-11-21 20:55:09.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://ci.eclipse.org/jgit/job/jgit-stable.gerrit/11/ : SUCCESS
+
+https://ci.eclipse.org/jgit/job/jgit.gerrit/11637/ : SUCCESS
+
+-------------------------------------
+author: Elise Key
+date: 2017-11-22 07:06:17.000000000
+
+Patch Set 2:
+
+(8 comments)
+
+Line:295, org.eclipse.jgit/src/org/eclipse/jgit/lib/ConfigConstants.java -> Do we always specify the major release xxx@xxx.xxx even for things added in a minor release?
+
+Line:242, org.eclipse.jgit/src/org/eclipse/jgit/util/FS.java -> remove
+
+Line:242, org.eclipse.jgit/src/org/eclipse/jgit/util/FS.java -> support
+
+Line:811, org.eclipse.jgit/src/org/eclipse/jgit/util/FS.java -> "a new"
+
+Line:319, org.eclipse.jgit/src/org/eclipse/jgit/util/FS_POSIX.java -> xxx@xxx.xxx tag?
+
+Line:340, org.eclipse.jgit/src/org/eclipse/jgit/util/FS_POSIX.java -> else block is unnecessary here.
+
+Line:341, org.eclipse.jgit/src/org/eclipse/jgit/util/FS_POSIX.java -> Doesn't this always evaluate to false?  If nlink is 2, it would enter the block at L335 and return true at L336.
+
+Line:341, org.eclipse.jgit/src/org/eclipse/jgit/util/FS_POSIX.java -> Is this suppression needed?  There are no string literals in this line.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-11-22 08:34:14.000000000
+
+Patch Set 2: Code-Review-1
+
+(4 comments)
+
+Line:295, org.eclipse.jgit/src/org/eclipse/jgit/lib/ConfigConstants.java -> strictly speaking Eclipse API tooling does not support adding API in a service release (3rd digit in version changes) which is also against semantic versioning rules. The closest accepted by Eclipse API tooling is xxx@xxx.xxx 4.5. 
+
+We need this patch on stable-4.5 since we have some systems still running on Java 7 and 4.5 is the last version supporting this ancient Java version and adding this constant doesn't really break anything. We'll have to suppress the corresponding warning in Eclipse.
+
+Line:306, org.eclipse.jgit/src/org/eclipse/jgit/util/FS_POSIX.java -> * this isn't thread safe, mark it volatile ?
+* I think this should be named supportsUnixNLink
+* move this field to the top of this class where the other fields are defined
+
+Line:311, org.eclipse.jgit/src/org/eclipse/jgit/util/FS_POSIX.java -> xxx@xxx.xxx core.supportsAtomicCreateNewFile = true}
+
+Line:314, org.eclipse.jgit/src/org/eclipse/jgit/util/FS_POSIX.java -> xxx@xxx.xxx core.supportsAtomicCreateNewFile = false}
+
+-------------------------------------
+author: Zachary Orozco
+date: 2017-11-22 12:01:20.000000000
+
+Patch Set 2:
+
+(10 comments)
+
+Line:242, org.eclipse.jgit/src/org/eclipse/jgit/util/FS.java -> Done
+
+Line:242, org.eclipse.jgit/src/org/eclipse/jgit/util/FS.java -> Done
+
+Line:811, org.eclipse.jgit/src/org/eclipse/jgit/util/FS.java -> Done
+
+Line:306, org.eclipse.jgit/src/org/eclipse/jgit/util/FS_POSIX.java -> - it's marked volatile now
+- the field has been moved
+- the name: Technically this field is set when an access to the attribute "unix:nlink" throws an UnsupportedOperationException. And based on the API doc this means that the view "unix" is not supported. If the attribute "nlink" is not known then another, currently unhandled exception is thrown. Means: I think the name is ok.
+
+Line:311, org.eclipse.jgit/src/org/eclipse/jgit/util/FS_POSIX.java -> Done
+
+Line:314, org.eclipse.jgit/src/org/eclipse/jgit/util/FS_POSIX.java -> Done
+
+Line:319, org.eclipse.jgit/src/org/eclipse/jgit/util/FS_POSIX.java -> Done
+
+Line:340, org.eclipse.jgit/src/org/eclipse/jgit/util/FS_POSIX.java -> Done
+
+Line:341, org.eclipse.jgit/src/org/eclipse/jgit/util/FS_POSIX.java -> Done
+
+Line:341, org.eclipse.jgit/src/org/eclipse/jgit/util/FS_POSIX.java -> Done
+
+-------------------------------------

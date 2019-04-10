@@ -1,0 +1,48 @@
+DESCRIPTION
+
+Compare contents rather than timestamps when marking as out of sync
+
+This change depends on readFile() in the RawText class having its InputStream
+closed after the data has been read.
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-02-03 16:37:42.000000000
+
+Patch Set 1: I would prefer that you didn't submit this; No score
+
+
+
+Line:165, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/decorators/DecoratableResourceAdapter.java -> Always doing a content check is horribly expensive.  Normally a Git application will check timestamps between the indexEntry and resourceEntry, and then fall back into content check only if a race condition was detected.  The logic is roughly:
+
+  IF indexEntry.time != resourceEntry.time:
+    assume dirty / modified
+
+  ELSE:
+    IF indexEntry.time != indexFile.time:
+        assume clean
+
+    ELSE:
+       IF indexContent == resourceContent:
+         set indexFile.time = resourceEntry.time
+         save indexFile
+
+       ELSE:
+         set indexFile.time != resourceEntry.time
+         save indexFile
+
+This is the "racily clean" or "racy git" problem in Git.  For a bit more details, try looking at DirCacheEntry at the mightBeRacilyClean and smudgeRacilyClean methods.  The decorator code is basically doing the work of "git status" in command line tools, it should be taking advantage of the same strategy about checking file modification times, falling back into content checks when there is a race condition, and correcting the cached index timestamp after a content check so we don't have to do it again during a future request.
+
+Basically that's what the TODO you deleted was trying to talk about.
+
+-------------------------------------
+author: Nathanael Holden
+date: 2010-02-03 18:29:04.000000000
+
+Patch Set 1: Abandoned
+
+A more efficient implementation is possible without always having to read content.
+
+-------------------------------------

@@ -1,0 +1,68 @@
+DESCRIPTION
+
+JVMCBC-259: Merge DCP streams in two steps
+
+Motivation
+----------
+The librry cannot merge more infinite streams than RX default ringbuffer
+size.
+
+Modification
+------------
+Merge DCP streams in two steps using window() operator.
+
+Result
+------
+It is possible to stream whole cluster.
+
+Change-Id: I956c6aad515bbe47a3619ad51bad81ef1cc9b148
+
+
+COMMENTS
+
+author: Cory Peck
+date: 2015-10-28 22:15:51.617000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Cory Peck
+date: 2015-10-28 22:36:24.785000000
+
+Patch Set 1: Verified-1
+
+Seems like it still stuck when actually try to process the feeds. Michael, could you take a look?
+
+This is a minimal example I use
+
+        BucketStreamAggregatorState aggregatorState = new BucketStreamAggregatorState("test");
+        for (short i = 0; i < 1024; i++) {
+            aggregatorState.put(new BucketStreamState(i, 0, 0, 0xffffffff, 0, 0xffffffff));
+        }
+        Observable<DCPRequest> changes = new BucketStreamAggregator(core, bucket.name()).feed(aggregatorState);
+        changes
+                .window(100)
+                .flatMap(dcpRequestObservable -> dcpRequestObservable
+                        .filter(dcpRequest -> dcpRequest instanceof MutationMessage)
+                        .map(dcpRequest -> (MutationMessage) dcpRequest)
+                        .map((mutationMessage) -> mutationMessage.partition() + " -> " + mutationMessage.key()))
+                .take(10001)
+                .toBlocking()
+                .forEach(System.out::println);
+
+-------------------------------------
+author: Estrella Humphrey
+date: 2015-10-29 18:33:32.043000000
+
+Patch Set 1: Code-Review-1
+
+I'm not sure what to make of it, I have less and less confidence in the use of Subjects and am not at ease with the infinite aspect of it, and the fact that we have to resort to windows and tuning the rx ring buffer...
+Maybe we can brainstorm live, Michael and Sergey?
+
+-------------------------------------
+author: Cory Peck
+date: 2015-11-03 13:49:56.309000000
+
+Abandoned
+
+-------------------------------------

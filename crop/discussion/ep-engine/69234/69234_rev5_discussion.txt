@@ -1,0 +1,125 @@
+DESCRIPTION
+
+MB-20760: Fix data race on VBucket::chkFlushTimeout
+
+As identified by ThreadSantizer:
+
+WARNING: ThreadSanitizer: data race (pid=23560)
+  Write of size 8 at 0x7ff76a2e7e50 by thread T52 (mutexes: write M64345, write M85935):
+    #0 VBucket::adjustCheckpointFlushTimeout(unsigned long) ep-engine/src/vbucket.cc:393 (ep.so+0x00000016c806)
+    #1 VBucket::notifyOnPersistence(EventuallyPersistentEngine&, unsigned long, bool) ep-engine/src/vbucket.cc:332 (ep.so+0x00000016c806)
+    #2 EventuallyPersistentStore::flushVBucket(unsigned short) ep-engine/src/ep.cc:3475 (ep.so+0x0000000be736)
+    #3 Flusher::flushVB() ep-engine/src/flusher.cc:284 (ep.so+0x0000001100d1)
+    #4 Flusher::step(GlobalTask*) ep-engine/src/flusher.cc:183 (ep.so+0x0000001110b7)
+    #5 FlusherTask::run() ep-engine/src/tasks.cc:138 (ep.so+0x000000156642)
+    #6 ExecutorThread::run() ep-engine/src/executorthread.cc:115 (ep.so+0x000000108d96)
+    #7 launch_executor_thread ep-engine/src/executorthread.cc:33 (ep.so+0x000000109675)
+    #8 CouchbaseThread::run() platform/src/cb_pthreads.cc:54 (libplatform.so.0.1.0+0x0000000057a5)
+    #9 platform_thread_wrap platform/src/cb_pthreads.cc:66 (libplatform.so.0.1.0+0x0000000057a5)
+
+  Previous read of size 8 at 0x7ff76a2e7e50 by thread T9 (mutexes: write M295):
+    #0 VBucket::getCheckpointFlushTimeout() ep-engine/src/vbucket.cc:406 (ep.so+0x0000001683e6)
+    #1 EventuallyPersistentEngine::doEngineStats(void const*, void (*)(char const*, unsigned short, char const*, unsigned int, void const*)) ep-engine/src/ep_engine.cc:3628 (ep.so+0x0000000e9678)
+    #2 EventuallyPersistentEngine::getStats(void const*, char const*, int, void (*)(char const*, unsigned short, char const*, unsigned int, void const*)) ep-engine/src/ep_engine.cc:4680 (ep.so+0x0000000ea930)
+    #3 EvpGetStats ep-engine/src/ep_engine.cc:235 (ep.so+0x0000000eb9fe)
+    #4 stat_executor memcached/daemon/mcbp_executors.cc:3367 (memcached+0x00000046c94b)
+    #5 process_bin_packet memcached/daemon/mcbp_executors.cc:4650 (memcached+0x00000046481d)
+    #6 mcbp_complete_nread(McbpConnection*) memcached/daemon/mcbp_executors.cc:4759 (memcached+0x00000046481d)
+    #7 conn_nread(McbpConnection*) memcached/daemon/statemachine_mcbp.cc:314 (memcached+0x000000472678)
+    #8 McbpStateMachine::execute(McbpConnection&) memcached/daemon/statemachine_mcbp.h:43 (memcached+0x000000447054)
+    #9 McbpConnection::runStateMachinery() memcached/daemon/connection_mcbp.cc:1003 (memcached+0x000000447054)
+    #10 McbpConnection::runEventLoop(short) memcached/daemon/connection_mcbp.cc:1274 (memcached+0x0000004470dd)
+    #11 run_event_loop memcached/daemon/connections.cc:147 (memcached+0x00000044b9e9)
+    #12 event_handler(int, short, void*) memcached/daemon/memcached.cc:851 (memcached+0x00000041466c)
+    #13 event_persist_closure /home/Piper Jefferson/serverjenkins/workspace/cbdeps-platform-build/deps/packages/build/libevent/libevent-prefix/src/libevent/event.c:1319 (libevent_core-2.0.so.5+0x00000000b6b7)
+    #14 event_process_active_single_queue /home/Piper Jefferson/serverjenkins/workspace/cbdeps-platform-build/deps/packages/build/libevent/libevent-prefix/src/libevent/event.c:1363 (libevent_core-2.0.so.5+0x00000000b6b7)
+    #15 event_process_active /home/Piper Jefferson/serverjenkins/workspace/cbdeps-platform-build/deps/packages/build/libevent/libevent-prefix/src/libevent/event.c:1438 (libevent_core-2.0.so.5+0x00000000b6b7)
+    #16 event_base_loop /home/Piper Jefferson/serverjenkins/workspace/cbdeps-platform-build/deps/packages/build/libevent/libevent-prefix/src/libevent/event.c:1639 (libevent_core-2.0.so.5+0x00000000b6b7)
+    #17 CouchbaseThread::run() platform/src/cb_pthreads.cc:54 (libplatform.so.0.1.0+0x0000000057a5)
+    #18 platform_thread_wrap platform/src/cb_pthreads.cc:66 (libplatform.so.0.1.0+0x0000000057a5)
+
+  Location is global 'VBucket::chkFlushTimeout' of size 8 at 0x7ff76a2e7e50 (ep.so+0x000000431e50)
+
+Change-Id: I2d6f928b8a5552cf08a91c6134ad5134810966c2
+
+
+COMMENTS
+
+author: Hugo Blankenship
+date: 2016-11-02 15:00:19.457000000
+
+Patch Set 5:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/1719/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-02 15:15:05.018000000
+
+Patch Set 5:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/1313/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-02 15:16:20.255000000
+
+Patch Set 5:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/1514/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-02 15:17:55.025000000
+
+Patch Set 5:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-watson/339/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-02 15:32:14.222000000
+
+Patch Set 5: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/1719/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/1313/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/1514/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-watson/339/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-02 15:32:20.482000000
+
+Patch Set 5: -Verified
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/1720/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-02 15:52:42.763000000
+
+Patch Set 5: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/1313/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/1514/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-watson/339/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/1720/ : SUCCESS
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-11-02 16:27:08.826000000
+
+Change has been successfully cherry-picked as 2f227193d98b64171d287f4a6cecee02d1726192 by Ashlee Kent
+
+-------------------------------------

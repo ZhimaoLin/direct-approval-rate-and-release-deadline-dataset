@@ -1,0 +1,174 @@
+DESCRIPTION
+
+[Refactor]: Move queueDirty() go from KVBucket to VBucket
+
+KVBucket::queueDirty() is a function used to put an item onto checkpoint
+after it is inserted into hash table. Both hash table and checkpoint are
+members of VBucket class and hence it is more appropriate to implement
+this function in VBucket class.
+
+Also, added VBUpdateReturnCtx which will indicate the KVBucket on the
+actions to be taken after adding/deleting/updating an item in VBucket.
+
+Implementing this functions in VBucket class will help in refactoring
+calls to hash table and also result better abstraction.
+
+Change-Id: I74ecdd774a88981feb482a34d375f38a12cfc900
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2017-01-06 23:32:14.574000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-06 23:32:24.042000000
+
+Patch Set 4:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2588/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-06 23:32:24.179000000
+
+Patch Set 4:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/2734/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-06 23:32:24.307000000
+
+Patch Set 4:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1413/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-06 23:32:24.434000000
+
+Patch Set 4:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2229/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-06 23:48:47.971000000
+
+Patch Set 4: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2588/ : FAILURE
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/2588/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1413/ : FAILURE
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-addresssanitizer-master/1413/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/2734/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2229/ : SUCCESS
+
+-------------------------------------
+author: Keira Washington
+date: 2017-01-07 00:49:04.207000000
+
+Patch Set 4:
+
+(2 comments)
+
+Line:710, src/vbucket.cc -> Perhaps a slightly a slightly more descriptive name would be useful?
+
+Line:728, src/vbucket.cc -> This might actually require even more thought. The checkpoint manager itself has the ability to notify the flusher through a callback it's given when constructed and already does so as part of the CheckpointManager::queueDirty code path:
+
+https://github.com/Piper Jefferson/ep-engine/blob/master/src/checkpoint.cc#L265
+
+The value that's returned a couple of lines below is eventually turned into the above `bool rv` so there seems to be at least some degree of redundancy here.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-01-07 20:25:13.332000000
+
+Patch Set 4:
+
+(2 comments)
+
+Line:710, src/vbucket.cc -> Done
+
+Line:728, src/vbucket.cc -> I think this is the right place to notify flusher.
+Checkpoint is a class in VBucket which is just supposed to hold items temporarily and snapshot the items for clients (persistence and replication) as needed. Ideally it should not be aware of shard/flusher etc.
+
+It is the implementation of checkpoint (it has some meta items) that required the flusher cb to be passed. Ideally we must rid those meta items and hence the flusher cb. maybe eventually in future.
+
+-------------------------------------
+author: Keira Washington
+date: 2017-01-08 00:12:27.775000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:728, src/vbucket.cc -> > Checkpoint is a class in VBucket which is just supposed to hold items temporarily and snapshot the items for clients (persistence and replication) as needed. Ideally it should not be aware of shard/flusher etc.
+
+That doesn't make any sense. If the Checkpoint manager is the one that knows there's new stuff for replication/persistence then Checkpoint manager is the *perfect* class to notify replication/persistence. Maybe it doesn't need to know about the flusher/connmaps directly, give it a callback for replication and a callback for persistence and it can call them when appropriate. It's actually incredibly clean and removes all this glue code.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-01-09 12:40:40.125000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:728, src/vbucket.cc -> Regarding the existing CheckpointManager callback, it does /appear/ that we have two things doing a very similar task - current code in Checkpoint::queueDirty() below does ultimately cll the same function - Flusher::notifyFlushEvent(): 
+
+    // Notify flusher if in case queued item is a checkpoint meta item or
+    // vbpersist state.
+    if (qi->getOperation() == queue_op::checkpoint_start ||
+        qi->getOperation() == queue_op::checkpoint_end ||
+        qi->getOperation() == queue_op::set_vbucket_state) {
+        checkpointManager->notifyFlusher();
+    }
+
+I response to Manu's comment:
+
+> It is the implementation of checkpoint (it has some meta items) that required the flusher cb to be passed. Ideally we must rid those meta items and hence the flusher cb. maybe eventually in future.
+
+I doubt we'll be able to remove the meta queue_ops - given they are used for anything which needs to be serialised with respect to the data stream (set_vbucket_state for example now is done that way). 
+
+As such it would be good to have a single notification mechanism from queueDirty if possible. While callbacks do have their downsides (they make static code flow hard to follow amounts others), it does feel like we're struggling to restructure the code in such a way that the different bucket types can cleanly handle notification for replication, IOcomplete etc.
+
+As such I think it's worth considering an approach where the VBucket (or maybe CheckpointManger / Checkpoint?) can have callbacks registered on it.
+
+Maybe start by seeing if the code at the bottom of Checkpoint::queueDirty (above) can be made unconditional (for all queue_ops) and have all calls to notifyFlushEvent occur from there?
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-01-12 02:13:13.279000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:728, src/vbucket.cc -> I thought about calling the callback from Checkpoint::queueDirty.
+But the logic there seems like we need to notify only flusher there, but not notify replication.
+This is some smartness in Checkpoint, which should not be there. Ideally Checkpoint(mgr) should be a dumb data structure and hold last few items and keep up snapshot invariants.
+
+I think best way to notify is to have callback in VBucket layer and finalize(hence notify) there that a new item is added in memory.
+The callback notifies KVBucket and it decides what/whom to notify.
+
+Welcome comments here.
+
+-------------------------------------
+author: Tate Garrett
+date: 2017-01-13 18:19:54.679000000
+
+Change has been successfully cherry-picked as e4c718e92cb817a7ee349e8d42764404dfe798ac by Adrianna Holmes
+
+-------------------------------------

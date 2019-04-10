@@ -1,0 +1,134 @@
+DESCRIPTION
+
+MB-9866 StoredValue now contains queued_item instance.
+
+Use reference-counted Item (queued_item) class inside StoredValue class.
+CheckPoint Manger and Hashtable will now share keys and metadata for items
+instead of making copies. This will greatly decrease memory usage for
+cases where there is big number of small sized items. Many files have been
+changed to allow the queued_item class to used intead of Item class.
+
+Change-Id: I304ef139dc08f99535e41abee81d4fa285a8b228
+
+
+COMMENTS
+
+author: Miley Adams
+date: 2014-01-22 16:30:56.933000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Miley Adams
+date: 2014-01-22 16:43:19.534000000
+
+Patch Set 2:
+
+==> make engine-tests
+Running [0033/0253]: test mb5215 (couchstore).../Users/Miley Adams/cb/m/cmake/ep-engine/tests/ep_testsuite.cc:2098 Test failed: `Failed to persist new exptime' (newExpTime == expTime)
+ DIED
+Running [0121/0253]: disk>RAM golden path (couchstore).../Users/Miley Adams/cb/m/cmake/ep-engine/tests/ep_testsuite.cc:5318 Test failed: `mem_used (ep_kv_size + ep_overhead) should be greater than ep_overhead' (get_int_stat(h, h1, "mem_used") == overhead)
+ DIED
+Running [0122/0253]: disk>RAM paged-out rm (couchstore).../Users/Miley Adams/cb/m/cmake/ep-engine/tests/ep_testsuite.cc:5349 Test failed: `mem_used (ep_kv_size + ep_overhead) should be greater than ep_overhead' (get_int_stat(h, h1, "mem_used") == overhead)
+ DIED
+Running [0129/0253]: disk>RAM golden path (wal) (couchstore).../Users/Miley Adams/cb/m/cmake/ep-engine/tests/ep_testsuite.cc:5318 Test failed: `mem_used (ep_kv_size + ep_overhead) should be greater than ep_overhead' (get_int_stat(h, h1, "mem_used") == overhead)
+ DIED
+Running [0130/0253]: disk>RAM paged-out rm (wal) (couchstore).../Users/Miley Adams/cb/m/cmake/ep-engine/tests/ep_testsuite.cc:5349 Test failed: `mem_used (ep_kv_size + ep_overhead) should be greater than ep_overhead' (get_int_stat(h, h1, "mem_used") == overhead)
+ DIED
+Running [0249/0253]: test observe with item_eviction (couchstore).../Users/Miley Adams/cb/m/cmake/ep-engine/tests/ep_testsuite.cc:8257 Test failed: `Expected persisted in result' (persisted == OBS_STATE_PERSISTED)
+ DIED
+Running [0250/0253]: test expired item with item_eviction (couchstore).../Users/Miley Adams/cb/m/cmake/ep-engine/tests/ep_testsuite.cc:8315 Test failed: `Expect the compactor to delete an expired item' (get_int_stat(h, h1, "vb_active_expired") == 1)
+ DIED
+# Passed 246 of 253 tests
+
+-------------------------------------
+author: Ellie Kidd
+date: 2014-01-22 19:20:30.151000000
+
+Patch Set 2:
+
+(2 comments)
+
+Just a few minor nits thanks
+
+Line:24, src/objectregistry.h -> why is this forward declaration needed here?
+
+Line:409, src/couch-kvstore/couch-kvstore.cc -> line greater than 80 characters
+
+-------------------------------------
+author: Miley Adams
+date: 2014-01-22 19:34:15.034000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:24, src/objectregistry.h -> added this to make compiler work. didn't look into why it worked without it before.
+
+Line:409, src/couch-kvstore/couch-kvstore.cc -> will shorten it.
+
+-------------------------------------
+author: Abby Duran
+date: 2014-01-22 19:42:55.722000000
+
+Patch Set 2: Code-Review-1
+
+(20 comments)
+
+David,
+
+I have a bunch of comments in StoredValue parts as it is the main part of this change.
+
+We can discuss it over the skype if you want.
+
+Line:703, src/stored-value.h -> We shouldn't allocate the memory to include a key string anymore because a key is already part of queued_item instance. We can simply pass "base" to the new constructor below or simply "new StoredValue(itm, n, ...)" should be enough.
+
+Line:854, src/stored-value.h -> Can we remove this function?
+
+Line:149, src/stored-value.h -> Can we still use std::memcmp? i don't think it's quite different in performance, but still have some advantages in terms of CPU cycles.
+
+Line:216, src/stored-value.h -> The type should be uint64_t
+
+Line:496, src/stored-value.h -> Please rename "item" to "itm". Using "item" variable name has some conflicts with memcached "item" struct definition and causes some compilation issues in some compilers.
+
+Line:693, src/stored-value.h -> itm->getKey();
+
+Line:699, src/stored-value.h -> Please remove this line.
+
+Line:700, src/stored-value.h -> We don't need to call setKey because queued_item is already part of StoredValue instance.
+
+Line:836, src/stored-value.h -> queued_item is already the ref-counter based pointer to Item instance. We should not return the pointer to the ref-counter based pointer. Please change the return type to "queued_item"
+
+Line:851, src/stored-value.h -> val->getCas()
+
+Line:894, src/stored-value.h -> Please remove those lines.
+
+Line:1024, src/stored-value.h -> Why do we need this stmt? Can we simply call "val->getKey()" below?
+
+Line:1030, src/stored-value.h -> Do we need this function? I prefer to replace it with the above function.
+
+Line:1451, src/stored-value.h -> Please change the return type to "queued_item" as mentioned above.
+
+Line:93, src/stored-value.cc -> We should adapt setExptime so that it should not mark an item dirty. I think this is one of the reasons to some unit test failures.
+
+Line:114, src/stored-value.cc -> Same comment as above.
+
+Line:235, src/stored-value.cc -> Likewise, we should not mark an item dirty in this function.
+
+Line:564, src/stored-value.cc -> Please rename item to "qitem"
+
+Line:628, src/stored-value.cc -> We should not create queued_item instance in heap. Please simply do the following:
+
+return queued_item(itm);
+
+Line:632, src/stored-value.cc -> If we need this function, its return type should be simply "queued_item" so that its ref counter is incremented.
+
+-------------------------------------
+author: Tate Garrett
+date: 2014-01-30 07:10:06.741000000
+
+The change could not be merged due to a path conflict.
+
+Please rebase the change locally and upload the rebased commit for review.
+
+-------------------------------------

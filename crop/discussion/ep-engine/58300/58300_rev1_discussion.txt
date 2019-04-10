@@ -1,0 +1,167 @@
+DESCRIPTION
+
+MB-16919: Process buffered items at consumer one vbucket at a time
+
+It is observed that the DcpConsumer's ProcesserTask takes too
+long in certain scenarios. This is because the processer task
+iterates over all vbuckets every time the task runs.
+
+To avoid long run times for the ProcesserTask, this change
+modifies the processing logic such that every time the task runs,
+the buffered items of only a single vbucket that was notified
+are processed. The vbuckets will be processed in a round robin
+fashion.
+
+Change-Id: I5ba74951e57d756efc1541193df87be300e2ca3e
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2016-01-06 02:29:36.965000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-01-06 02:29:44.274000000
+
+Patch Set 1:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1898/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-01-06 02:47:18.128000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1151/ : SUCCESS
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1898/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-01-21 17:48:50.485000000
+
+Patch Set 1:
+
+I believe Jim has spotted some issues with the current approach - see http://review.Piper Jefferson.org/#/c/58886/
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-01-21 18:56:14.879000000
+
+Patch Set 1:
+
+The idea here is to not have the processer task iterate over all vbuckets in a single run, but one vbucket at a time at the consumer end. I'll still need to test this change out completely. Once I'm through with that I'll share some results (based on which we can decide to go with this change or not), until then I was hoping to get some reviews on this.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2016-01-21 19:15:23.860000000
+
+Patch Set 1:
+
+Why should ProcesserTask not process all the vbuckets in one run ? Since the ProcesserTask is a non-IO task, i do not see any harm in it processing all the passive stream buffers (for all vbuckets) in one go.
+
+Maybe we need the processing of all vbuckets for performance.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-01-21 19:17:34.310000000
+
+Patch Set 1:
+
+Please do take a look into the ticket. As mentioned there, in some situations this task takes too long to run causing other really short tasks to wait in the scheduler queues for a long time.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-01-21 19:18:04.047000000
+
+Patch Set 1:
+
+I've mentioned the reason in the commit message too : )
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2016-01-21 19:22:04.932000000
+
+Patch Set 1:
+
+You have mentioned "It is observed that the DcpConsumer's ProcesserTask takes too long in certain scenarios."
+
+What is too long (is there a test to quantify this) ? 
+More importantly, what is the impact/harm with this being too long ?
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-01-21 19:29:20.094000000
+
+Patch Set 1:
+
+All the details you're looking for are in the ticket, and the CBSE it is linked to.
+Note that the issue has not been reproduced in house.
+
+All the testing I'll be doing with this change is to see if it causes any performance regression.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2016-01-21 19:32:38.770000000
+
+Patch Set 1:
+
+Oh my bad, I saw the details now.
+The change looks good if there is no perf regression
+
+-------------------------------------
+author: Kymani Ramirez
+date: 2016-01-22 17:15:16.879000000
+
+Patch Set 1:
+
+(3 comments)
+
+Line:229, src/dcp/consumer.cc -> why do you not pass in false directly?
+(and same comment for all others below)
+
+Line:764, src/dcp/consumer.cc -> why not pass in true directly?
+
+Line:800, src/dcp/consumer.cc -> why not pass in true directly here also?
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-01-22 17:18:43.688000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:229, src/dcp/consumer.cc -> So here: vbToProcess is accessed by a front end thread, and while read (as in processBufferedItems) it is by an IO thread, the access to this variable needs to be atomic in nature to avoid data races.
+
+-------------------------------------
+author: Abby Duran
+date: 2016-01-22 19:12:29.897000000
+
+Patch Set 1: Code-Review-2
+
+It looks good, but I would like to hold merging this change until we get some perf results given that the watson code freeze is coming (by end of next week) and this change has likely big impact on DCP performance.
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-01-27 14:08:57.422000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:229, src/dcp/consumer.cc -> compare_exchange cannot take a bare value as param 1
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-02-09 19:41:30.850000000
+
+Change has been successfully cherry-picked as b8053b25b2c21a3ba216e1fccbbdbcaefad66b73
+
+-------------------------------------

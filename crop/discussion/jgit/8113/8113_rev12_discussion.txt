@@ -1,0 +1,68 @@
+DESCRIPTION
+
+Implement recursive merge strategy
+
+Extend ResolveMerger with RecursiveMerger to merge two tips
+that have up to 200 bases.
+
+Bug: 380314
+CQ: 6854
+Change-Id: I6292bb7bda55c0242a448a94956f2d6a94fddbaa
+Signed-off-by: Malia Sampson xxx@xxx.xxx
+Also-by: Zachary Orozco xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Zachary Orozco
+date: 2012-12-05 19:14:00.000000000
+
+Uploaded patch set 12.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2012-12-05 19:24:13.000000000
+
+Patch Set 12:
+
+George, I added more tests now which nearly all fail. I think the test which work with a non-bare repo fail because we don't handle the index correctly.
+But I wrote also low-level test which work without an index (Gerrit like situation). Also they fail. I think that's because the merge base is not correctly computed when we have more than two common predecessors.
+
+But now since we have tests which reproduce that we should be able to find & fix the issues.
+
+Please have a look at the tests. For all tests I checked that native git is able to merge and we are not. I just put breakpoints just before we do our recursive merge and tried in that folder with native git.
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-12-05 19:48:46.000000000
+
+Patch Set 12:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2550/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-12-05 20:01:52.000000000
+
+Patch Set 12: Fails
+
+Build Failed 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2550/ : FAILURE
+
+-------------------------------------
+author: Zachary Orozco
+date: 2012-12-05 22:03:17.000000000
+
+Patch Set 12: (2 inline comments)
+
+
+
+Line:392, org.eclipse.jgit/src/org/eclipse/jgit/merge/RecursiveMerger.java -> This loop is strange. Where is the final result stored? It can't be in resultTree. Somehow I thought that you run through this loop and in every iteration you merge one new commonAncestor into what you have constructed so far. And what you have constructed so far is stored in resultTree. But no: you always merge a new commonAncestor with the never-changing firstCommonAncestor.
+My statement is: it doesn't matter how many commonAncestors you have and how they look like: in the end resultTree will always contain only the result of a merge between the first and the last common ancestor. The intermediate commonAncestors are ignored. That can't be ok.
+
+Line:415, org.eclipse.jgit/src/org/eclipse/jgit/merge/RecursiveMerger.java -> Here comes one problem: Imagine you are running in the Gerrit environment on a bare repo without an index. When you construct the RecursiveMerge instance a new, empty incore index is instantiated and stored in this.dircache. When you reach line 395 this index is filled and it finally contains the state of the newly calculated mergeBase. Now you reach this line 415 and you start a mergeTrees(). mergeTrees will not only look at the given trees but also take the index into account. And the git merge algorithms assume that the index is based on the first tree. (Analogy: on git command line you assume that your index is based on HEAD which is always the first tree). Whenever first tree and index differ the merge assume we have an "dirty index" and stop. That is the reason why the test lowLevelBareRepo_CrissCrossMerge() fails!
+
+We have to make sure that when we reach this point we have an index set to the h1 content. The index which was filled during calculation of the merge base can be dumped.
+
+-------------------------------------

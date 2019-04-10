@@ -1,0 +1,66 @@
+DESCRIPTION
+
+Teach PackWriter how to reuse an existing object list
+
+Counting the objects needed for packing is the most expensive part of
+an UploadPack request that has no uninteresting objects (otherwise
+known as an initial clone).  During this phase the PackWriter is
+enumerating the entire set of objects in this repository, so they can
+be sent to the client for their new clone.
+
+Allow the ObjectReader (and therefore the underlying storage system)
+to keep a cached list of all reachable objects from a small number of
+points in the project's history.  If one of those points is reached
+during enumeration of the commit graph, most objects are obtained from
+the cached list instead of direct traversal.
+
+PackWriter uses the list by discarding the current object lists and
+restarting a traversal from all refs but marking the object list name
+as uninteresting.  This allows PackWriter to enumerate all objects
+that are more recent than the list creation, or that were on side
+branches that the list does not include.
+
+However, ObjectWalk tags all of the trees and commits within the list
+commit as UNINTERESTING, which would normally cause PackWriter to
+construct a thin pack that excludes these objects.  To avoid that,
+addObject() was refactored to allow this list-based enumeration to
+always include an object, even if it has been tagged UNINTERESTING by
+the ObjectWalk.  This implies the list-based enumeration may only be
+used for initial clones, where all objects are being sent.
+
+The UNINTERESTING labeling occurs because StartGenerator always
+enables the BoundaryGenerator if the walker is an ObjectWalk and a
+commit was marked UNINTERESTING, even if RevSort.BOUNDARY was not
+enabled.  This is the default reasonable behavior for an ObjectWalk,
+but isn't desired here in PackWriter with the list-based enumeration.
+Rather than trying to change all of this behavior, PackWriter works
+around it.
+
+Because the list name commit's immediate files and trees were all
+enumerated before the list enumeration itself starts (and are also
+within the list itself) PackWriter runs the risk of adding the same
+objects to its ObjectIdSubclassMap twice.  Since this breaks the
+internal map data structure (and also may cause the object to transmit
+twice), PackWriter needs to use a new "added" RevFlag to track whether
+or not an object has been put into the outgoing list yet.
+
+Change-Id: Ie99ed4d969a6bb20cc2528ac6b8fb91043cee071
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Malia Sampson
+date: 2011-01-27 19:24:38.000000000
+
+Patch Set 1: Looks good to me, approved; Build Successful; IP review completed
+
+Looks good.
+
+-------------------------------------
+author: Malia Sampson
+date: 2011-01-27 19:24:39.000000000
+
+Change has been successfully merged into the git repository.
+
+-------------------------------------

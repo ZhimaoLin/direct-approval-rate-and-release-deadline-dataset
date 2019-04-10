@@ -1,0 +1,104 @@
+DESCRIPTION
+
+tmf: Add asynchronous way of broadcasting signals
+
+For that the signal manager queues signals and executes them in order
+of arrival in a separate thread.
+
+Unit tests were added for the signal manager.
+
+
+COMMENTS
+
+author: Braxton Mccarthy
+date: 2014-01-15 23:59:42.000000000
+
+Patch Set 1: Code-Review-1
+
+(7 comments)
+
+Looks very good! Wow @ those tests, that's very thorough!
+
+Some comments/questions. I'm wondering if the queue is actually being used, not sure just by looking at the code, I'd have to test it more.
+
+Line:12, /COMMIT_MSG -> missing Change-Id and Sign-off lines
+
+Line:348, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/signal/TmfSignalManagerTest.java -> Minor thing, but the constructors don't need to be public, do they?
+
+The signal handler methods, as well as the class itself (so that TmfSignalManager can access the signal handler) need to be public. But only the test here calls those constructors, so it doesn't seem they have to be (I tried putting them private and it worked).
+
+It doesn't really matter, it's just the comment can be misleading.
+
+Line:56, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/signal/TmfSignalManager.java -> object could be final.
+
+But I'm wondering about its use here. Is there a chance of deadlock if we put the new methods "synchronized" instead?
+
+Line:174, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/signal/TmfSignalManager.java -> why is there a try/finally block here? can dispatchSignal() return abnormally?
+
+Line:180, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/signal/TmfSignalManager.java -> If the queue is full, offer() will not insert the object and return immediately. So the signal will be simply dropped.
+
+Is this the expected behavior? I assume we might want to drop signals if there are too many, but maybe this should be documented. The method could return a boolean, taken from the return value of .offer(), indicating if the signal was succesfully queued or not. Then it's up to the component to decide if they want to handle the case where the signal they sent was dropped.
+
+Line:200, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/signal/TmfSignalManager.java -> hmm, is the queue actually being used here?
+
+you put "myThread" in the queue earlier, then this is called right after and does a .poll(). Then you "queue" it in the executor with .execute(). Why not call fExecutor.execute() directly above instead of .offer(myThread) ?
+
+If the executor has a queue of its own, we could use that directly.
+
+Another option would be to define our own thread, which uses the BlockingQueue as its synchronization mechanism using .take() (A bit like it's done in AbstractTmfStateProvider). Then you can queue the signals directly, instead of queueing Runnable's, which saves one object. And that way you do not have to call a scheduleNext() manually, the signal manager just throws stuff in the queue, and the thread takes whatever it can whenever it can.
+
+Line:42, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/component/ITmfComponent.java -> in the same thread of execution (missing "in")
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-01-16 01:00:38.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/5065/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-01-16 01:43:58.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/5065/ : SUCCESS
+
+-------------------------------------
+author: Ricky Reeves
+date: 2014-01-16 13:52:59.000000000
+
+Patch Set 1:
+
+(7 comments)
+
+Line:12, /COMMIT_MSG -> Oh must have removed accidentally when I did rebase -i. It supposed to be on top of https://git.eclipse.org/r/#/c/20590/
+
+Line:348, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/signal/TmfSignalManagerTest.java -> Done
+
+Line:56, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/signal/TmfSignalManager.java -> Done
+
+Line:174, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/signal/TmfSignalManager.java -> Just in case there was a runtime exception created in one of the signal handlers. By using try/finally the next signal in the queue is executed after return normally or abnormally from dispatchSignal()
+
+Line:180, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/signal/TmfSignalManager.java -> This is a good point. I didn't think about that. I choose offer() over add() to avoid an exception when the queue is full. 
+
+Also, you're right I can use the executor directly. It uses a LinkedBlockingQueue() for queueing tasks. So need for another queue in the signal manager. I will change that.
+
+Also if we ever want to wait for the signal being finished and return a return value we can easily do it by using the executor (futureObject = executor.submit(callable)). However, this won't be part of the patch.
+
+Line:200, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/signal/TmfSignalManager.java -> I'll use the executor service directly. No need to for a own queue.
+
+Line:42, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/component/ITmfComponent.java -> Done
+
+-------------------------------------
+author: Ricky Reeves
+date: 2014-01-16 13:53:58.000000000
+
+Abandoned
+
+Will be handled by https://git.eclipse.org/r/#/c/20590/
+
+-------------------------------------

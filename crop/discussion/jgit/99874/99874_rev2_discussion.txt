@@ -1,0 +1,125 @@
+DESCRIPTION
+
+Support -merge attribute in binary macro
+
+The merger is now able to react to the use of the merge attribute.
+The value unset and the custom value 'binary' are handled (-merge
+and merge=binary)
+
+Since the specification of the merge attribute states that when the
+attribute is unset, ours version must be kept in case of a conflict, we
+don't overwrite the file but keep the local version.
+
+Bug: 517128
+Change-Id: Ib5fbf17bdaf727bc5d0e106ce88f2620d9f87a6f
+Signed-off-by: Felicity Case xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Felicity Case
+date: 2017-06-23 08:45:42.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-06-23 08:45:47.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/10386/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-06-23 08:57:20.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/10386/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2017-06-23 09:13:03.000000000
+
+Patch Set 2:
+
+(6 comments)
+
+Line:184, org.eclipse.jgit/src/org/eclipse/jgit/attributes/Attributes.java -> The method is called isBinary but it checks for the merge attribute. Maybe we should call it isMergeable.
+
+Think about the situation where we have text files which should not be content-merged. Some files are text but you know that a content merge algorithm would create invalid content and you want to force a human being to do the merge. One example I have in mind are property files written by tools which always write the lines in a random order. These files are not binary, e.g. it's ok to cat their content to the console. But although they contain text its useless to run jgits default mergealgorithm over it. So: not binary but also not mergeable.
+
+File Comment: org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeAlgorithm.java -> We could avoid the changes in this class if we don't call a MergeAlgorithm when the merge attribute is unset.
+
+Line:481, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> Why duplicating the method. It's a protected method called only from inside this class. Just add the attributes to the parameter list. No need to have two processEntry methods: one with and one without the attributes.
+
+Line:696, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> I would have expected an if statement here. If for the current entry merge attribute is set call contentMerge() otherwise don't call contentMerge(). It sounds strange to even call contentMerge() if we know we don't do a content merge. The benefits would be:
+- method contentMerge() would not need a new signature,
+- your fix would be smaller
+- most important: we don't do the potentially expensive calls to the get the content for base,our,theirs in cases we know that we don't need content.
+
+What we do with binary files is similar to what we do to submodule link files in line 688. May you could just add a '|| isBinary(...)' to the if in line 688
+
+Later we may support even more attributes influencing the merge. E.g. if the merge attribute is set to a string defining a external merge driver. I think that code handling this should also go here. Based on the attributes we would determine the mergeAlgorithm, configure it and let the algorithm do the content merge.
+
+Line:750, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> Not sure whether contentMerge() needs to know about attributes if we handle it in processEntry()
+
+Line:823, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> Not sure whether updateIndex() needs to know about attributes if we handle it in processEntry()
+
+-------------------------------------
+author: Felicity Case
+date: 2017-06-23 13:00:14.000000000
+
+Patch Set 2:
+
+(6 comments)
+
+Thanks Christian for your comments. Before pushing another patchset, I have some remarks on two of them
+
+Line:184, org.eclipse.jgit/src/org/eclipse/jgit/attributes/Attributes.java -> I am not sure for the name isMergeable, because if JGit handle one day custom mergers (with the attribute merger='MyCustomMerger') it will be incorrect.
+
+Maybe isMergeableWith(theMerger) to use this method to detect the correct merger for the file or shouldBeHandledAsBinary() to keep its responsibility to the detection of files that should be handled as binary?
+
+File Comment: org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeAlgorithm.java -> Done
+
+Line:481, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> I duplicate the method to avoid API break. If I remove this method, we need to change the version of the bundle to 5.0.0
+
+Line:696, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> Done
+
+Line:750, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> Done
+
+Line:823, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> Done
+
+-------------------------------------
+author: Zachary Orozco
+date: 2017-06-23 14:27:04.000000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:184, org.eclipse.jgit/src/org/eclipse/jgit/attributes/Attributes.java -> You described the semantics of the method in the javadoc: it should return true if "the entry has an -merge or a merge=binary attribute".
+
+Maybe hasNoOrBinaryMergeAttribute() or canBeContentMerged().
+
+I dislike *binary* method names because it fails when we set the -merge attribute on non-binary files.
+
+Line:481, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> Really? I am also sometimes confused about what is allowed or not in a minor release so I asked Matthias. He said that we are allowed to change the signature of protected methods in a minor release. This breaks only implementors, so people who are subclassing our methods. But clients who are just using our public API should not be broken in a minor release.
+So I think it's OK to simply modify the signature of this protected method and add problem filters to silence the API tooling
+
+-------------------------------------
+author: Felicity Case
+date: 2017-06-27 08:34:10.000000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:184, org.eclipse.jgit/src/org/eclipse/jgit/attributes/Attributes.java -> Done
+
+Line:481, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> Done
+
+-------------------------------------

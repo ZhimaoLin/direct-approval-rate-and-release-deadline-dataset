@@ -1,0 +1,98 @@
+DESCRIPTION
+
+MB-15209: use binary stats and refactor GsiClient consistency.
+
+for SessionConsistency,
+  Implement Crc64 protocol to avoid Vbuuid payload and to detect
+  vbucket branches and rollbacks.
+
+Change-Id: Ibef99f13b8486aeb789794506299dc82604f3915
+
+
+COMMENTS
+
+author: Leonel Abbott
+date: 2015-06-25 08:24:31.145000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Kinsley Fox
+date: 2015-06-25 09:52:40.855000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:14, secondary/common/dcp_seqno.go -> It will be better to use RWLock right ?
+
+Line:121, secondary/common/dcp_seqno.go -> Isn't it better to directly write at offset rather than sorting ?
+vbnos[vbno] = seqno
+Also preallocate all arrays with 1024 as size rather than appending.
+
+-------------------------------------
+author: Kinsley Fox
+date: 2015-06-25 10:30:48.761000000
+
+Patch Set 2: Code-Review+1
+
+(5 comments)
+
+Line:84, secondary/indexer/util.go -> Is it a better idea to make this retry configurable with backoff using RetryHelper ?
+
+Line:399, secondary/indexer/scan_coordinator.go -> Do we even need to allocate this for stale=ok queries ?
+
+Line:849, secondary/dcp/transport/client/dcp_feed.go -> Will it be better if we have a 1024 sized slice and it can pass that reference to fill seqnos in it?
+
+Once a 1024 sized array is constructed, the same can be passed to collect seqnos from all nodes since each node holds unique set of vbnos.
+We can set seqnos using array[vbno]=seqno
+
+Line:648, secondary/common/util.go -> This is interesting :)
+
+Line:653, secondary/common/util.go -> Is it better to declare a table variable and reuse ?
+Will this MakeTable be costly?
+
+-------------------------------------
+author: Kinsley Fox
+date: 2015-06-25 12:12:58.570000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:120, secondary/common/timestamp.go -> I'm not sure whether this overwrite approach will be safe in all platforms. This can happen concurrently. Is atomic store better to support all platforms ?
+
+-------------------------------------
+author: Leonel Abbott
+date: 2015-06-25 13:49:33.817000000
+
+Patch Set 2:
+
+(6 comments)
+
+Line:84, secondary/indexer/util.go -> Refactored common/dcp_seqno.go to avoid the retry.
+
+Line:399, secondary/indexer/scan_coordinator.go -> Thanks for catching, copy paste error. It must have been copied to one line below.
+
+Line:849, secondary/dcp/transport/client/dcp_feed.go -> There are two problems,
+1. we don't get unique (aka exclusive) set of vbuckets, node returns vbuckets that are not hosted by that node.
+2. we are doing this in parallel, we cannot allow concurrent updates to a slice.
+
+Nevertheless, I want KV to get rid of 1.
+
+Line:14, secondary/common/dcp_seqno.go -> Thanks for pointing it out. I was planning to optimize it in another round, but looks like I have to do it now,
+1. because I had to avoid a Refresh() call.
+2. because it creates a corner case that expects caller to retry BucketSeqnos().
+3. because RWLock() is better any ways.
+
+Line:120, secondary/common/timestamp.go -> I see. You might be right. Let me remove this logic and compute the Crc64 during snapshot creation.
+
+Line:653, secondary/common/util.go -> This gets called after a rebalance or recovery is detected on client side. and once for every snapshot. and the over head is 2K per call. If this comes up in the GC profiling, we can implement this. Otherwise too much of change to get it right.
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-06-30 10:35:06.095000000
+
+Change has been successfully merged into the git repository.
+
+-------------------------------------

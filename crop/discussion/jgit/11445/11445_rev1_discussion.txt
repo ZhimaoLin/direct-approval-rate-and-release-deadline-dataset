@@ -1,0 +1,83 @@
+DESCRIPTION
+
+RFC: Implement a reader for reading back inserted objects
+
+Previously, the only way to ensure objects recently inserted by an
+ObjectInserter were available for reading was to call flush() on the
+inserter. On some storage implementations, such as DFS, flushing even a
+few small objects can incur significant latency penalties. This is
+particularly bad on an operation like iterated content merges of several
+commits, where there is a loop and each iteration requires access to the
+objects (trees, blobs) written by the previous iteration.
+
+Solve this by providing a specialized ObjectReader implementation that
+is tied to a single ObjectInserter (in a single thread) and caches all
+the inserted objects up to a maximum count or size. This requires
+changing some of the insert methods of ObjectInserter to ensure objects
+get cached properly.
+
+Change-Id: I29fdf92b4c1e0038aaa5844355c3642ffaf882c7
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2013-03-25 20:16:05.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3246/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-03-25 20:21:35.000000000
+
+Patch Set 1: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3246/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2013-03-26 03:18:06.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(4 inline comments)
+
+
+
+Line:418, org.eclipse.jgit/src/org/eclipse/jgit/lib/ObjectInserter.java -> This stream is at EOF at this point. So the put wouldn't work.
+
+Line:60, org.eclipse.jgit/src/org/eclipse/jgit/lib/InsertedObjectReader.java -> Nak, you did much more work than is necessary.
+
+The underlying inserters know how to get the content they wrote. In the local filesystem one its just the loose object code path. So the local filesystem can return its normal WindowCursor handle as the ObjectReader and everything is happy.
+
+Line:80, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsInserter.java -> This map knows every object that was put into the current pack named by packDsc. Why can't you look for an object in this map and if its present use its offset to load the object from the pack stream?
+
+Line:225, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsInserter.java -> The tricky part is the return from db.writeFile() has support to read back from the file. But PackStream does not. So you need to hold onto the DfsOutputStream here (and our backend needs to also support read-back from INSERT type packs and just RECEIVE type packs, trivial fix there).
+
+We may have to duplicate a small amount of code to read back a whole object from a pack from either DfsPackFile or the PackParser. But this is relatively simple code. We already stored the object deflated and we only store it as a whole form (see beginObject) so there are no delta chains to worry about needing to unfold.
+
+Memory wise you will use less memory, as we aren't duplicating the content. It might cost a bit more CPU however as the data needs to be inflated again.
+
+-------------------------------------
+author: Santos Moore
+date: 2013-04-10 23:50:10.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:80, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsInserter.java -> Easy enough for a reader in this thread, but harder to guarantee for the result of calling newReader().newReader(). Pretty sure I found a DfsObjectReader implementation where read() is not threadsafe.
+
+-------------------------------------
+author: Santos Moore
+date: 2013-05-01 18:40:23.000000000
+
+Patch Set 1: Abandoned
+
+Abandoning in favor of I454fdfb88f4d215e31b7da2b2a069853b197b3dd
+
+-------------------------------------

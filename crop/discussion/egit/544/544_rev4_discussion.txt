@@ -1,0 +1,203 @@
+DESCRIPTION
+
+Add tagging UI support
+
+Implements UI for unsigned and annotated tags. This implementation
+allows user to select with commit object should be associated with
+created tag. List of all commits is available in 'Advanced' section of
+dialog. There is a special combo widget that can suggest commits based
+on typed in commit SHA-1 or part from first line of commit message. User
+can also edit/overwrite message or associated commit of existing tag by
+selecting it from existing tag list (this list can be found in 'Details'
+section) and marking 'Overwrite existing tag' check box.
+
+By default tag is created for current HEAD, this can be changed in
+'Advanced' section.
+
+Tag dialog is available in project's context menu ('Team->Tag...').
+
+Bug: 311262
+
+Signed-off-by: Leslie Stephenson xxx@xxx.xxx
+Change-Id: Icb30655845d1e1198e59992a10148421ab9f9bd5
+
+
+COMMENTS
+
+author: Leslie Stephenson
+date: 2010-04-30 23:49:32.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Jaylon Avila
+date: 2010-05-01 01:08:33.000000000
+
+Patch Set 4: No score
+
+I've inlined a bunch of comments. I didn't really play with it much to be honest. Mostly just trying out the user interface and going over the diffs.
+
+As an aside, I think the strings/messages may need some rewording but that can be addressed later.
+
+Oh, there were also some unused NLS message warnings in my console. Please either a) use them or b) delete them. ;)
+
+!ENTRY org.eclipse.osgi 2 1 2010-04-30 20:29:05.189
+!MESSAGE NLS unused message: BranchSelectionDialog_NewTag in: org.eclipse.egit.ui.uitext
+
+!ENTRY org.eclipse.osgi 2 1 2010-04-30 20:29:05.190
+!MESSAGE NLS unused message: BranchSelectionDialog_NoBranchSeletectMessage in: org.eclipse.egit.ui.uitext
+
+!ENTRY org.eclipse.osgi 2 1 2010-04-30 20:29:05.190
+!MESSAGE NLS unused message: BranchSelectionDialog_NoBranchSeletectTitle in: org.eclipse.egit.ui.uitext
+
+Line:90, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/dialogs/CreateTagDialog.java -> I'm not sure if we're really gaining anything here by implementing IWorkbenchAdapter and IAdaptable. Are you planning to expand on this idea ?
+
+Line:147, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/dialogs/CreateTagDialog.java -> Dialogs block on open by default.
+
+This dialog should be resizable.
+
+Line:261, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/dialogs/CreateTagDialog.java -> You do not want to do this. That means I can just check the 'Overwrite' button and then the 'OK' button gets enabled which allows the user to create a tag with an empty string. You need to perform input validation.
+
+Also, if I'm overwriting a tag, the dialog still says "Already exists".
+
+Line:284, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/dialogs/CreateTagDialog.java -> I'm not sure if "Details" is really the best word here. The dialog isn't showing me more details. It's showing me existing tags. It also feels confusing to me that there's both "Advanced" and "Details".
+
+Line:304, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/dialogs/CreateTagDialog.java -> Is there a particular reason as to why we need to dispose/recreate it repeatedly?
+
+Line:405, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/dialogs/CreateTagDialog.java -> This seems counterintuitive. I'm not sure I agree with this behaviour of hiding on double-click.
+
+Line:106, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/dialogs/CommitCombo.java -> You really don't want to use the same style for yourself and the combo. This is asking for trouble. Either use it only for one or make two parameters.
+
+Line:117, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/dialogs/CommitCombo.java -> You probably want to use a ContentAssistCommandAdapter instead. Then Ctrl+Space should work.
+
+Line:131, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/dialogs/CommitCombo.java -> Use org.eclipse.core.runtime.Assert.isNotNull(revCommit).
+
+Line:56, org.eclipse.egit.core/src/org/eclipse/egit/core/op/TagOperation.java -> This entire block should be wrapped in a try/finally with a monitor.done() invocation in the finally block.
+
+Line:67, org.eclipse.egit.core/src/org/eclipse/egit/core/op/TagOperation.java -> SubMonitor is preferred over SubProgressMonitor.
+
+Line:68, org.eclipse.egit.core/src/org/eclipse/egit/core/op/TagOperation.java -> This monitor.worked(1) line is unnecessary. Just allocate three units of work and split up as 1-1-1. The code right now makes it seem like 1-1-2.
+
+Line:99, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/actions/TagAction.java -> Is there a particular reason why a job isn't used instead?
+
+Line:112, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/actions/TagAction.java -> Use the StatusManager to show this error.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2010-05-01 20:55:08.000000000
+
+Patch Set 4: I would prefer that you didn't submit this; Unclean IP, do not check in
+
+We'll need a CQ for IP review since this change is way larger than 250 lines hence marking this as unclean IP. I'll create the CQ as soon as this change has settled and review is fine.
+
+I played around with the UI, in general you are moving in the right direction :)
+
+I think from usability perspective we need some polishing:
+- the label for the tag name should be just "Tag name*:"
+  more detailed descriptions should IMO go into the online help or a tooltip (don't know what the Eclipse UI guidelines recommend here)
+- it would be useful to see the branch name the tag will be created on
+- IMO the list of existing tags for the given branch should be always shown as another list on the left side of the dialog (probably this should be sorted in reverse chronological order, means latest on top). I didn't expect to find this list behind the "Details >>" button.
+- when entering a tag name which already exists the tag list should scroll to this already existing tag and the tag name edit field background should turn red to make the user aware of the fact that this tag already exists. Maybe then a help text should appear "Tag xyz already exists, if you want to replace it check the force option".
+- if an existing branch has been selected from the list there is no way to create a new tag anymore except closing and re-opening the dialog. This could be solved by adding a pseudo entry in the list which is named e.g. <create new tag>. Selecting this entry should then clear all the edit fields so that a new tag can be defined.
+- I think the label "Overwrite existing tag" should be changed to "Force: replace existing tag" (see description of -f in [1], as long as this checkbox is not checked the data for an existing tag should be read-only. Then users will rather think twice before they change an existing tag.
+- the advanced mode is cool :) I think the label should be a bit more to the point, e.g. "Select commit to tag". To notify the user that he can start typing display the little bulb icon in front of the edit field (used e.g. for the URI field of clone wizard you open via "Import > Git Repository") and display the explanation as a tooltip on this icon.
+
+[1] http://www.kernel.org/pub/software/scm/git/docs/git-tag.html
+
+-------------------------------------
+author: Malia Sampson
+date: 2010-05-03 08:05:06.000000000
+
+Patch Set 4: No score; No score
+
+Dariusz, we would like to get this in 0.8.0 if possible.
+
+Can you have an updated patch soon?
+
+-------------------------------------
+author: Leslie Stephenson
+date: 2010-05-03 08:29:09.000000000
+
+Patch Set 4: No score
+
+I'm currently away form my computer so I cannot work on this patch set. I'll back on it Tuesday (04.05.2001) evening and and then I'll answer yours comments. I thing that til Thursday there should be here a new patch set with suggested improvements.
+
+-------------------------------------
+author: Malia Sampson
+date: 2010-05-03 08:43:02.000000000
+
+Patch Set 4:
+
+Thanks Dariusz!
+
+We have a couple weeks until we start freezing EGit for 0.8.0 so the rush isn't that bad, just wanted to make you aware. We are really looking forward to have this support in EGit.
+
+-------------------------------------
+author: Leslie Stephenson
+date: 2010-05-04 22:22:44.000000000
+
+Patch Set 4:
+
+@Remy:
+I've answered yours comments. Some of them I've already implement but I'll publish them after I handle all requests.
+
+@Matthias:
+If you don't mind I'll move your last comment to bugzilla and add my comments for things that you were pointing out.
+
+Line:90, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/dialogs/CreateTagDialog.java -> You are right here IAdaptable interface is useless here, but I'll keep IWorkbenchAdapter implemented because when it is removed list of tags is empty.
+
+Line:147, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/dialogs/CreateTagDialog.java -> Done
+
+Line:261, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/dialogs/CreateTagDialog.java -> Good point! This should be rethink as well as validation.
+
+Line:284, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/dialogs/CreateTagDialog.java -> This "Details pattern" is taken from eclipse's CVS tag dialog, but this can be changed. Maybe list of existing tags should be always visible in tag dialog as Matthias suggest it; this should be discussed.
+
+Line:304, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/dialogs/CreateTagDialog.java -> No, I was thinking that this can free some used resources eg. file handler or sth. But if it doesn't I'll remove it.
+
+Line:405, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/dialogs/CreateTagDialog.java -> When I first think about this "feature" it seems to me quite fancy. But right now I agree with you that this is a strange behavior. I'll remove it.
+
+Line:106, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/dialogs/CommitCombo.java -> Done
+
+Line:117, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/dialogs/CommitCombo.java -> To be honest I prefer to have list of suggestion immediately after typing without pressing Ctrl+Space, but I'm open for any discussion what behavior would be more useful.
+
+Line:131, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/dialogs/CommitCombo.java -> Done
+
+Line:34, org.eclipse.egit.core/src/org/eclipse/egit/core/op/TagOperation.java -> I'll replace IWorkspaceRunnable with IEGitOperation interface in next commit.
+
+Line:56, org.eclipse.egit.core/src/org/eclipse/egit/core/op/TagOperation.java -> Done
+
+Line:67, org.eclipse.egit.core/src/org/eclipse/egit/core/op/TagOperation.java -> Done
+
+Line:68, org.eclipse.egit.core/src/org/eclipse/egit/core/op/TagOperation.java -> Done
+
+Line:99, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/actions/TagAction.java -> No, I've just taken this section from old version of BranchOperation, I'll reimplement it using job.
+
+Done.
+
+-------------------------------------
+author: Jaylon Avila
+date: 2010-05-05 11:45:12.000000000
+
+Patch Set 4:
+
+It is possible to get the proposals to appear even when typing but it doesn't really matter to me one way or another at the end of the day.
+
+Line:117, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/dialogs/CommitCombo.java -> With auto activation characters set you can still get that behaviour but that's a bit of [tedious] work. I'm not going to bother pushing for this as it's not important to me.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2010-05-05 12:27:57.000000000
+
+Patch Set 4:
+
+of course you may move stuff you want to postpone to another change to bugzilla
+
+-------------------------------------
+author: Gerrit Johnathan Pham
+date: 2010-05-12 22:06:46.000000000
+
+Your change could not be merged due to a path conflict.
+
+Please merge (or rebase) the change locally and upload the resolution for review.
+
+-------------------------------------

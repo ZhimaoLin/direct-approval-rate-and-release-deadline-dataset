@@ -1,0 +1,111 @@
+DESCRIPTION
+
+MB-21325: Fix race in BloomFilter::getNumOfKeysInFilter
+
+Address race condition identified by ThreadSanitizer on
+BloomFilter::keyCounter.
+
+WARNING: ThreadSanitizer: data race (pid=341)
+  Write of size 8 at 0x7d140000df80 by thread T11 (mutexes: write M20582, write M20817, write M19369):
+    #0 BloomFilter::addKey() ep-engine/src/bloomfilter.cc:119 (ep.so+0x00000002453d)
+    #1 VBucket::addToFilter() ep-engine/src/vbucket.cc:482 (ep.so+0x000000149704)
+    #2 PersistenceCallback::callback() ep-engine/src/ep.cc:3211 (ep.so+0x0000000b27c1)
+    #3 non-virtual thunk to PersistenceCallback::callback(int&) ep-engine/src/ep.cc:3167 (ep.so+0x0000000b36c2)
+    #4 CouchKVStore::commitCallback() ep-engine/src/couch-kvstore/couch-kvstore.cc:1898 (ep.so+0x00000017aa51)
+    #5 _ZN12CouchKVStore17commit2couchstoreEP8CallbackIJ10KVStatsCtxEE ep-engine/src/couch-kvstore/couch-kvstore.cc:1712 (ep.so+0x00000017208b)
+    #6 _ZN12CouchKVStore6commitEP8CallbackIJ10KVStatsCtxEE ep-engine/src/couch-kvstore/couch-kvstore.cc:954 (ep.so+0x000000171c92)
+    #7 EventuallyPersistentStore::commit(unsigned short) ep-engine/src/ep.cc:3451 (ep.so+0x0000000a29e6)
+    #8 EventuallyPersistentStore::flushVBucket(unsigned short) ep-engine/src/ep.cc:3399 (ep.so+0x0000000a1935)
+    #9 Flusher::flushVB() ep-engine/src/flusher.cc:293 (ep.so+0x0000001038ae)
+    #10 Flusher::step(GlobalTask*) ep-engine/src/flusher.cc:183 (ep.so+0x000000101f7e)
+    #11 FlusherTask::run() ep-engine/src/tasks.cc:138 (ep.so+0x00000013ac42)
+    #12 ExecutorThread::run() ep-engine/src/executorthread.cc:115 (ep.so+0x0000000fd53f)
+    #13 launch_executor_thread(void*) ep-engine/src/executorthread.cc:33 (ep.so+0x0000000fd095)
+    #14 platform_thread_wrap(void*) platform/src/cb_pthreads.cc:55 (libplatform_so.so.0.1.0+0x000000005deb)
+
+  Previous read of size 8 at 0x7d140000df80 by main thread (mutexes: write M15538, write M1828880534441356728):
+    #0 BloomFilter::getNumOfKeysInFilter() ep-engine/src/bloomfilter.cc:142 (ep.so+0x0000000246a0)
+    #1 VBucket::addStats() ep-engine/src/vbucket.cc:597 (ep.so+0x00000014a527)
+    #2 EventuallyPersistentEngine::doVBucketStats() ep-engine/src/ep_engine.cc:3837 (ep.so+0x0000000c69f6)
+    #3 EventuallyPersistentEngine::doVBucketStats() ep-engine/src/ep_engine.cc:3861 (ep.so+0x0000000c664a)
+    #4 EventuallyPersistentEngine::getStats() ep-engine/src/ep_engine.cc:4774 (ep.so+0x0000000cbbb3)
+    #5 EvpGetStats() ep-engine/src/ep_engine.cc:231 (ep.so+0x0000000baafe)
+    #6 mock_get_stats() memcached/programs/engine_testapp/engine_testapp.cc:215 (engine_testapp+0x0000004ce40d)
+    #7 std::string get_stat<std::string>() ep-engine/tests/ep_test_apis.cc:1140 (ep_testsuite_xdcr.so+0x000000020c34)
+    #8 unsigned long get_stat<unsigned long>() ep-engine/tests/ep_test_apis.cc:1179 (ep_testsuite_xdcr.so+0x00000002089b)
+    #9 get_ull_stat() ep-engine/tests/ep_test_apis.cc:1174 (ep_testsuite_xdcr.so+0x00000001e73e)
+    #10 test_del_with_meta_and_check_drift_stats() ep-engine/tests/ep_testsuite_xdcr.cc:1711 (ep_testsuite_xdcr.so+0x0000000143f1)
+    #11 execute_test() memcached/programs/engine_testapp/engine_testapp.cc:1118 (engine_testapp+0x0000004cc997)
+    #12 __libc_start_main /build/buildd/eglibc-2.15/csu/libc-start.c:226 (libc.so.6+0x00000002176c)
+
+Change-Id: I4e9a589e9286e72646df515db891c57b143d1fdd
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2016-10-17 10:49:08.973000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-17 10:49:16.297000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/1513/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-17 10:53:14.738000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-watson/164/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-17 10:58:29.640000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/1145/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-17 11:00:27.963000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/1331/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-17 11:08:46.500000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-watson/164/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/1145/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/1513/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/1331/ : SUCCESS
+
+-------------------------------------
+author: Kymani Ramirez
+date: 2016-10-17 13:27:38.706000000
+
+Patch Set 1: Code-Review+2
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-10-17 16:03:16.637000000
+
+Change has been successfully cherry-picked as 45053a3635e1877a159fae703145340047a735ac by Ashlee Kent
+
+-------------------------------------

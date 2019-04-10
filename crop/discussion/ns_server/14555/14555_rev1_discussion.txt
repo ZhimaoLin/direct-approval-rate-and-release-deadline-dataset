@@ -1,0 +1,107 @@
+DESCRIPTION
+
+only reuse tap name when changing vbucket filter.MB-4366
+
+Now for all ebucketmigrators we're killing named tap before
+establishing connection, except as noted below.
+
+Basically we're trying to avoid named tap reuse as much as
+possible. And there's only one case where it's worthwhile reusing
+it. That is our quite frequent change of vbucket filter for most
+replication connections during rebalance. If we're not using named tap
+and only relying on checkpoints, it'll cause excessing resending of
+already received data, because our checkpoints are normally quite
+large.
+
+The approach is the following:
+
+* when we detected vbucket filter may be changed
+
+* we send erl_eval lambda (via rpc:call) to node that hosts some
+  ebucketmigrator
+
+* that lambda checks if it support this node supports vbucket filter
+  change and if it does calls local vbucket filter change code
+
+* that code spawns separate process where it's work is performed
+
+* that process is registered in vbucket_filter_changes_registry. This
+  process represents 'vbucket filter change transaction'. And
+  everything is linked carefully so that any crash will not leave any
+  resources orphan.
+
+* vbucket filter change then proceeds with finding current
+  ebucketmigrator for stream we want change filter for
+
+* it then calls start_vbucket_filter_change/1 on it
+
+* which is handled inside ebucketmigrator by creating new downstream socket
+
+* checking if current downstream socket is alive (by use of confirm_sent_messages)
+
+* and if all is well replying with that new downstream, original
+  ebucketmigrator enters 'zombie' state then where it'll only handle
+  EXIT messages
+
+* vbucket filter changing code then shuts down original
+  ebucketmigrator process through it's supervisor (terminate & remove
+  child)
+
+* it then spawns new child for which it adds extra option:
+  downstream_retriever
+
+* function that's value of this option is called by new
+  ebucketmigrator to check if downstream is being passed to it
+
+* implementation of this function then consults
+  vbucket_filter_changes_registry and if there's still 'transaction
+  process', it is asked for downstream via gen_server:call
+
+* if that succeeds new ebucketmigrator is then using it instead of
+  opening it's own downstream _and_ only in this case tap name is not
+  killed before sending tap_connect command
+
+As can be seen this is quite complicated procedure. Why?
+
+* erl_eval lambda sending trick is part of our handling of old
+  nodes. Old nodes _will_ reuse named tap and quite obviously do not
+  support special vbucket filter change operation. For them we fall
+  back to old sequence of stopping child and starting it back (with
+  updated vbucket filter).
+
+* we need to handle ns_vbm_sup restarting our ebucketmigrators with
+  same arguments we used. Thus instread of just passing downstream as
+  one of options/parameters we're using that trick with process
+  registry.
+
+* also because vbucket filter is used as part of process's child_id
+  inside vbm_sup, we seemingly really need this dance with shutting
+  down old process and creating new
+
+* and we're creating downstream in old process because:
+
+  a) we cannot afford, even temporarily, two ebucketmigrators for same
+  name. Otherwise some crash in the middle may cause supervisor to
+  actually (re)spawn them both.
+
+  b) we want to make sure nothing can happen with downstream memcached
+  in between
+
+  So we have this complex procedure of creating new downstream while
+  old downstream is alive and only after old downstream passed check
+  we're passing new dowsntream up where it's then passed into new
+  vbucketmigrator
+
+Change-Id: I36fd85c25d5c36c96f822dc2dbb8169f2d683dae
+
+
+COMMENTS
+
+author: Nathalie Landry
+date: 2012-04-05 04:34:16.436000000
+
+Patch Set 1: Verified
+
+
+
+-------------------------------------

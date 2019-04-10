@@ -1,0 +1,85 @@
+DESCRIPTION
+
+MB-9821: Add takeover stream logic
+
+The change adds two more states to the producer stream state
+machine to allow a producer to properly hand off a vbucket to
+another node.
+
+Change-Id: Ia7925442b9f8cb984639b331ae642d90c9ef94a0
+
+
+COMMENTS
+
+author: Kenny Maynard
+date: 2014-01-04 08:38:15.434000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Abby Duran
+date: 2014-01-06 05:28:11.508000000
+
+Patch Set 4: Code-Review-1
+
+(7 comments)
+
+Line:5130, src/ep_engine.cc -> I expect this function to be longer and longer to process new response types in the future. We should split the producer responses from the consumer responses for the better maintenance.
+
+Line:88, src/upr-producer.cc -> Can we simply break here? I assume that set_vbucket_state is issued for only one stream at a time.
+
+Line:235, src/upr-stream.cc -> Why UPR_DELETION is not considered?
+
+Line:30, src/upr-stream.cc -> Please use "const static uint64_t UPR_MAX_SEQNO..." instead of macro.
+
+Line:232, src/upr-stream.cc -> My concern here is that if we simply set the vbucket state to dead without considering the number of backlogs for takeover completion, it will have significant impact on the performance.
+
+Line:277, src/upr-stream.cc -> Why is this "lastReadSeqno" instead of "lastSentSeqno"? Why "lastSentSeqno" is used in takeoverSendPhase(...)?
+
+Line:333, src/upr-stream.cc -> As mentioned in the previous commit, my understanding is that the de-duplication will happen only in the open checkpoint and we should still send the item's old copy to the destination.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2014-01-06 22:59:25.209000000
+
+Patch Set 4:
+
+(7 comments)
+
+Line:5130, src/ep_engine.cc -> Trond had a really good idea for this and I was planning on cleaning up all of these functions in a future commit. We can discuss this more tomorrow.
+
+Line:88, src/upr-producer.cc -> Done
+
+Line:235, src/upr-stream.cc -> Done
+
+Line:30, src/upr-stream.cc -> Done
+
+Line:232, src/upr-stream.cc -> The intention is that ns server will only create this stream once it knows there are only a small amount of items remaining to be sent. Do we do something different currently?
+
+Line:277, src/upr-stream.cc -> lastReadSeqno is the last item that we have gotten from disk or memory. Once the item is put on the wire we will update lastSentSeqno with the seqno of the item that was sent. Once we have no more items that need to be queued to be sent we can add the end stream message to the queue.
+
+Line:333, src/upr-stream.cc -> Fixed in the previous patch.
+
+-------------------------------------
+author: Abby Duran
+date: 2014-01-07 01:03:05.699000000
+
+Patch Set 4:
+
+(2 comments)
+
+Line:232, src/upr-stream.cc -> We still need to consider the number of items in the queue and unAcked items in the ACK queue as well. If you look at the TAP takeover implementation, we consider them in changing the vbucket state. Let's address this issue in a separate commit.
+
+Line:277, src/upr-stream.cc -> Then, why lastReadSeqno can't be used in takeoverSendPhase(...) below? I might be wrong, but would rather add the end_stream message to the queue in the places where we update lastSentSeqno
+
+-------------------------------------
+author: Kenny Maynard
+date: 2014-01-07 08:22:46.865000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:277, src/upr-stream.cc -> We could use lastReadSeqno for the takeover since the outcome would likely be the same. In any case I think your right that it would be safer to just wait. I'll make the change.
+
+-------------------------------------

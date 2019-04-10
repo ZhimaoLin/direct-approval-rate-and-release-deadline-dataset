@@ -1,0 +1,154 @@
+DESCRIPTION
+
+MB-19982: Fix potential deadlock between DcpConsumer::bufMutex & vbstateChange
+
+As identified by ThreadSanitizer (see below). The issue is that the
+DcpConsumer::bufMutex and connsLock mutexes are acquired in different
+orders:
+
+A) As part of processing incoming DCP messages
+   (PassiveStream::processBufferedMessages) we acquire (1) bufMutex,
+   then (2) acquire connsLock as part of DcpConnMap::vbucketStateChanged.
+
+B) When disconnecting a connection from the DcpConnMap, we acquire (1)
+   connsLock to locate the connection to be closed, and then (2)
+   acquire bufMutex as part of PassiveStream::setDead.
+
+Address this by changing (B) - update the data structures maintaining
+the map of cookie -> connection (`all` and `map_`), *release
+connsLock* and then call PassiveStream::setDead. Finally we re-acquire
+connsLock to add the (now closed) stream to the deadConnections list.
+
+WARNING: ThreadSanitizer: lock-order-inversion (potential deadlock) (pid=393)
+  Cycle in lock order graph: M22701 (0x7d5000018140) => M969 (0x7d840001cc50) => M22701
+
+  Mutex M969 acquired here while holding mutex M22701 in thread T10:
+    #0 pthread_mutex_lock <null> (engine_testapp+0x00000047e980)
+    #1 cb_mutex_enter <null> (libplatform.so.0.1.0+0x000000003960)
+    #2 Mutex::acquire() ep-engine/src/mutex.cc:31 (ep.so+0x0000001e60ce)
+    #3 LockHolder::lock() ep-engine/src/locks.h:71 (ep.so+0x000000080b33)
+    #4 LockHolder::LockHolder(Mutex&, bool) ep-engine/src/locks.h:48 (ep.so+0x0000000807a2)
+    #5 DcpConnMap::vbucketStateChanged(unsigned short, vbucket_state_t) ep-engine/src/connmap.cc:1044 (ep.so+0x00000023b3ba)
+    #6 EventuallyPersistentStore::setVBucketState(unsigned short, vbucket_state_t, bool, bool) ep-engine/src/ep.cc:1057 (ep.so+0x0000000dc240)
+    #7 PassiveStream::processSetVBucketState(SetVBucketState*) ep-engine/src/dcp-stream.cc:1483 (ep.so+0x0000002a3125)
+    #8 PassiveStream::processBufferedMessages(unsigned int&) ep-engine/src/dcp-stream.cc:1313 (ep.so+0x0000002a0b58)
+    #9 DcpConsumer::processBufferedItems() ep-engine/src/dcp-consumer.cc:608 (ep.so+0x0000002650c4)
+    #10 Processer::run() ep-engine/src/dcp-consumer.cc:48 (ep.so+0x000000264cbf)
+    #11 ExecutorThread::run() ep-engine/src/executorthread.cc:109 (ep.so+0x0000001e75a1)
+    #12 launch_executor_thread(void*) ep-engine/src/executorthread.cc:34 (ep.so+0x0000001e6bca)
+    #13 platform_thread_wrap platform/src/cb_pthreads.c (libplatform.so.0.1.0+0x00000000371c)
+
+  Mutex M22701 previously acquired by the same thread here:
+    #0 pthread_mutex_lock <null> (engine_testapp+0x00000047e980)
+    #1 cb_mutex_enter <null> (libplatform.so.0.1.0+0x000000003960)
+    #2 Mutex::acquire() ep-engine/src/mutex.cc:31 (ep.so+0x0000001e60ce)
+    #3 LockHolder::lock() ep-engine/src/locks.h:71 (ep.so+0x000000080b33)
+    #4 LockHolder::LockHolder(Mutex&, bool) ep-engine/src/locks.h:48 (ep.so+0x0000000807a2)
+    #5 PassiveStream::processBufferedMessages(unsigned int&) ep-engine/src/dcp-stream.cc:1286 (ep.so+0x0000002a085d)
+    #6 DcpConsumer::processBufferedItems() ep-engine/src/dcp-consumer.cc:608 (ep.so+0x0000002650c4)
+    #7 Processer::run() ep-engine/src/dcp-consumer.cc:48 (ep.so+0x000000264cbf)
+    #8 ExecutorThread::run() ep-engine/src/executorthread.cc:109 (ep.so+0x0000001e75a1)
+    #9 launch_executor_thread(void*) ep-engine/src/executorthread.cc:34 (ep.so+0x0000001e6bca)
+    #10 platform_thread_wrap platform/src/cb_pthreads.c (libplatform.so.0.1.0+0x00000000371c)
+
+  Mutex M22701 acquired here while holding mutex M969 in main thread:
+    #0 pthread_mutex_lock <null> (engine_testapp+0x00000047e980)
+    #1 cb_mutex_enter <null> (libplatform.so.0.1.0+0x000000003960)
+    #2 Mutex::acquire() ep-engine/src/mutex.cc:31 (ep.so+0x0000001e60ce)
+    #3 LockHolder::lock() ep-engine/src/locks.h:71 (ep.so+0x000000080b33)
+    #4 LockHolder::LockHolder(Mutex&, bool) ep-engine/src/locks.h:48 (ep.so+0x0000000807a2)
+    #5 PassiveStream::clearBuffer() ep-engine/src/dcp-stream.cc:1573 (ep.so+0x00000029e6a1)
+    #6 PassiveStream::setDead(end_stream_status_t) ep-engine/src/dcp-stream.cc:1171 (ep.so+0x00000029dffc)
+    #7 DcpConsumer::closeAllStreams() ep-engine/src/dcp-consumer.cc:722 (ep.so+0x00000026fb66)
+    #8 DcpConnMap::disconnect_UNLOCKED(void const*) ep-engine/src/connmap.cc:1096 (ep.so+0x00000023bbe3)
+    #9 DcpConnMap::disconnect(void const*) ep-engine/src/connmap.cc:1069 (ep.so+0x00000023b664)
+    #10 EventuallyPersistentEngine::handleDisconnect(void const*) ep-engine/src/ep_engine.cc:5711 (ep.so+0x0000001617ab)
+    #11 EvpHandleDisconnect(void const*, ENGINE_EVENT_TYPE, void const*, void const*) ep-engine/src/ep_engine.cc:1702 (ep.so+0x00000013d415)
+    #12 mock_perform_callbacks memcached/programs/engine_testapp/mock_server.c (engine_testapp+0x0000004d04db)
+    #13 disconnect_mock_connection <null> (engine_testapp+0x0000004d10c6)
+    #14 destroy_mock_cookie <null> (engine_testapp+0x0000004d0fa7)
+    #15 test_mb19982(engine_interface*, engine_interface_v1*) ep-engine/tests/ep_testsuite.cc:12020 (ep_testsuite.so+0x0000000b1d7d)
+    #16 execute_test memcached/programs/engine_testapp/engine_testapp.c (engine_testapp+0x0000004c50bf)
+    #17 main crtstuff.c (engine_testapp+0x0000004c2ea8)
+
+  Mutex M969 previously acquired by the same thread here:
+    #0 pthread_mutex_lock <null> (engine_testapp+0x00000047e980)
+    #1 cb_mutex_enter <null> (libplatform.so.0.1.0+0x000000003960)
+    #2 Mutex::acquire() ep-engine/src/mutex.cc:31 (ep.so+0x0000001e60ce)
+    #3 LockHolder::lock() ep-engine/src/locks.h:71 (ep.so+0x000000080b33)
+    #4 LockHolder::LockHolder(Mutex&, bool) ep-engine/src/locks.h:48 (ep.so+0x0000000807a2)
+    #5 DcpConnMap::disconnect(void const*) ep-engine/src/connmap.cc:1068 (ep.so+0x00000023b64e)
+    #6 EventuallyPersistentEngine::handleDisconnect(void const*) ep-engine/src/ep_engine.cc:5711 (ep.so+0x0000001617ab)
+    #7 EvpHandleDisconnect(void const*, ENGINE_EVENT_TYPE, void const*, void const*) ep-engine/src/ep_engine.cc:1702 (ep.so+0x00000013d415)
+    #8 mock_perform_callbacks memcached/programs/engine_testapp/mock_server.c (engine_testapp+0x0000004d04db)
+    #9 disconnect_mock_connection <null> (engine_testapp+0x0000004d10c6)
+    #10 destroy_mock_cookie <null> (engine_testapp+0x0000004d0fa7)
+    #11 test_mb19982(engine_interface*, engine_interface_v1*) ep-engine/tests/ep_testsuite.cc:12020 (ep_testsuite.so+0x0000000b1d7d)
+    #12 execute_test memcached/programs/engine_testapp/engine_testapp.c (engine_testapp+0x0000004c50bf)
+    #13 main crtstuff.c (engine_testapp+0x0000004c2ea8)
+
+SUMMARY: ThreadSanitizer: lock-order-inversion (potential deadlock) ??:0 __interceptor_pthread_mutex_lock
+
+Change-Id: Ia441d5f5898516e3526a610426fa81f5df0e35e6
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2016-06-28 11:35:02.160000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-06-28 11:35:07.762000000
+
+Patch Set 1:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/669/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-06-28 11:35:10.445000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-3.0.x/286/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-06-28 11:35:14.657000000
+
+Patch Set 1: Well-Formed+1
+
+Permission granted to commit: 
+
+http://server.jenkins.Piper Jefferson.com/job/restricted-branch-check/17259/artifact/restricted.html : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-06-28 11:35:41.695000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-3.0.x/286/ : ABORTED
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-06-28 11:35:51.286000000
+
+Patch Set 1:
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/669/ : ABORTED
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-06-28 14:18:42.371000000
+
+Change has been successfully cherry-picked as 65bbce36a558ad0d50da29ddaa115c7133bb2261 by Ashlee Kent
+
+-------------------------------------

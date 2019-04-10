@@ -1,0 +1,126 @@
+DESCRIPTION
+
+Use libcbio instead of libcouchstore
+
+Change-Id: I37f5f7e5691f7ea8565ac4375fca8f6adfea97b9
+
+
+COMMENTS
+
+author: Asher Vang
+date: 2012-05-08 11:47:41.843000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Abby Duran
+date: 2012-05-11 06:34:39.858000000
+
+Patch Set 6:
+
+Jin,
+
+As we're very close to make ep_engine's make test green on linux environment as well, please review this code when you have time later.
+
+-------------------------------------
+author: Audrina Olson
+date: 2012-05-16 02:53:45.106000000
+
+Patch Set 6: (18 inline comments)
+
+I have looked the changes, and everything looks good so far. I see many benefits of introducing libcbio. However, since there are a few comments + I still need to look at libcbio implementation, I am not mark either +/- yet. 
+
+Please see my initial comments and make whatever update necessary if agreed. Thanks.
+
+Line:114, couch-kvstore/couch-kvstore.cc -> cbio_document_get_key()?
+
+Line:119, couch-kvstore/couch-kvstore.cc -> I think it should be an assert instead, at any given time if a database file exists and is being corrupted for its key id and metadata.
+
+Line:146, couch-kvstore/couch-kvstore.cc -> we can calculate this seqno at the same place where you calculate id/meta and assert if any of these metadata retrievals fails. Or can we have something like cbio_document_get_info(or_header)(doc, seqno, key, nkey, meta, nmeta)?
+
+Line:280, couch-kvstore/couch-kvstore.cc -> No clue in terms of which causes abort() if it every happens.
+
+Line:284, couch-kvstore/couch-kvstore.cc -> Once again, I need to look at the implementation of set_deleted() but I cannot really think of use case for set_deleted(doc, other_than_1). If such case, may want to implement reset_deleted(doc) + set_deleted(doc).
+
+Line:289, couch-kvstore/couch-kvstore.cc -> why not cbio_document_set_value() accepts default content type and/or internally calls set_content_type() if needed? still I also find that it'd be good to keep set_content_type() api regardless for another use case.
+
+Line:474, couch-kvstore/couch-kvstore.cc -> Why do we have to return ENGINE_NOT_MY_VBUCKET here? If there is a case where libcbio's ENOENT must be translated into NOT_MY_VBUCKET instead of KEY_ENOENT then please define a different error code and update couchErr2EngineErr() accordingly.
+
+Line:508, couch-kvstore/couch-kvstore.cc -> why not ?
+
+if (value) {
+    cbio_document_get_value(...)
+} else {
+   calculate doc->info->size in a different, succinct way
+}
+
+Line:520, couch-kvstore/couch-kvstore.cc -> I don't think anyone can easily figure out that cbio_document_get_value(doc, NULL, &ndata) actually returns ndata = doc->info->size. Can we extend cbio_document_get_meta(..., &size) instead so that it returns size = doc->info->size? Anyway ndata is different than info->size and should be treated differently.
+
+Line:790, couch-kvstore/couch-kvstore.cc -> Couchbase taught me to arrange compounds (body) of if statements like this ;) :
+if (err == CBIO_SUCCESS) {
+:
+} else {
+:
+}
+
+Line:921, couch-kvstore/couch-kvstore.cc -> not introduced by this code patch, but please remove vector<string>(). we don't need to initialize, thanks!
+
+Line:1102, couch-kvstore/couch-kvstore.cc -> In addition to many good benefits of libcbio already provides, I think it would be much better, clean api if we also hide the concepts of fileRev of database file from CouchKVStore. I think libcbio should handle calculating the current fileRev then open the file and return just a handle of it.
+
+Line:1248, couch-kvstore/couch-kvstore.cc -> I think somewhat redundant error message here was introduced to better track from which code path(commit or something else) saveDocs failed.
+
+Line:1290, couch-kvstore/couch-kvstore.cc -> Again, I think it is worth considering to let libcbio handle database file revision number. Otherwise, any 3rd application that uses libcbio also has to understand and adopt the file revision mechanism which is very cumbersome.
+
+Line:1430, couch-kvstore/couch-kvstore.cc -> Can libcbio add new api, cbio_get_vbucket_id(handle)?
+
+Line:1543, couch-kvstore/couch-kvstore.cc -> I'd case one vote for changing the function name to closeDB(handle).
+
+Line:77, couch-kvstore/couch-kvstore.hh -> we don't need this here any longer.
+
+Line:235, couch-kvstore/couch-kvstore.hh -> For coherency of two methods, openDB and closeDatabaseHandle, why not name this closeDB(handle) instead?
+
+-------------------------------------
+author: Asher Vang
+date: 2012-05-16 05:28:31.647000000
+
+Patch Set 6: (10 inline comments)
+
+THanks for the comments. Here is my initial thoughts before I drive off to work and start fixing them :)
+
+Line:114, couch-kvstore/couch-kvstore.cc -> Yeah, it's the key, but couchstore and couchdb calls it ID... I'm not exactly sure who should be the one making the mapping between them..
+
+Line:119, couch-kvstore/couch-kvstore.cc -> Ok by me
+
+Line:146, couch-kvstore/couch-kvstore.cc -> I'm not sure if I like the one that gets all of the things (since it'll be harder when/if we add more fields etc)... we can of course try to make this piece a bit more readable :)
+
+Line:280, couch-kvstore/couch-kvstore.cc -> It should never happen.. I guess It could be replaced with an assert here.. (well I know since I wrote the implementation of libcbio). since the function _have_ a return variable we should check it.. (this is pretty much like the filesystem close() call... it _may_ return errors, but have we ever experienced that it did (given sane input))
+
+Line:284, couch-kvstore/couch-kvstore.cc -> you may call it to set_deleted(doc, 0) that it is called _deleted is that it's setting the deleted "state" of the documented. it's primarily done for consistency across the different methods (set_content_type, set_revision etc)
+
+Line:289, couch-kvstore/couch-kvstore.cc -> That would make the order you call functions matter (If I now set the content type first, then tries to set the value.. should the content type suddenly be replaced?) by having a separate function it is easier to test...
+
+Line:474, couch-kvstore/couch-kvstore.cc -> libcbio use CBIO_ERROR_ENOENT for open if the file isn't there, and for searching (document isn't there). since you _can't_ both open and search though libcbio at the same call the error meaning is completely unambiguous so using the same error variable isn't a problem.
+
+Line:520, couch-kvstore/couch-kvstore.cc -> I guess the documentation of _get_value should be updated to specify that NULL is a legal value for the doc pointer to query the length of the object.
+
+Line:790, couch-kvstore/couch-kvstore.cc -> and that is correct.. this patch tired to touch as little as possible elsewhere in the code.. such kind of refactoring should be done in a separate commit, making it easier to ensure that we don't introduce regressions.
+
+Line:235, couch-kvstore/couch-kvstore.hh -> Sure.. I tried to make the change as isolated as possible, so I didn't go ahead and do other kind of cleanup as well.
+
+-------------------------------------
+author: Asher Vang
+date: 2012-05-16 06:49:26.822000000
+
+Patch Set 6: (3 inline comments)
+
+
+
+Line:1430, couch-kvstore/couch-kvstore.cc -> Not exactly sure what that's supposed to do? Don't we use a separate database (instance of cbio) per vbucket?
+
+(we can always add new API entry points)
+
+Line:1543, couch-kvstore/couch-kvstore.cc -> Yeah.. but let's do that in a separate commit
+
+Line:77, couch-kvstore/couch-kvstore.hh -> Done
+
+-------------------------------------

@@ -1,0 +1,75 @@
+DESCRIPTION
+
+Improve PatienceDiff performance
+
+[ !!!! DO NOT SUBMIT !!!! ]
+
+This improces the performance from being 18x slower than MyersDiff to
+only 5.29x slower on my desktop system.  On my MacBook Pro, its only
+2x slower than MyersDiff.  Clearly the JIT and/or difference in x86
+processors has a huge impact on throughput.
+
+The majority of the improvement comes from not rebuilding the indexes
+on each recursive step.  On each recursive step the index is split in
+half in-place.  Records are moved into either the first-half or the
+second-half depending on whether they appear before or after the
+longest common subsequence.  This removes the sort from each recursive
+invocation, and makes a pretty big impact on running time.
+
+I'm not happy with the code as it stands.  The indexSplit functions
+and rather large and virtually identical.  The duplication exists to
+handle using the "A" vs. "B" side of the region and index Edits that
+provide the bounds.  This should be a single implementation that is
+better parameterized.
+
+Change-Id: I9a2803a4a9745e14c674717d6f766d64b4710188
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-09-03 14:22:12.000000000
+
+Patch Set 1: Do not submit
+
+(5 inline comments)
+
+I have to put this down for now, but I'm posting this with notes inline on certain lines of code to at least save my current state and make it visible to everyone else.
+
+I'm rather disappointed in the current performance of PatienceDiff.  It may be because of the sorting of the index; using a hashtable with near constant time insertion might be more efficient.
+
+We may also be looking at a very bad input.  CharArray has skewed semantics where equals() is faster than most other operations.  This isn't true on RawText, or probably any other more complex sequence object.  Trying to avoid equals() only costs us running time, but it should save a lot of time on a more realistic source code-like file.
+
+Line:240, org.eclipse.jgit/src/org/eclipse/jgit/diff/PatienceDiff.java -> Once we know that an item is a match point that isn't contained within another match point, its going to be a match point in any recursive step we run.
+
+I tried caching the Edit here indexed by bOf(rec), so that on recursive steps we didn't need to redo the stretching of a match to determine its total length.  Unfortunately that proved to be slower than not caching at all.  Like the isUnique() caching below I think this is being caused by the input sequence having too cheap of an equals() method.
+
+FWIW, I tried caching in a HashMap<Integer,Edit>, and also in a sorted list of Edit (sorted by startB).  The latter seemed like a good idea because the match list is already sorted, so we could merge-join the two lists together in this loop.  I suspect the caching was slower because of the amount of memory being allocated to track the Edit instances.
+
+So then I went and removed use of Edit for region and index throughout the code, so that we didn't do memory allocations at all.  That was even slower than using the Edit instances, as apparently pushing 8 ints onto the call stack during each frame activation was slower than allocating the two objects and pushing only those two references onto the stack.  Yuck.
+
+Line:320, org.eclipse.jgit/src/org/eclipse/jgit/diff/PatienceDiff.java -> This split function should be combined with its sibling, splitIndexB.  Its a massive amount of complex code that is duplicated between the two.
+
+Line:440, org.eclipse.jgit/src/org/eclipse/jgit/diff/PatienceDiff.java -> Right now I suspect this is why we are losing so badly to MyersDiff.  Sorting the lines is O(N log N).  MyersDiff is able to run in O(N) time.  Switching this to being a hashtable and trying to get O(N) construction time may help things considerably.
+
+Line:444, org.eclipse.jgit/src/org/eclipse/jgit/diff/PatienceDiff.java -> FWIW, I tried caching the results of isUnique in a record.  Once we know a record is unique within a particular index segment, it will remain unique for the rest of the recursive steps that contain the record, because each step is splitting the index in half (or even smaller).
+
+The caching worked by shifting the element position up 1 bit and OR'ing in 1 as soon as we found the element was unique.  The start of the method then became:
+
+  if ((rec & 1) != 0)
+   return true;
+
+This turned out to be slower on every system I tried it on, but I suspect its artificial due to the type of Sequence being used by the performance test.  equals() on that char[] based sequence used by the test is insanely fast.  equals() on a larger line input like RawText uses is a lot slower.  We should revisit this caching concept by testing on a more common input.
+
+Line:129, org.eclipse.jgit.test/tst/org/eclipse/jgit/diff/DiffPerformanceTest.java -> Obviously we don't want to remove these tests.  This is temporary just to make it easier to understand the performance impacts of changes made to PatienceDiff.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-09-04 06:58:55.000000000
+
+Patch Set 1: Abandoned
+
+Improvements squashed into the original commit.
+
+-------------------------------------

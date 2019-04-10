@@ -1,0 +1,41 @@
+DESCRIPTION
+
+Respect core.excludesfile to enable global ignore rules 
+
+Bug: 328428 (partial fix)
+Change-Id: I41d94694f220dcb85605c9acadfffb1fa23beaeb
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2011-02-23 18:46:14.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(4 inline comments)
+
+The code is OK. I just wonder if we shouldn't be using FS.resolve().
+
+Line:900, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> This is probably wrong. On Cygwin with git-new-workdir info is a symlink. So this should be using repository.getFS().resolve(repository.getDirectory(), "info/exclude"). I must have missed this earlier. :-(
+
+Line:902, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> FWIW, getString() requires an O(N) search to locate the relevant key. We usually work around this by using the SectionParser stuff, like CoreConfig. Those objects are cached inside of a HashMap, which reduces their lookup cost to be closer to O(1).
+
+Fortunately this code only ones once per WorkingTreeIterator, but EGit might be creating many WTIs over the period of several minutes each time it needs to update decorations.
+
+Although we probably still pay a higher cost to read the file than we do to look for the key in an O(N) search, so there might be a bigger savings from caching the file contents.
+
+Its probably not worth creating a new SectionParser for this, but it might be OK to put this into the existing CoreConfig one.
+
+Line:907, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> This should be using:
+
+  excludesFile = repository.getFS().resolve(
+    repository.getFS().userHome(),
+    p.substring(2));
+
+On Cygwin the user might have pointed us to ~/.my-ignores which is a symlink to someplace else.
+
+Line:910, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> We might also want to use repository.getFS().resolve() here.
+
+-------------------------------------

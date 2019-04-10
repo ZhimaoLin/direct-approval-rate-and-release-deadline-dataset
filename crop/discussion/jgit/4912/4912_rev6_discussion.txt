@@ -1,0 +1,116 @@
+DESCRIPTION
+
+Generate conflicts and index updates on file mode changes
+
+Add two new special cases to DirCacheCheckout:
+
+Case 1)
+
+  An entry in the working tree, HEAD tree, and merge tree have
+  different modes and different content.
+
+  Prior Outcome: 
+    Dirty working tree content is replaced and file mode
+    changes are lost.
+
+  New Outcome: 
+    Conflict is generated.
+
+Case 2)
+
+  An entry in the index and merge tree have the same content
+  but different modes but both modes are file type modes.
+
+  Prior Outcome:
+    File mode in working tree is not updated and the working
+    directory is dirty.
+
+  New Outcome: 
+    Index is updated and the working directory is clean.
+
+Bug: 363772
+Change-Id: I224602d68228eb419813986807f1eeab77e9c302
+
+COMMENTS
+
+author: Zachary Orozco
+date: 2012-01-16 00:07:13.000000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-01-16 00:07:25.000000000
+
+Patch Set 6:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1392/ 
+
+-------------------------------------
+author: Zachary Orozco
+date: 2012-01-16 00:08:24.000000000
+
+Patch Set 6:
+
+just rebased this change on a proposal which adds much more comments to DirCacheCheckout
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-01-16 00:10:40.000000000
+
+Patch Set 6: Build Successful
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1392/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2012-01-16 00:44:26.000000000
+
+Patch Set 6: I would prefer that you didn't submit this
+
+(4 inline comments)
+
+
+
+Line:766, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> What is if Merge and Index hava different by modes?
+
+Line:824, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> what is if Head and index have different modes?
+
+Line:899, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> We can remove the last line of the comment because we may touch index and file.
+
+Line:901, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> If Head and Merge are equal by content and mode we will not touch index or file. Same is true if Head and Index are equal. I would add
+
+  if (mId.equals(hId) && mMode == h.getEntryRawMode())
+    keep(dce);
+  if (mId.equals(iId) && mMode == iMode)
+    keep(dce);
+
+-------------------------------------
+author: Jaidyn Nichols
+date: 2012-01-17 01:11:37.000000000
+
+Patch Set 6: (1 inline comment)
+
+
+
+Line:901, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> I'm not sure I understand your comment, you want to add explicit checks to keep the current entry even though they would be kept by falling through the current checks to the keep line on 927?  I think I might be missing something.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2012-01-17 17:53:42.000000000
+
+Patch Set 6: (1 inline comment)
+
+
+
+Line:901, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> We need the first if statement because current code will call update() where it should call keep() when merge and head are equal by mode and content but merge and index differ. The comment shows the misunderstanding: we will not always try to update index to merge when they differ.
+
+We need the second if statement because current code will call conflict() where it should call keep() when merge and index are equal by mode and content but merge and head differ by mode and the file is dirty. Again the comment shows the misunderstanding: It's not always a conflict if workingtree, head and merge have different content.
+
+Sorry, I know, all that sounds far too complicated, but what git does during checkout is really complicated. Look at cases 15 and 19 in the "carry forward rules" in http://linux.die.net/man/1/git-read-tree to see the explanation for this two cases.
+
+I'll propose some testcases which cover this.
+
+-------------------------------------

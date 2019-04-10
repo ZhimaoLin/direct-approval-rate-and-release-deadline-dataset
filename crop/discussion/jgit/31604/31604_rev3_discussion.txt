@@ -1,0 +1,204 @@
+DESCRIPTION
+
+Cleanup use of java.util.Inflater, fixing rare infinite loops
+
+The native implementation of inflate() can set finished to return
+true at the same time as it copies the last bytes into the buffer.
+
+Check for finished on each iteration, terminating as soon as libz
+knows the stream was completely inflated.
+
+If not finished, it is likely input is required before the next
+native call could do any useful work. Most invocations are passing
+in a buffer large enough to store the entire result. A partial return
+from inflate() will need more input before it can continue. Checking
+right away that needsInput() is true saves a native call to determine
+no bytes can be inflated without more input.
+
+This should fix a rare infinite loop condition inside of inflation
+when an object ends exactly at the end of a block boundary, and
+the next block contains only the 20 byte trailing SHA-1.
+
+When the stream is finished each new attempt to inflate() returns
+n == 0, as no additional bytes were output. The needsInput() test
+tries to add the length of the footer block to itself, but then loops
+back around an reloads the same block as the block is smaller than
+a full block size. A zero length input is set to the inflater,
+which triggers needsInput() condition again.
+
+Change-Id: I95d02bfeab4bf995a254d49166b4ae62d1f21346
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2014-08-14 00:28:21.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-08-14 01:19:12.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/egit/job/jgit.gerrit/5490/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-08-14 01:35:37.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/jgit.gerrit/5490/ : SUCCESS
+
+-------------------------------------
+author: Gunnar Crawford
+date: 2014-08-14 07:08:57.000000000
+
+Patch Set 3:
+
+What are the chances of that? within 10mins of me posting my first review here, after sitting on the comment in the associated bug for 4 months or so, another review changes the same piece of code!
+
+Anyway, can you look at https://git.eclipse.org/r/#/c/31603/ and its associated bug - It looks like your refactored WindowCursor suffers from the issue I've fixed, namely calling inflate if the destination buffer is zero length.
+
+Apologies, but I haven't checked whether a change in the calling code will stop that occurring as I never understood enough of the context to know what was being attempted by the code in my case, but if this change can sort my issue as well then great!
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2014-08-14 07:29:45.000000000
+
+Patch Set 3:
+
+I think this also fixes your bug, and a different one that we ran into today. For a zero-length object we still want to run the inflater to have the checksum verified as zero length. This should work fine, so long as we check the inflater was finished.
+
+-------------------------------------
+author: Gunnar Crawford
+date: 2014-08-14 08:26:40.000000000
+
+Patch Set 3:
+
+I'm not sure it does, unless a change elsewhere is handling it, as what I was seeing was WindowCursor.inflate being called with a zero length dstbuf - inf.inflate was then being called with that buffer that was returning zero (into n), and inf.finished() and inf.needsInput() were false (IIRC), so it threw a DataFormatException.
+
+My 'fix' was to not enter the decode loop if there was nothing to decode (ie. never call inf.inflate).
+
+-------------------------------------
+author: Juliet Cantu
+date: 2014-08-14 09:15:56.000000000
+
+Patch Set 3:
+
+Can you comment on this in relation to https://git.eclipse.org/r/#/c/31603/ ?
+
+-------------------------------------
+author: Gunnar Crawford
+date: 2014-08-14 11:29:12.000000000
+
+Patch Set 3:
+
+I've done some more experimentation, providing the inflater with a deflated zero length object rather than zero length input (which I didn't do originally; unfortunately). 
+
+This test shows the output of Inflater when given a zero length object:
+
+ import java.util.zip.Inflater;
+ import java.util.zip.Deflater;
+
+ public class ZipTest
+ {
+
+    public static void main(String args[]) throws Exception {
+          byte[] emptyData = new byte[0];
+          byte[] deflated = new byte[100];
+
+          // Compress the bytes
+          Deflater compresser = new Deflater();
+          compresser.setInput(emptyData);
+          compresser.finish();
+
+          int deflatedLen = compresser.deflate(deflated);
+          System.err.println("DEFLATE: " + deflatedLen);
+
+          Inflater inf = new Inflater(false);
+          byte[] dstBuf = new byte[128];
+
+          inf.setInput(deflated, 0, deflatedLen);
+          System.err.println("INFLATE: " + inf.inflate(dstBuf, 0, 0));
+          System.err.println("NEEDS: " + inf.needsInput());
+          System.err.println("FINISHED: " + inf.finished());
+    }
+ }
+
+
+Which gives the following output (with standard JDK):
+
+ DEFLATE: 8
+ INFLATE: 0
+ NEEDS: true
+ FINISHED: true
+
+With jazzlib replacing the JDK zip (-Xbootclasspath/p:./jazzlib.jar):
+
+ DEFLATE: 8
+ INFLATE: 0
+ NEEDS: false
+ FINISHED: false
+
+Which is obviously quite significantly different and is the symptoms I was describing (I did mention jazzlib in my bug report).
+
+The reason behind using jazzlib was that on attempting to do the initial push of a SVN -> GIT migrated project the zip processing basically appears to hang (but only on one particular machine)... Now I wonder whether we were seeing the issue this change solves (rare infinite loop).
+
+I shall try to reproduce what we originally saw, and then attempt again with this code and see if our issue has gone.
+
+-------------------------------------
+author: Gunnar Crawford
+date: 2014-08-14 11:54:49.000000000
+
+Patch Set 3:
+
+Can't reproduce it - Tried re-importing the project into our gerrit instance running without jazzlib and it is all working now - We have given the machine more resources since we originally saw the issue, so I wonder if that caused it.
+
+So I'm inclined to close my bug and abandon my review.
+
+-------------------------------------
+author: Santos Moore
+date: 2014-08-14 18:34:44.000000000
+
+Patch Set 3: Code-Review-1
+
+(5 comments)
+
+Thanks, the description of the incorrect assumptions in the commit message made the change easy to follow. Just a few nits/questions about documentation.
+
+Line:603, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsReader.java -> Same comment as other javadoc.
+
+Line:606, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsReader.java -> Same comment as other javadoc.
+
+Line:293, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/WindowCursor.java -> Did you mean, "Must be large enough to store the entire stream, unless headerOnly is true."?
+
+If not, this doesn't really make sense: headerOnly=true would read up to dstbuf.length bytes, which is the entire stream, not just the header.
+
+Line:296, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/WindowCursor.java -> Explain what dstoff is, since it's no longer a param.
+
+Line:92, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsBlock.java -> Why switch the order of args?
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2014-08-14 19:37:40.000000000
+
+Patch Set 3:
+
+(5 comments)
+
+Line:603, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsReader.java -> Done
+
+Line:606, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsReader.java -> Done
+
+Line:293, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/WindowCursor.java -> Yes, that is what I meant. Done.
+
+Line:296, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/WindowCursor.java -> Done
+
+Line:92, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsBlock.java -> Make them consistent with WindowCache. The two classes have basically the same API, but reversed the arguments between them.
+
+-------------------------------------

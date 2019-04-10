@@ -1,0 +1,61 @@
+DESCRIPTION
+
+Fix failing ep-engine checkpoint unit test
+
+The following issues were fixed:
+1. Simplified the logic to join the worker threads created by the main
+   thread. Essentially, since we do not care about the actual return
+   value from the threads, it is alright to return a NULL from the
+   threads and throw it away in the main thread. If at all we must
+   assert some condition, we should do so in the worker thread. The
+   previous method of calling pthread_join() was causing a segfault
+   due to improper casting of the return value.
+2. Fixed the persistence worker thread to read the queue items front
+   to back instead of back to front. If the persistence thread is slow
+   for whatever reason, reading the queue back to front may cause the
+   flush operation to be discovered before one or more of the regular
+   data items. Consequently, the persistence thread will quit before
+   it has finished reading the entire queue. This was causing a timing
+   dependent assertion failure.
+3. Fixed the persistence worker thread to also account for checkpoint
+   start and end operations. The previous code assumed that the
+   presence of a flush operation indicated end of the queue. However,
+   this may not be true because new checkpoint start and end ops may
+   get introduced while processing the regular queue items.
+4. Fixed the cleanup worker thread to *not* assert the numItemsRemoved
+   be zero. The reason this may not be zero is because we may create
+   new checkpoints during the test and thus end up with one or more
+   closed and unreferenced checkpoints. Consequently, a call to the
+   removeClosedUnrefCheckpoints() function may return a non-zero value.
+
+Change-Id: Ie9725ac830ae3ce30a4b3e8c0cb4e9da62b958bd
+
+
+COMMENTS
+
+author: Asher Vang
+date: 2011-07-02 14:27:13.662000000
+
+Patch Set 1: Looks good to me, but someone else must approve
+
+(1 inline comment)
+
+(I didn't have that much time to look into this right now... I'm at a family reunion)..
+
+Line:133, t/checkpoint_test.cc -> Why initialize the variable twice?? It seems to only be used within the for loop so it could might as well just be in that scope.
+
+-------------------------------------
+author: Asher Vang
+date: 2011-07-03 09:41:04.586000000
+
+Patch Set 1: Verified; Looks good to me, approved
+
+
+
+-------------------------------------
+author: Asher Vang
+date: 2011-07-03 09:41:05.026000000
+
+Change has been successfully cherry-picked as 5ade39960f1fe0a4e933d5bfdf74cae934c5fbff.
+
+-------------------------------------

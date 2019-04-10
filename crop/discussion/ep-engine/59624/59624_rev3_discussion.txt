@@ -1,0 +1,79 @@
+DESCRIPTION
+
+Incorrect ordering during ActiveStream's takeover-send phase
+
+A race between the step() and ActiveStreamCheckpointProcessorTask
+can cause mutations to be queued into the readyQ after the
+setVBucketState(active) message.
+
+Here's the scenario in chronology (T: Front-end thread, BT: IO thread):
+1. T1: ActiveStream::setVBucketStateAckRecieved()
+2. T1: transitionState(takeoverSend) => schedules ActiveStreamCheckpointProcessorTask
+3. BT1: manageConnections() notifies memcached about specific conn (max idle time: 5s)
+4. BT2: ActiveStreamCheckpointProcessorTask runs, gets all Items For Cursor
+5. T1: step() -> takeoverSendPhase() -> readyQ is empty
+        => nextCheckpointItem() return false, as getNumItemsForCursor returns 0
+        => setVbucketState(active) added to readyQ
+6. BT2: ActiveStreamCheckpointProcessorTask continues, adds mutations acquired into readyQ
+        -> Note the mutations were acquired in step 4
+        => Notified memcached connections
+7. T1: step() .. ships messages in incorrect order
+
+On the new master, the vbucket is promoted to active state and then more
+mutations are received from the old master. If there were front end ops
+at this time, there could be an inconsistency in highSeqno or in worst
+cases crashes in checkpoint manager due to highSeqno not belonging in
+the designated range.
+
+The fix: Add an atomic flag that is also checked for along with
+getNumItemsForCursor in nextCheckpointItem(). This flag is set before
+retrieving all items for a cursor (getAllItemsForCursor) and unset after
+all the retrieved items have been added to the ready queue of the stream.
+
+**Test case verifies the fix.
+
+Change-Id: I8adb1a2369dd89a57b2bf88d76b4c2706f3e7bc3
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2016-02-08 22:21:49.012000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-08 22:22:01.461000000
+
+Patch Set 3:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1610/ (2/2)
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-02-08 23:00:40.355000000
+
+Abandoned
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-08 23:01:41.544000000
+
+Patch Set 3:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1612/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-08 23:11:16.812000000
+
+Patch Set 3:
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2372/ : FAILURE
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1612/ : SUCCESS
+
+-------------------------------------

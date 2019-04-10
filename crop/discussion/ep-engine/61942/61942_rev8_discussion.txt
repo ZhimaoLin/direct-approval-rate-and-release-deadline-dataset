@@ -1,0 +1,210 @@
+DESCRIPTION
+
+MB-18135: Ensure manageConnections cleans up all deadConnections
+
+Dead connections are cleaned-up by manageConnections.
+manageConnections is invoked in the run() of ConnManager,
+which is a NONIO Task.  The task has a MIN_SLEEP_TIME of 2s,
+which means dead connections will only be clean-up at most
+every two seconds.
+
+The ConnManager task stops being put back on the run list if
+isShutdown is set to true.
+
+isShutdown is set to true at the start of the destroy function,
+just before calling shutdownAllConnections. shutdownAllConnections
+will cause connections to be disconnected and hence added to the
+deadConnections list.  It is therefore essential that
+manageConnections are called to clean-up these dead connections.
+
+It was originally thought that the clean-up of dead connections
+could be best achieved by calling manageConnections at the end
+of the shutdownAllConnections.  However this is not sufficient.
+
+Instead we need to ensure that ConnManager task keeps running
+until the all list and deadConnections list are empty.
+
+In addition the shutdownAllConnections function clears the
+all list and map_.  It then calls releaseReference on each
+connection waiting for them to disconnect.  However to
+disconnect function checks to see if the connection is in the
+map_ before disconnecting.  Therefore we should just let the
+connections disconnect using the disconnect function, and the
+connections will then be added to the deadConnections list and
+cleaned-up in manageConnections.
+
+Change-Id: I7e6c577f30b862e22437f381a3c0106cb72b3e96
+
+
+COMMENTS
+
+author: Kymani Ramirez
+date: 2016-03-30 12:55:18.638000000
+
+Uploaded patch set 8: Patch Set 7 was rebased.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-03-30 13:11:49.784000000
+
+Patch Set 8:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/290/ (1/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-03-30 13:29:09.579000000
+
+Patch Set 8:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/205/ (2/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-03-30 13:29:09.833000000
+
+Patch Set 8:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/321/ (3/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-03-30 13:41:22.594000000
+
+Patch Set 8: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/205/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/321/ : FAILURE
+
+Timeout of a CTest test 25/30 Test #27: ep-engine_value_eviction_xdcr .........} ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-watson/321/ )
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-watson/321/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/290/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-03-30 15:48:07.070000000
+
+Patch Set 8: -Verified
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/327/ (1/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-03-30 15:48:07.218000000
+
+Patch Set 8:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/210/ (2/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-03-30 15:48:07.362000000
+
+Patch Set 8:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/298/ (3/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-03-30 15:55:14.660000000
+
+Patch Set 8: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/327/ : FAILURE
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-watson/327/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/298/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/210/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-03-30 17:16:44.989000000
+
+Patch Set 8: -Verified
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/329/ (1/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-03-30 17:16:45.122000000
+
+Patch Set 8:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/212/ (2/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-03-30 17:16:45.258000000
+
+Patch Set 8:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/300/ (3/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-03-30 17:26:15.247000000
+
+Patch Set 8: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/329/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/212/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/300/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-03-31 07:51:47.458000000
+
+Patch Set 8: Code-Review+1
+
+(4 comments)
+
+Functionality looks good, couple of naming / grammar suggestions.
+
+Line:33, /COMMIT_MSG -> Grammar - should this be "the" ?
+
+Line:181, src/connmap.h -> By convention we name accessors returning a boolean as "isXXXX" - this means when used in an if statement you get a easy to understand sentence:
+
+ if (isDeadConnectionsEmpty()) { ...
+
+(It also means the reader had an indication the function returns a bool without having to look at the definition).
+
+Line:185, src/connmap.h -> Ditto
+
+Line:486, src/connmap.h -> Ditto
+
+-------------------------------------
+author: Kymani Ramirez
+date: 2016-03-31 11:09:51.555000000
+
+Patch Set 8:
+
+(4 comments)
+
+Line:33, /COMMIT_MSG -> Done
+
+Line:181, src/connmap.h -> Done
+
+Line:185, src/connmap.h -> Done
+
+Line:486, src/connmap.h -> Done
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-03-31 22:19:36.107000000
+
+Change has been successfully cherry-picked as 3d470801fce31a11c0e33f0fbaf960b6296d507b
+
+-------------------------------------

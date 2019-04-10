@@ -1,0 +1,92 @@
+DESCRIPTION
+
+Added a preliminary version of rename detection
+
+JGit does not currently do rename detection during diffs. I added
+a class that, given a TreeWalk to iterate over, can output a list
+of DiffEntry's for that TreeWalk, taking into account renames. This
+class only detects renames by SHA1's. More complex rename detection,
+along the lines of what C Git does will be added later.
+
+Change-Id: I93606ce15da70df6660651ec322ea50718dd7c04
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-07-01 22:57:21.000000000
+
+Patch Set 1: (16 inline comments)
+
+
+
+Line:92, org.eclipse.jgit/src/org/eclipse/jgit/diff/RenameDetector.java -> Style-nit:  Javadoc should be like a git commit message, a short single line sentence on the first line, paragraph break (usually with <p> HTML element) and then the rest of the method description.
+
+Line:98, org.eclipse.jgit/src/org/eclipse/jgit/diff/RenameDetector.java -> You should document that this needs to have exactly two tree iterators involved, since 0 and 1 are accessed in the loop.
+
+Line:120, org.eclipse.jgit/src/org/eclipse/jgit/diff/RenameDetector.java -> Error messages need to be externalized strings in JGitText class and the JGitText properties file.
+
+Line:123, org.eclipse.jgit/src/org/eclipse/jgit/diff/RenameDetector.java -> Don't abbreviate here.  Create the full ObjectId.
+
+Really what you should do is:
+
+  MutableObjectId idBuf = new MutableObjectId();
+  while (walk.next()) {
+    DiffEntry entry = new DiffEntry();
+
+    tw.getObjectId(idBuf, 0);
+    entry.oldId = AbbreviatedObjectId.fromObjectId(idBuf);
+
+    tw.getObjectId(idBuf, 1);
+    entry.newId = AbbreviatedObjectId.fromObjectId(idBuf);
+  }
+
+That keeps object allocation down to a minimum by using a locally allocated, but mutable, object id buffer.
+
+Line:128, org.eclipse.jgit/src/org/eclipse/jgit/diff/RenameDetector.java -> Don't test on the ObjectId, use the FileMode.  If its FileMode.MISSING then that side doesn't exist.
+
+Line:190, org.eclipse.jgit/src/org/eclipse/jgit/diff/RenameDetector.java -> I think findExactRenames() is a more descriptive name for this method since its only doing the exact case.
+
+Line:194, org.eclipse.jgit/src/org/eclipse/jgit/diff/RenameDetector.java -> Hmm.  AbbreviatedObjectId is immutable, and hashable.  Instead of copying to an ObjectId, lets just hash the AbbreviatedObjectId as the key.
+
+Line:198, org.eclipse.jgit/src/org/eclipse/jgit/diff/RenameDetector.java -> You can't do that.  The Arrays.asList result has a constant length.  Which means on the 3rd item for the same key, you'll throw an exception during add().
+
+This has to be an ArrayList, but you can set its size as 2:
+
+  ArrayList<DiffEntry> tmp = new ArrayList<DiffEntry>(2);
+  tmp.add(old);
+  tmp.add(del);
+  map.put(id, tmp);
+
+On the next addition when have a 3rd item, the array list will double in capacity to 4 elements, then 8, 16, etc.
+
+Line:215, org.eclipse.jgit/src/org/eclipse/jgit/diff/RenameDetector.java -> Make the 100 a constant, but lets call it something specific like EXACT_RENAME.  For various reasons I think we might want the exact rename score to be bigger than any possible similarity score.  It will be easier to tweak that if it has a special constant assigned to it.
+
+Line:220, org.eclipse.jgit/src/org/eclipse/jgit/diff/RenameDetector.java -> remove returns the DiffEntry.  Which eliminates the need for the get on the line above.
+
+Line:221, org.eclipse.jgit/src/org/eclipse/jgit/diff/RenameDetector.java -> Only put the list back if its not empty?
+
+Line:227, org.eclipse.jgit/src/org/eclipse/jgit/diff/RenameDetector.java -> To make this easier to extend with similarity based matching code, I would just do:
+
+  added = tempAdded
+
+Here, and then above in getEntries() just before you set done, I would do something like:
+
+  entries.addAll(added);
+  entries.addAll(deleted);
+  added = null;
+  deleted = null;
+  done = true;
+  Collections.sort(entries, ...);
+
+Then we can just plug in the similarity pass by invoking a new similarity pass method after the findExactRenames() method is run.
+
+Line:80, org.eclipse.jgit/src/org/eclipse/jgit/lib/AbbreviatedObjectId.java -> Please avoid reformatting code you aren't changing.
+
+Line:91, org.eclipse.jgit/src/org/eclipse/jgit/lib/AbbreviatedObjectId.java -> Please also document that the converted id is complete, and thus can be recast back to an ObjectId with no loss.
+
+Line:93, org.eclipse.jgit/src/org/eclipse/jgit/lib/AbbreviatedObjectId.java -> Accept AnyObjectId since you are copying the field values.
+
+Line:107, org.eclipse.jgit/src/org/eclipse/jgit/lib/AbbreviatedObjectId.java -> Again, reformatting.
+
+-------------------------------------

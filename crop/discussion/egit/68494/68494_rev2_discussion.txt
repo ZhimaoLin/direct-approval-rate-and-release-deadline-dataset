@@ -1,0 +1,81 @@
+DESCRIPTION
+
+Refresh decorations after re-connecting a project
+
+Re-connecting a previously connected, then disconnected project did not
+refresh the decorations in the project explorer.
+
+RepositoryChangeListener was unused, and likewise
+GitProjectData.addRepositoryChangeListener(). Therefore, all calls to
+RepositoryMapping.fireRepositoryChanged() had absolutely no effect. Thus
+I have removed all these calls. (Except the one in RepositoryMapping
+itself -- we'll need that one.)
+
+Interesting bit of EGit history: the very first version (even before
+EGit became an Eclipse project) of GitProjectData contained what is now
+known as the RepositoryCache (the one in EGit). The
+RepositoryChangeListener indeed was notified on changes in a repository.
+In that original commit, there was exactly one such listener: in the git
+decorator.
+
+Through various refactorings, RepositoryCache was extracted from
+GitProjectData, and then IndexDiffChangedListener appeared.
+RepositoryChangeListener became unused; GitLightweightDecorator was
+changed to listen on index diff changes in commit f332331.
+
+Nowadays, this RepositoryChangeListener is notified not on repository
+changes, but whenever a new RepositoryMapping is added to the Eclipse
+resource tree. And that is exactly what is needed to fix bug 489696:
+when a previously connected, now disconnected project is re-connected,
+there will be no resource change events (the project is known in
+Eclipse's resource tree already, and adding new RepositoryMappings as
+session properties doesn't trigger a resource delta). There also will be
+no repository or index diff related events (provided the repository is
+still known to EGit, for instance because it is in the Repositories
+view, or because there are other projects from that repository.) So the
+GitLightweightDecorator will not refresh decorations.
+
+Using a RepositoryChangeListener (again, after 5 years) the
+GitLightweightDecorator can correctly refresh the project explorer in
+this case.
+
+Since this listener is no longer invoked when a repository changes, but
+when a new RepositoryMapping appears, I have renamed and re-purposed the
+interface to RepositoryMappingChangeListener.
+
+Bug: 489696
+Change-Id: I2b59cea1f1500cbdde554fff28b676456c8462d8
+Signed-off-by: Alayna Houston xxx@xxx.xxx
+
+COMMENTS
+
+author: Alayna Houston
+date: 2016-03-15 22:41:29.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-03-15 22:45:12.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/8288/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-03-15 23:15:31.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/8288/ : SUCCESS
+
+-------------------------------------
+author: Gerrit Johnathan Pham
+date: 2016-03-16 07:45:44.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

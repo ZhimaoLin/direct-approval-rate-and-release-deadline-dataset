@@ -1,0 +1,230 @@
+DESCRIPTION
+
+Implemented shallow clones
+
+This implements the server side of shallow clones only (i.e. git-upload-pack),
+not the client side.
+
+
+COMMENTS
+
+author: Tobias Gibbs
+date: 2010-08-25 20:09:43.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Tobias Gibbs
+date: 2010-08-25 20:17:36.000000000
+
+Patch Set 3:
+
+Ok, here's Round 2.  I think I hit all of the style issues from before, and addressed the commonBase problem we discussed.  I did it in a slightly different way than your suggestion, but I think it makes a little bit more sense given how the data comes into the generator.  Let me know if you see any problems with it.
+
+The generator should now return all commits up to the specified depth, ignoring any that were part of commonBase.  But it will correctly start returning any commits below the boundary of a previous shallow checkout, and return all commits at the old boundary as UNINTERESTING so that the PackWriter can exclude the right things from the pack.  As far as I can tell, this is correct behavior in all cases.
+
+I couldn't do the SEEN thing like I was planning on doing, because uninteresting commits get the flag set on them as well (as part of markStart()), so sometimes it's already present on commits in our queue even though we haven't added all their parents yet.  I reworked the depth stuff a bit and added some comments, hopefully making it clear enough that the depth sorting accomplishes the same thing.
+
+I'm cautiously optimistic that this is getting pretty close.  Please let me know if there's anything else that needs to be done to get this thing completely out the door.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-08-28 02:51:04.000000000
+
+Patch Set 3: I would prefer that you didn't submit this
+
+(19 inline comments)
+
+You almost might not want to bother reading these comments.  I'm starting to realize its pretty complex and I don't feel like I fully understand it all myself.  I'm going to try poking at it more tomorrow to see if I can get somewhere with it.
+
+Line:392, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> This is sadly going to force us to keep the bulk of this revision pool alive longer than we need to.
+
+Can we instead do:
+
+  unshallowCommits.add(walk.lookupCommit(c));
+
+This way what we hold onto is a pointer into the main pool we already are retaining long-term.  Or maybe better, since these two collections don't actually have to be RevCommits we can just declare them ObjectId and use:
+
+  unshallowCommits.add(c.copy));
+
+to shed the entire pool overhead.
+
+Line:697, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> Style-nit: Space after if
+
+Line:67, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DepthGenerator.java -> This documentation isn't correct.
+
+If UNSHALLOW is on the commits the client doesn't have, but will have when we are done transmitting, these cannot be marked UNINTERESTING.  Really its the first descendant of an UNSHALLOW commit that should be marked UNINTERESTING (any commit whose parent is UNSHALLOW should be UNINTERESTING).
+
+Line:92, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DepthGenerator.java -> Can we allocate this flag also as part of the DepthWalk?  The reason is, if a walk gets reset and runs again we'd allocate yet another flag.  Do that enough times and walk suddenly stops working, because there are no free flags.
+
+Explicitly releasing the flag is hard from a generator, there isn't an API to have the walk tell the generator that the walk is being reset.  So the easiest thing may be to just allocate this at the same time as the UNSHALLOW flag in the individual walk classes.
+
+Line:102, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DepthGenerator.java -> Hmmph.  Almost makes sense.
+
+Commits that pass this test are the branch heads the client wants, and which are at depth 0.  I'm a little concerned there may be a corner case here though.  What happens if the client only wants a new branch and that new branch is pointing at a commit that has UNSHALLOW set?  We'll wind up up with an  empty pending queue and process nothing at all.  Which means the client WON'T get the commit it asked us for, and it'll crash out, because it doesn't have that yet (that's why it asked to unshallow it).
+
+We may just have to make this test:
+
+  if ((c.flags & RevWalk.UNINTERESTING) == 0)
+
+to work around that corner condition.  However we would then be pushing in UNSHALLOW commits that aren't actually start points.  This is a bug in DepthWalk.ObjectWalk's markUnshallow method.  It shouldn't call markStart().
+
+However we do also need uninteresting commits to be iterated.  The client may have given us a commit in common that we both have and that wasn't wanted by the client (because he already has it).
+
+And, uh, this is all far harder than I thought.  I might try poking at it more tomorrow to see if I can better distill down the conditions involved and how we can express them internally.
+
+Line:153, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DepthGenerator.java -> "everything below us, including us is new".  When you unshallow something the client doesn't have it yet.
+
+Line:156, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DepthGenerator.java -> I think your logic is incorrect here.  I still think we want what I  proposed in patch set 1's comments:
+
+  if (c.has(UNSHALLOW))
+    p.add(UNSHALLOW);
+  if (c.has(UNINTERESTING)) {
+    if (p.has(UNSHALLOW))
+      c.add(BOUNDARY);
+    else
+      p.add(UNINTERESTING);
+  }
+
+With renaming your REINTERESTING flag to be BOUNDARY.
+
+Line:168, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DepthGenerator.java -> I think this is really:
+
+  if (produce)
+    produce = c.has(UNINTERESTING) ? c.has(BOUNDARY) : false;
+
+Line:393, org.eclipse.jgit/src/org/eclipse/jgit/storage/pack/PackWriter.java -> Style-nit: Blank line xxx@xxx.xxx tag.
+
+Line:402, org.eclipse.jgit/src/org/eclipse/jgit/storage/pack/PackWriter.java -> Style-nit: We indent between the "*" and the first part of the text with spaces.  Here you used tabs in this block.
+
+Line:1050, org.eclipse.jgit/src/org/eclipse/jgit/storage/pack/PackWriter.java -> Declare this DepthWalk.ObjectWalk and then you don't need to downcast below.
+
+Line:1053, org.eclipse.jgit/src/org/eclipse/jgit/storage/pack/PackWriter.java -> These two sort lines are pointless.  DepthWalk doesn't honor them.
+
+Line:1079, org.eclipse.jgit/src/org/eclipse/jgit/storage/pack/PackWriter.java -> This is a critical exception.  If we don't have something that we are unshallowing, we cannot continue.  That means you can simplify your code by removing the try/catch here and make it more like the very simple interestingObjects loop above.
+
+Line:1084, org.eclipse.jgit/src/org/eclipse/jgit/storage/pack/PackWriter.java -> This downcast is unnecessary if you declare the walker variable to be of the correct type above.
+
+Line:73, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DepthWalk.java -> Shouldn't this be a static class?
+
+Line:78, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DepthWalk.java -> We typically don't expose fields to the public, just to our own package.  I know I argued to expose this more than private, but I really just meant package/default access, not public.
+
+Line:161, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DepthWalk.java -> Javadoc?  Why would a caller want to do this?
+
+Line:168, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DepthWalk.java -> Style-nit: Continuation line should be indented one more level.
+
+Line:173, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DepthWalk.java -> We shouldn't call markStart here.  See my comments in the setup for DepthGenerator for why.
+
+-------------------------------------
+author: Tobias Gibbs
+date: 2010-08-28 23:37:08.000000000
+
+Patch Set 3: (1 inline comment)
+
+
+
+Line:67, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DepthGenerator.java -> I think we may be defining this term differently, and that's leading to many/most of your concerns.
+
+I'm using 'unshallow' in the same sense that the git pack protocol does--a commit which the client DOES have, but which it used to have marked as shallow (which means 'this commit claims to have parents, but pretend that it doesn't because we didn't download them'.)  If we're deepening the tree, the client needs to remove the marking on these commits, since afterward it will have their parents just like any other commit.
+
+Thus, these commits represent the last commit in the chain that the client has.  Anything beyond this which still passes the depth test is a new commit which must be sent to the client.  Since the client has all UNSHALLOW commits, they should be marked as UNINTERESTING as well, which is normally carried to all ancestors.  This is based on the assumption that if we have a commit, we always have its parents.  But in this case, that is not true, so we need to get rid of the UNINTERESTING flag on these ancestor commits, to tell the rest of the machinery that they need to be sent across.  To accomplish that, I carry the REINTERESTING flag to every commit below an UNSHALLOW commit, to denote that even though it's marked as UNINTERESTING, it's really lying.
+
+Does that clear anything up?  Or are there still corner cases in the algorithm if it's done this way?
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-08-31 01:48:49.000000000
+
+Patch Set 3: (1 inline comment)
+
+
+
+Line:67, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DepthGenerator.java -> You're right.  I wasn't defining the term UNSHALLOW correctly, which lead to me misunderstanding a lot of the implementation.
+
+I'll have to re-read this entire patch set in light of this new explanation.  Thanks.
+
+-------------------------------------
+author: Tobias Gibbs
+date: 2010-09-12 17:31:41.000000000
+
+Patch Set 3:
+
+Ping?
+
+-------------------------------------
+author: Malia Sampson
+date: 2010-09-13 13:38:23.000000000
+
+Patch Set 3:
+
+Shawn is on leave until October so his responses will be a bit slow. The rest of the EGit and JGit teams are focusing on shipping 0.9 so our responses will be a bit slow too.
+
+Sorry for the delayed response.
+
+-------------------------------------
+author: Tobias Gibbs
+date: 2010-10-26 20:26:04.000000000
+
+Patch Set 3:
+
+Word on the street is that Shawn is back, or will be soon, so Brad suggested I poke this issue one more time.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-10-28 18:52:29.000000000
+
+Patch Set 3: (8 inline comments)
+
+Please clean up some of the style issues, and upload a new version.
+
+Line:385, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> This should be c.getDepth()
+
+Line:387, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> Style-nit: We don't need {} around this statement.
+
+Line:392, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> We still need to do what I suggested earlier to shed the revision pool memory usage:
+
+  unshallowCommits.add(c.copy())
+
+Line:445, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> Style-nit: Please insert a blank line here between the two command test blocks.
+
+Line:449, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> Style-nit: Please insert a blank line after your new block (and before the "want" test).
+
+Line:698, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> I think I would prefer passing the other shallow stuff through a new method.  That is:
+
+  if (depth > 0)
+    pw.setShallowPack(depth, unshallowCommits);
+  pw.preparePack(pm, wantAll, commonBase);
+
+Line:393, org.eclipse.jgit/src/org/eclipse/jgit/storage/pack/PackWriter.java -> Still have a style-nit here (blank line xxx@xxx.xxx
+
+Line:402, org.eclipse.jgit/src/org/eclipse/jgit/storage/pack/PackWriter.java -> Still have a style-nit here (use spaces instead of tabs for indent inside of javadoc comment).
+
+-------------------------------------
+author: Malia Sampson
+date: 2010-11-13 17:43:08.000000000
+
+Patch Set 3:
+
+Matt, are you still alive?
+
+-------------------------------------
+author: Tobias Gibbs
+date: 2010-11-15 05:55:13.000000000
+
+Patch Set 3:
+
+I am, but sadly I haven't been able to put any time into this lately.  I'm hoping to work on it a bit this week.  Sorry for the delay. :(
+
+-------------------------------------
+author: Malia Sampson
+date: 2010-11-15 15:39:46.000000000
+
+Patch Set 3:
+
+Thanks for the response Matt.
+
+Just checking if you're alive as we're planning to release 0.10 December 15th and if we want this in... would be good to get something squared away by the end of November.
+
+Thanks!
+
+-------------------------------------

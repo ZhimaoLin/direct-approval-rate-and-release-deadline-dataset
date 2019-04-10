@@ -1,0 +1,80 @@
+DESCRIPTION
+
+Enable smart HTTP transport to place EOF at end of pack
+
+When fetching over smart HTTP the InputStream that gets fed into
+a PackParser doesn't really support EOF at the end of the pack. It
+instead tries to make a new HTTP request, which fails because there
+is no request body currently buffered by the client.
+
+Make EOF work correctly on the end of an HTTP derived InputStream
+for the pack by denoting no more requests are expected as the higher
+level code is now consuming the pack (or side-band embedded pack).
+Smart HTTP support doesn't automatically enqueue execute support onto
+the end of the UnionInputStream, which allows the UnionInputStream
+to correctly reflect EOF when the HTTP response is consumed.
+
+Change-Id: I975f1ab1c81ab1c1af925716970088bc7b8d6b1a
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2012-03-13 18:13:57.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1590/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-03-13 18:17:49.000000000
+
+Patch Set 1: Verified
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1590/ : SUCCESS
+
+-------------------------------------
+author: Santos Moore
+date: 2012-03-13 18:31:50.000000000
+
+Patch Set 1: Looks good to me, but someone else must approve
+
+(2 inline comments)
+
+
+
+Line:706, org.eclipse.jgit/src/org/eclipse/jgit/transport/TransportHttp.java -> Why is this try/finally necessary now, and it wasn't before?
+
+Line:800, org.eclipse.jgit/src/org/eclipse/jgit/transport/TransportHttp.java -> I don't believe this comment accurately reflects your changes.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2012-03-13 18:45:57.000000000
+
+MISMATCHED INLINE COMMENT
+Line:706, org.eclipse.jgit/src/org/eclipse/jgit/transport/TransportHttp.java -> The Service object was only held on the stack, so it was available for garbage collection immediately after doFetch() scope ended. Now its an instance member on the connection, which is held in the caller's stack frame and may be getting held longer than we would like. A try/finally to set the field to null ensures the Service object has the same lifespan as before, it only is reachable during the scope of the doFetch method.
+
+In theory the caller should also be holding the connection like this:
+
+  FetchConnection fc = transport.openFetch(...);
+  try {
+    fc.fetch(...);
+  } finally {
+    fc.close();
+  }
+
+But I'd rather not worry about it, or how much buffer space might get retained inside of the Service object when fetch fails and the caller is holding onto the FetchConnection longer than they should. Its at least the same behavior as before.
+
+I guess my alternative implementation would have been to pass a reference to the SmartHttpFetchConnection or an AtomicBoolean into Service and use that to read the finalRequest boolean. This just seemed slightly cleaner.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2012-03-13 18:45:57.000000000
+
+MISMATCHED INLINE COMMENT
+Line:800, org.eclipse.jgit/src/org/eclipse/jgit/transport/TransportHttp.java -> Good point. I have rewritten this comment block.
+
+-------------------------------------

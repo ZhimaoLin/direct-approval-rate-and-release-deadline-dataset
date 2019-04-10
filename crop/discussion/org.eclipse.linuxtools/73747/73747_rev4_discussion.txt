@@ -1,0 +1,113 @@
+DESCRIPTION
+
+Bug 471670 - better support cases where the Docker connection is lost
+
+Refactoring the DockerConnection to handle 3 states:
+- unknown (connection was not opened)
+- established (connection was opened and Docker responded
+  to ping)
+- closed
+
+Connections are in UNKNOWN state by default, and opened when
+node is expanded in Explorer view or list of containers or
+images is loaded.
+
+Connection is set back to UNKNOWN state when the settings are
+changed.
+
+Change-Id: I469fbe9df711a1539d5407bcae02ad1e1cde6340
+Signed-off-by: Zechariah Krause xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Zechariah Krause
+date: 2016-05-27 08:11:56.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-05-27 08:12:02.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/10856/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-05-27 08:36:10.000000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/10856/ : SUCCESS
+
+-------------------------------------
+author: Nathanael Holden
+date: 2016-05-30 18:06:59.000000000
+
+Patch Set 4: Code-Review-1
+
+(11 comments)
+
+Some issues to fix, but mostly looks like this should work without regressing anything too obvious.
+
+Line:512, containers/org.eclipse.linuxtools.docker.ui/src/org/eclipse/linuxtools/internal/docker/ui/views/DockerContainersView.java -> I would remove this and keep the flow as it was before.
+
+Line:628, containers/org.eclipse.linuxtools.docker.ui/src/org/eclipse/linuxtools/internal/docker/ui/views/DockerContainersView.java -> I would remove this and keep the flow as it was before.
+
+Line:74, containers/org.eclipse.linuxtools.docker.ui/src/org/eclipse/linuxtools/internal/docker/ui/views/DockerContainersContentProvider.java -> This seems unnecessary. What advantage is there here versus before ? Both guarantee the order is respected.
+
+Line:78, containers/org.eclipse.linuxtools.docker.ui/src/org/eclipse/linuxtools/internal/docker/ui/commands/BuildImageCommandHandler.java -> Any risk in using !connection.isOpen() ?
+
+Line:68, containers/org.eclipse.linuxtools.docker.ui/src/org/eclipse/linuxtools/internal/docker/ui/commands/EnableConnectionCommandHandler.java -> Again, I would try to avoid using the JobChangeListener, and just after conn.open(true).
+
+Line:445, containers/org.eclipse.linuxtools.docker.ui/src/org/eclipse/linuxtools/internal/docker/ui/views/DockerImagesView.java -> I would get rid of the JobChangeListener and simply leave the order of execution as it was before since I don't think this is changing anything.
+
+Line:532, containers/org.eclipse.linuxtools.docker.ui/src/org/eclipse/linuxtools/internal/docker/ui/views/DockerImagesView.java -> No need for job change listener.
+
+Line:305, containers/org.eclipse.linuxtools.docker.core/src/org/eclipse/linuxtools/internal/docker/core/DockerConnection.java -> I think you need to uncomment these. this.containers and this.images are empty at this point if the connection was previously CLOSED, so the listeners won't refresh with any values.. which is what I'm seeing.
+
+If you look at setActive, you'll see one of the first things I did was call getContainers(), getImages(), and then notify the listeners.
+
+Line:536, containers/org.eclipse.linuxtools.docker.core/src/org/eclipse/linuxtools/internal/docker/core/DockerConnection.java -> I would maybe add a comment here explain how this cannot generate an endless loop because either open() throws an exception somewhere terminating early, or the ping() call changes the state so that it's not UNKNOWN for the next call.
+
+Line:74, containers/org.eclipse.linuxtools.docker.ui/src/org/eclipse/linuxtools/internal/docker/ui/views/DockerImagesContentProvider.java -> Isn't this doing the exact same thing as before ? When viewer.refresh() runs, connection.getImages(true) has completed.
+
+I would avoid touching this if there's no benefit.
+
+Line:403, containers/org.eclipse.linuxtools.docker.core/src/org/eclipse/linuxtools/docker/core/IDockerConnection.java -> This will need xxx@xxx.xxx 2.0.0 tag since it's new in this release.
+
+-------------------------------------
+author: Nathanael Holden
+date: 2016-05-30 18:15:04.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+As suggested by Arianna Johns.
+
+Line:80, containers/org.eclipse.linuxtools.docker.ui/src/org/eclipse/linuxtools/internal/docker/ui/DockerConnectionWatcher.java -> Could you try using CommandUtils.getCurrentConnection(null) and see if this works the same as this function ?
+
+You may need to rebase on top of 18a5caebc2ba75ff8323db367046e5f9fdb08b66 (Fix logic for CommandUtils getCurrentConnection) for it to work.
+
+-------------------------------------
+author: Nathanael Holden
+date: 2016-05-30 18:56:26.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:17, containers/org.eclipse.linuxtools.docker.core/src/org/eclipse/linuxtools/docker/core/EnumDockerConnectionState.java -> This will also need xxx@xxx.xxx tag since it's new.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-05-31 18:46:30.000000000
+
+Change has been successfully cherry-picked as 92e687c26559b2b2ae11560eee61a5dd113d2ef9 by Nathanael Holden
+
+-------------------------------------

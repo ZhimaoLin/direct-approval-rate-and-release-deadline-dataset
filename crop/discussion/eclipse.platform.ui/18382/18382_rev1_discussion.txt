@@ -1,0 +1,102 @@
+DESCRIPTION
+
+Bug 419016 - [CSS] Provide some reasonable bridge interactions between
+CSS and our older Colors and Fonts properties
+
+Change-Id: Ibbe98e0769c065ac649cdbe6bac09cfe9d284476
+Signed-off-by: Addison Irwin xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2013-11-14 13:51:44.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/213/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-14 14:02:36.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/213/ : SUCCESS
+
+-------------------------------------
+author: Addison Irwin
+date: 2013-11-15 09:13:46.000000000
+
+Patch Set 1:
+
+I've used the Mockito framework in my unit tests. It allows to simulate simply different usecases as well as verify the processing flow. It is available in the Orbit repository. As far I've checked it is distributed with the MIT license that is accepted by the Eclipse Foundation (http://www.eclipse.org/legal/eplfaq.php -> What licenses are acceptable for third-party code redistributed by Eclipse projects?)
+
+Daniel
+
+-------------------------------------
+author: Slade Moran
+date: 2013-11-15 21:15:50.000000000
+
+Patch Set 1:
+
+(2 comments)
+
+If the bundle is already in Orbit, it's already passed an Eclipse Foundation IP review.  If it's only used for tests (which we technically don't include in our products) I don't think we need another CQ (but we can check with John A).
+
+I have some concerns with Font and Color objects being created and then just handed out.  That can cause a resource leak.
+
+Also, what happens when one of the color and font themes is changed.  Do we have access to all 3.x theme colors and fonts at any time from our CSS?  Are we restricted to only what the currently selected theme can do?  Or are color and font definitions (identified by ID) simply swapped out when you switch from one theme to another?
+
+Line:71, bundles/org.eclipse.e4.ui.css.swt/src/org/eclipse/e4/ui/css/swt/helpers/CSSSWTColorHelper.java -> This resource needs to be managed and disposed when appropriate.  Sometimes we use org.eclipse.jface.resource.LocalResourceManager.  It also might be appropriate to change the org.eclipse.e4.ui.internal.css.swt.definition.IColorAndFontProvider interface so that it becomes responsible for managing the resource, if that can be done.
+
+Line:248, bundles/org.eclipse.e4.ui.css.swt/src/org/eclipse/e4/ui/css/swt/helpers/CSSSWTFontHelper.java -> This font needs to be cached somewhere, and disposed when appropriate.
+
+-------------------------------------
+author: Addison Irwin
+date: 2013-11-18 10:52:02.000000000
+
+Patch Set 1:
+
+(2 comments)
+
+The current implementation shouldn't produce the memory leaks. However after modifying the theme settings by the user some unused resource may exist in the memory for some while (at the worse case it will be disposed with the SWT.Dispose event). When user does not modify the registry then it is not the case. As I wrote, I will try to make it simpler to dispose unused resource immediately (not in the lazy mode as it is done at this moment)
+
+At the first glance it works fine when user switches the current theme, however I will test it deeper
+
+thanks for review,
+Daniel
+
+Line:71, bundles/org.eclipse.e4.ui.css.swt/src/org/eclipse/e4/ui/css/swt/helpers/CSSSWTColorHelper.java -> All resources created by *Helper classes are put to the IResourceRegistry and managed by it. It is the CSS engine specific cache. In the case of the VolatileResources the current version is kept in the registry  and invalid (unused) ones are put to the SWTResourcesRegistry.unusedResources list and disposed in the lazy mode (the SWTResourcesRegistry.disposeUnusedResources method). So we don't have memory leaks here. However I will try to implement it better to eliminate this list and lazy mode.
+
+Line:248, bundles/org.eclipse.e4.ui.css.swt/src/org/eclipse/e4/ui/css/swt/helpers/CSSSWTFontHelper.java -> All resources are cached in the CSS engine (the IResourceRegistry class, the SWTResourceRegistry in particular). The ColorByDefinition and FontByDefinition objects are stored in cache as well (as the VolatileResource objects). It works in this way that by calling the CSSEngine.convert method the cache is look up for the required resource. When it is present, the cached version is returned. If not, the new one is created, stored in the cache for next time use and returned. Additionally when the current resource is the Volatile one, it is verified if it is still valid. If not the latest version is retrieved (the CSSSWTFontHelper.getCurrentFont(FontByDefinition) or CSSSWTColorHelper.getCurrentColor(ColorByDefinition) methods). Particular helper using the IColorAndFontProvider gets the latest version of color/font from theme registry and when it is changed creates the new instance of resource with current values. When the new instance was created in the previous step then it is updated in the proper VolatileResource instance and marked as  valid and the previous one is added to the unused resource list for disposing in the lazy mode (at this stage all resource are still in use so we have to wait for replacing it with the latest versions)
+
+When the volatile resources cache gets invalided? So when user modifies the theme registry using the ColorAndFontPreferencePage dialog, the cache for the volatile resources is invalidated (the WBWRenderer.ThemeDefinitionChangedHandler handler) what caused to refreshing the resources with the current version during styling (the CSSEngine.reapply method)
+
+-------------------------------------
+author: Slade Moran
+date: 2013-11-18 15:18:54.000000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:71, bundles/org.eclipse.e4.ui.css.swt/src/org/eclipse/e4/ui/css/swt/helpers/CSSSWTColorHelper.java -> This methods returns a new Color(*) object *or* one that's cached ina a ColorByDefinition.  Where does the new Color(*) object get cached (or how can the consumer of this function know it got a cached version)?
+
+Also, the concern with Color isn't memory leak but SWT resource handle leak.  If it's not in use it needs to be disposed immediately, or it's considered a resource leak.
+
+Line:248, bundles/org.eclipse.e4.ui.css.swt/src/org/eclipse/e4/ui/css/swt/helpers/CSSSWTFontHelper.java -> Same comment as for Color, this method returns a cached font *or* a new font.  Where does the new font get added back to a FontByDefinition?
+
+-------------------------------------
+author: Addison Irwin
+date: 2013-11-19 14:01:55.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:71, bundles/org.eclipse.e4.ui.css.swt/src/org/eclipse/e4/ui/css/swt/helpers/CSSSWTColorHelper.java -> Please take a look at the latest patch that addresses the issues above
+
+-------------------------------------

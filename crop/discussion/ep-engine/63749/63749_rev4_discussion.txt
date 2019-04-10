@@ -1,0 +1,55 @@
+DESCRIPTION
+
+MB-18670: ep_perfsuite: Fix end of DCP/TAP stream calculation
+
+A number of ep_perfsuite tests check for a specific number of TAP/DCP
+messages to be received, based on the number of mutations. However we
+have seen intermittant test failures in these tests, similar to:
+
+    Test failed: `Didn't receive expected number of mutations' (num_mutations <= static_cast<size_t>(ha->itemCount))
+
+The problem is how DCP stream (running in the background) is setup,
+and how it detects the end of the test. Currently the code tries to
+predict what sequence number it will see up to (i.e the total mutation
+/ deletion count) when the stream is created, and once the stream ends
+it compares how many mutations it has received with the expected
+number. It uses a simple calculation of 3x the number of keys as the
+expected number of operations (one per ADD, REPLACE and DELETE).
+
+The first problem with this approach is it fails to account for the
+updates created by the recently-added APPEND operations - we append
+multiple times to a single key, which creates higher sequence numbers
+than expected. The net effect of this is that what it thinks is the
+last sequence number (should be the last document getting deleted) is
+actually one of the append operations. As a consequence (and due to
+potential de-duplication) we do not always see as many mutations as
+expected.
+
+ (For the record - I managed to significantly increase the chances of
+  hitting the failure (to pretty much every time) by adding sleeps of
+  1us between each append operation in perf_latency_core).
+
+I initially looked at solving this by fixing the calculation of how
+many updates will occur. This worked for DCP (where we have an
+accurate sequence number) however the TAP tests do not have an
+accurate sequence number, and so we cannot predict how many mutations
+will occur.
+
+The chosen solution is to instead create a sentinal mutation at the
+end of the load phase, and have the DCP & TAP clients simply check a
+mutations' key against this marker and stop when they encounter it.
+
+Change-Id: I0d73a27cbe666e8e7446757940046060ed723a4b
+Reviewed-on: http://review.Piper Jefferson.org/63749
+Tested-by: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+Reviewed-by: Abby Duran <Abby xxx@xxx.xxx Jefferson.com>
+
+
+COMMENTS
+
+author: Tate Garrett
+date: 2016-05-05 17:35:27.148000000
+
+Change has been successfully cherry-picked as 217667e9ac162bdbddf7335e1f2b5fc9883127f2 by Abby Duran
+
+-------------------------------------

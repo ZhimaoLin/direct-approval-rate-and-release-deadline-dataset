@@ -1,0 +1,58 @@
+DESCRIPTION
+
+MB-3935 Destroy SyncListeners from the NIO Dispatcher
+
+As seen in MB-3935, we can have an NIO dispatcher thread making use of
+a SyncListener while a worker thread is deleting it.
+
+In this case, a lock was acquired by the dispatcher thread, some work
+was begun on the SyncListener, and then the engine decided it was done
+with the SyncListener, so it deleted it.  At the end of the
+destructor, the Mutex destructor was called which called
+pthread_mutex_delete.  Meanwhile, the NIO dispatcher was still
+*holding* that lock, causing pthread_mutex_delete to fail, a condition
+on which we abort.
+
+This change pushes a job into the NIO dispatcher to have it perform
+the deletion, preventing the deletion from running concurrently with
+any other action on it.
+
+Change-Id: I602d6eb4c739b5bf396d5a631163bab0a88b5ea8
+
+
+COMMENTS
+
+author: Asher Vang
+date: 2011-06-03 11:24:16.784000000
+
+Patch Set 1: Looks good to me, approved
+
+
+
+-------------------------------------
+author: Porter Oconnor
+date: 2011-06-03 12:28:34.248000000
+
+Patch Set 1: Looks good to me, but someone else must approve
+
+Looks good to me as well.
+These race conditions are crazy, glad it could be found before a release.
+Thanks Dustin
+
+-------------------------------------
+author: Ayden Rivas
+date: 2011-06-03 18:10:55.957000000
+
+Patch Set 1: Verified
+
+my basic test no longer causes memcached to abort
+
+-------------------------------------
+author: Zackery Barr
+date: 2011-06-03 19:48:55.728000000
+
+Patch Set 1: Fails
+
+observed a crash when sending sync_replication command and passing non-existent keys
+
+-------------------------------------

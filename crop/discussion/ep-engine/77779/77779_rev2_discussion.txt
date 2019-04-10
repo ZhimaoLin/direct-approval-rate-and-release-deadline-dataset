@@ -1,0 +1,93 @@
+DESCRIPTION
+
+MB-24246: update highestDedupedSeqno when an existing value is changed
+
+This is a temporary change to bring DCP backfills closer to correct
+while a larger solution is constructed. This will be removed when the
+"proper" solution is introduced.
+
+Without this, rangeReads are allowed to stop "too early" - potentially
+missing out on items that have been updated, i.e.,
+
+^ = HDDS
+
+ A   B   C            Initial items
+[A   B   C]           rangeRead 1-3
+[A   B   C]  B'       Update B
+ A   B   C   B'       RR ends
+[A   B   C]  B'       new rangeRead, still consistent
+ A   B   C   B'       RR ends
+ A       C   B'       purger removes stale B
+!A       C!  B'       RR 1-3 could be requested, but would be
+inconsistent. The HDDS serves to extend the end of a rangeRead to the
+most recently deduped item, in this case B' replaced an older B.
+
+Change-Id: If6c57a86bab56ccc007b0fe17c9229218bb0c2c7
+
+
+COMMENTS
+
+author: Jace Townsend
+date: 2017-05-08 14:54:11.688000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-05-08 15:33:18.127000000
+
+Patch Set 2: Code-Review-1
+
+(2 comments)
+
+Line:16, /COMMIT_MSG -> Should define this abbreviation on first use.
+
+Line:25, /COMMIT_MSG -> Might be worth including the sequence number on these for clarity. I believe you can do subscript in unicode.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-05-08 15:35:51.146000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6341/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4848/ : FAILURE
+
+Failure of a CTest test  7/26 Test  #5: ep-engine_ep_unit_tests .................. ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-addresssanitizer-master/4848/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/98/ : FAILURE
+
+ThreadSanitizer issue: data race /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/monotonic.h:46 in Monotonic<long>::operator=(long const&)  ( http://cv.jenkins.couchbase.com//job/ep-engine-threadsanitizer-master/98/ )
+
+Failure of a CTest test  7/26 Test  #5: ep-engine_ep_unit_tests .................. ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/98/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5543/ : SUCCESS
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-05-08 16:30:18.612000000
+
+Patch Set 2: Code-Review-1
+
+(1 comment)
+
+Also can we please have a test case ?
+
+Line:11, /COMMIT_MSG -> What is the proper solution ?
+
+-------------------------------------
+author: Jace Townsend
+date: 2017-05-08 17:55:08.498000000
+
+Patch Set 2:
+
+Yeah - I deffo need to add a test case.
+
+Sorry - I mean't to get the writeup in the MB before this referred to it. In fact, I may reword the commit message; this /does/ do what it says on the tin.
+
+The "final" solution is related to the issue of duplicate keys appearing in a snapshot. To solve /that/ the current idea is to reuse a field of the OrderedStoredValue to point to its replacement. If that goes ahead, the information there would benefit this; if the osv is moved we still have to immediately update the HDDS, but if it is appended and an item marked stale, we don't actually have to update the HDDS until the stale item is removed. However, it might turn out that that isn't really that much of a benefit. Once I've updated the MBs it would be really useful to see what you think Manu
+
+-------------------------------------

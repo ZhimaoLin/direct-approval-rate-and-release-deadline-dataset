@@ -1,0 +1,99 @@
+DESCRIPTION
+
+Recognize CRLF when parsing the short message of a commit or tag
+
+Bug: 400707
+Change-Id: I9b09bb88528af465018fc0278f5441f7e6b75986
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2013-03-30 12:19:51.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3265/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-03-30 12:25:01.000000000
+
+Patch Set 1: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3265/ : SUCCESS
+
+-------------------------------------
+author: Eden Lin
+date: 2013-04-01 20:02:09.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(3 inline comments)
+
+I got confused by the endOfParagraph matcher. Aside from that, this looks sensible. Thanks for writing it.
+
+Line:1079, org.eclipse.jgit/src/org/eclipse/jgit/util/RawParseUtils.java -> This is getting a bit obfuscated. The first loop searches for the string "\n\n" or "\n\r", or a \n or \r at the beginning of the string. The second loop moves back one character if there is room to do so. (It executes at most one time.) The "if" after that checks if the preceding character is \r, and if so, moves back one more character.
+
+Is the intent something like the following?
+
+ // A paragraph break is LF or CRLF at the beginning of a line.
+ while (ptr < sz && b[ptr] != '\n' &&
+          (b[ptr] != '\r' || ptr + 1 == sz || b[ptr + 1] != '\n'))
+   ptr = nextLF(b, ptr);
+
+ // Move back by one LF, CR, or CRLF
+ if (start < ptr && b[ptr - 1] == '\n')
+   ptr--;
+ if (start < ptr && b[ptr - 1] == '\r')
+   ptr--;
+
+ return ptr;
+
+Line:1062, org.eclipse.jgit/src/org/eclipse/jgit/util/RawParseUtils.java -> Style: trailing space
+
+Line:306, org.eclipse.jgit/src/org/eclipse/jgit/util/StringUtils.java -> Looks good. I wonder, would a StringBuilder be more idiomatic?
+
+final int len = in.length();
+StringBuilder buf = new StringBuilder(len);
+for (int i = 0; i < len; i++) {
+  char ch = in.charAt(i);
+  if (ch == '\r' && i + 1 < len && in.charAt(i + 1) == '\n') {
+    buf.append(' ');
+    i++;
+  } else if (ch == '\r' || ch == '\n')
+    buf.append(' ');
+  else
+    buf.append(ch);
+}
+return buf.toString();
+
+Maybe that's pointless abstraction. Either way there is this copy to convert a mutable object to an immutable one that I wish we could avoid but don't see how to.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2013-04-02 21:36:34.000000000
+
+Patch Set 1: (3 inline comments)
+
+
+
+Line:1079, org.eclipse.jgit/src/org/eclipse/jgit/util/RawParseUtils.java -> DId you expect me to grok that?
+
+Line:1062, org.eclipse.jgit/src/org/eclipse/jgit/util/RawParseUtils.java -> Done
+
+Line:306, org.eclipse.jgit/src/org/eclipse/jgit/util/StringUtils.java -> We try to squeeze every bit of performance from the low-level internals, otherwise I'd probably use StringBuilder
+
+-------------------------------------
+author: Eden Lin
+date: 2013-04-02 21:42:25.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:1079, org.eclipse.jgit/src/org/eclipse/jgit/util/RawParseUtils.java -> Sorry for the lack of clarity. What I meant is that it seems strange to treat LF CR (without another LF after that) as a double-newline.
+
+-------------------------------------

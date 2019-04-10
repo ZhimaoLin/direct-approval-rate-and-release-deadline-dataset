@@ -1,0 +1,119 @@
+DESCRIPTION
+
+TMF: Add the concept of host to a trace
+
+This patch adds the concept of a host to a trace.  By default, the host if the
+name of the trace itself (so 1 trace => 1 host).  For CTF traces, the clock
+uuid is used to uniquely identify the host (boot session) the trace was taken
+from.
+
+Change-Id: Ie35725bc24be4ea5678c94d5ab5680e67892f4be
+Signed-off-by: Aryana Jones xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2013-06-25 18:46:28.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/sandbox/job/linuxtools/2760/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-06-25 19:02:01.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/linuxtools/2760/ : SUCCESS
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-06-25 20:42:41.000000000
+
+Patch Set 1: Code-Review-1
+
+(3 comments)
+
+Idea looks fine, here's some comments:
+
+* Does the setter really need to be public? I would put only the getter in the interface, then have the trace type itself assign its host provider. There could be a protected setter in TmfTrace for its subclasses.
+Having this setter right in the open seems like asking for multithreading problems.
+
+
+* Does (I)TmfHostProvider really need to exist? If we just have the getter public, then every trace can do what it wants underneath.
+
+* Finally, we might (and probably should) want to add a "Host" column to the list of eventual possible event table columns. In this case, should the CtfTmfTrace's getHost return something that also contains the real machine hostname? Like "hostname/uuid"?
+
+Line:77, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/ctfadaptor/CtfTmfTrace.java -> This should use a string constant defined in ctf.core.  For example, patch https://git.eclipse.org/r/#/c/13931/ introduces a new public "CTFStrings". There is already a "uuid" constant in (what is called with that patch) MetadataStrings, it could be moved to the public one and reused here.
+
+Line:85, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/ctfadaptor/CtfTmfTrace.java -> space after cast
+
+Line:87, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/ctfadaptor/CtfTmfTrace.java -> idem
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2013-06-25 20:52:28.000000000
+
+Patch Set 1:
+
+This is just a first implementation of the concept.  
+
+Eventually, I'd add a "manual" host provider and its UI counterpart where the user can specify that 2 traces are from the same host (say a log file and some ctf trace for which there is no automatic way to match the host).  The host would then be saved in the trace element's properties and when instantiating the trace, it would set the HostProvider to a ManualHostProvider, that's why I made the setter public.
+
+But I'm open to other ideas on how to do this.
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-06-25 21:35:18.000000000
+
+Patch Set 1:
+
+Ok, yeah that's what I assumed, that different components might want to look at the trace from a different perspective (the "host provider" for one view might not be the same host provider for another view).
+
+In this case, the notion of host provider should not belong in the trace. Maybe in the view/component itself? So it could be for example
+  getHost(ITmfHostProvider hostProvider)
+so that there is no danger of two threads using different host providers of affecting each other.
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2013-06-26 13:15:07.000000000
+
+Patch Set 1:
+
+Hmm, I wasn't thinking about different host provider for different views... Would that really make sense?  I mean a host is a host and a trace cannot be from multiple hosts.  But you could rename a host with super long uuid to something more human-readable.
+
+As for the host belonging to the view/component, that is not possible because of the default host provider for CTF that uses the clock uuid.  The trace needs to be instantiated to have it.  
+
+Also we have to keep in mind that the host is not a UI concept, it can be used by analysis as well.  Especially with the RCP, I understand it will be possible to do stuff/analysis through command line, so host will be needed without UI.
+
+What I could do:
+
+* Remove the setHostProvider() method and replace by a getHost(ITmfHostProvider), and keeping the default getHost() which uses the trace's default provider
+
+* But then, would the getHost(ITmfHostProvider) save the host so that next call to getHost() returns the same instead of the default?  Otherwise how could the analysis modules use the host set by the UI, without the setHostProvider() method being called?
+
+* When I add the ui host setting, I could add the host as a component's property and it will fetch the default host when the trace is first instantiated.
+
+Alex, we could discuss that a bit more when you come to Poly.
+
+-------------------------------------
+author: Bryce Kline
+date: 2013-06-26 14:27:48.000000000
+
+Patch Set 1:
+
+My two cents, about a real use of trace on multi-host.
+
+Here at Kalray, we use TMF to display traces coming from both Host and MPPA (Multi Purpose Processor Array - our chip).
+We use LTTng on Host, and custom traces on MPPA.
+
+We are able to visualize all of them in the same viewer.
+Timestamp synchonization is made thanks to a kind of ping-pong algorithm.
+
+To distinguish origin of the events, we use today the "File" and "Source" fields.
+
+-------------------------------------

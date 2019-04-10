@@ -1,0 +1,160 @@
+DESCRIPTION
+
+Add a JGit-internal Nullable type
+
+Commit 847b3d1 enabled annotation-based NPE analysis to JGit.
+
+In so doing, it introduced a new dependency on the org.eclipse.jdt that
+is undesirable. Follow Gerrit's lead by adding an internal Nullable type
+(see
+https://gerrit.googlesource.com/gerrit/+/stable-2.11/gerrit-common/src/main/java/com/google/gerrit/common/Nullable.java).
+
+The javax.annotations.Nullable class uses a retention policy of RUNTIME,
+whereas the org.eclipse.jdt.annotation.Nullable class used a policy of
+CLASS. Since I'm not aware of tools that make use of the annotation at
+runtime I chose the CLASS policy. If in the future there is a benefit to
+retaining the annotations in the running binary we can update this
+class.
+
+Change-Id: I63dc8f9a6dc46b517cbde211bb5e2f8521a54d04
+Signed-off-by: Ariel Sawyer xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Ariel Sawyer
+date: 2015-11-09 22:31:13.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Eden Lin
+date: 2015-11-09 22:35:23.000000000
+
+Patch Set 2: Code-Review+2
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-11-09 23:02:31.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7439/
+
+-------------------------------------
+author: Eden Lin
+date: 2015-11-09 23:04:20.000000000
+
+Patch Set 2: Verified+1
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-11-09 23:04:22.000000000
+
+Change has been successfully merged into the git repository by Eden Lin
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-11-09 23:10:25.000000000
+
+Patch Set 2:
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7439/ : SUCCESS
+
+-------------------------------------
+author: Eden Lin
+date: 2015-12-03 03:14:49.000000000
+
+Patch Set 2:
+
+After reading https://github.com/typetools/checker-framework/blob/master/checker/src/org/checkerframework/checker/nullness/NullnessAnnotatedTypeFactory.java#L118 and http://types.cs.washington.edu/checker-framework/current/checker-framework-manual.html#nullness-related-work, I am starting to regret this change. There were already too xxx@xxx.xxx types with subtly distinct semantics. This change added another, and tools like checker-framework do not know about this one.
+
+The JDT Nullable type wouldn't have the problem described at https://gerrit-review.googlesource.com/50112 --- unlike javax.annotation.*, the entire org.eclipse.jdt.annotation.* package is wholly contained within a single bundle. So I'd like to try using it again.
+
+My only fear is about whether this would involve a run-time dependency on java 8. Am I correct in guessing that because it has a retention policy of CLASS instead of RUNTIME, we're safe?
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2015-12-03 18:49:14.000000000
+
+Patch Set 2:
+
+The plethora of nullness-related annotation types are due to the failure of standardization efforts in the Java community. Frameworks that want to provide powerful functionality based on nullness-related annotations are really hurt by this state of affairs.
+
+The links you pointed out in the Checker Framework show that it just ignores the semantics of other nullness annotations and treats them with the semantics that the Checker Framework needs. For example, it maps in the checkstyle annotations, which are defined with quite different semantics. IIRC, you can even and xxx@xxx.xxx comments in parameter lists and the Checker Framework will interpret that as if a org.checkerframework annotation was in the source code.
+
+It is kind of surprising that the Checker Framework uses a hardcoded list of nullness-related types. Eclipse's approach allows user preferences to override the types used in its analysis, but in the current release you have to choose a single type per annotation rather than providing a list of aliases, the way the Checker Framework does. The work on http://bugs.eclipse.org/369079 seems well on its way to solving that though.
+
+As for the semantic differences that are meaningful to these analysis frameworks, the issue is not the retention policy but rather the target. The 1.5 annotations don't support the TYPE target, so they can't express a collection with potentially null entries, e.g.: xxx@xxx.xxx String>. You can only use type annotations with Java 1.8. 
+
+Eclipse defines both 1.5 and 1.8 versions of its nullness-related annotations. Both versions are in the same Java package, but in different OSGi bundles.
+
+This does make a bit of a mess for library integration. What if an existing Eclipse project using the 1.8 version of the JDT annotations wants to integrate with JGit, which is using 1.5 annotations. The annotations are not an internal detail of JGit, they appear in the public API. But the two versions share exactly the same package and class names. There might be a way to make that work that I a missing, but it seems easier to have distinct annotation classes for the 1.5 vs. 1.8 classes to simplify these types of integrations.
+
+tl;dr: I vote to keep the current scheme. Nullness-annotations are a mess, and given that there is no standard consensus, fameworks that deal with them need to be flexible.
+
+-------------------------------------
+author: Eden Lin
+date: 2015-12-03 19:56:55.000000000
+
+Patch Set 2:
+
+> Eclipse defines both 1.5 and 1.8 versions of its nullness-related
+ > annotations. Both versions are in the same Java package, but in
+ > different OSGi bundles.
+
+Ah, neat.
+
+Do you mean that they're different versions of the same bundle or
+separate bundles? If they're different versions of the same bundle
+(1.0.0 vs 2.0.0?) then shouldn't the usual OSGi dependency resolution
+avoid problems?
+
+The advice at https://wiki.eclipse.org/JDT_Core/Null_Analysis is
+
+ For Plug-in projects it is recommended to add an optional, versioned
+ dependency to the bundle org.eclipse.jdt.annotation
+
+which I think would avoid trouble.
+
+ > This does make a bit of a mess for library integration. What if an
+ > existing Eclipse project using the 1.8 version of the JDT
+ > annotations wants to integrate with JGit, which is using 1.5
+ > annotations. The annotations are not an internal detail of JGit,
+ > they appear in the public API. But the two versions share exactly
+ > the same package and class names.
+
+We can't be the first people to have run into that. It does not
+appear to be a binary compatibility issue, at least:
+https://docs.oracle.com/javase/specs/jls/se7/html/jls-13.html#jls-13.5.7
+
+I'll look to see if it was already discussed during the 1.0.0->2.0.0
+upgrade of org.eclipse.jdt.annotations.
+
+ > tl;dr: I vote to keep the current scheme.
+
+I think what I'm missing is the motivation for that. If the JDT
+annotation works, why add another? The cost is clear (underdocumented
+semantics, lack of awareness by existing tools) and I don't see the
+benefit.
+
+And on the other hand, if the JDT annotation doesn't work, I am
+interested in learning where it breaks.
+
+-------------------------------------
+author: Eden Lin
+date: 2015-12-07 21:03:35.000000000
+
+Patch Set 2:
+
+> > tl;dr: I vote to keep the current scheme.
+ > 
+ > I think what I'm missing is the motivation for that.
+
+Did more research, documented at https://git.eclipse.org/r/62148
+
+Thanks for the clarifications.
+
+-------------------------------------

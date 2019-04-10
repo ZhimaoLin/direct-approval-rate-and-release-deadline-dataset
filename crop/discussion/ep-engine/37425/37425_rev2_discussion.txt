@@ -1,0 +1,51 @@
+DESCRIPTION
+
+Revert "Use spinlocks instead of conn mutex to guard UPR notifications"
+
+This reverts commit 0d2696445ac6f584081938628f4bd936fe96a4d3.
+
+Change-Id: I747d8dd59e9d1c365692961e8c9b1198149490d9
+
+
+COMMENTS
+
+author: Kenny Maynard
+date: 2014-05-22 07:33:43.635000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2014-05-22 07:40:07.476000000
+
+Patch Set 2:
+
+I'm fairly certain that this change is causing a deadlock condition in bucket deletion. QE actually filed a bug yesterday which I thought I fixed by checking for a NULL vbucket, but it doesn't appear that that check will actually help. While we won't segfault anymore the code will read some invalid memory can deadlock.
+
+When we shutdown a bucket we call closeAllStreams in the EventuallyPersistentStore destructor. This makes sure that all streams are closed before we actually delete the vbuckets. The deadlock occurs because not all streams were closed and I think the reason for this is that there is some connection that was accidentally left in the vbConns. Since this won't get removed until we call the UprConnMap destructor we might have a stream somewhere that isn't properly closed.
+
+I've seen this issue a few times now and I'm fairly certain that QE will file a bug on it soon. I also spent a little bit of time trying to see what the problem was but wasn't able to find anything.
+
+-------------------------------------
+author: Abby Duran
+date: 2014-05-22 07:43:21.100000000
+
+Patch Set 2:
+
+This is too bad. We frequently failed the code review and verification, and really need to do a code review and verification more thoroughly.
+
+-------------------------------------
+author: Miley Adams
+date: 2014-05-22 16:16:18.213000000
+
+Patch Set 2: Code-Review+2
+
+This seems like a bug that needs some thorough debugging. If Mike is certain then we should just revert it and revisit when dev has the environment to test and debug.
+
+-------------------------------------
+author: Abby Duran
+date: 2014-05-22 17:18:22.283000000
+
+Patch Set 2: Verified+1 Code-Review+2
+
+-------------------------------------

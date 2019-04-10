@@ -1,0 +1,146 @@
+DESCRIPTION
+
+Search more with the KetamaIterator.
+
+The existing KetamaIterator implementation, with a small number
+of nodes, may actually hit the same down node multiple times in
+a row leading to failing to find a node when it should find
+another one.
+
+The original libketama[1] hashes each server to 160 numeric
+values.  These are spread out in a 64-bit value.  The key is
+then hashed to a numeric value within that 64-bit value and
+wNathalie Landryed forward until it finds a server.
+
+Previously, this library's ketama implementation would only look
+in the consistent hash for a number of iterations limited by the
+number of servers.  With two servers (similar to flipping a
+coin, you'd get heads twice in a row sometimes) you would have
+a 1 in 4 chance of picking the same dead server twice.
+
+The new implementation will iterate based on the number of
+servers, but attempts to keep the probability of hitting the
+same dead server to less than 1% for a two node configuration.
+This will guarantee less than 1% possibility with two or more
+servers.
+
+Because we iterate by simply appending the number of tries on
+the front of the key, we'll be quite random about where in
+the continuium we hit.  Each selection is rather random, but
+for a set of results already calculated, half of which are
+alive and half of which are dead, we can say that in seven
+iterations, there is only a 1/128 [1/(2^7)] chance that we
+would not select once at least one alive server.  The
+probability for any given test still 1/2, but we can describe
+the probability of the iterations.  The key info on this came
+from the "gambler's fallacy"[2].
+
+1. https://github.com/RJ/ketama/blob/master/libketama/ketama.c
+2. http://en.wikipedia.org/wiki/Gambler's_fallacy
+
+Other references:
+http://answers.google.com/answers/threadview/id/568615.html
+http://en.wikipedia.org/wiki/Combinations
+
+Change-Id: I6fa52c0b02516b68ca8da26e4fd85bb1730b82b2
+
+
+COMMENTS
+
+author: Andreas Short
+date: 2011-04-19 07:22:02.623000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2011-04-22 01:18:36.711000000
+
+Patch Set 2: Looks good to me, approved
+
+indeed looks minor. Sets tries number to 7 which in case of low number of nodes increases it for larger chance of hitting live node.
+
+-------------------------------------
+author: Andreas Short
+date: 2011-04-22 01:34:54.662000000
+
+Patch Set 2: Verified
+
+self verified
+
+-------------------------------------
+author: Andreas Short
+date: 2011-04-22 01:34:55.380000000
+
+Change has been successfully cherry-picked as 00daa10f012a7fd1656f41a5678629fa5978b1f5.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2011-04-22 01:39:44.924000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:104, src/main/java/net/spy/memcached/KetamaNodeLocator.java -> Seems this should be
+
+if (allNodes.size() < 7)
+    // Old return statement
+else
+    // New return statement
+
+-------------------------------------
+author: Noah Dean
+date: 2011-04-22 01:43:44.704000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:104, src/main/java/net/spy/memcached/KetamaNodeLocator.java -> Without the curly braces?  Are you crazy!?
+
+Do you mean this:
+
+    return new KetamaIterator(k, Math.max(7, allNodes.size()), getKetamaNodes(), hashAlg);
+
+I don't think it makes a huge difference if it probes more on smaller clusters.
+
+-------------------------------------
+author: Andreas Short
+date: 2011-04-22 01:46:35.724000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:104, src/main/java/net/spy/memcached/KetamaNodeLocator.java -> Actually, that was the source of the bug, really.  The number of nodes affects the number of possible points on the continuum, but does not affect the number of iterations the client should do before giving up.
+
+7 will give a 1 in 2^7 (128) possibility of finding all nodes as dead, assuming everything is pretty random.  That's a stretch as an assumption, but it used to be 1 in 2^2, or a 25% chance you'd never find a live node!
+
+Iteration beyond 128 times seems pretty pointless, unless there's something I'm missing.
+
+-------------------------------------
+author: Noah Dean
+date: 2011-04-22 01:51:57.859000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:104, src/main/java/net/spy/memcached/KetamaNodeLocator.java -> No, you're right.  I got about 3.5 hours of sleep last night so I kind of feel hung over and not thinking clearly.
+
+That's exactly correct, though.  Too few iterations *is* the bug.  Too many doesn't help.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2011-04-22 01:58:06.919000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:104, src/main/java/net/spy/memcached/KetamaNodeLocator.java -> I got my '<' backwards. Meant to say (allNodes.size() > 7). This is definitely a nit picky thing on my end. Doing 7 iterations is enough, but for example if we had 50 servers then we might want this number to 50 because in the case we had to do more than 7 iterations to find a live server we have the flexibility to so. But when the number of servers is less than 7 it's good to have at least have 7 retries.
+
+I wrote the comment before the code was merged and it got submitted afterward. I am fine with either way of doing it and was going to give a +1 on the current code anyways.
+
+-------------------------------------

@@ -1,0 +1,136 @@
+DESCRIPTION
+
+MB-24246: Combine 'writeLock' & 'highSeqnosLock' into one in BasicLinkedList
+
+Functionally 'writeLock' and 'highSeqnosLock' both result in the
+serialization of the BasicLinkedList write and other list operations.
+Hence this commit combines the 2 locks into one lock.
+
+As a consequence this commit ensures that the writeLock is held on
+the BasicLinkedList until the sequence number for the newly added,
+updated and soft-deleted is generated. While this is strictly not
+needed in new add, it is necessary in update and soft delete as
+explained below.
+
+(a) New Add :
+   A1, B2, C3 and we are trying to add D4
+   A1, B2, C3, D added but no seqno yet.
+   Now we don't really care if range read starts here as it can read
+   only A1, B2, C3 in the snapshot.
+
+   But to maintain uniformity (hence simpler code) with update
+   and soft-delete we grab writeLock such that we append to list
+   + update highSeqno as an atomic operation.
+
+(b) Update (and Soft-delete):
+   A1, B2, C3 and we are trying to update B to B4
+   A1, B2, C3, B added but no seqno yet and/or no B2_stale yet
+   Now we cannot start the range read here because we do not wait
+   for range read to finish to mark the item stale (note that we
+   are planning to not send stale(duplicate) items in a snapshot).
+
+   This was already in case (b) using highSeqnosLock, this commit
+   uses just writeLock for the same.
+
+The commit also adds documentation regarding the desired heirarchy of
+the lock acquisition in BasicLinkedList.
+
+Change-Id: I10a80f55a763d1496adec24fa12bc75d83ea1573
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2017-05-12 06:30:56.885000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-05-12 07:19:03.741000000
+
+Patch Set 5: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6472/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4960/ : FAILURE
+
+Timeout of a CTest test 26/26 Test  #9: ep_testsuite.full_eviction ...............} ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-addresssanitizer-master/4960/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5655/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/206/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-05-12 07:53:46.124000000
+
+Patch Set 5:
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6473/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5655/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4961/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/206/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-05-12 08:07:26.817000000
+
+Patch Set 5: Code-Review-1
+
+(2 comments)
+
+Generally looks good, just some relatively minor comments.
+
+Line:31, /COMMIT_MSG -> Maybe for clarity mark "B2" as something like "B?" as given we are updating, there /is/ no B2 anymore (we're reused it's object for B4).
+
+But in general - much better description thanks - I can now understand why we need this change :)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-05-12 08:22:21.621000000
+
+Patch Set 5: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5655/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4961/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/206/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6475/ : SUCCESS
+
+-------------------------------------
+author: Jace Townsend
+date: 2017-05-12 08:53:05.464000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:264, src/linked_list.cc -> Just as a point of interest, if not holding the write lock in rangeRead is valid, as mentioned in http://review.Piper xxx@xxx.xxx is workable without danger, this could be extended to the purger - it would only need the write lock to actually erase, not to check if something is stale. The only danger I can see from that would be leaving a new stale item until the next purger run.
+
+Totally correct as is, just thought it might be an interesting thought.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-05-12 16:27:19.405000000
+
+Patch Set 5:
+
+(3 comments)
+
+Line:31, /COMMIT_MSG -> Done
+
+Line:264, src/linked_list.cc -> Will respond to this soon, just trying to get this commit merged before Manchester guys take off for the weekend :)
+
+-------------------------------------

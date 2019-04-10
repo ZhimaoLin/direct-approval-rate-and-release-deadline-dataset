@@ -1,0 +1,125 @@
+DESCRIPTION
+
+Avoid expensive property tester evaluations
+
+The GitFlow property tester tests the presence of certain values in the
+git config. Accessing the git config incurs three file accesses to get
+the last-modified times of the system, user, and repo config files to
+determine whether they have changed, and if so, to reload them. These
+are potentially slow operations involving file I/O. Even just getting
+the last-modified time apparently can be expensive, for instance if the
+user config is on a non-local file system.
+
+The GitFlow property testers were based on the current selection and
+thus were re-evaluated by the Eclipse framework whenever the current
+selection changed, including text selections. The text selection may
+change on each keypress. This could lead to very noticeable delays if
+access to the last-modified time of a config file was slow.
+
+I don't see an easy way to improve the handling of config files. The
+other approach to minimize the overhead of property testers is to
+minimize the number of times they're re-evaluated. Since the GitFlow
+property testers are not really interested in the current selection
+but in a derived property of that (the current repository), this
+change provides this current repository as a variable in the
+IEvaluationContext and makes the property tester use that new variable.
+As a result, the tests are only re-evaluated when the current selection
+changes such that the current repository changes. Keypresses and text
+selection changes in an editor no longer trigger re-evaluations of the
+GitFlow property tests.
+
+The current repository is still determined on each selection change.
+However,
+
+* this is normally a relatively fast operation as the repository is
+  already cached most of the time, 
+* the repository is determined only once in the source provider instead
+  of again and again in each property test.
+
+Bug: 484795
+Change-Id: Id305fb54a6666f8e9715dcf0adb070880e1c098a
+Signed-off-by: Alayna Houston xxx@xxx.xxx
+
+COMMENTS
+
+author: Alayna Houston
+date: 2016-01-02 12:13:18.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-01-02 12:15:23.000000000
+
+Patch Set 2:
+
+Fixed wrong bug number.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-01-02 12:15:42.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/7999/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-01-02 12:38:53.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/7999/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2016-01-02 23:49:57.000000000
+
+Patch Set 2: Code-Review+2
+
+-------------------------------------
+author: Gerrit Johnathan Pham
+date: 2016-01-02 23:50:04.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------
+author: Jayvion Booth
+date: 2016-01-04 12:27:34.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+I've updated today the IDE to latest egit and immediately saw 3 UI freeze reports on next IDE startup, all related to the new code.
+
+Line:70, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/selection/RepositorySourceProvider.java -> The problem now is that for those who never installed gitflow plugins (me) the default UI starts to report UI freezes on selections where I previously never seen them :-(.
+
+Question: can we do the selection update asynchronously in background job? Or will this change break gitflow? If the later the case, can we move this RepositorySourceProvider to the gitflow, so that at least the "standard" egit installation is not affected?
+
+java.lang.Exception: Stack Trace
+	at org.eclipse.core.internal.properties.PropertyManager2.getProperty(PropertyManager2.java:139)
+	at org.eclipse.core.internal.resources.Resource.getPersistentProperty(Resource.java:1152)
+	at org.eclipse.egit.core.internal.util.ResourceUtil.getGitProvider(ResourceUtil.java:245)
+	at org.eclipse.egit.core.project.RepositoryMapping.getMapping(RepositoryMapping.java:364)
+	at org.eclipse.egit.core.project.RepositoryMapping.getMapping(RepositoryMapping.java:400)
+	at org.eclipse.egit.ui.internal.selection.SelectionUtils.getRepository(SelectionUtils.java:227)
+	at org.eclipse.egit.ui.internal.selection.SelectionUtils.getRepository(SelectionUtils.java:61)
+	at org.eclipse.egit.ui.internal.selection.RepositorySourceProvider.selectionChanged(RepositorySourceProvider.java:70)
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2016-01-04 21:38:59.000000000
+
+Patch Set 2:
+
+> (1 comment)
+ > 
+ > I've updated today the IDE to latest egit and immediately saw 3 UI
+ > freeze reports on next IDE startup, all related to the new code.
+
+https://git.eclipse.org/r/#/c/63510
+
+-------------------------------------

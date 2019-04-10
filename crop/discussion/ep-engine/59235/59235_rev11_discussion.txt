@@ -1,0 +1,201 @@
+DESCRIPTION
+
+MB-15946: Move DCP cursors to new open chkPt when the chkPt has only meta items
+
+(1): When a new checkpoint is created and only queue_op_empty and
+queue_op_checkpoint_start are added, we must move any DCP and persistence
+cursors pointing to queue_op_checkpoint_end in the previous checkpoint to this
+new checkpoint. Note we cannot move the TAP cursors in the same way when they
+are pointing to queue_op_checkpoint_end. This is because TAP replication
+protocol expects to receive queue_op_checkpoint_end.
+Hence the change also adds a flag to identify if a cursor needs
+queue_op_checkpoint_end or not.
+
+(2): Also, when items for replication are got from the checkpoint, we can move
+to the new checkpoint even if we encounter queue_op_checkpoint_end. This is
+needed because, we do not want to leave any replication cursors hanging onto
+queue_op_checkpoint_end in the closed checkpoint when there are only meta items
+in the current open checkpoint.
+
+Both the above changes will help release the memory occupied by the closed
+checkpoints.
+
+Change-Id: I5c46bfd250dc486cf1adac7e243806e600ddc8b6
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2016-02-18 00:17:04.826000000
+
+Uploaded patch set 11.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-18 00:17:11.536000000
+
+Patch Set 11:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1813/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-18 00:24:11.281000000
+
+Patch Set 11: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1813/ : SUCCESS
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2554/ : SUCCESS
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-02-18 01:49:41.400000000
+
+Patch Set 11: Code-Review-1
+
+(5 comments)
+
+Line:124, tests/module_tests/stream_test.cc -> This check for the return value was removed intentionally to avoid intermittent test failures:
+
+http://review.Piper Jefferson.org/#/c/60048/
+
+Line:82, tests/ep_testsuite_dcp.cc -> I don't see the need for this new parameter.
+
+I would recommend passing numeric_limits<uint64_t>::max for end instead, and manage breaking out of the loop around step() in another way.
+
+(see last comment on how you can manage this for your 2 new tests).
+
+Line:212, tests/ep_testsuite_dcp.cc -> These changes shouldn't be a part of this commit, even if it is simple refactoring or fixing character count per line.
+
+Line:1411, tests/ep_testsuite_dcp.cc -> No need for this extra parameter, invoke dcp_stream in a separate thread, and kill the thread before closing the test.
+
+Line:1462, tests/ep_testsuite_dcp.cc -> If keeping the active stream alive is all that is needed, you can spin of dcp_stream in a separate thread, and kill the thread when you've satisfied the conditions below.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-02-18 02:04:27.370000000
+
+Patch Set 11:
+
+(1 comment)
+
+Line:1708, src/ep.cc -> Rename tap_cursors to just cursors perhaps?
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2016-02-18 02:59:24.435000000
+
+Patch Set 11:
+
+(6 comments)
+
+Line:124, tests/module_tests/stream_test.cc -> Done
+
+Line:1708, src/ep.cc -> Done
+
+Line:82, tests/ep_testsuite_dcp.cc -> Done
+
+Line:212, tests/ep_testsuite_dcp.cc -> Done
+
+Line:1411, tests/ep_testsuite_dcp.cc -> Cool, sounds better
+
+Line:1462, tests/ep_testsuite_dcp.cc -> Cool, sounds better. I will wait for the test code refactoring so that I can use the dcp_stream struct/class to pass the thread args
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-02-18 10:01:47.244000000
+
+Patch Set 11: Code-Review-1
+
+(14 comments)
+
+Looks good in general - and thanks for the new unit tests :)
+
+I have a few comments - none of them are serious, but it would be good to address them if possible.
+
+Line:542, tests/module_tests/checkpoint_test.cc -> Shouldn't the seqno be incremented for each item? I would have thought the checkpoint class and friends would get upset if they were all 0...
+
+Line:593, tests/module_tests/checkpoint_test.cc -> Again here, does this need updating?
+
+Line:74, src/checkpoint.h -> I would move the documentation about what this means from the variable definition below to here - that way there's a single central place people can look up, which they can see when looking at functions which take this type.
+
+Line:75, src/checkpoint.h -> This is redundant (it'll be 0 by default, and anyways we don't care what the underlying numeric representation is).
+
+Line:75, src/checkpoint.h -> Why the trailing underscore on these? If there's a conflict with some macros, maybe rename to YES / NO ?
+
+Line:85, src/checkpoint.h -> Might be worth documenting this type also.
+
+Line:1034, src/checkpoint.cc -> This seems like an unrelated change - could you elaborate on why it is being made?
+
+Line:396, src/checkpoint.cc -> Style: Could simplify to a range-based for loop:
+
+ for (auto cur_it& : connCursors) {
+
+Line:456, src/checkpoint.cc -> Nit: We're trying to standardise on C++-style for pointer / references, which is to associated the '&' or '*' with the type, not the variable.
+
+Line:1161, src/checkpoint.cc -> As previous, can simplify to a range-based for loop.
+
+Line:1726, src/tapconnection.cc -> This comment is redundant now we have a descriptive name for the type :)
+
+Line:115, tests/ep_testsuite_dcp.cc -> Nit: I wouldn't make these kinds of whitespace-only change to unrelated code - it makes reviewing harder (i have to mentally scan to see it's only whitespace, then ignore), and also would make any future forward / backward port of the code more likely to have conflicts.
+
+By all means fix up the long lines if you want, but do it in a separate patch if it's not a line of code you're already touching due to functional reasons in your patch.
+
+Line:1389, tests/ep_testsuite_dcp.cc -> Do you need 50 items for this? Would a smaller number suffice to test the functionality - 1 or 2?
+
+Line:1427, tests/ep_testsuite_dcp.cc -> Similar here, can we do this with a smaller number of items? How about 2 (and making checkpoint max items be 1)?
+
+Similar to a comment I made on Abhinav's patch, smaller tests run faster, are easier to debug and reason about.
+
+"Make the test as simple as possible, but no simpler."
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2016-02-20 00:56:30.543000000
+
+Patch Set 11:
+
+(14 comments)
+
+Line:542, tests/module_tests/checkpoint_test.cc -> This is ok because of genSeqno flag that we pass. The true boolean we pass in the next line.
+And the check in checkpoint manager is here 
+http://src.Piper Jefferson.org/source/xref/watson/ep-engine/src/checkpoint.cc#973
+
+Line:593, tests/module_tests/checkpoint_test.cc -> Not necessary
+
+Line:74, src/checkpoint.h -> Done
+
+Line:75, src/checkpoint.h -> This was because of windows compilation failure. Windows doesn't allow you to use FALSE and TRUE in an enum. Ok will use YES/NO
+
+Line:75, src/checkpoint.h -> Done
+
+Line:85, src/checkpoint.h -> Done
+
+Line:1034, src/checkpoint.cc -> This is the change corresponding to the 2nd part of the commit message.
+And both (1) and (2) are related to fixing the issue in hand
+
+Line:396, src/checkpoint.cc -> Done
+
+Line:456, src/checkpoint.cc -> Done
+
+Line:1161, src/checkpoint.cc -> Done
+
+Line:1726, src/tapconnection.cc -> Done
+
+Line:115, tests/ep_testsuite_dcp.cc -> Done
+
+Line:1389, tests/ep_testsuite_dcp.cc -> Done
+
+Line:1427, tests/ep_testsuite_dcp.cc -> I will reduce it to 10.
+I prefer to have some lee way so that I don't hit any test scenario related race conditions thereby causing sporadic failures
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-02-24 23:23:47.654000000
+
+Change has been successfully cherry-picked as ef72046d58bbe9c67bf2ab760f9bd7bbeefb85e8
+
+-------------------------------------

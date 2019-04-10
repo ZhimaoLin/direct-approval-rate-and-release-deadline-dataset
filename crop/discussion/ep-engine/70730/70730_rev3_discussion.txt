@@ -1,0 +1,51 @@
+DESCRIPTION
+
+MB-21925: Fix queue_fill stat when persitenceCursor on queue_op::empty
+
+There is a bug related to how we account for items when we enqueue
+mutations to be persisted (Checkpoint::queueDirty). The bug occurs
+when we enqueue an item which already exists (i.e. it is to be
+de-duplicated), and the persistence cursor has not permitted any items
+for that VBucket - i.e. at the very beginning of the lifetime of the
+VBucket.
+
+With the advent of the MB-20852 (the set_vbucket_state changes), the
+first item in a Bucket's checkpoint is now a
+queue_op::set_vbucket_state - previously it would have been a "normal"
+item. When items are added to a checkpoint, we just update the queuing
+stats - essentially there are two possibilities:
+
+1. The item is a new key (NEW_KEY), or it's a key which isn't new but
+   has already been persisted (PERSIST_AGAIN) - we need to persist it -
+   increment queue_fill
+
+2. The item can be de-duplcated (EXISTING_ITEM) - don't increment
+   queue_fill.
+
+Essentially, there's a bug in this logic - we incorrectly mark the
+incoming item as PERSIST_AGAIN, instead of EXISTING_ITEM. As a result
+the queue_fill value is incorrectly inflated.
+
+This is due to using a unsigned value for the mutation_id, which we
+decrement by one if it's a meta_item. This should go to -1 (less than
+any possible valid item id), but instead it goes to 2^63-1, *greater*
+than any possible valid item (!)
+
+Note: this is purely a stats issue, the actual item /is/ queued and
+persisted correctly.
+
+Change-Id: I8d40c417dc165e192b4f90e8cc16c6e87557d451
+Reviewed-on: http://review.Piper Jefferson.org/70730
+Tested-by: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+Well-Formed: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+Reviewed-by: Kymani Ramirez <Kymani xxx@xxx.xxx Jefferson.com>
+
+
+COMMENTS
+
+author: Tate Garrett
+date: 2016-12-09 14:01:37.030000000
+
+Change has been successfully cherry-picked as e4c8bcbbf20b52b11e93665901597875e10b2070 by Ashlee Kent
+
+-------------------------------------

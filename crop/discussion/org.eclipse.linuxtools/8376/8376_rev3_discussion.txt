@@ -1,0 +1,118 @@
+DESCRIPTION
+
+tmf: Statistics provider based on event requests
+
+This patch adds a TmfEventsStatistics, which uses trace event
+requests and counts the instances of each event types to
+provide statistics information. This is useful for trace types
+that cannot use the default implementation using the state
+system (traces where events are not chronologically ordered,
+for example).
+
+The previous TmfStatistics has been renamed TmfStateStatistics,
+to better differentiate between the two alternatives that are
+now available.
+
+To keep the request coalescing, the separate threading is now
+done is a new ITmfStatistics.updateStats(). This allows the signal
+handler code to send the queries, but return immediately and
+spawn a thread that will wait for the requests to be done.
+
+When the results are ready, they will be sent back to the view
+using the new TmfStatsUpdatedSignal. This makes the handler for
+the StateSystemBuildCompleted signal obsolete.
+
+Change-Id: I5b6237aef7f5c7cb373c68e4624376146a6e5086
+Signed-off-by: Braxton Mccarthy xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Braxton Mccarthy
+date: 2012-10-30 18:18:32.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-10-30 18:18:38.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/sandbox/job/linuxtools/481/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-10-30 18:35:26.000000000
+
+Patch Set 3: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/linuxtools/481/ : SUCCESS
+
+-------------------------------------
+author: Janet Compton
+date: 2012-10-30 19:04:01.000000000
+
+Patch Set 3: Verified; Looks good to me, but someone else must approve; IP review completed
+
+
+
+-------------------------------------
+author: Luciana Barry
+date: 2012-10-30 19:51:37.000000000
+
+Patch Set 3: (7 inline comments)
+
+
+
+Line:184, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statistics/TmfEventsStatistics.java -> Chunk size should depend on the trace cache size.
+
+Line:191, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statistics/TmfEventsStatistics.java -> Should it be background?
+
+Line:216, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statistics/TmfEventsStatistics.java -> Chunk size should depend on the trace cache size.
+
+Line:223, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statistics/TmfEventsStatistics.java -> Should it be background?
+
+Line:124, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statistics/TmfStateStatistics.java -> But ITmfStatistics says start and end have no effect if isGlobal is true...
+How about removing isGlobal flag, just take a TmfTimeRange as input, and if it's global then the time range is TmfTimeRange.ETERNITY?
+Also, perhaps the time range for which the statistics have been computed should be included in the callback signal.
+
+Line:196, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statistics/TmfStateStatistics.java -> ITmfTimestamp should be normalized to nanoseconds
+
+Line:219, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statistics/TmfStateStatistics.java -> ITmfTimestamp should be normalized to nanoseconds
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2012-10-30 21:17:13.000000000
+
+Patch Set 3: (7 inline comments)
+
+
+
+Line:184, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statistics/TmfEventsStatistics.java -> Ok, I didn't know it was for that, old Stats request had a hard-coded value of 50k
+
+Line:191, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statistics/TmfEventsStatistics.java -> I honestly don't know... Aren't Foreground request for when responding to user events? And updating the current time range being a user event?
+
+Line:216, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statistics/TmfEventsStatistics.java -> Done
+
+Line:223, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statistics/TmfEventsStatistics.java -> Done
+
+Line:124, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statistics/TmfStateStatistics.java -> >But ITmfStatistics says start and end have no effect if isGlobal is true
+
+Oh no, he noticed ;)  Yeah that is true, but for state-system-statistics in particular, we can't use the start/end times of the trace itself, we have to use the time of the first event and the time of the last event (for the small work-around below to work).
+
+If I use getEventsTotal() here, the result changes, so to maintain the same values, I use the same query type the old view used to do.
+
+>Also, perhaps the time range for which the statistics have been computed should be included in the callback signal
+
+That could make sense, but then what if the time ranges don't match? The stats view just receives a signal that the current range was updated, it should not set the current range at that point (only user actions should).
+
+The purpose of the TmfStatsUpdated signal is to update what is shown in the "current time range" column, not to set the time range itself.
+
+Line:196, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statistics/TmfStateStatistics.java -> Yes, good point, will fix. I'll make it part of the checkStartTime/checkEndTime methods.
+
+Line:219, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/statistics/TmfStateStatistics.java -> Done
+
+-------------------------------------

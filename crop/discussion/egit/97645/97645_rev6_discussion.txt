@@ -1,0 +1,166 @@
+DESCRIPTION
+
+Add ICommitMessageProvider2 for caret positioning in commit messages
+
+The caret in the CommitMessageComponent is placed, according to the
+value of getCaretPosition() of the first implementation of
+ICommitMessageProvider2, that was discovered. In case there are multiple
+implementations available, they are ignored.
+Commit messages are not trimmed anymore, to ensure consistency between a
+provided message and the provided caret position.
+
+Bug: 516867
+Change-Id: I1b0ffd33ef37196d53077d09774672c2b033835f
+Signed-off-by: James Mcgee xxx@xxx.xxx
+
+COMMENTS
+
+author: James Mcgee
+date: 2017-06-06 11:40:55.000000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-06-06 11:47:58.000000000
+
+Patch Set 6: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/9905/ : FAILURE
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-06-06 12:35:27.000000000
+
+Patch Set 6:
+
+(10 comments)
+
+> How can I dynamically add a plugin (-> ICommitMessageProvider2) to a test runtime?
+
+That's going to be difficult without injection and without mocking. Probably the best you can do is provide one statically in the test bundle via an executable extension factory that itself delegates to some singleton factory that creates the provider. That singleton factory can be known to the test class, and the test class can enable it just for its tests and disable it afterwards. The singleton factory would return a no-op commit message provider if disabled, and a test provider that does implement ICommitMessageProvider2 when enabled.
+
+Just an idea; perhaps there's an easier way, but I can't think of one off the top of my head.
+
+Line:2, org.eclipse.egit.ui/src/org/eclipse/egit/ui/ICommitMessageProvider2.java -> ?? Who is this, and why 2010? Methinks this should be
+
+    Copyright (C) 2017 James Mcgee xxx@xxx.xxx
+
+Line:21, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/dialogs/CommitMessageComponentState.java -> Since this is never set when reading an old persisted state, it should initialized to DEFAULT_POSITION.
+
+Line:232, org.eclipse.egit.ui/src/org/eclipse/egit/ui/Activator.java -> Just
+
+  handleIssue(IStatus.WARNING, message, thr, false);
+
+will do the trick. And do we need warning(...) at all? If you want to provide it for symmetry with the createErrorStatus() methods below, then it should be named createWarningStatus, and be implemented using toStatus().
+
+Line:2, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/dialogs/CommitMessageCalculator.java -> Again... 
+
+  Copyright (C) 2017 James Mcgee xxx@xxx.xxx
+
+Line:52, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/dialogs/CommitMessageCalculator.java -> Description missing.
+
+Line:63, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/dialogs/CommitMessageCalculator.java -> Description missing.
+
+Line:65, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/dialogs/CommitMessageCalculator.java -> No, it doesn't return "the caret position". It returns a commit message plus possibly a caret position.
+
+Line:65, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/dialogs/CommitMessageCalculator.java -> Indeed, DEFAULT_POSITION should be -1 and mean that the ICommitMessageProvider doesn't care. So no need either to log a warning if there are multiple ICommitMessageProviders. A warning should be logged only if there are two that do care.
+
+Line:101, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/dialogs/CommitMessageCalculator.java -> With DEFAULT_POSITION -1 (maybe NO_POSITION would be a better name then), this isCaretPositionSet field becomes superfluous, and we can just do here
+
+  return new CommitMessageWithCaretPosition(
+    finalMessage.toString(), Math.max(0, caretPosition));
+
+Line:146, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/dialogs/CommitMessageCalculator.java -> Here we'll need to check that messageWithPosition.getDesiredCaretPosition() actually is within the bounds of the message. And if it's -1, no update should occur (and no logging, either).
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-06-06 12:39:16.000000000
+
+Patch Set 6: -Verified
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/9906/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-06-06 12:43:21.000000000
+
+Patch Set 6: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/9906/ : ABORTED
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-06-06 12:43:27.000000000
+
+Patch Set 6: -Verified
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/9907/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-06-06 13:06:35.000000000
+
+Patch Set 6: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/9907/ : SUCCESS
+
+-------------------------------------
+author: James Mcgee
+date: 2017-06-07 06:32:54.000000000
+
+Patch Set 6:
+
+(6 comments)
+
+Thanks for your patience with the javadoc and copyright header mistakes! :)
+
+Line:2, org.eclipse.egit.ui/src/org/eclipse/egit/ui/ICommitMessageProvider2.java -> Done
+
+Line:21, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/dialogs/CommitMessageComponentState.java -> I added the initialization to CommitMessageComponentStateManager.loadState(), where all other attributes are initialized as well.
+
+Line:232, org.eclipse.egit.ui/src/org/eclipse/egit/ui/Activator.java -> Done
+
+Line:2, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/dialogs/CommitMessageCalculator.java -> Done
+
+Line:52, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/dialogs/CommitMessageCalculator.java -> Done
+
+Line:65, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/dialogs/CommitMessageCalculator.java -> My understanding was, that any implementor of ICommitMessageProvider2 does care about the caret position by definition. Providers, not caring would implement ICommitMessageProvider. Then, the current implementation with DEFAULT_POSITION works fine.
+
+If you prefer, that ICommitMessageProvider is kind of deprecated, I would introduce UNDEFINED_POSITION again. ICommitMessageProvider2 implementors could then decide to return UNDEFINED_POSITION.
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-06-07 11:03:29.000000000
+
+MISMATCHED INLINE COMMENT
+Line:65, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/dialogs/CommitMessageCalculator.java -> My thinking was: An ICommitMessageProvider2 may not always care about the position. Depending on the passed-in resources, it sometimes may want to specify a position, and sometimes not.
+
+-------------------------------------
+author: James Mcgee
+date: 2017-06-08 06:54:11.000000000
+
+MISMATCHED INLINE COMMENT
+Line:65, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/dialogs/CommitMessageCalculator.java -> Done
+
+-------------------------------------
+author: James Mcgee
+date: 2017-06-08 06:54:11.000000000
+
+MISMATCHED INLINE COMMENT
+Line:101, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/dialogs/CommitMessageCalculator.java -> Done
+
+-------------------------------------
+author: James Mcgee
+date: 2017-06-08 06:54:11.000000000
+
+MISMATCHED INLINE COMMENT
+Line:146, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/dialogs/CommitMessageCalculator.java -> Done
+
+-------------------------------------

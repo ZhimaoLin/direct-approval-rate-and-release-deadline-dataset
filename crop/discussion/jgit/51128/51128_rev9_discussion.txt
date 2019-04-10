@@ -1,0 +1,88 @@
+DESCRIPTION
+
+Store push certificates in refs/push-certs
+
+Inspired by a proposal from gitolite[1], where we store a file in
+a tree for each ref name, and the contents of the file is the latest
+push cert to affect that ref.
+
+The main modification from that proposal (other than lacking the
+out-of-git batching) is to append xxx@xxx.xxx to filenames, which
+allows storing certificates for both refs/foo and refs/foo/bar. Those
+refnames cannot coexist at the same time in a repository, but we
+do not want to discard the push certificate responsible for deleting
+the ref, which we would have to do if refs/foo in the push cert tree
+changed from a tree to a blob.
+
+The xxx@xxx.xxx syntax is at least somewhat consistent with
+gitrevisions(7) xxx@xxx.xxx describe operators on ref names.
+
+As we cannot atomically update the push cert ref with the ref that
+were updated, this operation is inherently racy. Try to minimize
+inconsistent states by not writing out push certificates if the
+current value of the ref does not match the value mentioned in the
+push cert.
+
+[1] https://github.com/sitaramc/gitolite/blob/cf062b8bb6b21a52f7c5002d33fbc950762c1aa7/contrib/hooks/repo-specific/save-push-signatures
+
+Change-Id: Id3eb32416f969fba4b5e4d9c4b47053c564b0ccd
+
+
+COMMENTS
+
+author: Santos Moore
+date: 2015-07-07 19:45:27.000000000
+
+Uploaded patch set 9.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-07-07 19:45:35.000000000
+
+Patch Set 9:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/6856/
+
+-------------------------------------
+author: Santos Moore
+date: 2015-07-07 19:49:20.000000000
+
+Patch Set 9:
+
+(1 comment)
+
+Line:28, /COMMIT_MSG -> This is unsatisfying.
+
+In theory if a ref backend supports atomic updates with BatchRefUpdate, we could do this in the same batch. But then we have potentially significant contention on the push cert ref, and it is difficult to determine which of the ref updates caused the lock failure. Plus it would be a pain on the client side to retry the whole batch modulo the one push cert ref update that would need to be rebased.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-07-07 19:52:28.000000000
+
+Patch Set 9: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/6856/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-07-08 19:25:33.000000000
+
+Patch Set 9: Code-Review-1
+
+(3 comments)
+
+We talked offline about queuing certs and applying them in a batch as part of the BatchRefUpdate. That may be a good way to do this.
+
+Line:107, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateStore.java -> Given what we now know about C Git and refs/foo names do we want to still use this?
+
+Line:121, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateStore.java -> Formatting seems off here
+
+Line:265, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateStore.java -> This test is wrong. If the tree entry is a gitlink its non-zero and you fall through to read the commit that doesn't exist as though it is a blob.
+
+Safer test is:
+
+  (rawMode & TYPE_FILE) != TYPE_FILE
+
+-------------------------------------

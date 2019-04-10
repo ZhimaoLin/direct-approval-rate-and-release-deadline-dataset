@@ -1,0 +1,95 @@
+DESCRIPTION
+
+CBD-1038 Compression of in-memory doc
+
+Apply Snappy compression to item value when putting
+items into hashtable and uncompression when getting
+items from hashtable. This process happens between client
+and hashtable as well as between hastable and couchstore.
+Added config parameter "compress_value". default: true
+Added test case "test_compression".
+
+Change-Id: I0cd5568f75dce839f82f4321a316f702bb1558ac
+
+
+COMMENTS
+
+author: Ellie Kidd
+date: 2013-09-06 05:03:17.705000000
+
+Patch Set 1: Code-Review-1
+
+(6 comments)
+
+Sorry if I missed this in the design, but how are we handling upgrades?
+thanks
+
+Line:1024, src/ep.cc -> how do we handle upgrade?
+
+Line:387, src/item.h -> how is valueCompressed_ initialized?
+
+Line:59, src/item.cc -> why is the second check commented out ? don't we need this while say upgrading?
+
+Line:67, src/item.cc -> shouldn't we check for null value of dst_buf, set the value of valueCompressed_ to false and exit?
+
+Line:82, src/item.cc -> why comment out second check here?
+
+Line:100, src/item.cc -> line seems to exceed 80 chars
+
+-------------------------------------
+author: Abby Duran
+date: 2013-09-06 18:56:42.760000000
+
+Patch Set 1:
+
+(1 comment)
+
+I will review it in more details sometime later today, but one thing I think is missing here is that we should decompress a value before streaming it to the destination through TAP protocol and compress it on the destination node when it is pushed into the hash table.
+
+Line:390, configuration.json -> In my opinion, we should disable the compression option by default at this time. We can always enable it when a bucket is created by passing that option.
+
+-------------------------------------
+author: Dalia Matthews
+date: 2013-09-06 19:25:50.166000000
+
+Patch Set 1:
+
+Incidentally, when dealing with snappy compression and Couchstore, you can avoid decompressing/compressing when going to and from storage.
+
+Couchstore has a marker on each item's metadata (the high bit of the DocInfo.content_meta field, http://git.io/zfu34A ) that indicates that the item is stored snappy compressed.
+
+Couchstore's *default* behavior is exact passthrough, that is if you set the item-is-compressed flag, you should compress it and decompress it yourself when storing and reading. However, it also provides options to the store and read APIs that will make it compress and decompress for you: http://git.io/s0w_RA and http://git.io/RwRVsQ
+
+CouchKVStore currently uses these: 
+
+https://github.com/Piper Jefferson/ep-engine/blob/ffd9abebbb626f002dd245423e9e86886e2c8548/src/couch-kvstore/couch-kvstore.cc#L1205 (and other places)
+
+If you wanted compression passthrough to storage, you would simply *stop* passing those flags, and make sure to only have that flag on the DocInfo set when sending Couchstore already-compressed items, and then check that same bit on read so that you can mark the in-memory item as compressed.
+
+-------------------------------------
+author: Ellie Kidd
+date: 2013-09-06 20:47:06.988000000
+
+Patch Set 1: -Code-Review
+
+Please ignore my comments on upgrade.. sorry about the misunderstanding..
+
+-------------------------------------
+author: Abby Duran
+date: 2013-09-07 01:07:17.907000000
+
+Patch Set 1:
+
+David,
+
+As we discussed, Aaron made good comments and suggestions. Let's reflect them in the next patch set.
+
+-------------------------------------
+author: Miley Adams
+date: 2013-09-11 22:17:11.863000000
+
+Abandoned
+
+replaced by new change
+
+-------------------------------------

@@ -1,0 +1,209 @@
+DESCRIPTION
+
+MB-20746: Delete bloom filter only if temporary filter is created
+
+During compaction, a temporary filter is only created in the
+bloom filter callback function. There is a possibility that this
+function will not get invoked if there is no data present during
+compaction. So, before swapping the filter, ensure that a temporary
+filter is created before deleting the original filter.
+
+Change-Id: Ie07751031332edc8aef06da77063ca7bf37d72e4
+
+
+COMMENTS
+
+author: Bobby Buck
+date: 2016-10-21 00:36:08.648000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-21 00:36:14.112000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1646/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-21 00:36:14.271000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/440/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-21 00:47:00.292000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1314/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-21 00:48:35.432000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1545/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-21 01:04:51.156000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/440/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1314/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1545/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1646/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-10-21 07:58:31.580000000
+
+Patch Set 1:
+
+What exactly is the consequence of this bug? If we compact with an empty vBucket the bloom filter is deleted (and hence will go to disk when we shouldn't?)
+
+I'm trying to determine if we need to fix this for Watson. If this is "just" a perf issue with empty VBucket then I'm thinking it shouldn't really affect any customers. If it could occur with non-empty vBuckets (and hence suddenly performance would drop with "real" data) then I think it's a bigger problem.
+
+-------------------------------------
+author: Kymani Ramirez
+date: 2016-10-21 09:45:26.569000000
+
+Patch Set 1: Code-Review+1
+
+-------------------------------------
+author: Bobby Buck
+date: 2016-10-21 12:54:45.754000000
+
+Patch Set 1:
+
+> What exactly is the consequence of this bug? If we compact with an
+ > empty vBucket the bloom filter is deleted (and hence will go to
+ > disk when we shouldn't?)
+ > 
+ > I'm trying to determine if we need to fix this for Watson. If this
+ > is "just" a perf issue with empty VBucket then I'm thinking it
+ > shouldn't really affect any customers. If it could occur with
+ > non-empty vBuckets (and hence suddenly performance would drop with
+ > "real" data) then I think it's a bigger problem.
+
+Yes, compacting a vbucket that has no data results in deleting the filter. Subsequent calls end up going to disk, thus affecting performance.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-10-21 13:02:42.943000000
+
+Patch Set 1:
+
+> > What exactly is the consequence of this bug? If we compact with
+ > an
+ > > empty vBucket the bloom filter is deleted (and hence will go to
+ > > disk when we shouldn't?)
+ > >
+ > > I'm trying to determine if we need to fix this for Watson. If
+ > this
+ > > is "just" a perf issue with empty VBucket then I'm thinking it
+ > > shouldn't really affect any customers. If it could occur with
+ > > non-empty vBuckets (and hence suddenly performance would drop
+ > with
+ > > "real" data) then I think it's a bigger problem.
+ > 
+ > Yes, compacting a vbucket that has no data results in deleting the
+ > filter. Subsequent calls end up going to disk, thus affecting
+ > performance.
+
+Thanks. So one follow-up question:
+
+Say a vbucket was empty, compaction ran and the bloom filter was deleted. Then the user starts adding items to this vbucket - would that mean there would be no Bloom filter present until the next compaction run?
+
+If the above is true, I think this is actually quite a bad perf bug, and we need to fix in watson.
+
+-------------------------------------
+author: Bobby Buck
+date: 2016-10-21 13:46:10.991000000
+
+Patch Set 1:
+
+> > > What exactly is the consequence of this bug? If we compact with
+ > > an
+ > > > empty vBucket the bloom filter is deleted (and hence will go to
+ > > > disk when we shouldn't?)
+ > > >
+ > > > I'm trying to determine if we need to fix this for Watson. If
+ > > this
+ > > > is "just" a perf issue with empty VBucket then I'm thinking it
+ > > > shouldn't really affect any customers. If it could occur with
+ > > > non-empty vBuckets (and hence suddenly performance would drop
+ > > with
+ > > > "real" data) then I think it's a bigger problem.
+ > >
+ > > Yes, compacting a vbucket that has no data results in deleting
+ > the
+ > > filter. Subsequent calls end up going to disk, thus affecting
+ > > performance.
+ > 
+ > Thanks. So one follow-up question:
+ > 
+ > Say a vbucket was empty, compaction ran and the bloom filter was
+ > deleted. Then the user starts adding items to this vbucket - would
+ > that mean there would be no Bloom filter present until the next
+ > compaction run?
+
+
+
+ > 
+ > If the above is true, I think this is actually quite a bad perf
+ > bug, and we need to fix in watson.
+
+ > > > What exactly is the consequence of this bug? If we compact with
+ > > an
+ > > > empty vBucket the bloom filter is deleted (and hence will go to
+ > > > disk when we shouldn't?)
+ > > >
+ > > > I'm trying to determine if we need to fix this for Watson. If
+ > > this
+ > > > is "just" a perf issue with empty VBucket then I'm thinking it
+ > > > shouldn't really affect any customers. If it could occur with
+ > > > non-empty vBuckets (and hence suddenly performance would drop
+ > > with
+ > > > "real" data) then I think it's a bigger problem.
+ > >
+ > > Yes, compacting a vbucket that has no data results in deleting
+ > the
+ > > filter. Subsequent calls end up going to disk, thus affecting
+ > > performance.
+ > 
+ > Thanks. So one follow-up question:
+ > 
+ > Say a vbucket was empty, compaction ran and the bloom filter was
+ > deleted. Then the user starts adding items to this vbucket - would
+ > that mean there would be no Bloom filter present until the next
+ > compaction run?
+
+Yes. This is true. Until the next compaction, there is no bloom filter
+for that vbucket.
+
+ > 
+ > If the above is true, I think this is actually quite a bad perf
+ > bug, and we need to fix in watson.
+
+-------------------------------------
+author: Bobby Buck
+date: 2016-10-22 01:57:44.300000000
+
+Abandoned
+
+Pushed to watson
+
+-------------------------------------

@@ -1,0 +1,149 @@
+DESCRIPTION
+
+Repository can be configured with FS
+
+On Windows, FS_Win32_Cygwin has been used if a Cygwin Git installation
+is present in the PATH. Assuming that the user works with the Cygwin
+Git installation may result in unnecessary overhead if he actually
+does not.
+
+Applications built on top of jgit may have more knowledge on the
+actually used Git client (Cygwin or not) and hence should be able to
+configure which FS to use accordingly.
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-04-22 15:16:06.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+
+
+Line:131, org.eclipse.jgit/src/org/eclipse/jgit/transport/TransportAmazonS3.java -> Shouldn't this use the Repository's FS instance?  Just in case we detected Cygwin, but the application wants msysgit behavior?  The user's home directory where the Amazon S3 property files are stored should match the same home directory that the SSH configuration is stored in, which is determined by the FS type.
+
+Line:141, org.eclipse.jgit/src/org/eclipse/jgit/util/FS.java -> This should be thread-safe, and its not.  The prior implementation was relying on class initialization to ensure thread-safe initialization of the userHome property.  Since you've moved this to be an instance member of this class, you need to modify this method to use some sort of thread-safe construct here.
+
+It might just be sufficient to mark userHome volatile.  java.io.File is immutable, and initializing the variable is relatively inexpensive, so doing it concurrently from multiple threads in the event that more than one thread needs the value at the same time and its not yet prepared isn't an issue.
+
+Line:100, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> Style-nit: Trailing whitespace error.
+
+Line:253, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> You should also pass through the fs instance to the ObjectDirectory.
+
+Line:256, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> You should also pass through the fs instance to the ObjectDirectory.
+
+Line:392, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> Should be getFS().
+
+But I'm also not that happy about including this in the public API of Repository.  I actually want to start removing some of the filesystem based assumptions from this class.  We probably have no choice in the matter though, I can see how an application would want this available so it can later construct a FileTreeIterator, which needs the same FS instance.
+
+Line:88, org.eclipse.jgit/src/org/eclipse/jgit/transport/OpenSshConfig.java -> Shouldn't this be using the repository's FS type?  Because the user's .ssh/config should come from the Git system they are using for this repository, not the one we auto-detected.
+
+Line:197, org.eclipse.jgit/src/org/eclipse/jgit/transport/SshConfigSessionFactory.java -> Shouldn't this be using the repository's FS type?  Because the user's .ssh/known_hosts should come from the Git system they are using for this repository, not the one we auto-detected.
+
+Line:216, org.eclipse.jgit/src/org/eclipse/jgit/transport/SshConfigSessionFactory.java -> Shouldn't this be using the repository's FS type?  Because the user's .ssh/id_rsa should come from the Git system they are using for this repository, not the one we auto-detected.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-04-24 12:16:01.000000000
+
+Patch Set 1: No score; No score
+
+
+
+Line:141, org.eclipse.jgit/src/org/eclipse/jgit/util/FS.java -> Shawn: Isn't this safe?. What would happen, should two threads enter this method at the same time is that two File objects gets constructed, which is a performance problem, but not a safety problem. This method could construct a new File instance every time.
+
+-------------------------------------
+author: Saniya Hill
+date: 2010-04-26 15:33:17.000000000
+
+Patch Set 1: No score
+
+Publish comments.
+
+Line:392, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> I have introduced this getter to avoid new constructors with FS parameter in GitIndex and RefDirectory. But it's a bit ugly anyway as RefDirectory member has to be created after assigning FS member. So when you agree to simply add FS parameter to existing constructor of GitIndex and RefDirectory, I'll happily remove this getter.
+
+If an application is able to choose correct FS for Repository construction, it is probably also able to choose correct FS for FileTreeIterator. If managing the FS outside of the Repository should get really to annoying in the application, we can still discuss whether to re-introduce that getter.
+
+Line:88, org.eclipse.jgit/src/org/eclipse/jgit/transport/OpenSshConfig.java -> I can't see a relation to a Repository here (resp. OpenSshConfig may be used for many Repository's)?
+
+If your comment should just suggest to make FS a parameter of this method, that will be fine.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-04-24 19:02:37.000000000
+
+MISMATCHED INLINE COMMENT
+Line:141, org.eclipse.jgit/src/org/eclipse/jgit/util/FS.java -> Actually, there is another option available to us here.
+
+The default implementation of userHomeImpl() is pretty cheap.  So we can simply remove the method and inline it all into userHome(), and avoid the userHome instance member altogether.  Threading problems go away.
+
+In FS_Win32_Cygwin, we introduce a private static inner class with a static final field containing the user home:
+
+ xxx@xxx.xxx
+  public File userHome() {
+    return UserHome.home;
+  }
+
+  private static class UserHome {
+    static final File home = userHomeImpl();
+  }
+
+and let class initialization take care of the caching and memory synchronization for us.  Then we aren't paying the volatile read penalty on each access.
+
+Though, I have to point out, a volatile read is far cheaper than constructing the PrivilegedAction needed to pass through the AccessController.doPrivileged to get the user.home system property.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-04-24 18:37:27.000000000
+
+MISMATCHED INLINE COMMENT
+Line:141, org.eclipse.jgit/src/org/eclipse/jgit/util/FS.java -> No, its not safe.
+
+Under the Java memory model, a thread can read the userHome member and see the java.io.File object's reference, but be unable to see the fields assigned within the object.  It could be seeing garbage from the prior resident of that location, or it could be seeing all NULs from the allocator clearing the region before initialization.
+
+The only way to ensure that all writes up to a particular point are visible, and thus that the object(s) in question are internally consistent from the perspective of a reader, is to travel through a synchronization barrier.  Those barriers exist at a synchronized block, or when writing/reading a volatile.
+
+The memory model requires that all writes carried out within a thread prior to a write to a volatile must be visible to another thread that reads that volatile first.  Or, that all writes carried out before releasing a monitor on an object must be visible to another thread after it acquires that same monitor.
+
+Anything else is playing with fire.
+
+So.  Either delete the userHome property and compute it on the fly every time its requested, or use a volatile.
+
+Given that on Cygwin userHome is computed via a fork+exec, that's pretty expensive.  We could permit the default implementation to compute on demand every time, but we still should cache the result in the Cygwin case.  Which brings us right back to this discussion of needing to mark the field volatile.  :-)
+
+-------------------------------------
+author: Saniya Hill
+date: 2010-04-29 18:14:55.000000000
+
+MISMATCHED INLINE COMMENT
+Line:141, org.eclipse.jgit/src/org/eclipse/jgit/util/FS.java -> getUserHome() is accessed in SystemReader which is accessed in Repository constructor, so it has to be evaluated virtually always. Hence, I will make it final and move evaluation to the constructor.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-04-26 15:46:56.000000000
+
+MISMATCHED INLINE COMMENT
+Line:392, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> Yea, go ahead and make FS a parameter to the constructor of GitIndex and RefDirectory.
+
+-------------------------------------
+author: Saniya Hill
+date: 2010-04-29 17:32:09.000000000
+
+MISMATCHED INLINE COMMENT
+Line:392, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> I've just tried now to add FS to OpenSshConfig. But this will require FS to be passed through many other transport-related classes. Similar for GitIndex which is used in various tests, too. So I think the least intrusive solution will be to keep getFS() public :(
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-04-26 15:46:56.000000000
+
+MISMATCHED INLINE COMMENT
+Line:88, org.eclipse.jgit/src/org/eclipse/jgit/transport/OpenSshConfig.java -> Lets say we detect Cygwin as the FS type, because cygpath appeared in the user's $PATH.
+
+But the user has configured SmartGit to *not* use Cygwin.
+
+Now when JGit tries to use an SSH connection, its going to be asking the user's *Cygwin* home directory for the .ssh/config and their SSH keys.  But that makes no sense, if SmartGit was configured to *not* use Cygwin, why is it using the Cygwin based settings?
+
+So, this needs to be using the same FS instance that the Repository its being called by is using.
+
+-------------------------------------

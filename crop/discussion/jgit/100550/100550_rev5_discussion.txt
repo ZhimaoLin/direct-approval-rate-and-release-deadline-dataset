@@ -1,0 +1,129 @@
+DESCRIPTION
+
+Fix matching ignores and attributes pattern of form a/b/**.
+
+Fix patch matching for patterns of form a/b/** : this should not match
+paths like a/b but still match a/b/ and a/b/c.
+
+Change-Id: Iacbf496a43f01312e7d9052f29c3f9c33807c85d
+Signed-off-by: Luis Lutz xxx@xxx.xxx
+Signed-off-by: Jayvion Booth xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Jayvion Booth
+date: 2017-07-07 13:21:04.000000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Jayvion Booth
+date: 2017-07-07 13:30:31.000000000
+
+Patch Set 5: Code-Review+2
+
+(1 comment)
+
+Line:213, org.eclipse.jgit/src/org/eclipse/jgit/attributes/AttributesRule.java -> I decided to strip the trailing slashes here.
+The caller here don't care if it is "dir" or "dir/", so we will get the "native git" behavior. 
+
+I decided not to do this in PathMatcher, because it is more generic one and this would also have implications on ignore rules, which I can't overlook right now.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-07-07 13:40:44.000000000
+
+Patch Set 5:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/10425/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-07-07 13:51:43.000000000
+
+Patch Set 5: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/10425/ : SUCCESS
+
+-------------------------------------
+author: Luis Lutz
+date: 2017-07-07 14:39:52.000000000
+
+Patch Set 5:
+
+Thanks, I agree with the main idea of the change!
+Whether or not
+
+  a/** should match a/
+and 
+  a/b/** should a/b/
+in FastIgnoreRuleTest is rather a philosophical question that has no practical application. Personally I think that no because in case of "git check-attr" it says they do not match and official .gitattributes documentation states:
+===
+  The rules how the pattern matches paths are the same as in .gitignore files; see gitignore[5]. Unlike .gitignore, negative patterns are forbidden.
+===
+To make them non-matched one can replace
+if (left < endExcl)
+  match = matches(matcher, path, left, endExcl, assumeDirectory);
+
+with
+
+
+if (left < endExcl) {
+  match = matches(matcher, path, left, endExcl, assumeDirectory);
+} else {
+  match = match && !(matcher == matchers.size() - 1 && matchers.get(matcher) == WILD);
+}
+
+But I have no objection to your latest fix as in practice there's no real difference.
+
+-------------------------------------
+author: Jayvion Booth
+date: 2017-07-07 16:30:03.000000000
+
+Patch Set 5: -Code-Review
+
+> Thanks, I agree with the main idea of the change!
+ > Whether or not
+ > 
+ > a/** should match a/
+ > and
+ > a/b/** should a/b/
+ > in FastIgnoreRuleTest is rather a philosophical question that has
+ > no practical application. Personally I think that no because in
+ > case of "git check-attr" it says they do not match and official
+ > .gitattributes documentation states:
+ > ===
+ > The rules how the pattern matches paths are the same as in
+ > .gitignore files; see gitignore[5]. Unlike .gitignore, negative
+ > patterns are forbidden.
+ > ===
+
+Yes, makes sense.
+
+ > To make them non-matched one can replace
+ > if (left < endExcl)
+ > match = matches(matcher, path, left, endExcl, assumeDirectory);
+ > 
+ > with
+ > 
+ > 
+ > if (left < endExcl) {
+ > match = matches(matcher, path, left, endExcl, assumeDirectory);
+ > } else {
+ > match = match && !(matcher == matchers.size() - 1 &&
+ > matchers.get(matcher) == WILD);
+ > }
+
+The else could be just 
+
+match = match && matchers.get(matcher) != WILD;
+
+ > But I have no objection to your latest fix as in practice there's
+ > no real difference.
+
+I'm inclined to prefer your latest proposal (simplified) because being consistent makes sense even if the case has no practical use.
+
+-------------------------------------

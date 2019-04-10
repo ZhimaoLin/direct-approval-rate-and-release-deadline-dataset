@@ -1,0 +1,208 @@
+DESCRIPTION
+
+Add Publisher implementation
+
+Adds the server-side Publisher implementation and protocol. The
+Publisher hooks the post-receive update and generates packs to cover
+all connected Sessions. Clients establish Sessions that store their
+subscriptions and stream pointers for PublisherPushes. PublisherPacks
+are generated on the fly by PublisherPushes and the
+PublisherPackFactory. Each Pack is split into PublisherPackSlices.
+All Packs are placed in a global linked-list for which each client
+creates an iterator. The memory footprint of Packs is managed by the
+PublisherMemoryPool, which loads the Slices in and out of memory as
+necessary to reclaim memory.
+
+Change-Id: I35cadea785160585fc76ed9280c7a16f3da9e724
+
+
+COMMENTS
+
+author: Karlee Dorsey
+date: 2012-08-10 00:16:52.000000000
+
+Uploaded patch set 15.
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-08-10 12:14:55.000000000
+
+Patch Set 15:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2109/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-08-10 12:21:42.000000000
+
+Patch Set 15: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2109/ : SUCCESS
+
+-------------------------------------
+author: Warren Watkins
+date: 2012-08-14 05:52:03.000000000
+
+Patch Set 15: I would prefer that you didn't submit this
+
+(31 inline comments)
+
+here is my first cut.
+
+Line:177, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherClient.java -> Is it safe to write these messages to the client?
+
+Line:362, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherClient.java -> should this be "last-pack-id"?
+
+Line:387, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherClient.java -> you can inline these in the request.
+
+Line:411, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherClient.java -> does this message need to go in the strings file
+
+Line:414, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherClient.java -> parts.length != 3
+
+Line:95, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherPackFactory.java -> do these setters need to be synchronized?
+
+Line:131, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherPackFactory.java -> Why?
+
+Line:136, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherPackFactory.java -> is this mutable?
+
+Line:115, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherStream.java -> why would data be null?
+
+Line:127, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherStream.java -> *stream of pushes. Given an example of how you should use this api.
+
+Line:136, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherStream.java -> why do you have first and start?  you should only need first. Also you never remove start, so the nodes will never be garbage collected.
+
+Line:145, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherStream.java -> capacity + 1
+
+Line:149, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherStream.java -> comments
+
+Line:186, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherStream.java -> you can't add the current if it is the first node.
+
+Line:207, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherStream.java -> doesn't the node need to be closed?
+
+Line:210, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherStream.java -> can't you just break here?
+
+Line:231, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherStream.java -> the stream is not locked. updated comment
+
+Line:276, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherStream.java -> if windowCount == 0, then you don't have to do anything, except call close immediately (ideally outside of the synchronized block).
+
+  boolean hasWindows;
+  synchronized(this) {
+    hasWindows = windowCount != 0;
+    if (hasWindows) {
+      Node prev = tail;
+      tail = new Node(item, windowCount);
+      prev.setNext(tail);
+    }
+  }
+  if (!hasWindows)
+    item.close()
+
+Line:72, org.eclipse.jgit/src/org/eclipse/jgit/transport/Publisher.java -> pull this into its own class.
+
+Line:128, org.eclipse.jgit/src/org/eclipse/jgit/transport/Publisher.java -> you should name this thread and make it a daemon thread.
+
+Line:141, org.eclipse.jgit/src/org/eclipse/jgit/transport/Publisher.java -> synchronized
+
+Line:150, org.eclipse.jgit/src/org/eclipse/jgit/transport/Publisher.java -> synchronized
+
+Line:158, org.eclipse.jgit/src/org/eclipse/jgit/transport/Publisher.java -> it --> window
+
+Line:191, org.eclipse.jgit/src/org/eclipse/jgit/transport/Publisher.java -> i don't think you want to close in this case
+
+Line:192, org.eclipse.jgit/src/org/eclipse/jgit/transport/Publisher.java -> why not just throw the exception?
+
+Line:215, org.eclipse.jgit/src/org/eclipse/jgit/transport/Publisher.java -> is this done elsewhere in the code? I think you should just re-raise these exceptions.
+
+Line:287, org.eclipse.jgit/src/org/eclipse/jgit/transport/Publisher.java -> shutdown the executor
+
+Line:101, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherMemoryPool.java -> you could check <= capacity and short-circuit the block below.
+
+Line:103, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherMemoryPool.java -> i don't think this really helps, since other threads will be able to increment the size while you are iterating. You probably don't really need this synchronized block.
+
+Line:49, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribeSpec.java -> valid comments are needed in this file
+
+Line:86, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribeSpec.java -> use stripWildcard(refName)
+
+-------------------------------------
+author: Karlee Dorsey
+date: 2012-08-14 21:23:07.000000000
+
+Patch Set 15: (31 inline comments)
+
+
+
+Line:177, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherClient.java -> I believe it's safe to write TransportExceptions, and I added user-friendly ServiceNotEnabledException text.
+
+Line:362, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherClient.java -> Yeah it should
+
+Line:387, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherClient.java -> Done
+
+Line:411, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherClient.java -> Done
+
+Line:414, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherClient.java -> Done
+
+Line:95, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherPackFactory.java -> No, these are one-time calls when the factory is constructed.
+
+Line:131, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherPackFactory.java -> So we can avoid sending duplicate objects that the client already has. Imagine a merge of branch1 back into master where the client is subscribed to everything. We know the client already has the objects in branch1, so we don't need to send all of that data again when master changes. If the client was only subscribed to master, we can't assume it would have the branch1 objects.
+
+Line:136, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherPackFactory.java -> Yes, and removing items doesn't delete the actual refs from the database.
+
+Line:115, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherStream.java -> The first item in the stream is null
+
+Line:127, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherStream.java -> Done
+
+Line:136, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherStream.java -> Edge cases. When the window is first constructed, it points to start, but no data should be returned from start. When items are prepended a call to next() would skip the head node and return data from the next node, so we need to keep track of the first node in the list and return data from it on the first next() call.
+
+Line:145, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherStream.java -> Done
+
+Line:149, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherStream.java -> Done
+
+Line:186, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherStream.java -> Why not? The first node will never be streamed again, but it's a valid point to rollback to.
+
+Line:207, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherStream.java -> This only removes any items that are newer in the list, since they will be visited again as we have rolled back the stream. Items only get deleted when they fall off the end of the marked list or aren't marked at all.
+
+Line:210, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherStream.java -> No, the rest of the nodes after matched = true need to be removed from the list.
+
+Line:231, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherStream.java -> Done
+
+Line:276, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherStream.java -> Done
+
+Line:72, org.eclipse.jgit/src/org/eclipse/jgit/transport/Publisher.java -> Done
+
+Line:128, org.eclipse.jgit/src/org/eclipse/jgit/transport/Publisher.java -> Done
+
+Line:141, org.eclipse.jgit/src/org/eclipse/jgit/transport/Publisher.java -> Done. These were more one-time configuration options when the publisher is constructed, but it doesn't hurt to let them be changed at a later time.
+
+Line:150, org.eclipse.jgit/src/org/eclipse/jgit/transport/Publisher.java -> Done
+
+Line:158, org.eclipse.jgit/src/org/eclipse/jgit/transport/Publisher.java -> Done
+
+Line:191, org.eclipse.jgit/src/org/eclipse/jgit/transport/Publisher.java -> This gets thrown if there is an error releasing the stream window -> error deleting a reference-counted pack -> filesystem error.
+
+Line:192, org.eclipse.jgit/src/org/eclipse/jgit/transport/Publisher.java -> It won't get seen by anyone, since this executes inside the scheduled executor thread.
+
+Line:215, org.eclipse.jgit/src/org/eclipse/jgit/transport/Publisher.java -> The post-receive interface doesn't allow for thrown exceptions, and we wouldn't want to throw any exceptions and abort a push.
+
+Line:287, org.eclipse.jgit/src/org/eclipse/jgit/transport/Publisher.java -> Done
+
+Line:101, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherMemoryPool.java -> Done
+
+Line:103, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherMemoryPool.java -> It's fine if other threads increment, since the size change will show up in whichever thread is already trying to free up space. I don't want 2 threads going over the same slices and trying to store them.
+
+Line:49, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribeSpec.java -> Done
+
+Line:86, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribeSpec.java -> Done
+
+-------------------------------------
+author: Warren Watkins
+date: 2012-08-17 18:14:02.000000000
+
+Patch Set 15: (1 inline comment)
+
+
+
+Line:131, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherPackFactory.java -> please update the comment.
+
+-------------------------------------

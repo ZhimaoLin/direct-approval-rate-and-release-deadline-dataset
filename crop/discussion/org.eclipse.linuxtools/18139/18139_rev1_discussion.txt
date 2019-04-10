@@ -1,0 +1,117 @@
+DESCRIPTION
+
+TMF: Ported the LTTng Kernel state system to an analysis module
+
+And update the views accordingly.
+
+Also, for the sake of uniformisation, with the analysis module state system,
+old state systems should now use this mechanism.  The old get- and register-
+state system methods are deprecated.
+
+Change-Id: I90975b5772db24a784d99d2d0232f6f76a8e5e03
+Signed-off-by: Aryana Jones xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2013-11-06 15:21:46.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/3841/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-06 15:51:48.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/3841/ : SUCCESS
+
+-------------------------------------
+author: Ayanna Reed
+date: 2013-11-06 16:50:04.000000000
+
+Patch Set 1: Code-Review+1
+
+LTGM with my knowledge of the analysis framework.
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-11-06 22:07:59.000000000
+
+Patch Set 1: Code-Review-1
+
+(13 comments)
+
+Quick pass of comments, this will of course depend on the final version of the dependency patch.
+
+Line:37, lttng/org.eclipse.linuxtools.lttng2.kernel.core/src/org/eclipse/linuxtools/lttng2/kernel/core/analysis/LttngKernelStateSystemModule.java -> The check could be for LttngKernelTrace event (I'm not sure why the LttngKernelStateProvider takes a CtfTmfTrace in parameter...)
+
+Line:38, lttng/org.eclipse.linuxtools.lttng2.kernel.core/src/org/eclipse/linuxtools/lttng2/kernel/core/analysis/LttngKernelStateSystemModule.java -> Don't throw RuntimeException's directly, Sonar does not like it.
+
+If it's a case where it's completely impossible for the exception to happen, you can use IllegalStateException(), to indicate that if it ever happens it's a logic error (like with TmfStateValue.unboxInt(), if you checked for the type immediately before).
+
+On the other hand, if it's something that may potentially happen, you should log the exception, via Activator.log, and then throw a checked exception or return with a special value.
+
+However! In this particular case here, it might be better/safer to:
+
+- override setTrace() to check for the instanceof type, before calling super.setTrace()
+- override getTrace() to return a LttngKernelTrace directly.
+
+That way you always get the correct type on getTrace(), and if there is a wrong type error, you catch it a bit earlier.
+
+Line:130, lttng/org.eclipse.linuxtools.lttng2.kernel.ui/src/org/eclipse/linuxtools/internal/lttng2/kernel/ui/views/controlflow/ControlFlowPresentationProvider.java -> This is fine for now, but I suppose it will eventually go in a specific "LTTng kernel analysis" module?
+
+Line:459, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/trace/TmfTraceTest.java -> This will modify the state of fTrace, which might affect the following tests (or break if previous tests leave it in an unexpected state).
+
+You could use a different TmfTraceStub here. Or make sure you return fTrace to its previous state (does something need to be done to undo the openTrace() ?)
+
+Line:174, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/views/statesystem/TmfStateSystemExplorer.java -> What about state system modules that belong to other modules (and not directly to the trace)? Will they get picked up by this .get?
+
+Line:183, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/views/statesystem/TmfStateSystemExplorer.java -> For the view itself, shouldn't we only display the state system that are already built? For test purposes, we can always execute the analysis manually. But I don't think the view should build all the potential state systems, even temporarily.
+
+Line:199, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/views/statesystem/TmfStateSystemExplorer.java -> This is existing code, but if it's getting touched, might as well change it to like IllegalStateException(), which is a bit more informative than RuntimeException()
+
+Line:35, lttng/org.eclipse.linuxtools.lttng2.kernel.core/src/org/eclipse/linuxtools/lttng2/kernel/core/trace/LttngKernelTrace.java -> Remove the second sentence, it's not true anymore!
+
+Line:45, lttng/org.eclipse.linuxtools.lttng2.kernel.core/src/org/eclipse/linuxtools/lttng2/kernel/core/trace/LttngKernelTrace.java -> You can remove this too, it's also in the module class
+
+Line:98, lttng/org.eclipse.linuxtools.lttng2.kernel.core/src/org/eclipse/linuxtools/lttng2/kernel/core/trace/LttngKernelTrace.java -> this reminds me, this method should be deprecated/removed from TmfTrace
+
+Line:449, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/TmfTrace.java -> Would it be possible to remove fStateSystems, and wrap these two methods into creating an analysis module for each state system?
+
+That way, existing code will continue to work but will use the new analysis paradigm. That way all state systems should show up in the Explorer view, etc. We could even keep these two methods into the 3.0 cycle xxx@xxx.xxx
+
+Line:449, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/TmfTrace.java -> This comment should go in ITmfTrace instead
+
+You could also suppress the "deprecation" warning here. We know we're implementing something deprecated, but we'll get warnings in the callers already. And when we'll remove the method from the interface, we'll have to remove it here too.
+
+Line:460, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/TmfTrace.java -> comment should go in ITmfTrace
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2013-11-07 01:07:31.000000000
+
+Patch Set 1:
+
+(6 comments)
+
+Some answers and more questions to comments
+
+Line:38, lttng/org.eclipse.linuxtools.lttng2.kernel.core/src/org/eclipse/linuxtools/lttng2/kernel/core/analysis/LttngKernelStateSystemModule.java -> These are too basic methods I don't like to have to override them, we shouldn't.  The IllegalStateException is OK in this case, because the appliesToTraceType should have filtered the traces
+
+Line:130, lttng/org.eclipse.linuxtools.lttng2.kernel.ui/src/org/eclipse/linuxtools/internal/lttng2/kernel/ui/views/controlflow/ControlFlowPresentationProvider.java -> What do you mean?  How would you like this to be?  I had no plan to put that anywhere else.
+
+Line:459, lttng/org.eclipse.linuxtools.tmf.core.tests/src/org/eclipse/linuxtools/tmf/core/tests/trace/TmfTraceTest.java -> I thought xxx@xxx.xxx took care of disposing of the trace.
+
+Line:174, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/views/statesystem/TmfStateSystemExplorer.java -> modules belong to traces, even if they are only by-products to be used by other analysis (at least that's how it is meant to be, though I guess nothing prevents a module to use an internal (non-public/non-advertised) state system module, in which case, it is not meant to be picked up anyway)
+
+Line:183, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/views/statesystem/TmfStateSystemExplorer.java -> With phase 2 of the analysis API, it won't build the state systems anymore, but for now, it is about the only way to build non-automatic state systems.
+
+Line:449, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/TmfTrace.java -> I'd need to modify the state system module so we can directly give it a state system and make it look like it already ran and it is impossible to run.  Or create an already deprecated class inheriting from the state system module for this purpose...
+
+-------------------------------------

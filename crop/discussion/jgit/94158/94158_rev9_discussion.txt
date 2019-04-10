@@ -1,0 +1,130 @@
+DESCRIPTION
+
+Fix RepoCommand to allow for relative URLs
+
+* Introduce ManifestParser#urlSlashMunging which controls removing and
+  adding trailing '/'. None of the tests appear to cover this
+  behavior, though.
+
+* Allow an empty base URL. This is useful if the 'fetch' field is "."
+  and all names are relative to some host root.
+
+* throw SAXException if 'fetch' is unset. The docs mark it as
+  #REQUIRED.
+
+* The URLs in the resulting superproject are relative to the
+  superproject's URL.  Add RepoCommand#setDestinationURI to
+  set this.
+
+* Add two tests for the Android and Gerrit case, checking the URL
+  format in .gitmodules; the tests use a custom RemoteReader which is
+  representative of Google's use of this class.
+
+Signed-off-by: Hayley Lang xxx@xxx.xxx
+Change-Id: Ia75530226120d75aa0017c5410fd65d0563e91b
+
+
+COMMENTS
+
+author: Dominick Floyd
+date: 2017-04-03 13:04:25.000000000
+
+Uploaded patch set 9: Commit message was updated.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-04-03 13:04:32.000000000
+
+Patch Set 9:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/10086/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-04-03 13:22:58.000000000
+
+Patch Set 9: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/10086/ : FAILURE
+
+-------------------------------------
+author: Beau Terry
+date: 2017-04-03 17:59:32.000000000
+
+Patch Set 9: Code-Review+1
+
+(2 comments)
+
+Line:120, org.eclipse.jgit/src/org/eclipse/jgit/gitrepo/ManifestParser.java -> maybe it's time to find out?
+
+My suspicion is that the handling of submodule URLs of git-core is sneaking in here. As the submodule URLs are "just like directories", you need an extra ../ (compared to real relative URLs) to indicate a location of a submodule.
+
+git-core also has a bug, that doesn't handle '/' correctly if the last part of the URL is '.' or even '..'.
+
+So we also have the code there to relativize a URL, but with unexpected results:
+
+  dir/subdir    + ../anotherdir  -> dir/anotherdir
+  dir/subbdir/a + ../anotherdir  -> dir/subdir/anotherdir
+  dir/subdir/.  + ../anotherdir  -> dir/subdir/anotherdir
+  dir/subdir/.. + ../anotherdir  -> dir/subdir/anotherdir
+
+This confusion seems straightforward to fix, but for reasons of git-core being git-core ("What if someone treats it as a feature? We don't want to break them. But nobody would do that right? Well, it turns out the test suite of git-core uses this hack a lot.") we never came around fixing it properly.
+
+On the other hand the example above can be easily explained when having the implementation in mind: We count the number of "../" in front of "anotherdir" and slash as many "/*" from the right of dir/subdir.
+
+How would this implementation handle it?
+(Seeing the testcase "testRelative("a/p/..//b/", "a/", "../");" seems promising in two ways: (a) do the correct thing and (b) be slightly different than git-core
+
+Line:25, /COMMIT_MSG -> As soon as you start a list in the commit message, you may want to ask if you can split up the change into multiple commits. (This is a strong bias in me for working in git-core for long, not sure how the JGit maintainers accept patches)
+
+-------------------------------------
+author: Dominick Floyd
+date: 2017-04-04 11:20:21.000000000
+
+Patch Set 9:
+
+(2 comments)
+
+Line:120, org.eclipse.jgit/src/org/eclipse/jgit/gitrepo/ManifestParser.java -> See https://git.eclipse.org/r/#/c/31562/ : The addition is "a tweak", follow-up on https://git.eclipse.org/r/#/c/31148, apparently for absolute remote URLs. Let me add a case for this.
+
+The removal is from here: https://git.eclipse.org/r/#/c/28216/ - there is no explanation for this change.
+
+Line:25, /COMMIT_MSG -> most of this is necessary to make the android and gerrit cases work. Added a line.
+
+-------------------------------------
+author: Beau Terry
+date: 2017-04-04 19:36:38.000000000
+
+Patch Set 9:
+
+(1 comment)
+
+Line:120, org.eclipse.jgit/src/org/eclipse/jgit/gitrepo/ManifestParser.java -> Thanks for digging!
+
+That last change has an inline comment: "to match repo behavior." I am not sure if that the whole story, though.
+
+Maybe drop the "for unexplained purposes." in the code and rather put it into the commit message? I do not think it is helpful when reading and trying to understand the code, i.e. describe the "what" (maybe even "how") in xxx@xxx.xxx not the "why", which (a) is not useful in the current form and (b) in case it becomes a longer backstory it is better in the commit message.
+
+-------------------------------------
+author: Dominick Floyd
+date: 2017-04-05 08:59:49.000000000
+
+Patch Set 9:
+
+(1 comment)
+
+@jrn - "this needs a clearer explanation before it can land." 
+
+what does 'this' mean here? (Did you look at the latest patchset?)
+
+Line:120, org.eclipse.jgit/src/org/eclipse/jgit/gitrepo/ManifestParser.java -> I dropped this phrase already. Can you look at the latest PS ?
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2017-04-13 03:31:14.000000000
+
+Change has been successfully merged into the git repository by Elise Key
+
+-------------------------------------

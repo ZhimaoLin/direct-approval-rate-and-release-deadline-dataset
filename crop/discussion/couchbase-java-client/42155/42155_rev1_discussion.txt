@@ -1,0 +1,94 @@
+DESCRIPTION
+
+JCBC-591 : if bucket was closed, operations will throw a BucketClosedException
+
+Motivation
+-----------
+When calling close() on a Bucket, one expects not to be able to use the bucket operations anymore. However the bucket doesn't fail gracefully and instead attempt to perform the operation, which results in a TimeoutException from the underlying AsyncBucket after a delay.
+
+Modifications
+-------------
+The CouchbaseAsyncBucket has been refactored. When close() operation is successfully performed, an internal flag is set, which can be seen through isClosed() method.
+
+Other significant operation (that is the ones that delegate to the core) check this flag via safeCheck() method.
+ If needed, safeCheck will throw a BucketClosedException immediately instead of attempting the operation.
+
+ Users can be impacted if they were watching for TimeoutExceptions specifically to detect a closed bucket.
+
+Result
+------
+Operations on a closed bucket immediately fail with a BucketClosedException.
+
+Change-Id: Ia6de60a882ef6d81cc807a7205bb1c1002e7df42
+
+
+COMMENTS
+
+author: Estrella Humphrey
+date: 2014-10-15 13:28:57.066000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Estrella Humphrey
+date: 2014-10-15 13:32:48.260000000
+
+Patch Set 1: Verified+1
+
+-------------------------------------
+author: Cory Peck
+date: 2014-10-15 14:39:50.540000000
+
+Patch Set 1: Code-Review-1
+
+(3 comments)
+
+Line:114, src/main/java/com/couchbase/client/java/CouchbaseAsyncBucket.java -> probably it will be better to define method
+
+    <R extends CouchbaseResponse> Observable<R> send(CouchbaseRequest request);
+
+which will execute safeCheck() internally. In this case we will never forget to put safeCheck() in new code
+
+Line:744, src/main/java/com/couchbase/client/java/CouchbaseAsyncBucket.java -> we are using braces even for single-line statements
+
+Michael, when close() might return false? Can we consider unclosable buckets as open?
+
+Line:11, /COMMIT_MSG -> Normally we are reformatting the message to 75-80 characters per line
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2014-10-15 15:55:04.038000000
+
+Patch Set 1: Code-Review-2
+
+(13 comments)
+
+Line:49, src/main/java/com/couchbase/client/java/CouchbaseBucket.java -> don't do it here at all. Handle it in a place where the async ops come together (like the send method and _fail_ the observable in there. That way we have it in one place.
+
+Line:26, src/main/java/com/couchbase/client/java/error/BucketClosedException.java -> relative
+
+Line:27, src/main/java/com/couchbase/client/java/error/BucketClosedException.java -> author, since and stability tags are missing (see others)
+
+Line:51, src/main/java/com/couchbase/client/java/AsyncBucket.java -> please put the imports in the import section and relative ones here like the others.
+
+Line:54, src/main/java/com/couchbase/client/java/AsyncBucket.java -> feel free to add yourself as well everywhere you contribute!
+
+Line:77, src/main/java/com/couchbase/client/java/CouchbaseAsyncBucket.java -> this needs to be volatile?
+
+Line:84, src/main/java/com/couchbase/client/java/CouchbaseAsyncBucket.java -> false is the default?
+
+Line:107, src/main/java/com/couchbase/client/java/CouchbaseAsyncBucket.java -> relative
+
+Line:112, src/main/java/com/couchbase/client/java/CouchbaseAsyncBucket.java -> We probably want to be more direct like bucket has is closed (reference is not important I guess)
+
+Line:114, src/main/java/com/couchbase/client/java/CouchbaseAsyncBucket.java -> +1, very good point
+
+Line:744, src/main/java/com/couchbase/client/java/CouchbaseAsyncBucket.java -> yes please use always braces
+
+I think we can consider it as closed, since a false return here would indicate some half-open state which is weird too. once closed, be gone :)
+
+Line:53, src/main/java/com/couchbase/client/java/Bucket.java -> same here
+
+Line:67, src/main/java/com/couchbase/client/java/Bucket.java -> the async method is just a reference to the underlying object, we should not throw here.
+
+-------------------------------------

@@ -1,0 +1,111 @@
+DESCRIPTION
+
+GC: Delete stale temporary packs and indexes
+
+When a GC operation is interrupted, temporary packs and indexes can be
+left on the pack folder. In big, busy repositories this can lead to
+significant amounts of wasted disk space if this interruption is done
+with a certain frequency.
+
+Remove stale temporary packs and objects at the end of the GC process so
+they do not accumulate.
+
+Change-Id: If9b6c1e57fac8a6a0ecc0a703089634caba4caae
+Signed-off-by: Elias Herrera xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Beatrice Lester
+date: 2017-11-10 11:07:47.000000000
+
+Uploaded patch set 2: Patch Set 1 was rebased.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-11-10 11:22:09.000000000
+
+Patch Set 2:
+
+Build Started https://ci.eclipse.org/jgit/job/jgit.gerrit/11531/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-11-10 11:44:04.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://ci.eclipse.org/jgit/job/jgit.gerrit/11531/ : SUCCESS
+
+-------------------------------------
+author: Elise Key
+date: 2017-11-11 07:54:27.000000000
+
+Patch Set 2: Code-Review+1
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-11-12 23:10:11.000000000
+
+Patch Set 2: Code-Review+1
+
+this change could go to stable-4.9 if you want it earlier, just the API change introducing the getPackDirectory() method can't but there is a simple workaround which can then be removed on master
+
+-------------------------------------
+author: Zachary Orozco
+date: 2017-11-13 09:05:52.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:971, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> We could delete files here which we haven't created. A different process which is doing gc with jgit could own these files. Don't we know the temporary files we created and delete only them?
+
+-------------------------------------
+author: Beatrice Lester
+date: 2017-11-13 10:26:26.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+@Matthias, thanks for the suggestion, I'll keep it here on master and probably cherry-pick it to our JGit version once is merged.
+
+Line:971, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> Good point. I see two options here: one, we keep a track of the files this run of GC created in order to only delete those. The problem I see is if this run of GC is cancelled and this method is not run, the temporal files will stay there. Second option could be to limit the delete operation to files older than a certain time; this will avoid deleting temporal files of a concurrent JGit GC process while avoiding cancelled runs to keep accumulating these files. 
+Another (better) option?
+
+-------------------------------------
+author: Zachary Orozco
+date: 2017-11-13 14:03:29.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:971, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> I like the idea of a grace period for unknown tmp files. We could do both. Delete directly the files which we know we have created. And delete the remaining files only when they are older than a certain period.
+
+-------------------------------------
+author: Beatrice Lester
+date: 2017-11-14 13:00:26.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:971, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> I decided to go with the second option only given the removal of these temporary files is done in a finally block (lines 1227-1234). That means, unless the JVM is killed, they should be cleaned up as part of the regular GC workflow and this is what we see most of the time. This change should cover, then, the case when that finally block is not executed.
+
+In order to avoid interfering with a concurrent GC operation, as you appropriately pointed out, only temporary files 24 hours or older are deleted. Given the GC operation takes max 2-3 hours in our biggest repositories, this threshold should be safe enough.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2017-11-14 13:38:32.000000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:971, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> +1
+
+-------------------------------------

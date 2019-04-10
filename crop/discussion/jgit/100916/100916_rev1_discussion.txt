@@ -1,0 +1,169 @@
+DESCRIPTION
+
+Send a detailed event on working tree modifications
+
+Currently there is no way to determine the precise changes done
+to the working tree by a JGit command. Only the CheckoutCommand
+actually provides access to the lists of modified, deleted, and
+to-be-deleted files, but those lists may be inaccurate (since they
+are determined up-front before the working tree is modified) if
+the actual checkout then fails halfway through. Moreover, other
+JGit commands that modify the working tree do not offer any way to
+figure out which files were changed.
+
+This poses problems for EGit, which may need to refresh parts of the
+Eclipse workspace when JGit has done java.io file operations.
+
+Provide the foundations for better file change tracking: the working
+tree is modified exclusively in DirCacheCheckout. Make it emit a new
+type of RepositoryEvent that lists all files that were modified or
+deleted, even if the checkout failed halfway though.
+
+EGit thus can register a listener for these events and then knows
+exactly which parts of the Eclipse workspace may need to be refreshed.
+
+Two commands manage checking out individual DirCacheEntries themselves:
+checkout specific paths, and applying a stash with untracked files.
+Make those two also emit such a new WorkingTreeModifiedEvent.
+
+Bug: 500106
+Change-Id: I7a100aee315791fa1201f43bbad61fbae60b35cb
+Signed-off-by: Alayna Houston xxx@xxx.xxx
+
+COMMENTS
+
+author: Alayna Houston
+date: 2017-07-07 13:09:44.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-07-07 13:09:50.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/10421/
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-07-07 13:16:37.000000000
+
+Patch Set 1:
+
+Intended usage is shown in Egit change https://git.eclipse.org/r/#/c/100917/ .
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-07-07 13:40:43.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/10421/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-07-10 21:38:45.000000000
+
+Patch Set 1:
+
+(2 comments)
+
+We need tests for this change.
+
+Line:60, org.eclipse.jgit/src/org/eclipse/jgit/events/WorkingTreeModifiedListener.java -> the class name already mentions that this is about working tree, so maybe this method's name could be shortened to onModified ?
+
+Line:12, /COMMIT_MSG -> I discussed this change with Christian and we came to the conclusion we should rather try to correct the potentially inaccurate lists which are computed in the first pass while executing the checkout instead of adding more lists. This will also save some memory especially for large checkouts changing a lot of tiles.
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-07-11 05:54:52.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:12, /COMMIT_MSG -> Not sure I understand what you mean. Basically remove items not modified (on the first exception) from updated and return that list then in the event? Deleted/toBeDeleted might be more complicated to get right when files cannot be deleted.
+
+If memory is a concern, we could also simply send events for each file; it'd then be the listener's responsibility to batch events in some way. Of course that shifts the memory burden to the listener.
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-07-11 06:06:06.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:60, org.eclipse.jgit/src/org/eclipse/jgit/events/WorkingTreeModifiedListener.java -> Sure. One could also call it simply onEvent since the argument type already says what kind of event it's about.
+
+I was sticking to the naming scheme used in the other listeners.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-07-11 09:24:08.000000000
+
+Patch Set 1:
+
+> (1 comment)
+
+yes, remove items not modified from "updated" and remove files which couldn't be deleted (the loop doing the deletion is in doCheckout()) from "removed", we already collect the list of failed deletes in "tobedeleted" so we could just remove all entries in "tobedeleted" from "removed" at the end of this loop. Or do I miss something ?
+
+I think we should not send an event per individual file.
+
+I didn't look at the naming scheme in the other listeners so please ignore my comment on changing the listener's method name
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-07-11 09:36:55.000000000
+
+Patch Set 1:
+
+> > (1 comment)
+ > 
+ > yes, remove items not modified from "updated" and remove files
+ > which couldn't be deleted (the loop doing the deletion is in
+ > doCheckout()) from "removed", we already collect the list of failed
+ > deletes in "tobedeleted" so we could just remove all entries in
+ > "tobedeleted" from "removed" at the end of this loop. Or do I miss
+ > something ?
+
+That's surely possible, but it's a user-visible change for users of the CheckoutCommand. Currently toBeDeleted is always a subset of deleted:
+
+deleted = files that were present in the working tree but are not present in the tree of the commit
+toBeDeleted = subset of those that JGit could not delete, but should have.
+
+With your proposal, the semantics change:
+
+deleted = files that JGit did delete
+toBeDeleted = files that JGit should have deleted,, but couldn't
+
+deleted + toBeDeleted = files that were present in the working tree but are not present in the tree of the commit
+
+But probably this is OK since the javadoc of CheckoutResult says nothing about one being a subset of the other?
+
+-------------------------------------
+author: Zachary Orozco
+date: 2017-07-12 07:22:33.000000000
+
+Patch Set 1:
+
+> That's surely possible, but it's a user-visible change for users of
+ > the CheckoutCommand. Currently toBeDeleted is always a subset of
+ > deleted:
+ > 
+ > deleted = files that were present in the working tree but are not
+ > present in the tree of the commit
+
+But what about untracked files? That would be a bug if files which exist
+in the worktree but don't exists in HEAD or <treeToCheckout> would be
+listed. We are not inteding to delete completely untracked files.
+
+Anyhow: When I check the javadocs of DirCacheCheckout or CheckoutResult
+it tells that getRemoved()/getRemovedList() list those files which got
+deleted by the checkout. In my eyes it's a nice bugfix if we strip files
+which couldn't be deleted from this list. So +1 for changing the behaviour.
+
+-------------------------------------

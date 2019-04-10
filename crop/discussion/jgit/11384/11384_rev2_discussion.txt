@@ -1,0 +1,181 @@
+DESCRIPTION
+
+Avoid useless exceptions
+
+LockFile.unlock() tries to delete non-existant files... a lot. Since we
+are going to catch and swallow the exception, it is much better not to
+create and throw it in the first place.
+
+Change-Id: I78c6531c2250d232f1ef5d95491de3447906b3c6
+
+
+COMMENTS
+
+author: Gustavo Green
+date: 2013-03-22 12:38:41.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Gustavo Green
+date: 2013-03-22 12:40:26.000000000
+
+Patch Set 2:
+
+For the record, a standard run of the SWTBot test suite throws more than 500 of these swallowed (and avoidable) errors.
+
+If needed for such a trivial change:
+
+* I am the author of 100% of the code I am contributing,
+* I own the copyright on the code I am contributing,
+* I have the right to contibute this content to Eclipse under the terms of the EPL.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-03-22 12:43:13.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3232/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-03-22 12:48:36.000000000
+
+Patch Set 2: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3232/ : SUCCESS
+
+-------------------------------------
+author: Juliet Cantu
+date: 2013-03-23 06:36:10.000000000
+
+Patch Set 2: Looks good to me, approved; Unclean IP, do not check in
+
+IP assertion missing
+
+-------------------------------------
+author: Gustavo Green
+date: 2013-03-25 07:54:02.000000000
+
+Patch Set 2:
+
+* I am the author of 100% of the code I am contributing,
+* I own the copyright on the code I am contributing,
+* I have the right to contibute this content to Eclipse under the terms of the EDL.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2013-03-25 08:45:23.000000000
+
+Patch Set 2:
+
+Has somebody found out why we have this exceptions? When the LockFile.unlock() method thinks there should be an existing lockfile but there is no then that may be a sign for a bug somewhere. Somebody seems to be removing lock files without the knowledge of the associated LockFile instance.
+
+-------------------------------------
+author: Gustavo Green
+date: 2013-03-25 08:55:06.000000000
+
+Patch Set 2:
+
+(not related to Christian's comment)
+
+I think my IP assertions above were a little off in the case of JGit? I mentionned that
+
+* I have the right to contibute this content to Eclipse under the terms of the *EPL*.
+
+I think I should have asserted that
+
+* I have the right to contibute this content to Eclipse under the terms of the *EDL*.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2013-03-25 13:50:44.000000000
+
+Patch Set 2:
+
+I put a breakpoint on the catch clause and added a line printing out the IOE and found that, when running egit swtbot tests, in all cases haveLock = true but the lock file has already been renamed earlier, hence deletion of the lock file fails (I tried that on Mac). 
+
+So it looks like something is wrong here, not yet sure why LockFile thinks it still has the lock but the lock file is already renamed, we need to understand this
+
+-------------------------------------
+author: Gustavo Green
+date: 2013-03-26 09:04:39.000000000
+
+Patch Set 2:
+
+Matthias,
+
+As far as I could see during my debug sessions, the lock file is put into an incoherent state as soon as we call "commit" on it.
+
+Namely, "commit" calls "lck.renameTo(ref)", which results in the "lock" file to be deleted in favor of its "ref" (even if that does fail, we force it through "renameLock" later on). As a result of calling commit(), haveLock == true but lck.exists() == false.
+
+I did not understand all of the intricacies behind the locking mechanism, so I only solved the effect through this patch, not considering the cause. There may be a bug... but I admit I cannot help on it.
+
+As a matter of example, you can look into the checkout operation, as it always throws at least one such exception: from the git repository, checkout any branch, and the lock on "HEAD.lock" will throw it. The key points are org.eclipse.jgit.internal.storage.file.RefDirectoryUpdate.doLink(String) at line 160 which calls "lck.commit()" and the associated "finally" clause in org.eclipse.jgit.lib.RefUpdate.link(String) which calls "unlock()"
+
+Sorry for not being much help here.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2013-03-26 20:27:36.000000000
+
+Patch Set 2: I would prefer that you didn't submit this
+
+I think change If42b6192d92c5a2d8f2bf904b16567ef08c32e89 is the correct fix to get rid of the unnecessarily thrown IOExceptions
+
+-------------------------------------
+author: Zachary Orozco
+date: 2013-03-27 08:16:51.000000000
+
+Patch Set 2: I would prefer that you didn't submit this
+
+We know have Matthias change If42b6192d92c5a2d8f2bf904b16567ef08c32e89 which fixes this problem. Independent from that what is proposed here doesn't look bad on the first glance. Semantically it is ok to replace:
+
+  try {
+    FileUtils.delete(lck, FileUtils.RETRY);
+  } catch (IOException e) {
+    // couldn't delete the file even after retry.
+  }
+
+with
+
+  FileUtils.delete(lck, FileUtils.RETRY | FileUtils.SKIP_MISSING);
+
+But: most of the times it costs you one filesystem access more because the SKIP_MISSING option requires us to look whether the file exists before we even try to delete. It's cheaper to simply try to delete the file instead of previously checking for existence.
+
+Therefore I vote for abandoning this change.
+
+-------------------------------------
+author: Gustavo Green
+date: 2013-03-27 08:27:09.000000000
+
+Patch Set 2:
+
+Matthias' change fixes the cause, whereas this only avoided the effect. I also think that this can be abandonned.
+
+However, I believe that rather than swallowed, this exception should be logged : if an IOException -does- happen when trying to unlock, it should be investigated and fixed (here, we were in a case where the SWTBot tests threw hundreds of exceptions... which even if caught and ignored still cause performance (and debugging) issues.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2013-03-27 09:16:22.000000000
+
+Patch Set 2:
+
+If we call unlock() and the lockfile doesn't exist anymore and that's the reason why we can't delete it --- then I don't think we should do something. The repository state is consistent and the file is unlocked as expected.
+
+If we call unlock() and the lockfile exists but we can't delete it then I agree it would be nice not to swallow this exceptional case. JGit doesn't write a log and this method can't throw checked exceptions. We could throw an unchecked exception in this case. Then EGit could catch and log it.
+
+-------------------------------------
+author: Gustavo Green
+date: 2013-04-10 07:12:11.000000000
+
+Patch Set 2: Abandoned
+
+Just saw that this is still "open". According to discussions on another change, I guess only the owner of a change can abandon it?
+
+Abandoning now, I think change If42b6192d92c5a2d8f2bf904b16567ef08c32e89 took care of this issue better than this.
+
+-------------------------------------

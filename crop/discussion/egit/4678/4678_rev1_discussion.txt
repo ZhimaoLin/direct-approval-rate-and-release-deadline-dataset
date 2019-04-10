@@ -1,0 +1,138 @@
+DESCRIPTION
+
+[RFC] Show detailed branch status in label decoration of project
+
+The branch status is shown after the branch name in the decoration if
+the current branch is different from the remote tracking branch. This is
+useful as a visual indication that the branch needs to be pushed (or
+merged/rebased).
+
+If there are commits on the branch that are not on the tracking branch,
+an upwards arrow (↑) followed by the number of commits is shown. This
+can be read as "the branch is N commits ahead" or "N commits need to be
+pushed".
+
+If there are commits on the tracking branch that are not on the local
+branch, a downwards arrow (↓) is shown, followed by the number of
+commits. This can be read as "the branch is N commits behind" or "N
+commits need to be merged".
+
+For example, if there are 2 unpushed commits on master, the project is
+now shown like this:
+
+  project [repo master ↑2]
+
+If there are both unpushed and unmerged commits (the branches have
+diverged), it's shown like this:
+
+  project [repo master ↑2 ↓1]
+
+In C Git, information about the tracking branch is displayed in "git
+status" output. EGit currently doesn't have any indication that a branch
+needs to be pushed, apart from the labels in History View. When there
+are multiple repositories involved, it can easily happen that a push is
+forgotten. This change helps prevent that.
+
+Change-Id: I1e1caca561d1b0a0c194bfc42e64b698f42c6e6a
+Signed-off-by: Danika Greer xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Danika Greer
+date: 2011-11-26 13:23:46.000000000
+
+Patch Set 1:
+
+This change is a result of the discussion here:
+
+http://egit.eclipse.org/r/#change,3993
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2011-11-27 22:38:31.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(6 inline comments)
+
+I prefer this proposal compared to the alternative approach in change 3993
+
+In the preview pane shown under "Preferences > Team > Git > Label Decorations" a '*' character is shown as branch decorator : "> Project [repository|Conflicts master*]", I think this should be replaced by the arrow annotation
+
+Did you check the performance impact of this feature ?
+
+I think we should also display this information in the repositories view. 
+
+And we could show a more explicit textual hint in the staging view which is the equivalent to git status in EGit, e.g.:
+- "Branch 'x' has 2 unpublished commits"
+- "Branch 'x' is 3 commits behind 'origin/master' and can be fast-forwarded"
+- next to these hints the corresponding action which can bring the delta to 0 could be exposed as a button: "Push to upstream" or "Merge 'origin/master'"
+
+Line:262, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/decorators/DecoratableResourceHelper.java -> do not prepend a blank here, if I want to move this decoration e.g. to the beginning of the text decorator I wouldn't be able to remove it and would have to waste one blank worth of horizontal space
+
+Line:263, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/decorators/DecoratableResourceHelper.java -> I would tend to flip the arrows, this way the arrows would always point from the current branch in direction towards the corresponding remote tracking branch
+
+Line:274, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/decorators/DecoratableResourceHelper.java -> yes, Repository looks like a better home for this method, would deserve some unit tests
+
+Line:290, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/decorators/DecoratableResourceHelper.java -> maybe move this to RevWalk, also would deserve some unit tests
+
+Line:15, /COMMIT_MSG -> I would tend to flip the arrows, this way the arrows would always point from the current branch in direction towards the corresponding remote tracking branch
+
+Line:38, /COMMIT_MSG -> s/helps prevent/helps to prevent/
+
+-------------------------------------
+author: Danika Greer
+date: 2011-12-02 18:07:11.000000000
+
+Patch Set 1: (5 inline comments)
+
+> In the preview pane shown under "Preferences > Team > Git > Label Decorations" a '*' character is shown as branch decorator : "> Project [repository|Conflicts master*]", I think this should be replaced by the arrow annotation
+
+Good catch!
+
+> Did you check the performance impact of this feature ?
+
+No, but I've deployed it to our internal update site and will see how it affects performance (10+ moderately-sized repos).
+
+> I think we should also display this information in the repositories view.
+
+Will do.
+
+> And we could show a more explicit textual hint in the staging view which is the equivalent to git status in EGit, e.g.:
+
+Can we do that in a separate change?
+
+Thanks for the review Matthias!
+
+Line:262, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/decorators/DecoratableResourceHelper.java -> Hm, the problem here is that, when I don't prepend a blank here, the default format would have to look like this (see GitLightweightDecorator):
+
+PROJECT_FORMAT_DEFAULT ="{dirty:>} {name} [{repository} {branch} {branch_status}]";
+
+(Notice the space between {branch} and {branch_status}.)
+
+With this default format, there would always be a blank, even if the current branch isn't different from the remote tracking branch. It would then look like this:
+
+project [repo branch ]
+
+Is that acceptable? Or is there a way to avoid this?
+
+Line:274, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/decorators/DecoratableResourceHelper.java -> Will do.
+
+Line:290, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/decorators/DecoratableResourceHelper.java -> Will do.
+
+Line:15, /COMMIT_MSG -> I thought about this for some time, but decided that ? for ahead and ? for behind is more intuitive (the way it is in the patch).
+
+The arrows point from the remote tracking ("the original"), to the current branch. It's the current branch's status we want to show. It says "the current branch is up there, compared to the remote branch". Flipping the arrows would reverse that, changing the meaning to "the remote branch is down there".
+
+I think it also corresponds better with the wording of "git status", which says:
+
+  Your branch is ahead of 'origin/master' by 1 commit.
+
+Ahead sounds more like ? than ?, no?
+
+Maybe we need to have a vote on that, maybe my thinking is non-intuitive here.
+
+Line:38, /COMMIT_MSG -> Will do.
+
+-------------------------------------

@@ -1,0 +1,176 @@
+DESCRIPTION
+
+Fix JGit set core.fileMode to false by default instead of true for non Windows OS.
+
+Bug: 519887
+Change-Id: I4ae0d6783a9dc62f78ead54ddd1ab2b5b66a811c
+Signed-off-by: Milo Wolf xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Milo Wolf
+date: 2017-07-24 12:57:35.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-07-24 12:57:40.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/10639/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-07-24 13:08:23.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/10639/ : SUCCESS
+
+-------------------------------------
+author: Milo Wolf
+date: 2017-07-25 09:39:58.000000000
+
+Patch Set 3:
+
+Are we happy with this change?
+
+-------------------------------------
+author: Milo Wolf
+date: 2017-08-21 10:39:43.000000000
+
+Patch Set 3:
+
+Hi, Can anyone look into this? This has been open for more than a month!!!
+
+-------------------------------------
+author: Milo Wolf
+date: 2017-08-23 22:08:40.000000000
+
+Patch Set 3:
+
+@Douglas Trujillo Is this ok to go?
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-08-24 11:17:02.000000000
+
+Patch Set 3:
+
+I don't quite understand under what conditions we can end up not being the owner of a file we created.
+
+-------------------------------------
+author: Milo Wolf
+date: 2017-08-24 15:51:35.000000000
+
+Patch Set 3:
+
+I don't understand either but I just monkey patched this change in my project and it fixed the issue.
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-08-24 16:35:31.000000000
+
+Patch Set 3:
+
+> I don't understand either but I just monkey patched this change in
+ > my project and it fixed the issue.
+
+That's not exactly reassuring. :-( I don't understand this ownership issue.
+
+But I think FS_POSIX has a problem: if canExecute == true, it uses PosixFilePermissions and sets the execute bit for owner, group, others subject to the umask. if canExecute == false, it used to remove only the execute bit for the owner. The owner might still be able to execute the file if the group or others bits are still set, and thus off == true on line 324 in [1], and thus fileMode == false.
+
+So I do think removing the execute bit for all is indeed correct.
+
+@Salma Murray: what's the umask on that Alpine Linux account, and are you 100% sure that that account is not the file owner of that temp file?
+
+[1] https://git.eclipse.org/r/plugins/gitiles/jgit/jgit/+/refs/heads/master/org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/FileRepository.java#316
+
+-------------------------------------
+author: Milo Wolf
+date: 2017-08-24 18:53:48.000000000
+
+Patch Set 3:
+
+At [1] the mask is:
+-rw-r-xr-x 1 root root     0 Aug 24 18:48 try4944867411352214073execute
+And `off` is `true` instead of `false`
+[1] https://git.eclipse.org/r/plugins/gitiles/jgit/jgit/+/refs/heads/master/org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/FileRepository.java#325
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-08-24 21:52:01.000000000
+
+Patch Set 3:
+
+> At [1] the mask is:
+ > -rw-r-xr-x 1 root root     0 Aug 24 18:48 try4944867411352214073execute
+ > And `off` is `true` instead of `false`
+ > [1] https://git.eclipse.org/r/plugins/gitiles/jgit/jgit/+/refs/heads/master/org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/FileRepository.java#325
+
+Is your application running as root?
+
+-------------------------------------
+author: Milo Wolf
+date: 2017-08-25 08:43:15.000000000
+
+Patch Set 3:
+
+Yes it runs as root in a Docker container with Alpine Linux as a base.
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-08-25 08:49:47.000000000
+
+Patch Set 3:
+
+> Yes it runs as root in a Docker container with Alpine Linux as a
+ > base.
+
+I thought so when you first mentioned Alpine :-). But then what we see here is that it's _not_ a file ownership problem: the file is owned by user "root", which _is_ the user running the application that creates the file. So that bit is fine. It _is_ indeed a problem with the inconsistency between setting the execution bit for all (the umask of root is probably 0022) and not clearing it for all. I'll have to see if I can reproduce this when I run a Java application as root...
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-08-25 09:27:14.000000000
+
+Patch Set 3: Code-Review+1
+
+Confirmed; I can reproduce this on Mac OS X.
+
+When run as a normal user with umask 0022, the existing code with File.setExecutable(false) works fine.
+
+When run as root with umask 0022, root can still execute the file if only the owner's execute bit is removed, and thus for root off == true and then fileMode == false.
+
+When run as root with umask 0033, root cannot execute the file anymore, as expected, since the group and others bit were never set.
+
+Salma Murray's fix resolves the problem, and is IMO correct.
+
+@Salma Murray: I'm not a committer in the jgit project, so I can only give this a +1, not a +2 nor actually merge it. But some committer (there are quite a few in the reviewers list) will surely come around to this in due time.
+
+-------------------------------------
+author: Milo Wolf
+date: 2017-08-25 10:28:28.000000000
+
+Patch Set 3:
+
+xxx@xxx.xxx Houston.
+Can any body approve this?
+
+-------------------------------------
+author: Elise Key
+date: 2017-08-26 00:58:05.000000000
+
+Patch Set 3: Code-Review+2
+
+-------------------------------------
+author: Elise Key
+date: 2017-08-26 00:58:07.000000000
+
+Change has been successfully merged by Elise Key
+
+-------------------------------------

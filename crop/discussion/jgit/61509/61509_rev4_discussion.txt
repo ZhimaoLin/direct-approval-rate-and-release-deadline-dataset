@@ -1,0 +1,207 @@
+DESCRIPTION
+
+Null-annotated Ref class and fixed related compiler errors
+
+This change fixes all compiler errors in JGit and replaces possible
+NPE's with either appropriate exceptions, avoiding multiple "Nullable
+return" method calls or early returning from the method.
+
+Change-Id: I24c8a600ec962d61d5f40abf73eac4203e115240
+Signed-off-by: Jayvion Booth xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Jayvion Booth
+date: 2015-12-07 22:52:49.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-12-07 23:08:22.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7684/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-12-07 23:16:54.000000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7684/ : SUCCESS
+
+-------------------------------------
+author: Eden Lin
+date: 2015-12-08 00:21:05.000000000
+
+Patch Set 4:
+
+(9 comments)
+
+Line:407, org.eclipse.jgit/src/org/eclipse/jgit/transport/FetchProcess.java -> r.getObjectId is always non-null with the in-tree transports. (The only transport that advertises a ref without an object id is 'dumb http', which only does so for HEAD.) So if r.getObjectId is null, then something strange is happening.
+
+Since we don't have a way of fetching symrefs as opposed to their targets, adding such a tag as a 'want' wouldn't accomplish anything. So how about:
+
+  ObjectId id = r.getObjectId();
+  if (id == null) {
+    continue;
+  }
+  Ref local = haveRefs.get(r.getName());
+  if (local == null || !id.equals(local.getObjectId()) {
+    wantTag(r);
+  }
+
+Line:422, org.eclipse.jgit/src/org/eclipse/jgit/transport/FetchProcess.java -> If newId == null then the transport advertised this ref as a symref to an unborn branch. This can happen if I try to fetch 'HEAD' over dumb http and HEAD points to an unborn branch.
+
+I think that's a bug in HttpTransport. Transports shouldn't do that and none of the others do. So this seems like an API validation exception and not e.g. a protocol problem --- something like
+
+  if (newId == null) {
+    // The transport advertised a ref without an object id.
+    // This is not supposed to happen (ref advertisements pointing
+    // to 0{40} would use ObjectId.zeroId()).
+    throw new NullPointerException(
+      String.format("Transport provided ref %s with no object id", src));
+  }
+
+Line:129, org.eclipse.jgit/src/org/eclipse/jgit/lib/RefWriter.java -> Interesting.
+
+This means that trying to build info/refs if there's a symref-to-unborn-branch other than HEAD would fail. For comparison, C git skips those unless GIT_REF_PARANOIA is set to 1 or true.
+
+This step comes after the actual push has occurred so it seems safer to skip the symref like C git does:
+
+  if (objectId == null) {
+    // Symrefs to unborn branches aren't advertised in the info/refs file.
+    continue;
+  }
+
+Line:183, org.eclipse.jgit/src/org/eclipse/jgit/lib/RefWriter.java -> This shouldn't be possible --- symrefs cannot have storage PACKED. To guard against it:
+
+ if (objectId == null) {
+   // A packed ref cannot be a symref, let alone a symref
+   // to an unborn branch.
+   throw new NullPointerException();
+ }
+ ...
+
+Line:1377, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> This means bypassing the check if ref is a symref to an unborn branch. It would be safer to keep the check in that case:
+
+  if (cmd.getType() == ReceiveCommand.Type.DELETE && ref != null) {
+    ObjectId id = ref.getObjectId();
+    if (id == null) {
+      id = ObjectId.zeroId();
+    }
+    if (!ObjectId.zeroId().equals(...)
+        && !id.equals(...)) {
+      cmd.setResult(REJECTED_OTHER_REASON, "invalid old id sent");
+      continue;
+    }
+  }
+
+Line:1397, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> ref.getObjectId() == null would indicate a symref to an unborn branch, not a missing ref. An UPDATE doesn't make sense there (while a CREATE would make sense, though JGit doesn't handle it yet).
+
+  if (ref == null) {
+    ...
+  }
+  ObjectId id = ref.getObjectId();
+  if (id == null) {
+    cmd.setResult(REJECTED_OTHER_REASON, "cannot update unborn branch");
+  }
+  if (!id.equals(cmd.getOldId())) {
+    ...
+  }
+
+Line:1165, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> optional: this can go in ObjectIdRef.Unpeeled
+
+Line:471, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackFetchConnection.java -> The wants come from doFetch(), which passed them on from FetchConnection#fetch(). They come from the ref advertisement, so they should always point to an object id, but no one in the call chain validated them so that's up to us.
+
+People usually would call Transport#fetch instead of using the protocol directly. Transport#fetch builds the list of wants using refs it obtained from the Connection. Those always have an objectId --- though it can sometimes be 0{40} --- except in the "dumb http" path where HEAD can be a symref to an unborn branch.
+
+Since this code path is trying to check whether we already have the object pointed to by this remote ref and if not fetch it, why not do
+
+  if (objectId == null) {
+    continue;
+  }
+
+since there is nothing to fetch in that case?
+
+Line:273, org.eclipse.jgit/src/org/eclipse/jgit/transport/WalkFetchConnection.java -> Same thought as in the other files: this condition is more like an API error and not a protocol or higher-level error, so it should use a RuntimeException such as NPE instead of TransportException.
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-12-13 16:31:02.000000000
+
+Patch Set 4:
+
+(9 comments)
+
+Thanks & sorry for the delay. Next patch set is rebased and changed according to the review comments.
+
+Line:407, org.eclipse.jgit/src/org/eclipse/jgit/transport/FetchProcess.java -> Done
+
+Line:422, org.eclipse.jgit/src/org/eclipse/jgit/transport/FetchProcess.java -> Done
+
+Line:129, org.eclipse.jgit/src/org/eclipse/jgit/lib/RefWriter.java -> Done
+
+Line:183, org.eclipse.jgit/src/org/eclipse/jgit/lib/RefWriter.java -> Done
+
+Line:1377, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> Done
+
+Line:1397, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> Done
+
+Line:1165, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> ObjectIdRef.Unpeeled constructor can be called with null object id, so I don't get it how we can move this to the super class.
+
+Line:471, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackFetchConnection.java -> Done
+
+Line:273, org.eclipse.jgit/src/org/eclipse/jgit/transport/WalkFetchConnection.java -> Done
+
+-------------------------------------
+author: Eden Lin
+date: 2015-12-15 00:01:16.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Thanks. See previous comment for the remaining unaddressed comments on PS2. The rest looks good to me.
+
+Line:1165, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> Oh! Yep, my mistake (not sure how I ended up so confused).
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-12-15 07:58:14.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+> I can try making a change on top for those two comments if you
+ > don't get to it first. This change has been in review for long
+ > enough.
+
+I will push the updated patch shortly, I've missed that two comments on the older changeset. 
+
+ > For future classes, I'd be happiest with separate changes that fix
+ > the problems revealed by nullness annotations, followed by a change
+ > that annotates the class. That way most of the changes can be
+ > reviewed and applied quickly, instead of waiting for everything to
+ > be in good shape at once with a big bang. (Most are bugfixes so it
+ > is valuable to get them applied asap.) That said, the
+ > review-everything-at-once method has also been working fine for me
+ > if you strongly prefer it.
+
+I see your point. I don't know which parts I will focus on next (actually all the recent NP reviews were caused by bug 482217), but I think this depends on the amount of the code changes. I personally would prefer to keep all changes together because we saw that sometimes NP assumptions were changed during the review and so the fixes too, and also it is easier to play which compiler warnings etc.
+
+Line:1165, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> Done
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-12-15 08:37:51.000000000
+
+Change has been successfully merged into the git repository by Jayvion Booth
+
+-------------------------------------

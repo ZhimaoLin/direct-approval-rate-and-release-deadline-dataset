@@ -1,0 +1,57 @@
+DESCRIPTION
+
+Fixes for adding only hostname instead of both hostname and ip address
+
+Change-Id: Ieae49545e1c08f2cb9155f926015046a787c0f5b
+
+
+COMMENTS
+
+author: Andreas Short
+date: 2012-02-07 07:35:00.803000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Andreas Short
+date: 2012-02-07 07:44:10.166000000
+
+Patch Set 2: Verified; Looks good to me, approved
+
+I've added a test for Rag's original code and seen it with my own eyes work with an EC2 configured system, so I think this is a good fix.  I verified the test failed when used one commit back.
+
+There are probably better fixes, but this one is good enough for the number of times reconfigure is called.
+
+Will leave this for a few hours so Mike can put his eyes on it as well.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2012-02-07 19:36:26.079000000
+
+Patch Set 2: I would prefer that you didn't submit this
+
+(1 inline comment)
+
+One minor comment that I think we should fix before merging this.
+
+Line:183, src/main/java/com/couchbase/client/vbucket/VBucketNodeLocator.java -> I feel like we should throw an exception or do something to alert the user if a node isn't added to the node map.
+
+-------------------------------------
+author: Andreas Short
+date: 2012-02-07 20:52:07.762000000
+
+Patch Set 2: I would prefer that you didn't submit this
+
+(1 inline comment)
+
+Changing to -1, since we need to do better to not have nulls in the Map for the locator.
+
+Line:183, src/main/java/com/couchbase/client/vbucket/VBucketNodeLocator.java -> Yes, I'd thought of something similar, but now I think I have a better solution.  We don't really want to thrown an exception because it is called from a constructor.  We don't want to keep nulls in the map either.
+
+Solution: after population of the new map, iterate back through it looking for nulls.  If we find one, log a critical message and remove it.  
+
+This will then cause the client's event loop to fail to find a node for a given configuration, and those operations will fail but other operations will proceed.  
+
+Yes, this whole thing is pretty bad, but we're doing the best we can to keep going in this really unexpected case.  All MemcachedNodes should be created by the time we get here.
+
+-------------------------------------

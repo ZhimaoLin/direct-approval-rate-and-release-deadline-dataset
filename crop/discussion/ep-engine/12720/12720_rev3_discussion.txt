@@ -1,0 +1,87 @@
+DESCRIPTION
+
+MB-4693: Reset connection if mccouch stops responding
+
+If mccouch crashes after we send a request and before we receive
+a response then ep-engine will wait forever for a response that
+won't come. This change introduces a new parameter called
+couch_response_timeout that will cause ep-engine to re-establish
+a connection to mccouch if it a request doesn't come back for the
+given amount of time specified in couch_response_timeout. By
+default this parameter is set to 1 minute.
+
+Change-Id: Iede592f378d3ed73c0f7aed1a2986148cfb25d0b
+
+
+COMMENTS
+
+author: Kenny Maynard
+date: 2012-01-27 00:26:27.426000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Abby Duran
+date: 2012-01-27 03:40:28.244000000
+
+Patch Set 3: (1 inline comment)
+
+
+
+Line:94, configuration.json -> As this engine param is configurable at runtime, this "dynamic" property should be set to true. If this doesn't work, looks like there is a bug in parsing a config. As an alternative, removing this property should work.
+
+-------------------------------------
+author: Asher Vang
+date: 2012-01-27 08:27:40.948000000
+
+Patch Set 3: (1 inline comment)
+
+
+
+Line:92, configuration.json -> What is the average transaction commit time under high load with large objects? 1 minute seems a little bit low to me (the transaction size is 4000 objects, and our max object size is 20MB, that would be ~80GB.. Can EC2 (with friends) keep up with that?
+
+-------------------------------------
+author: Noah Dean
+date: 2012-01-27 08:32:44.927000000
+
+Patch Set 3: (1 inline comment)
+
+
+
+Line:92, configuration.json -> We're kind of guessing at this point.  The "nice" way to do it is to watch the longest transaction size and do about 4x that.
+
+We probably should work the transactions to be a bit smaller, though.  Perhaps cutting it off by object size as well as count.
+
+-------------------------------------
+author: Abby Duran
+date: 2012-01-27 08:43:57.655000000
+
+Patch Set 3: (1 inline comment)
+
+
+
+Line:92, configuration.json -> From our customer's clusters, I sometimes saw more than 1 min of a commit time even with small objects and 1000 transaction size in 1.7.x. In 2.0, the default transaction size is 10000, which could be too large for large objects. Reducing transaction size based on both object size and count is a good idea.
+
+In addition, as we record every commit timing, it would be probably better to adjust this timeout parameter dynamically based on the last N commit timings.
+
+-------------------------------------
+author: Asher Vang
+date: 2012-01-27 08:48:57.440000000
+
+Patch Set 3: (1 inline comment)
+
+
+
+Line:92, configuration.json -> It's dead easy to add more "non-blocking" checkpoints within mc-engine.. just insert a noop for every nth message/mb and couch will flush it's buffer and send us the noop back and we'll start marking the sent items as persisted (and they will not be part of the next retry if we time out). This kind of commit will not clear the persistence pipe in both directions and keep couchdb busy ;-)
+
+-------------------------------------
+author: Noah Dean
+date: 2012-01-27 08:59:56.095000000
+
+Patch Set 3: (1 inline comment)
+
+
+
+Line:92, configuration.json -> Well, sounds like we need a bigger number at the very least.  I do like the idea of having slightly more intelligent "hang" detection if possible.
+
+-------------------------------------

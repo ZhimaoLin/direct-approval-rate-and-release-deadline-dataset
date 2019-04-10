@@ -1,0 +1,122 @@
+DESCRIPTION
+
+Bug 432480: Show workspace location in pref page and window title
+
+- Show the true workspace location in the Workspace preference page.
+- Add an option to show the workspace location in the window title.
+  Support the -showlocation command line switch such that UI toggle is
+  disabled if it is specified, and show the specified location from the
+  command line in addition, if this one differs from the workspace 
+  location.  This is why we call the UI text "Show location" instead of
+  "Show workspace location".
+
+Change-Id: Ica1e2186ed3aafbcec1bb5a35c0b07394771029b
+Signed-off-by: Braedon Velazquez xxx@xxx.xxx
+
+COMMENTS
+
+author: Braedon Velazquez
+date: 2014-12-04 14:23:08.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-12-04 14:23:13.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/3851/
+
+-------------------------------------
+author: Zaid Mosley
+date: 2014-12-04 14:36:02.000000000
+
+Patch Set 3: Code-Review-1
+
+(6 comments)
+
+Thanks Christian, I think we should target a simpler solution. If the command line parameter is applied the preference is ignored, otherwise the preference is used. I think that would make the implementation easier. Also see several comments in the code
+
+Line:201, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/dialogs/IDEWorkspacePreferencePage.java -> Maybe we have this preference option independent of the command line parameter? If command line is specified we use it, otherwise the preference? I think that would make this logic simpler and access to the e4 context would not be required.
+
+Line:348, bundles/org.eclipse.ui.ide.application/src/org/eclipse/ui/internal/ide/application/IDEWorkLeon OchoachWindowAdvisor.java -> While were are here, please delete this ugyly ws
+
+Line:190, bundles/org.eclipse.ui.ide.application/src/org/eclipse/ui/internal/ide/application/IDEWorkLeon OchoachAdvisor.java -> I would move that deleted method to E4Application.
+
+Line:805, bundles/org.eclipse.ui.ide.application/src/org/eclipse/ui/internal/ide/application/IDEWorkLeon OchoachAdvisor.java -> I would suggest to move the calculation logic from the preference page to this place where the logic is actually applied.
+
+Line:453, bundles/org.eclipse.e4.ui.workLeon Ochoach.swt/src/org/eclipse/e4/ui/internal/workbench/swt/E4Application.java -> Instead of rewriting this method, I suggest to introduce a new method similiar to the old one you are deleting.
+
+Line:32, bundles/org.eclipse.e4.ui.workLeon Ochoach/META-INF/MANIFEST.MF -> This is a no-go, e4 cannot depend on o.e.ui. Why is this necessary?
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-12-04 14:58:16.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/3851/ : SUCCESS
+
+-------------------------------------
+author: Braedon Velazquez
+date: 2014-12-04 15:12:01.000000000
+
+Patch Set 3:
+
+(5 comments)
+
+Line:201, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/dialogs/IDEWorkspacePreferencePage.java -> That's actually what's implemented: if showlocation is set, it's used unconditionally, which is honored by a disabled toggle.  If it's not set, the pref takes control.  We can discuss how the UI should behave in the former case:
+* Be disabled like now
+* Disabled with a hint why ("locked by showlocation")
+* Even invisible (which would create confusion I think)
+
+We could go for the pref taking precedence, but then users might wonder why they don't see the location although they have set showlocation (because they unchecked the toggle somewhen in the past).  Which could only be made transparent by a third toggle value for "default".
+
+The two settings are related no matter what we do because they target the same title bar.  I am not so concerned about the logic here, but only what makes most sense for the users.
+
+Line:348, bundles/org.eclipse.ui.ide.application/src/org/eclipse/ui/internal/ide/application/IDEWorkLeon OchoachWindowAdvisor.java -> There is no ws (see line numbers).  This is just Gerrit.
+
+Line:805, bundles/org.eclipse.ui.ide.application/src/org/eclipse/ui/internal/ide/application/IDEWorkLeon OchoachAdvisor.java -> Ok
+
+Line:453, bundles/org.eclipse.e4.ui.workLeon Ochoach.swt/src/org/eclipse/e4/ui/internal/workbench/swt/E4Application.java -> I don't find this one too complicated, but sure we can have a separate one like getOptionalMultiArgValue()
+
+Line:32, bundles/org.eclipse.e4.ui.workLeon Ochoach/META-INF/MANIFEST.MF -> It's an xfriends declaration.  ui.ide depends on e4.ui.workbench due to the e4 context.  Is this dependency ok in general?
+
+-------------------------------------
+author: Zaid Mosley
+date: 2014-12-04 15:33:45.000000000
+
+Patch Set 3:
+
+(4 comments)
+
+Line:201, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/dialogs/IDEWorkspacePreferencePage.java -> I think a reasonable logic is: If the commandline parameter is specified, the preference value is ignored. I think the possibility of setting / unsetting the preference value should not be related to the command line parameter.
+
+So basically we do not need any check here for the workspaceLocationFromCommandLine. the setting in independent of the command line parameter.
+
+Line:348, bundles/org.eclipse.ui.ide.application/src/org/eclipse/ui/internal/ide/application/IDEWorkLeon OchoachWindowAdvisor.java -> Done
+
+Line:453, bundles/org.eclipse.e4.ui.workLeon Ochoach.swt/src/org/eclipse/e4/ui/internal/workbench/swt/E4Application.java -> I fail to read a method with several boolean flags, please create a new method.
+
+Line:32, bundles/org.eclipse.e4.ui.workLeon Ochoach/META-INF/MANIFEST.MF -> Ah, ide depends now on e4? I think that would be ok but is this to use the same String? In this case we should push the string to another place or use literals.
+
+-------------------------------------
+author: Braedon Velazquez
+date: 2014-12-04 16:22:35.000000000
+
+Patch Set 3:
+
+(4 comments)
+
+Line:201, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/dialogs/IDEWorkspacePreferencePage.java -> Done.  We just need to live with the fact then that the user can toggle w/o effect if -showlocation is set.
+
+Line:190, bundles/org.eclipse.ui.ide.application/src/org/eclipse/ui/internal/ide/application/IDEWorkLeon OchoachAdvisor.java -> Done
+
+Line:453, bundles/org.eclipse.e4.ui.workLeon Ochoach.swt/src/org/eclipse/e4/ui/internal/workbench/swt/E4Application.java -> Done
+
+Line:32, bundles/org.eclipse.e4.ui.workLeon Ochoach/META-INF/MANIFEST.MF -> I could again remove the dependency because the pref page no longer needs the e4 context.
+
+-------------------------------------

@@ -1,0 +1,148 @@
+DESCRIPTION
+
+tmf: Coalescing for analysis framework
+
+When opening a trace all relevant background requests (indexing,
+histogram, Kernel State system Analysis etc) are coalesced so
+that the trace is read only once. To make it work the method
+notifyPendingRequest() of the TmfDataProvider was used (amongst some
+rearrangements). This method allows to synchronize requests across
+threads. This is on top of the synchronization using TMF signals.
+
+However, due to the fact that the HistoryBuilder.buildManually() waits
+for the state system request to complete, the place to use
+notifyPendingRequests(false) to decrement the internal pending counter
+is not obvious. Therefore we need to revisit the way it is handled.
+
+We also should allow analysis to run asynchronous so that we don't
+use waitForCompletion. See executeAnalysis() method with requires
+that the the analysis is finished when returning.
+
+This patch is also to demonstrate that coalescing of requests is
+possible with the current means provided by TMF.
+The "Fun-bus-coalescing" hasn't been designed and there will be a
+several challenges to make it work (e.g. multi-thread handling). Also
+we don't know what the gain is. We should try to use what is already
+there.
+
+Change-Id: Ib5e156df9bca416e9546b16c5c9e06efe768372f
+Signed-off-by: Ricky Reeves <Meredith xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Ricky Reeves
+date: 2013-11-26 13:03:47.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-26 13:03:52.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4164/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-26 13:41:46.000000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4164/ : SUCCESS
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2013-11-29 15:04:51.000000000
+
+Patch Set 4:
+
+(2 comments)
+
+It looks ok, it works.  But do we have any unit test that can show it really works? That before requests didn't get coalesced and now they are? From my empirical point of view with toy traces, it never appeared that the analysis requests would run after the first indexing request, they all looked synchronous.  Simple coincidence maybe?
+
+Line:279, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/TmfAbstractAnalysisModule.java -> Will this not be called twice when the state system is built manually?  Once in the HistoryBuilder#buildManually and once here.  But then again, if we reach here, it means the request fired and that will only decrement 0...
+
+It should be added in the executeAnalysis method description that analysis must make sure they call the notifyPendingRequest method.
+
+And what if the analysis doesn't use a request, but depends on the output of an analysis who has a request (I'm thinking of the case of the critical path and lttng kernel execution graph).  Analysis that do not use requests should notifyPendingRequest(false) at their very beginning if they don't want to block others.  A bit tricky but if it's well documented, then it's the price to pay to get request coalescing.
+
+Line:808, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/views/timegraph/AbstractTimeGraphView.java -> That will cause 2 BuildThread to run simultaneously because the load trace does not cancel previously running build threads and the entry list is set at the end of the build thread.  The loadTrace method should be updated to make sure that any previously running one is cancelled.  But that can be filed as a bug and corrected in an eventual patch.
+
+-------------------------------------
+author: Ricky Reeves
+date: 2013-11-29 18:48:08.000000000
+
+Patch Set 4:
+
+(2 comments)
+
+> It looks ok, it works. But do we have any unit test that
+> can show it really works? That before requests didn't get
+> coalesced and now they are? From my empirical point of view 
+> with toy traces, it never appeared that the analysis 
+> requests would run after the first indexing request, they 
+> all looked synchronous. Simple coincidence maybe?
+
+There are not test cases for that, not the easiest thing to do. I verified it by enabled the TMF traces for signals and request. Then you can see which requests get coalesced. With this patch the analysis request gets coalecst with the indexing request (and others). Without this patch, the analysis request isn't coalesced. We need coalescing to work. Otherwise the performance will degrade significantly. You could test the effect of missing coalescing right now by disabling coalescing. Then we will have 5 different requests that reading the trace concurrently (histogram, indexing, 2 statistic request, and kernel state system)
+
+Line:279, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/TmfAbstractAnalysisModule.java -> You're completely right. I didn't like it there either. However, the problem is the TmfStateSystemFactory doesn't have the trace instance to call the notifyPendingRequest() in case the history file is already exists. I could move this into TmfStateSystemAnalysisModule however that doesn't solve the problem that some analysis won't use requests and in line 256 above we increment the pending counter.
+
+I think we have to sit back and see what we want to achieve. When it comes to reading a trace from multiple analysis, views etc. we want that the requests are coalesced, we don't want to read the trace multiple time. For that the signals where introduced to be able to synchronized tasks e.g reading the trace. Now, with the analysis framework, the analysis execution is done in a different thread which removes the possibility to coalesce requests using the signals. For a similar reason the pending request was introduced a long time ago. And believe me, I've never liked that because the designer has to know the insights of the implementation to make it work and as you've seen for this patch it is usually boils down to something like a hack to make coalescing work. 
+
+I still think it's a good way to synchronize using signals. However, it looks like I'm the only one. If want to make coalescing work using signals then the analysis execution cannot be within a own separate thread (unless we use the pending request mechanism)
+
+Of course we could also have a timer in the TmfEventProvider that allows other request to coalesce with an existing re quest for certain time. But this won't work all the time.
+
+Any thoughts?
+
+Line:808, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/views/timegraph/AbstractTimeGraphView.java -> I didn't notice that. It's possible. Will have to look at it.
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2013-11-29 19:44:44.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:279, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/TmfAbstractAnalysisModule.java -> I think what I really don't like about this is that this whole thing relies on the analysis module's developer to not forget to decrement the request flag or else it blocks forever.  The default behavior is to block.
+
+We could add a function analysisHasRequest() { return false; } and the notifyPendingRequest(true) would occur only if analysisHasRequest is true.  That way, the developer controls both calls.  He knows if he overwrites the first method then he has to decrement the pending request flag.
+
+And, if he ignores those methods, but uses a request, then, well... it probably won't be coalesced and that's not the end of the world. We'll catch that on a review if the code makes it into gerrit ;-)
+
+-------------------------------------
+author: Ricky Reeves
+date: 2013-11-29 19:50:04.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:279, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/TmfAbstractAnalysisModule.java -> That could work ... I'll experiment with it. Thanks
+
+-------------------------------------
+author: Ricky Reeves
+date: 2013-11-29 19:58:16.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:279, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/TmfAbstractAnalysisModule.java -> Well, it's actually not working because the HistoryBuilder needs to decrement because it blocks till the state system is build.
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2013-11-29 20:28:19.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:279, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/TmfAbstractAnalysisModule.java -> What did you try exactly?  You added the analysisHasRequest method in StateSystemModule and added it the conditions before both fTrace.notifyPendingRequest()?
+
+-------------------------------------

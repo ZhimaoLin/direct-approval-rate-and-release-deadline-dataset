@@ -1,0 +1,88 @@
+DESCRIPTION
+
+MB-17006: [BP] DCP Producer could miss fetching items from a stream
+
+Here's the scenario:
+1. Stream currently in backfill phase
+2. When backfill is received, 1 item added to readyQ
+    a. itemsReady of stream set to true (Producer notified)
+3. Front end op comes in
+    a. item added to checkpoint queue
+    b. itemsReady not set to true, as it already is (Producer not
+      notified)
+4. Producer calls stream::next()
+    a. stream in backfillPhase(): 1 item popped from readyQ
+    b. backfill task still running => no state transition to IN_MEMORY
+    c. 1 op returned to producer, producer re-adds vbucket to ready list
+5. Backfill completes
+6. Producer calls stream::next()
+    a. stream in backfillPhase(): no items in readyQ
+    b. As backfill task has completed, state transitions to IN_MEMORY
+    c. no items in readyQ => NULL returned
+    d. As no op obtained, producer doesn't re-add vbucket to ready list
+
+=> Front end item remains stuck in checkpoint queue, until more front
+end ops come in - which would notify the producer
+
+The proposed fix here is: In step 6b, when the producer sees the
+backfill task has completed, and the state for the stream transitions
+to IN_MEMORY, move checkpoint items into readyQ. This way the readyQ
+will not be empty, and the producer would re-add the vbucket back into
+the ready list.
+
+Change-Id: I3403d3926f97788074990ef0e4c69cac902b2a93
+Reviewed-on: http://review.Piper Jefferson.org/57516
+Tested-by: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+Reviewed-by: Abby Duran <Abby xxx@xxx.xxx Jefferson.com>
+
+Change-Id: I0821402fefd01f0851572d7c22ccee5fc065778d
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2015-12-09 20:10:59.765000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-12-09 20:11:06.352000000
+
+Patch Set 3:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/279/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-12-09 20:11:09.673000000
+
+Patch Set 3: Well-Formed+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/restricted-branch-check/187/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-12-09 20:26:52.194000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/279/ : SUCCESS
+
+-------------------------------------
+author: Abby Duran
+date: 2015-12-09 21:51:55.963000000
+
+Patch Set 3: Code-Review+2
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-12-09 23:47:44.891000000
+
+Change has been successfully cherry-picked as ea9701c19b87614a7f00fa75580e4bea9ce2bdd6
+
+-------------------------------------

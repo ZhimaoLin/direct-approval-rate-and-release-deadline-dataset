@@ -1,0 +1,101 @@
+DESCRIPTION
+
+MB-5164 Optimize background fetch by batching multiple gets
+
+As background fetches get backed-up, there is an opportunity to
+batch the reads from a single vbucket into one bulk read request.
+This patch includes restructuring of the background fetch into a
+batch of multiple gets. It also ensure that reads are scheduled
+fairly by a new task, bgfetcher, for the read-only dispatcher.
+
+Change-Id: I4e7a5f6122bfa7303a45c971508fae3266bc6067
+
+
+COMMENTS
+
+author: Audrina Olson
+date: 2012-06-26 07:57:29.601000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Audrina Olson
+date: 2012-06-26 07:59:51.585000000
+
+Patch Set 4:
+
+Please have your initial design review first!
+
+There are still a few issues in handling individual error case and missing callback case from couchstore. Debugging and design change in couchstore are underway.
+
+Thanks!
+
+-------------------------------------
+author: Roman Murillo
+date: 2012-06-26 19:18:22.278000000
+
+Patch Set 4: (3 inline comments)
+
+
+
+Line:1356, ep.cc -> Seems that values and items must have the same size. Do you need an assert for that?
+
+Line:1367, ep.cc -> The check for "vb" NULL should not be in this busy loop. Should be before entering the loop.
+
+Line:1424, ep.cc -> Do you need to check for NULL here?
+
+-------------------------------------
+author: Abby Duran
+date: 2012-06-27 08:55:12.787000000
+
+Patch Set 4: I would prefer that you didn't submit this
+
+(17 inline comments)
+
+I didn't look at CouchKVStore changes yet, but have some comments on the rest of changes.
+
+Line:206, vbucket.cc -> This memory overhead is already accounted in the tcmalloc hook functions that we implemented in the new memory accounting.
+
+Line:220, vbucket.cc -> Please remove it.
+
+Line:1340, ep.cc -> I think it's not good to have two arrays as parameters. We need to find a simpler way of passing batched items.
+
+Line:1350, ep.cc -> I don't think we need to grab the vbsetMutex. It's not necessary. We should fix it separately in completeBGFetch() as well.
+
+Line:1358, ep.cc -> Where is this item freed?
+
+Line:1399, ep.cc -> This shouldn't be WARNING
+
+Line:1422, ep.cc -> Please simply these by enum queue_operation op = (type == BG_FETCH_METADATA) ? queue_op_get_meta : queue_op_get;
+
+Line:1435, ep.cc -> It shouldn't be WARNING level
+
+Line:703, ep.hh -> Please describe all the parameters.
+
+Line:116, callbacks.hh -> I don't see any changes that use "cookie" here.
+
+Line:39, bgfetcher.cc -> Please add histogram timings for batch read
+
+Line:42, bgfetcher.cc -> Where do we free VBucketBGFetchItems instances?
+
+Line:61, bgfetcher.cc -> Shouldn't the predicate be corrected to if (!pendingJob()) { ...}
+
+Line:63, bgfetcher.cc -> This will sleep for 10 sec.
+
+Line:73, bgfetcher.cc -> Please remove "vbid <= std::numeric_limits<uint16_t>::max()"
+
+Line:50, bgfetcher.hh -> Please move this function to private section
+
+Line:284, vbucket.hh -> Please remove this variable.
+
+-------------------------------------
+author: Abby Duran
+date: 2012-06-27 17:37:05.243000000
+
+Patch Set 4: (1 inline comment)
+
+
+
+Line:109, vbucket.hh -> It should not be a reference type. Please change it to const queued_item itm;
+
+-------------------------------------

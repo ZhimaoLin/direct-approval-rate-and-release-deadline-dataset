@@ -1,0 +1,109 @@
+DESCRIPTION
+
+Added read/write support for pack index version E003.
+
+Pack index version E003 extends version 2 by including compressed
+bitmaps of the object graph. Furthermore, a logical API of the index
+functionality is included, as it is expected to be used by the
+PackWriter.
+
+Compressed bitmaps are created using the javaewah library, which is a
+word-aligned compressed variant of the Java bitset class based on
+run-length encoding. The library only works with positive integer
+values. Thus, the maximum number of ObjectIds in a pack file that
+this index can currently support is limited to Integer.MAX_VALUE.
+
+Every ObjectId is given an integer mapping. The integer is the
+position of the ObjectId in the complete ObjectId list, sorted
+by offset, for the pack file. That integer is what the bitmaps
+use to reference the ObjectId. Currently, the new index format can
+only be used with pack files that contain a complete closure of the
+object graph e.g. the result of a garbage collection.
+
+The index file includes four bitmaps for the Git object types i.e.
+commits, trees, blobs, and tags. In addition, a collection of
+bitmaps keyed by an ObjectId is also included. The bitmap for each entry
+in the collection represents the full closure of ObjectIds reachable
+from the keyed ObjectId (including the keyed ObjectId itself). The
+bitmaps are further compressed by XORing the current bitmaps against
+prior bitmaps in the index, and selecting the smallest representation.
+The XOR'd bitmap and offset from the current entry to the position
+of the bitmap to XOR against is the actual representation of the entry
+in the index file.
+
+Change-Id: Id328724bf6b4c8366a088233098c18643edcf40f
+
+
+COMMENTS
+
+author: Warren Watkins
+date: 2012-09-26 22:36:55.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-09-26 22:37:01.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2355/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-09-26 22:43:45.000000000
+
+Patch Set 2: Fails
+
+Build Failed 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2355/ : FAILURE
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2012-09-27 22:40:33.000000000
+
+Patch Set 2:
+
+- please add a footer CQ: 6810
+- in order to fix the packaging build we need to wait for the jawaEWAH bundle to be approved and available in orbit, update the orbit URL "orbit-site" in [1] and add the corresponding bundle to [2] in order to make it available to OSGi consumers like EGit
+
+[1] https://git.eclipse.org/c/jgit/jgit.git/tree/org.eclipse.jgit.packaging/pom.xml
+
+[2] https://git.eclipse.org/c/jgit/jgit.git/tree/org.eclipse.jgit.packaging/org.eclipse.jgit.feature/feature.xml
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2012-10-03 14:04:01.000000000
+
+Patch Set 2: Do not submit
+
+(1 inline comment)
+
+
+
+Line:99, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/BasePackBitmapIndex.java -> There is a race condition here that can cause this to go corrupt.
+
+If one thread enters this method and sets out = r.bitmap he now has an XOR compressed bitmap. This isn't a valid bitmap to return to the caller, but its type is correct.
+
+That thread then goes to sleep immediately before executing the while test condition.
+
+Another thread enters this method and also sees the bitmapContainer needs to be expanded. It does the full expansion process and stores bitmapContainer = out, the full bitmap.
+
+The first thread wakes up. When he calls this.xorBitmap() it returns null because the 2nd thread already set bitmapContainer to the expanded bitmap.
+
+The first thread breaks from the loop immediately, overwrites the good expanded bitmap with the XOR version (which is now garbage!), and returns the XOR version to the caller.
+
+Until the PackIndexVE003 is replaced with a new instance (e.g. due to GC or falling out of cache) that particular bitmap will be corrupt and contain inverted results. Any attempt to use such a bitmap will result in a pack being incomplete.
+
+-------------------------------------
+author: Warren Watkins
+date: 2012-10-03 15:40:01.000000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:99, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/BasePackBitmapIndex.java -> That code was brain dead. I updated the code to access bitmapContainer once, so it should be correct now.
+
+-------------------------------------

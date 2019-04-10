@@ -1,0 +1,169 @@
+DESCRIPTION
+
+Refactor the RWLock to allow locking through a std::lock_guard
+
+This patch alters the RWLock to refactor control of its reader
+/ writer locking / unlocking through the use of `reader()` and
+`writer()` member functions which return references to a
+`ReaderLock` and `WriterLock` object respectively. These objects
+both implement `BasicLockable` around their respective aspect
+of the RWLock.
+
+This allows the RWLock to be RAII managed by a std::lock_guard
+instead of an application specific lock holder:
+
+    RWLock rw;
+
+    void my_func() {
+        std::lock_guard<ReaderLock> rlh(rw.reader());
+        // reader lock is held
+
+        ...
+    } // reader lock is released
+
+This also moves exception based error control into the RWLock
+class.
+
+Change-Id: I6cd5a6147ff23fddd3039d98e1dc1a9af41efcb3
+
+
+COMMENTS
+
+author: Keira Washington
+date: 2016-11-28 19:34:25.724000000
+
+Uploaded patch set 2: Patch Set 1 was rebased.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-28 19:34:33.424000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1947/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-28 19:34:33.554000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/725/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-28 19:34:33.827000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1862/ (3/4)
+
+-------------------------------------
+author: Keira Washington
+date: 2016-11-28 20:10:40.291000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:51, src/rwlock.h -> This could be made additionally easier through the addition of implicit conversions which means you'd just need to specify Reader/Writer on the lock_guard. ie:
+
+    std::lock_guard<WriterLock> wlh(rwLock);
+
+instead of 
+
+    std::lock_guard<WriterLock> wlh(rwLock.writer());
+
+I'm undecided about whether this would be sensible or not
+
+-------------------------------------
+author: Keira Washington
+date: 2016-11-28 20:17:09.981000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:51, src/rwlock.h -> Another reason I like this conversion is it means WriterLockHolder and ReaderLockHolder can be replaced with aliases instead.
+
+Line:61, src/rwlock.h -> Having checked the code on the platform side it looks like the function throws exceptions itself nowadays and the return value is just to prevent compile errors (It can only be 0), will remove this error checking in a follow-up patch.
+
+-------------------------------------
+author: Keira Washington
+date: 2016-11-28 20:19:11.155000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:61, src/rwlock.h -> Never mind, misread the code, it can return nonzero - it just prints to stderr.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-28 20:19:12.986000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1560/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-28 20:25:28.724000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1947/ : ABORTED
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/725/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1560/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1862/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-29 11:24:14.859000000
+
+Patch Set 2: -Verified
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1954/ (4/4)
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-11-29 11:32:40.279000000
+
+Patch Set 2: Code-Review+2
+
+(3 comments)
+
+Line:89, src/locks.h -> You could mark this and the WriterLockHolder constructor with CB_ATTR_DEPRECATED - not sure how many warnings it'll produce though...
+
+Line:51, src/rwlock.h -> One thing to bear in mind is in the more medium-term I'd like to migrate to https://github.com/facebook/folly/blob/master/folly/docs/Synchronized.md
+
+Line:60, src/rwlock.h -> Given any exception here should be rare, you can probably just use std::string concatenation directly into the exception constructor.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-29 11:34:20.982000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/725/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1560/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1862/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1954/ : SUCCESS
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-11-29 18:29:28.750000000
+
+Change has been successfully cherry-picked as c399183b3bdee011681b6dcaba1f6b1f88968718 by Ashlee Kent
+
+-------------------------------------

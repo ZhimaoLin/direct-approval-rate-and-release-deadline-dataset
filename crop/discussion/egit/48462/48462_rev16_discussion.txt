@@ -1,0 +1,114 @@
+DESCRIPTION
+
+Workaround to enable linking multiple resources to HistoryView
+
+When given a selection the GenericHistoryView only considers the first
+element and adapts it to an IResource before passing it on as input. To
+work around this behavior the GitHistoryPage now tracks the current
+selection itself and uses it as input if preferable.
+
+Bug: 392948
+Signed-off-by: Ronin Harrell xxx@xxx.xxx
+Signed-off-by: Karter Mora xxx@xxx.xxx
+Signed-off-by: Maleah Marks xxx@xxx.xxx
+Signed-off-by: Corbin Edwards xxx@xxx.xxx
+Signed-off-by: Maren Gonzales xxx@xxx.xxx
+Signed-off-by: Denise Bennett xxx@xxx.xxx
+Change-Id: Idd3f2434881085d90a547f825fb20ba8895b7e79
+
+COMMENTS
+
+author: Denise Bennett
+date: 2017-04-24 08:23:35.000000000
+
+Uploaded patch set 16: Patch Set 15 was rebased.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-04-24 08:23:41.000000000
+
+Patch Set 16: -Code-Review
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/9753/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-04-24 08:46:10.000000000
+
+Patch Set 16: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/9753/ : SUCCESS
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-05-04 07:15:54.000000000
+
+Patch Set 16: Code-Review-1
+
+Sorry, this doesn't work quite correctly yet. Without this change, the history view updates when an editor is activated and shows the history of the resource opened in that editor. With this change, there are cases where this no longer works.
+
+To reproduce:
+
+* Have at least two files in an EGit-managed project.
+* Open one file (A) in an editor.
+* Expand the project in the package explorer.
+* Select both files (A and B, or even more files, but including A).
+* History view shows the combined history.
+* Activate the editor in which A is open. (Click on the tab, or in the text pane.)
+
+Expected:
+
+* History view updates to show the history of only A.
+
+Actual:
+
+* History view does not update and keeps showing the combined history of the selection in the package explorer.
+
+The reason is twofold:
+
+First, GitHistoryPage simply ignores any non-structured selections. An editor, however, reports an ITextSelection. Even if that is fixed (for instance by using SelectionUtils.getStructuredSelection()), it won't work because of:
+
+Second, GenericHistoryView reacts on part activation and calls setInput with the correct object (resource A open in the editor). But part activation comes before the notification of the selection change. GitHistoryPage thus still has the previous selection from the package explorer as "lastSelection". mostFittingInput will then return that lastSelection as input because it includes A.
+
+This is confusing: the user experience is that sometimes the history page updates and sometimes not. (It updates if the lastSelection does not contain A.)
+
+Not sure how to fix this. Even if GitHistoryPage did its own part activation tracking (like in the StagingView), there's no guarantee about the order in which the two listeners (GitHistoryPage and GenericHistoryView) are notified.
+
+There's also a second bug:
+
+* Make sure the GitHistoryPage shows the history of a single file.
+* Uncheck "Link with Editor and Selection".
+* Select several files in the package explorer (doesn't matter whether or not that selection includes A).
+* Select (Context menu)->Show In->History.
+
+Expected:
+
+* History view is activated and updates to show the combined history of the selected files.
+
+Actual:
+
+* History view is activated, does not update, and a beep occurs.
+
+-------------------------------------
+author: Denise Bennett
+date: 2017-05-04 14:51:56.000000000
+
+Patch Set 16:
+
+Hi Thomas,
+
+You are right that in the cases you describe, the current implementation does not work, and thank you very much for also providing your findings for the reasons why. I also had a more detailled look at it and I see a few problems.
+
+For the first bug, we may do the following (as included in the next patch set):
+1. Include the active part in the selection tracking.
+2. Clearing the selection once we have used it to avoid incorrect behavior when a part is activated. In this case, the fallback selection is used.
+
+What worries me, is the second case that may not be possible to solve. The reason for this is that there are two ways the history page is updated:
+1. Linked Selection: We track the active selection and update the view on demand. This is done by the GenericHistoryView which only extracts the first element of a selection on selection change and calls showLastSelectedElement on different occasions, e.g., when the selection changes or linking is enabled. This is the case our previous fix tried to solve by tracking our own selection and keeping all elements of the selection, not only the first.
+2. Show In > History: In this case, the o.e.ui.internal.ShowInHandler is triggered which calls the show method of the GenericHistoryView to see if the view can show a certain context. The context contains the selection (e.g., the tree selection from the Project Explorer) and an input (e.g., the JavaModel). Again, the GenericHistoryView only considers the first element of a structured selection and otherwise tries to show the input. So when we select multiple elements, the selection is not considered and the context input does not supply a page source (like for the JavaModel), the history page is never updated. As opposed to the selection tracking, where we are called with the wrong/incomplete input, here we are not called at all. And there seems to be no way to influence/override the GenericHistoryView.show behavior.
+
+This leads to the problem of seemingly inconsistent behavior from a user perspective. To be honest, I am not sure what is the best way to continue with this.
+
+-------------------------------------

@@ -1,0 +1,118 @@
+DESCRIPTION
+
+Fix PlotCommitList to set lanes on child-less commits
+
+In PlotCommitList.enter() commits are positioned on lanes for visual
+presentation. This implementation was buggy: commits without
+children (often the starting points for the RevWalk) are not positioned
+on separate lanes.
+
+The problem was that when handling commits with multiple children (thats
+where branches fork out) it was not handled that some of the children
+may not have been positioned on a lane yet. I fixed that and added a number
+of tests which specifically test the layout of commits on lanes.
+
+Bug: 300282
+Bug: 320263
+Change-Id: I267b97ecccb5251cec54cec90207e075ab50503e
+Signed-off-by: Zachary Orozco xxx@xxx.xxx
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-09-10 22:05:32.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(8 inline comments)
+
+
+
+Line:50, org.eclipse.jgit.test/tst/org/eclipse/jgit/revplot/PlotCommitListTest.java -> testLinear
+
+Line:56, org.eclipse.jgit.test/tst/org/eclipse/jgit/revplot/PlotCommitListTest.java -> parseCommit or lookupCommit is the better way to do this.  Its dangerous to use createCommit directly because you might create two different RevCommits with the same ObjectId within the walker pool.  That will confuse flags later during the traversal algorithm.
+
+Line:62, org.eclipse.jgit.test/tst/org/eclipse/jgit/revplot/PlotCommitListTest.java -> This 3 args-per-commit syntax is obtuse.  I would prefer to be a bit more declarative within the test, at the expense of slightly more framework to implement the test.
+
+Either inline the assertions for c, b, a in the test, or setup something that lets you describe the values, e.g.:
+
+  private TestList expected;
+
+  expected.row(c).lane(0).parent(b);
+  expected.row(b).lane(0).parent(a);
+  expected.row(a).lane(0);
+  assertCommitList(pcl);
+
+Line:142, org.eclipse.jgit.test/tst/org/eclipse/jgit/revplot/PlotCommitListTest.java -> That's a bug.  We shouldn't do that.
+
+When we markStart the commits they are tagged with the SEEN flag.  That should prevent them from being added back into the pending queue when they are encountered as a parent of a commit that was popped from pending.  If that isn't working, its certainly a bug inside of the walker.
+
+Line:148, org.eclipse.jgit/src/org/eclipse/jgit/revplot/PlotCommitList.java -> Typo on the name, should be reservedLane.
+
+Line:152, org.eclipse.jgit/src/org/eclipse/jgit/revplot/PlotCommitList.java -> Incomplete sentence here.  "They" ?
+
+Line:156, org.eclipse.jgit/src/org/eclipse/jgit/revplot/PlotCommitList.java -> I'm not sure I understand what we are doing here.  The child doesn't yet have a lane, so we allocate one for it.  Then we immediately recycle that lane and make it free again?
+
+This is because the lane terminates here, right?  Can we describe that in a comment here?
+
+Line:174, org.eclipse.jgit/src/org/eclipse/jgit/revplot/PlotCommitList.java -> I don't understand the point of the reservedLane concept. Can you better describe either in a comment or the commit message what we are trying to do here?
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2010-09-10 22:35:03.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+I tried with current egit repo and this doesn't yet work properly:
+- clone egit repository using egit and import projects
+- open history view in egit (using current egit stable-0.9 and this changes jgit version)
+- compare resulting graph in history view against the graph displayed by gitk
+-> the current algorithm uses not enough lanes so that the displayed graph edges are far from being correctly displayed
+
+click the show all branches toggle button:
+-> NPE is thrown :
+
+!ENTRY org.eclipse.ui 4 0 2010-09-11 00:34:09.786
+!MESSAGE Unhandled event loop exception
+!STACK 0
+java.lang.NullPointerException
+	at org.eclipse.egit.ui.internal.history.GitHistoryPage.inputSet(GitHistoryPage.java:1070)
+	at org.eclipse.egit.ui.internal.history.GitHistoryPage.refresh(GitHistoryPage.java:959)
+	at org.eclipse.egit.ui.internal.history.GitHistoryPage$3.run(GitHistoryPage.java:383)
+	at org.eclipse.jface.action.Action.runWithEvent(Action.java:498)
+	at org.eclipse.jface.action.ActionContributionItem.handleWidgetSelection(ActionContributionItem.java:584)
+	at org.eclipse.jface.action.ActionContributionItem.access$2(ActionContributionItem.java:501)
+	at org.eclipse.jface.action.ActionContributionItem$6.handleEvent(ActionContributionItem.java:452)
+	at org.eclipse.swt.widgets.EventTable.sendEvent(EventTable.java:84)
+	at org.eclipse.swt.widgets.Display.sendEvent(Display.java:3776)
+	at org.eclipse.swt.widgets.Widget.sendEvent(Widget.java:1367)
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-09-12 19:22:24.000000000
+
+Patch Set 1: (7 inline comments)
+
+worked  on the comments of Shawn.
+
+But the problems reported by Matthias when viewing the
+egit repo are still open. I'll work on them now.
+
+Line:50, org.eclipse.jgit.test/tst/org/eclipse/jgit/revplot/PlotCommitListTest.java -> Done
+
+Line:56, org.eclipse.jgit.test/tst/org/eclipse/jgit/revplot/PlotCommitListTest.java -> Done
+
+Line:62, org.eclipse.jgit.test/tst/org/eclipse/jgit/revplot/PlotCommitListTest.java -> I agree, I'll propose something like you suggested.
+
+Line:148, org.eclipse.jgit/src/org/eclipse/jgit/revplot/PlotCommitList.java -> Done
+
+Line:152, org.eclipse.jgit/src/org/eclipse/jgit/revplot/PlotCommitList.java -> just removed the incomplete sentence
+
+Line:156, org.eclipse.jgit/src/org/eclipse/jgit/revplot/PlotCommitList.java -> Yes, thats right. I want to make sure that in the end all commits are positioned. Previously that was not always true - we repaired unpositioned children only when they occured for parents with one child where the child had only one parent (us).
+I'll add a comment describing that better.
+
+Line:174, org.eclipse.jgit/src/org/eclipse/jgit/revplot/PlotCommitList.java -> I'll add a comment here.
+
+-------------------------------------

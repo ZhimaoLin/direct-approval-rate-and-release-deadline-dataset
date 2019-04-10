@@ -1,0 +1,133 @@
+DESCRIPTION
+
+MB-16677 Introduce service maps.
+
+The purpose is to handle rebalance out more gracefully. Any node
+service will first be deactivated in the corresponding service
+map. After that ns_server (with some following changes) will stop
+advertising the service on the node but will continue running the
+actual process on the node. Eventually clients will detect new
+configuration and will stop sending requests to the node. Then the
+node will be removed in our normal fashion.
+
+In more distant future service maps will also be used to track service
+topologies for topology aware services (like cbft).
+
+Change-Id: I20d79d64fe148687a0724816604a884f6b3de5f7
+
+
+COMMENTS
+
+author: Meghan Vazquez
+date: 2015-11-11 23:15:29.833000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2015-11-11 23:15:43.368000000
+
+Patch Set 1: Verified+1
+
+-------------------------------------
+author: Leah Mcdaniel
+date: 2015-11-12 00:15:02.820000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:112, src/ns_config_default.erl -> Small nit pick, this creates an intermediate list that is immediately discarded.
+Instead do
+S <- ns_cluster_membership:supported_services(), S=/=kv
+
+Line:382, src/ns_config_default.erl -> This forces a copy of the entire config list in order to append ServiceMaps.
+Rather do 
+| ServiceMaps]
+to avoid the copying
+
+-------------------------------------
+author: Kian Santos
+date: 2015-11-12 00:47:45.865000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:71, src/ns_online_config_upgrader.erl -> Does this have the effect of setting the service map to have all the active nodes as running n1ql and indexing for clusters upgrading from 4.0 (where they might be using MDS and have these services running on subsets of the active nodes)? I'm guessing I don't understand fully, but perhaps you could explain.
+
+-------------------------------------
+author: Philip Lara
+date: 2015-11-12 00:48:46.430000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:71, src/ns_online_config_upgrader.erl -> Why all active nodes are assigned to both n1ql and index? What if these services are not running on some of the nodes?
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2015-11-12 00:51:31.916000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:71, src/ns_online_config_upgrader.erl -> No, it doesn't. Only the nodes having n1ql in their services list will be running cbq-engine. Only the nodes that both have n1ql in their services and are present in {service_map, n1ql} will be advertised in rest apis.
+
+-------------------------------------
+author: Philip Lara
+date: 2015-11-12 00:52:06.039000000
+
+Patch Set 1:
+
+2 things:
+
+1. It looks like node is included in the map for the service even if the service is not configured on the node. Will work if the map is just used as a filter, but confusing.
+
+2. It looks like all maps for services are always the same. You do not remove the node from n1ql map, but keep it in index map. Why don't we just keep one nodes list instead of many?
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2015-11-12 00:54:25.045000000
+
+Patch Set 1:
+
+1. yes, the map is just a filter. I'm open to better name suggtestions.
+
+2. with topology aware services rebalancing each service will be a separate step, that's why there's a map per service.
+
+-------------------------------------
+author: Philip Lara
+date: 2015-11-12 01:00:53.336000000
+
+Patch Set 1:
+
+service_advertising_filter ?
+
+-------------------------------------
+author: Kian Santos
+date: 2015-11-12 01:05:58.568000000
+
+Patch Set 1:
+
+I agree with Artem that service_map sounds a bit too authoritative. I agree we could try to incorporate advertised into the name. Artem's suggestion is decent. It's the list of nodes that when the service is running on them we will advertise its presence. How about: service_advertisable_nodes? Or: service_advertised_map? 
+
+Best I've got. :-)
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2015-11-12 01:34:24.178000000
+
+Patch Set 1:
+
+I don't like any of the suggestions so far :) I'll think about this more.
+
+-------------------------------------
+author: Roselyn Villegas Code Review
+date: 2015-11-12 21:48:33.071000000
+
+Change has been successfully cherry-picked as 59437f30d6f9dd60773aa27e14c0d7e18c1a3f19
+
+-------------------------------------

@@ -1,0 +1,179 @@
+DESCRIPTION
+
+Improve performance of SelectionUtils.getRepository()
+
+Instead of converting selected elements to an IPath location always
+and then using RepositoryMapping.getRepository(IPath), try to keep as
+much info as needed and as possible: if the selection contains
+IResources, use their projects and the much more efficient
+RepositoryMApping.getRepository(IProject).
+
+In my tests on a test workspace with 46 open projects and the git
+toolbar and global menu enabled, this results in a speedup of the
+SelectionUtils.getRepository(IStructuredSelection) operation by a
+factor of 10 to 20 in most cases.
+
+Bug: 486857
+Change-Id: Ied35b304c8496c501dbf8109e1c8d5403b962efb
+Signed-off-by: Alayna Houston xxx@xxx.xxx
+Signed-off-by: Jayvion Booth xxx@xxx.xxx
+
+COMMENTS
+
+author: Jayvion Booth
+date: 2016-01-30 22:56:45.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-01-30 22:56:51.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/8095/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-01-30 23:22:12.000000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/8095/ : SUCCESS
+
+-------------------------------------
+author: Jayvion Booth
+date: 2016-01-30 23:28:08.000000000
+
+Patch Set 4: Code-Review+1
+
+(1 comment)
+
+Looks good. 
+
+
+Still, wondering if we should change the way how RepositoryMapping xxx@xxx.xxx IPath path) is implemented. 
+
+Ideally we should already know all git connected projects, so we could answer this without iterating over all workspace projects. I have a feeling we have few caches here and there (GitProjectData, RepositoryCache, IndexDiffCache) we could reuse here. 
+
+GitProjectData seems to be a best fit to add something like IProject getGitConnectedProject(IPath) which will return a closest Git related project we know for given path.
+
+Or we wirst check the RepositoryCache for the Repository for given IPath (number of repos to traverse is always smaller as number of projects) and then try to improve RepositoryMapping.findRepositoryMapping(Repository repository) to NOT to iterate over all projects again.
+
+So a map between Repository <-> Set<IProject> would be interesting, why not in GitProjectData? BTW I can't get the design rationale behind this class. The code seems to be "wild grown" over years without clear idea behind.
+
+Ideally the code would first get the closest Repository for a IPath, then get the closest project known for this repository.
+
+Line:261, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/selection/SelectionUtils.java -> The reason for the last patch. We had here a new warning about "unknown nullness" on "r".
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-01-31 09:36:15.000000000
+
+Patch Set 4:
+
+> Still, wondering if we should change the way how RepositoryMapping
+ > xxx@xxx.xxx IPath path) is implemented.
+
+Agreed, but maybe not in this change.
+
+ > So a map between Repository <-> Set<IProject> would be interesting,
+ > why not in GitProjectData? BTW I can't get the design rationale
+ > behind this class. The code seems to be "wild grown" over years
+ > without clear idea behind.
+
+So I'm not alone. This class has me puzzled from the very beginning. In particular GitProjectData.getRepositoryMapping(): this walks up the whole IContainer hierarchy. Can we ever have a case where a project is in one git repository, but a container inside the project is in some other git repository? Perhaps with linked resources...
+
+-------------------------------------
+author: Jayvion Booth
+date: 2016-01-31 09:38:07.000000000
+
+Patch Set 4:
+
+> > Still, wondering if we should change the way how
+ > RepositoryMapping
+ > > xxx@xxx.xxx IPath path) is implemented.
+ > 
+ > Agreed, but maybe not in this change.
+ 
+Sure.
+
+ > > So a map between Repository <-> Set<IProject> would be
+ > interesting,
+ > > why not in GitProjectData? BTW I can't get the design rationale
+ > > behind this class. The code seems to be "wild grown" over years
+ > > without clear idea behind.
+ > 
+ > So I'm not alone. This class has me puzzled from the very
+ > beginning. In particular GitProjectData.getRepositoryMapping():
+ > this walks up the whole IContainer hierarchy. Can we ever have a
+ > case where a project is in one git repository, but a container
+ > inside the project is in some other git repository? Perhaps with
+ > linked resources...
+
+I never used it, but I think this could be the case in git submodules?
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-01-31 12:23:04.000000000
+
+Patch Set 4: Code-Review-1
+
+> > So I'm not alone. This class has me puzzled from the very
+ > > beginning. In particular GitProjectData.getRepositoryMapping():
+ > > this walks up the whole IContainer hierarchy. Can we ever have a
+ > > case where a project is in one git repository, but a container
+ > > inside the project is in some other git repository? Perhaps with
+ > > linked resources...
+ > 
+ > I never used it, but I think this could be the case in git
+ > submodules?
+
+Perhaps... some archaeology on the pre-eclipse git repo (available at git://repo.or.cz/egit.git) turned up the original commit that introduced this container hierarchy walk: d6103ff. Originally added by Shawn, and the commit comment explains it:
+
+ > Change GitProjectData.getRepositoryMapping to work on linked resources
+ > 
+ > When we are looking up the mapping for a file contained within a linked
+ > directory the linked directory may be mapped to a Git repository that is
+ > not the same as the project itself, or the project doesn't even have a
+ > Git repository.
+ > 
+ > This may also be necessary for submodules.  For example a single project
+ > in Eclipse may actually contain several Git submodules below it and each
+ > must have its own RepositoryMapping.
+ > 
+ > We now store the RepositoryMapping for a given IContainer directly on
+ > that container using a session property.  This way Eclipse manages the
+ > hash lookups for us, and we can efficiently walk up the tree to locate
+ > the nearest mapping for any resource.
+
+Which leaves me still a bit puzzled because RepositoryMapping.getMapping(IPath) considers projects only. Digging around more in the early history (this time in the current repo) shows:
+
+* commit dfbdc45 (Shawn, 2009-09-30): the very initial version of getMapping(IResource) did actually use the GitProjectData to obtain the mapping, i.e., did do this container hierarchy walk.
+* commit 610529c (Dariusz, 2011-11-18): then it was augmented to also handle non-workspace resources, where the first version of the current getMapping(IPath) was introduced. (Scanning all IProjects.)
+* commit e65101e (Robin, 2012-08-26): refactoring introducing the first version of the current getMapping(IPath). At that point getMapping(IResource) still used the original code walking the container hierarchy, and getMapping(IProject) didn't exist yet.
+* commit a3da195 (Andrey, 2015-03-29): more refactoring, getMapping(IProject) introduced, and getMapping(IResource) no longer calling GitDataProvier.getRepositoryMapping(resource) but getMapping(resource.getProject()).
+
+Since that commit, we no longer do the container hierarchy walk.
+
+Now I _do_ wonder:
+* was this container hierarchy walk ever needed?
+* if it is or was, what obscure use case no longer works since a3da195, or if that didn't break anything, not even any obscure use case, why did it not?
+* the project scanning approach in getMapping(IPath) doesn't look right to me; I would rather use the RepositoryCache to consider all configured repositories, which would be feasible if it was made to load on demand (I do have a change for that that I could resurrect).
+
+The approach in this change here (going right to the IProject from an IResource) is only correct if that container hierarchy walk isn't needed. So I'm currently unsure whether this change here is good indeed. Otherwise, a mixture should be used: still differentiate IResource and IPath, then use RepositoryMapping.getMapping(IResource) or getMapping(IPath). This has two advantages:
+
+1. It delegates the whole question of whether this container hierarchy walk is needed to the implementation of RepositoryMapping.
+2. Avoid duplicating the isLinked() handling I introduced (RepositoryMApping alreadydoes that.
+
+I'll push an amended change. Can you shed any light on the questions above?
+
+-------------------------------------
+author: Gerrit Johnathan Pham
+date: 2016-02-20 09:41:41.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

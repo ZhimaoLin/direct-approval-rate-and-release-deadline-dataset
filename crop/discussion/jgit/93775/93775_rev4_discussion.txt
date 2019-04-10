@@ -1,0 +1,134 @@
+DESCRIPTION
+
+Don't flag a packfile invalid if opening existing file failed
+
+A packfile random file open operation may fail with a
+FileNotFoundException even if the file exists, possibly
+for the temporary lack of resources.
+
+Instead of managing the FileNotFoundException as any generic
+IOException it is best to rethrow the exception but prevent
+the packfile for being flagged as invalid until it is actually
+opened and read successfully or unsuccessfully.
+
+Bug: 514170
+Change-Id: Ie37edba2df77052bceafc0b314fd1d487544bf35
+Signed-off-by: Hayden Meyers xxx@xxx.xxx
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+
+COMMENTS
+
+author: Douglas Trujillo
+date: 2017-03-25 00:33:34.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-03-25 00:33:40.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/10029/
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-03-25 00:35:57.000000000
+
+Patch Set 4: Code-Review+2
+
+-------------------------------------
+author: Eden Lin
+date: 2017-03-25 00:37:22.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:646, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackFile.java -> Can't this happen due to other transient errors too? I think we need to reconsider the openFail(true) codepath altogether.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-03-25 00:47:07.000000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/10029/ : SUCCESS
+
+-------------------------------------
+author: Hayden Meyers
+date: 2017-03-25 01:21:00.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:646, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackFile.java -> True, should we then encapsulate the concept of transient vs. persistent error given a generic throwable in a separate function?
+
+-------------------------------------
+author: Elise Key
+date: 2017-03-25 01:27:12.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:646, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackFile.java -> That doesn't sound like something that should be done in this commit, though, or even on the stable branch...
+
+-------------------------------------
+author: Elise Key
+date: 2017-03-25 01:27:19.000000000
+
+Patch Set 4: Code-Review+1
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-03-25 01:33:24.000000000
+
+Patch Set 4:
+
+(3 comments)
+
+Line:646, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackFile.java -> yep, we should only openFail(true) for exceptions which signal a pack we for sure cannot use, found the following candidates:
+
+* java.io.EOFException (unexpected end of file detected)
+* java.nio.file.AccessDeniedException ?
+* java.nio.file.NoSuchFileException
+* org.eclipse.jgit.errors.CorruptObjectException
+* org.eclipse.jgit.errors.PackMismatchException
+
+I guess forl other less specific exceptions we can't be sure so we should handle them as a transient problem
+
+Line:721, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackFile.java -> need a more specific exception since we should remove this non-pack from the pack list
+
+Line:725, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackFile.java -> need a more specific exception since we should remove this pack since we can't handle a non-supported pack version
+
+-------------------------------------
+author: Hayden Meyers
+date: 2017-03-25 01:40:56.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:646, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackFile.java -> The java.nio.file.NoSuchFileException I guess needs to be managed as the FileNotFoundException: it is transient or persistent depending if the file actually exists or not.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-03-25 09:02:57.000000000
+
+Patch Set 4:
+
+> (1 comment)
+
+do you have any evidence for this ? Other than FileNotFoundException javadoc of NoSuchFileException only mentions non-existence as a reason to throw this exception
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2017-03-26 21:30:19.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

@@ -1,0 +1,69 @@
+DESCRIPTION
+
+MB-20751: Fix lock cycle (deadlock) during bucket delete & client disconnect
+
+MB-20716 recently fixed an issue where idle DCP connections (in
+EWOULDBLOCK state) would not be notified (woken up) in the frontend
+when a bucket was deleted. The fix for this was to trigger a notify
+(via producer->notifyPaused()) as part of ep-engine bucket delete.
+
+Unfortunately this introduced a lock-order-inversion (deadlock)
+between two mutxes, which caused memcached to hang during shutdown,
+as one (or more) worker threads would never terminate.
+
+The issue is between:
+
+1. Frontend_worker thread mutex (threadLock)
+2. ConnMap::connsLock
+
+And at least two threads (although normally 3 in the wild):
+
+T1: Frontend worker thread
+T2: DestroyBucket thread
+(optional T3: A NONIO thread running ConnManager)
+
+During bucket delete, the follow sequence occurs which creates a cycle
+between threadLock and connsLock:
+
+T1<Worker>:
+    event_handler() ... conn_pending_close()
+      -> LOCK(threadLock)
+    DcpConnMap::disconnect()
+      -> ACQUIRE(connsLock)
+
+T2<DeleteBucket>:
+    EventuallyPersistentEngine::handleDeleteBucket() ...
+    DcpConnMap::shutdownAllConnections()
+      -> LOCK(connsLock)
+    notifyIOComplete() ... DcpProducer::notifyPaused()
+      -> ACQUIRE(threadLock)
+
+Part of the issue here is that DcpProducer::notifyPaused() *must* be
+called with schedule==false, as there is no longer a ConnNotifier task
+running on another thread (which never acquires the connsLock and
+hence avoids any deadlock), as the ConnNotifier has been shutdown in
+DcpConnMap::shutdownAllConnections previously. Therefore we need to
+use the variant of notifyPaused which calls notify_IO_complete in the
+same thread.
+
+The solution chosen is to essentially drop the connsLock in
+shutdownAllConnections before calling notify. We achive this by taking
+a _copy_ of the connections map (under connsLock), and then iterating
+over this copy and calling notify etc. This is safe as the elements of
+the map are all ref-counted pointers.
+
+Change-Id: I73f9b7576e42030a9f5219ae51e604e36fabcac7
+Reviewed-on: http://review.Piper Jefferson.org/67252
+Well-Formed: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+Tested-by: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+Reviewed-by: Asher Vang <Asher xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Tate Garrett
+date: 2016-09-01 21:09:29.333000000
+
+Change has been successfully cherry-picked as 32c286fe0b9cf87fe540611a865ce320b29b8cb4 by Ashlee Kent
+
+-------------------------------------

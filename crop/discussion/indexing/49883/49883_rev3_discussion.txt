@@ -1,0 +1,84 @@
+DESCRIPTION
+
+MB-14357 : rebalance 2 kv nodes hangs due to race condition of StreamBegin
+
+Each <bucket,vb> has a owner (projector).  The ownership is managed by
+2 transport level operations: (1) StreamBegin to claim ownership
+(2) StreamEnd to relinguish ownership.   During rebalancing, vb
+ownership changes from projector to projector.  In addition,
+there is no guarantee that StreamBegin and StreamEnd will arrive
+in particular order.    In other words, it is possible that
+two projectors may claim ownership on a vb.   To support that,
+indexer will maintain reference count on vb ownership.  From
+indexer point of view, a vb has owner (vb status == VBS_STREAM_BEGIN)
+if reference count > 0.   A vb has no owner (vb stauts == VBS_STREAM_END)
+if reference count == 0.  If vb has no owner, then it is necessary
+to repair the stream.
+
+Change-Id: I5e0034a8b1363fe75ebb03ac5117d5f3b80a14f4
+
+
+COMMENTS
+
+author: Dominique Stanton
+date: 2015-04-20 22:12:12.860000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Maliyah Fischer
+date: 2015-04-21 15:31:05.642000000
+
+Patch Set 3:
+
+(2 comments)
+
+Line:958, secondary/indexer/timekeeper.go -> Not clear about this case. The projector from which we have seen ConnError will not send any further StreamEnd. I think StreamBegin is the only possibility after ConnError.
+
+Line:332, secondary/indexer/stream_state.go -> Not clear which case is addressed by promoting StreamEnd -> ConnError. There can be genuine multiple feed.feeder during rebalance due to time taken by dcp to be stable.
+
+-------------------------------------
+author: Dominique Stanton
+date: 2015-04-21 15:56:56.944000000
+
+Patch Set 3:
+
+(2 comments)
+
+Line:958, secondary/indexer/timekeeper.go -> It is just to catch a corner case (e.g. swap rebalancing):
+1) vb ownership changed hands mutiple times, so there could be multiple StreamBegin/StreamEnd from different nodes.  The last messages send from those nodes would be StreamEnd, but those StreamEnd messages can be out-of-order.
+2) There is a connection error since one of the nodes may get swap out or down.  So the vb goes to CONN_ERROR and vb count is reset to 0.
+3) The indexer receives StreamBegin for that vb from the new vb master.   So vb count is set to 1.
+4) The older StreamEnd messages start to arrive to indexer.   If there is more than 1 StreamEnd, then count go be negative.
+
+In general, once we get a CONN_ERROR, we can no longer expect projector has the proper book-keeping and we don't know for sure what messages will arrive at indexer.   So this condition is to detect inconsistency and ask projector to restart bookkeeping.
+
+Line:332, secondary/indexer/stream_state.go -> Let's say during rebalancing-in, StreamEnd coming from Node 1 and StreamBegin coming from Node 2 simultaneously.   StreamBegin comes first and StreamEnd comes later.    Timekeeper will attempt to repair stream but it will not succeed.   So promoting StreamEnd to ConnError is a safety switch for out-of-order messages, so indexer can tell projector to clean up its bookkeeping for that vb and restart over.
+
+-------------------------------------
+author: Maliyah Fischer
+date: 2015-04-21 16:03:24.467000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:332, secondary/indexer/stream_state.go -> But in timekeeper, we are now skipping repairStream if StreamBegin comes first and then StreamEnd.
+
+-------------------------------------
+author: Dominique Stanton
+date: 2015-04-21 21:51:17.218000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:332, secondary/indexer/stream_state.go -> Let's say that there is no CONN_ERROR, timekeeper will repairStream as long as count = 0.    If there is a CONN_ERROR, then will skip repairStream on StreamEnd, until indexer sees a StreamBegin.     In getRepairTsForBucket, the promotion when there is no prior CONN_ERROR.     Let me know if you comment refer to something else.
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-05-05 05:56:05.085000000
+
+Change has been successfully merged into the git repository.
+
+-------------------------------------

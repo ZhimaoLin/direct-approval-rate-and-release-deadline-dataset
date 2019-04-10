@@ -1,0 +1,84 @@
+DESCRIPTION
+
+RFC Break library up into modules
+
+Instead of compiling the entire library as one JAR, break it down into
+smaller units based on purpose.  This allows some parts of the build
+to compile in parallel, potentially reducing latency by making better
+use of available CPUs.
+
+After this change 'lib' has been reduced to approximately the smallest
+set of classes that do not have circular dependencies upon each other.
+
+As a result org.eclipse.jgit/BUCK is now rather messy, because it is
+showing the real mess within org.eclipse.jgit.  The JAR has very
+blurry lines with many classes crossing between package boundaries.
+Packages rarely contain all related classes.
+
+Currently it is impossible to separate the server protocol components
+(e.g. UploadPack, ReceivePack) from the main runtime library.
+
+Package internal.storage.file cannot be broken out, as it is required
+by internal.storage.pack and other classes in the library.
+
+Change-Id: Iad528c55e07ed47b33bb426d7b0ebc283830161a
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2013-11-24 11:24:12.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/egit/job/jgit.gerrit/4234/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-24 11:34:45.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/jgit.gerrit/4234/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2013-12-08 00:48:19.000000000
+
+Patch Set 2: Code-Review-1
+
+$ buck build jgit 
+hits compile errors:
+
+warning: [options] bootstrap class path not set in conjunction with -source 1.6
+/Users/d029788/src/git/jgit/org.eclipse.jgit/src/org/eclipse/jgit/lib/RebaseTodoLine.java:48: error: package org.eclipse.jgit.api.errors does not exist
+import org.eclipse.jgit.api.errors.JGitInternalException;
+                                  ^
+/Users/d029788/src/git/jgit/org.eclipse.jgit/src/org/eclipse/jgit/lib/RebaseTodoLine.java:222: error: cannot find symbol
+	private static JGitInternalException createInvalidCommentException(
+	               ^
+...
+
+looks like RebaseTodoLine shouldn't use an API exception, we can't add a reference to the api module since this would yield a circular module dependency. So it seems we should fix this by using another exception here and translate that in RebaseCommand to an API exception
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2013-12-09 09:44:15.000000000
+
+Patch Set 2:
+
+alternatively we could put the API exceptions into their own buck module in order to break up the module dependency cycle
+
+-------------------------------------
+author: Keenan Rosario
+date: 2013-12-09 10:12:40.000000000
+
+Patch Set 2:
+
+Yes, was hitting the same problem here. And it is very good sample why Maven sucks: you don't really see your dependencies.
+
+I think RebaseTodoLine shouldn't use anything from the API space.
+
+-------------------------------------

@@ -1,0 +1,82 @@
+DESCRIPTION
+
+Acquire vb statelock before streamsMutex in a streamRequest
+
+This is to avoid potential lock inversion:
+Also store the vbucket state information in an active stream
+to check the state where ever need be.
+
+15:41:52 WARNING: ThreadSanitizer: lock-order-inversion (potential deadlock) (pid=75802)
+15:41:52   Cycle in lock order graph: M19351 (0x7d540000f8f0) => M15459 (0x7d64000084a8) => M19351
+15:41:52
+15:41:52   Mutex M15459 acquired here while holding mutex M19351 in main thread:
+15:41:52     #0 pthread_rwlock_rdlock <null> (engine_testapp+0x000000469e20)
+15:41:52     #1 cb_rw_reader_enter /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/platform/src/cb_pthreads.cc:391 (libplatform.so.0.1.0+0x00000000687d)
+15:41:52     #2 ReaderLockHolder::ReaderLockHolder(RWLock&) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/rwlock.h:39 (ep.so+0x0000000683d3)
+15:41:52     #3 ActiveStream::ActiveStream(EventuallyPersistentEngine*, SingleThreadedRCPtr<DcpProducer>, std::string const&, unsigned int, unsigned int, unsigned short, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, SingleThreadedRCPtr<GlobalTask>) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/dcp/stream.cc:161 (ep.so+0x00000006da6b)
+15:41:52     #4 DcpProducer::streamRequest(unsigned int, unsigned int, unsigned short, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long*, ENGINE_ERROR_CODE (*)(vbucket_failover_t*, unsigned long, void const*)) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/dcp/producer.cc:291 (ep.so+0x00000006316a)
+15:41:52     #5 EvpDcpStreamReq(engine_interface*, void const*, unsigned int, unsigned int, unsigned short, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long*, ENGINE_ERROR_CODE (*)(vbucket_failover_t*, unsigned long, void const*)) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/ep_engine.cc:1550 (ep.so+0x0000000b43d7)
+15:41:52     #6 mock_dcp_stream_req(engine_interface*, void const*, unsigned int, unsigned int, unsigned short, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long*, ENGINE_ERROR_CODE (*)(vbucket_failover_t*, unsigned long, void const*)) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/memcached/programs/engine_testapp/engine_testapp.cc:551 (engine_testapp+0x0000004ce9e7)
+15:41:52     #7 test_dcp_takeover(engine_interface*, engine_interface_v1*) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/tests/ep_testsuite.cc:5368 (ep_testsuite.so+0x000000075b2a)
+15:41:52     #8 execute_test(test, char const*, char const*) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/memcached/programs/engine_testapp/engine_testapp.cc:1134 (engine_testapp+0x0000004cc728)
+15:41:52     #9 __libc_start_main /build/buildd/eglibc-2.15/csu/libc-start.c:226 (libc.so.6+0x00000002176c)
+15:41:52     #10 __libc_start_main /build/buildd/eglibc-2.15/csu/libc-start.c:226 (libc.so.6+0x00000002176c)
+15:41:52
+15:41:52   Mutex M19351 acquired here while holding mutex M15459 in main thread:
+15:41:52     #0 pthread_rwlock_rdlock <null> (engine_testapp+0x000000469e20)
+15:41:52     #1 cb_rw_reader_enter /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/platform/src/cb_pthreads.cc:391 (libplatform.so.0.1.0+0x00000000687d)
+15:41:52     #2 ReaderLockHolder::ReaderLockHolder(RWLock&) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/rwlock.h:39 (ep.so+0x0000000683d3)
+15:41:52     #3 DcpProducer::findStreamByVbid(unsigned short) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/dcp/producer.cc:986 (ep.so+0x000000065f61)
+15:41:52     #4 DcpProducer::notifySeqnoAvailable(unsigned short, unsigned long) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/dcp/producer.cc:754 (ep.so+0x000000066d8d)
+15:41:52     #5 DcpConnMap::notifyVBConnections(unsigned short, unsigned long) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/connmap.cc:1198 (ep.so+0x000000046d76)
+15:41:52     #6 EventuallyPersistentStore::queueDirty(RCPtr<VBucket>&, StoredValue*, LockHolder*, unsigned long*, bool, bool, bool, bool) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/ep.cc:3547 (ep.so+0x00000008604b)
+15:41:52     #7 EventuallyPersistentStore::set(Item const&, void const*, bool, unsigned char) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/ep.cc:866 (ep.so+0x000000087b2c)
+15:41:52     #8 EventuallyPersistentEngine::store(void const*, void*, unsigned long*, ENGINE_STORE_OPERATION, unsigned short) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/ep_engine.cc:2267 (ep.so+0x0000000b680f)
+15:41:52     #9 EvpStore(engine_interface*, void const*, void*, unsigned long*, ENGINE_STORE_OPERATION, unsigned short) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/ep_engine.cc:234 (ep.so+0x0000000b3547)
+15:41:52     #10 mock_store(engine_interface*, void const*, void*, unsigned long*, ENGINE_STORE_OPERATION, unsigned short) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/memcached/programs/engine_testapp/engine_testapp.cc:274 (engine_testapp+0x0000004cdce2)
+15:41:52     #11 storeCasVb11(engine_interface*, engine_interface_v1*, void const*, ENGINE_STORE_OPERATION, char const*, char const*, unsigned long, unsigned int, void**, unsigned long, unsigned short, unsigned int, unsigned char) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/tests/ep_test_apis.cc:853 (ep_testsuite.so+0x0000000a9fbf)
+15:41:52     #12 store(engine_interface*, engine_interface_v1*, void const*, ENGINE_STORE_OPERATION, char const*, char const*, void**, unsigned long, unsigned short, unsigned int, unsigned char) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/tests/ep_test_apis.cc:804 (ep_testsuite.so+0x0000000a80db)
+15:41:52     #13 dcp_stream(engine_interface*, engine_interface_v1*, char const*, void const*, unsigned short, unsigned int, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, int, int, int, int, bool, bool, unsigned char, bool, unsigned long*, bool) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/tests/ep_testsuite.cc:4583 (ep_testsuite.so+0x0000000921c3)
+15:41:52     #14 test_dcp_takeover(engine_interface*, engine_interface_v1*) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/tests/ep_testsuite.cc:5368 (ep_testsuite.so+0x000000075b2a)
+15:41:52     #15 execute_test(test, char const*, char const*) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/memcached/programs/engine_testapp/engine_testapp.cc:1134 (engine_testapp+0x0000004cc728)
+15:41:52     #16 __libc_start_main /build/buildd/eglibc-2.15/csu/libc-start.c:226 (libc.so.6+0x00000002176c)
+15:41:52
+15:41:52 SUMMARY: ThreadSanitizer: lock-order-inversion (potential deadlock) ??:0 pthread_rwlock_rdlock
+
+Change-Id: Iddb518b5e94a4595c62026f797ff17ba790d180c
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2016-01-13 02:37:04.211000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-01-13 02:37:15.916000000
+
+Patch Set 4:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1217/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-01-13 02:50:33.515000000
+
+Patch Set 4: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1217/ : ABORTED
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1969/ : SUCCESS
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-01-18 17:24:14.696000000
+
+Change has been successfully cherry-picked as ec5dbdc3f35743ff885d55c0efe455446141243f
+
+-------------------------------------

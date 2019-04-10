@@ -1,0 +1,139 @@
+DESCRIPTION
+
+CBQE-0: Support LWWXDCR Tests.
+       1. added tests skeleton for lwwXDCR test
+       2. Changed KVStore to have timestamp for each key to compare it during merging keys.
+
+Change-Id: I1dc0d7b943a48d82e4d0d0cae2d090cc2597802d
+
+
+COMMENTS
+
+author: Fisher Vargas
+date: 2015-01-30 09:54:40.126000000
+
+Uploaded patch set 13.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-01-30 09:54:47.707000000
+
+Patch Set 13:
+
+Build Started http://factory.couchbase.com/job/testrunner-Jasmin Rangel-master/3992/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-01-30 10:10:15.337000000
+
+Patch Set 13: Verified+1
+
+Build Successful 
+
+http://factory.couchbase.com/job/testrunner-Jasmin Rangel-master/3992/ : SUCCESS
+
+-------------------------------------
+author: Angelina Mayer
+date: 2015-02-02 19:32:11.747000000
+
+Patch Set 13:
+
+(2 comments)
+
+Line:2402, pytests/xdcr/xdcrnewbasetests.py -> My point here is -you have added this if condition inside a segment which will not have a single run where
+
+partition1.get_timestamp(key) < partition2.get_timestamp(key)
+
+which is why I'm recommending moving this condition to a case where key is present atleast in valid_keys_dest or deleted_keys_dest, then we know partition2.get_timestamp(key) will not return 0.
+
+Line:2420, pytests/xdcr/xdcrnewbasetests.py -> same as above.
+
+-------------------------------------
+author: Fisher Vargas
+date: 2015-02-03 07:02:26.653000000
+
+Patch Set 13:
+
+(1 comment)
+
+Line:2402, pytests/xdcr/xdcrnewbasetests.py -> Can you please give me an example in the form of condition. 
+
+E.g. 
+
+1. Load K1 key on C1....
+2. Delete K2  on C2....
+
+I mean please let me know the condition.
+
+For me.
+
+Ex-1-UniXDCR (No Delete)
+
+1. K1 at Cluster1 but not on C2.  -> Condition will work fine.
+
+
+Ex-2- BiXDCR (No Delete)
+
+2. K1 at Cluster 1 and K2 at Cluster-2 -> Condition will work fine.
+
+
+
+Ex-3. UniXDCR (No Delete)
+
+1. Pause. Replication.
+2. Load K1 at Cluster-1 @ timestamp T1. 
+3. Load K1 at Cluster-2. @ timestamp T2.
+
+Since T1 < T2, destination key will not be changed.
+
+Ex.4. UniXDCR (Delete)
+
+1. Load K1 at Cluster-1, Wait if replicated.
+2. Pause.
+4. Delete K1 @ Cluster-1 @ T1
+5. Update K1 at Cluster-2 @ T2.
+
+Both will have its own copy. I mean K1 will not present on Cluster1. but present on Culster2
+
+Anything I am missing here.
+
+-------------------------------------
+author: Angelina Mayer
+date: 2015-02-03 19:10:02.141000000
+
+Patch Set 13:
+
+(1 comment)
+
+Line:2402, pytests/xdcr/xdcrnewbasetests.py -> > Ex-1-UniXDCR (No Delete)
+1. K1 at Cluster1 but not on C2. -> Condition will work fine.
+Yes, we will copy K1 to dest bucket's kvs because of timestamp condition
+
+Ex-2- BiXDCR (No Delete)
+2. K1 at Cluster 1 and K2 at Cluster-2 -> Condition will work fine.
+
+I think you meant K1 with D2 at C2. It won't work because control wont even reach here simply because it is inside " if key not in valid_keys_dest and key not in deleted_keys_dest"
+
+I'm not saying the logic of lww condition is wrong. The only point I'm trying to make here is the lww if condition will _only_ get executed for cases where key is not present on C2 because of the __main condition under which it is nested__.
+
+Same with ex- 3
+1. Pause. Replication. 2. Load K1 at Cluster-1 @ timestamp T1. 3. Load K1 at Cluster-2. @ timestamp T2.
+
+K1 is present on both source and dest kv_store. So 
+"if key not in valid_keys_dest and key not in deleted_keys_dest" (inside which lww condition has been nested) will be false.
+
+If you test this piece of code, this might become clear to you.
+
+-------------------------------------
+author: Fisher Vargas
+date: 2015-02-04 10:30:37.479000000
+
+Patch Set 13:
+
+(1 comment)
+
+Line:2402, pytests/xdcr/xdcrnewbasetests.py -> Do you mean previous implementation has some problem?
+
+and if we run merge_keys twice(). One after creating keys and one after updating keys in that if condition false, since key is present on destination?
+
+-------------------------------------

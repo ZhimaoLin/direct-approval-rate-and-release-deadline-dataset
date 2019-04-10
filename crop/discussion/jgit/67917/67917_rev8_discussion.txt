@@ -1,0 +1,87 @@
+DESCRIPTION
+
+Implement DIR_NO_GITLINKS
+
+Implement the DIR_NO_GITLINKS setting with the same functionality
+it provides in cGit.
+
+Bug: 436200
+Change-Id: I8304e42df2d7e8d7925f515805e075a92ff6ce28
+Signed-off-by: Justin Vaughn xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Justin Vaughn
+date: 2016-03-14 17:14:45.000000000
+
+Uploaded patch set 8: Patch Set 7 was rebased.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-03-14 17:14:52.000000000
+
+Patch Set 8:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/8188/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-03-14 17:28:24.000000000
+
+Patch Set 8: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/8188/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2016-04-01 13:31:10.000000000
+
+Patch Set 8:
+
+(4 comments)
+
+Line:141, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeOptions.java -> I always have to think what it means if this method returns "true". Maybe one one sentence like "If true is returned folders containing .git entries will not be treated as gitlinks" should be added.
+
+Line:183, org.eclipse.jgit/src/org/eclipse/jgit/api/AddCommand.java -> nit: trailing whitespaces
+
+Line:922, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> I spent some time understanding why we have to change a method which doesn't depend on our newly introduced DIR_NO_GITLINK? We are changing semantics also in situations where DIR_NO_GITLINKS is not set. Of course I want to prevent that we break previously working scenarios. 
+
+I spent long understanding the effects of your change, gave up and wrote down a table which shows the different results in old and new code:
+https://docs.google.com/spreadsheets/d/1gKq1xNyuN-vNZKJukEs7paX2NHbe2Fx4oavntwoWNso/edit?usp=sharing
+
+In three situations new code differs:
+
+In these case new code returns GITLINK while oldCode returned TREE:
+isFileMode()==true && iMode==GITLINK && wtMode==TREE
+isFileMode()==false && iMode==GITLINK && wtMode==TREE
+
+In this case new code returns TREE while oldCode returned GITLINK:
+isFileMode()==false && iMode==TREE && wtMode==GITLINK
+
+Seems that in your code index mode has precedence over working-tree mode. Will we be able with your code to e.g. change from a GITLINK in the index to a Tree in the index (even if DIR_NO_GITLINK=false)? What is if I had a gitlink in the index, change from submodule to normal files in the working tree and then add that tree?
+
+Line:301, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/FileTreeIterator.java -> even a file named ".git" containing something like "gitdir: ..." should not cause jgit to interprete the folder as a subdir. I would write "directory or file".
+
+(see first Note in https://git-scm.com/docs/gitrepository-layout)
+
+-------------------------------------
+author: Zachary Orozco
+date: 2016-04-01 16:16:22.000000000
+
+Patch Set 8:
+
+(2 comments)
+
+Line:922, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> Hmm, after playing with native git I can understand this change better. Seems also in native git it's tricky to switch from gitlink to tree and vice versa. And this coding implements same semantics as native git. I think we are lacking a test for line 935-937.
+
+Line:937, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> These lines are explicitly there to handle core.filemode==false situations. Before this change it was guaranteed that this lines are only executed when core.filemode==false. Now you changed the condition and these tests are also executed when core.filemode==true. It's not harmful because we know non if these if clauses become true. But to clarify this I suggest to make it explicit:
+
+  if (!getOptions().isFileMode()) {
+    ... these two if clauses
+  } 
+  ...
+
+-------------------------------------

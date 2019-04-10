@@ -1,0 +1,107 @@
+DESCRIPTION
+
+JCBC-1026: Early unsubscription can trigger buffer leaks.
+
+Motivation
+----------
+It has been observed that when early unsubscription happens in observable
+sequences (like firing a timeout() chained in) the up the stream byte buffers
+are not properly released and lead to buffer leaks.
+
+As far as currently observed, the blocking API is not affected and the leak
+only happens during early unsubscribe, not during normal operations.
+
+Modifications
+-------------
+The current logic with defer() as converting a hot into a cold observable
+is not suffcient since when the unsubscribe happens the Subject is not
+checked again and as a result its content (which may includes pooled
+resources like ByteBufs) are leaked.
+
+As a result this changeset proposes an alternative defer() implementation
+which subscribes a second time to the async subject and in parallel monitors
+the subscription of the "main" observable. If a value is passed into the
+subject and the subscription is gone, it releases the buffers to avoid
+a leak. This works under the assumption that there can only be one subscriber
+and the deffered observable is indeed a subject.
+
+So far this holds true for all conditions inside our client but to double
+check and make errors explicit we have an instanceof check in place which
+will fail hard if that constraint is violated, otherwise the hidden
+side effects would be very hard to debug.
+
+Result
+------
+Code like this does not leak anymore:
+
+bucket.async().get("foo").timeout(1, TimeUnit.MICROSECOND).subscribe();
+
+It in general provides much better guarantees wich making sure that
+if an early unsubscribe happens the underlying buffers are freed if
+they are refcounted and their count is > 0 (to avoid double frees).
+
+The joys of object pooling.
+
+Change-Id: I4889d800e3d1835705c6e94992179db93bfae378
+
+
+COMMENTS
+
+author: Natasha Sullivan
+date: 2016-11-22 12:55:46.462000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Marques Ellis
+date: 2016-11-28 15:48:33.054000000
+
+Patch Set 3:
+
+(2 comments)
+
+Line:773, src/main/java/com/couchbase/client/java/CouchbaseAsyncBucket.java -> Will deferAndWatch not apply here?
+
+Line:137, src/main/java/com/couchbase/client/java/util/rawQuerying/AsyncRawQueryExecutor.java -> Why only for RawQuery executor, what about N1QLQueryExecutor?
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2016-11-30 18:24:32.111000000
+
+Patch Set 3:
+
+(2 comments)
+
+Line:773, src/main/java/com/couchbase/client/java/CouchbaseAsyncBucket.java -> no because the response is not "releasable" itself, only the nested observables need to be handled and those are our custom subjects that always dealt with this -- but great catch :-)
+
+Line:137, src/main/java/com/couchbase/client/java/util/rawQuerying/AsyncRawQueryExecutor.java -> when I checked all the methods with grep, the same applies to the other comment, basically they don't need to be released manually since they don't own some pooled data
+
+-------------------------------------
+author: Marques Ellis
+date: 2016-11-30 18:32:42.535000000
+
+Patch Set 3: Code-Review+2
+
+(1 comment)
+
+Line:773, src/main/java/com/couchbase/client/java/CouchbaseAsyncBucket.java -> Ah ok, makes sense
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2016-12-01 12:30:26.347000000
+
+Patch Set 3: Verified+1
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2016-12-01 12:30:30.097000000
+
+Patch Set 4: Patch Set 3 was rebased
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-12-01 12:30:34.428000000
+
+Change has been successfully cherry-picked as 6c2c533f67044e038cb8e1567b784c541c15692f by Natasha Sullivan
+
+-------------------------------------

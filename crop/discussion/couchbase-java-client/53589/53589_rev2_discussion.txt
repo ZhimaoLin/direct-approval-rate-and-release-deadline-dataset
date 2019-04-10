@@ -1,0 +1,64 @@
+DESCRIPTION
+
+JCBC-816: Make reconfiguration more resilient during edge cases.
+
+Motivation
+----------
+There are two edge cases which can happen either individually or
+together:
+
+  - Full cluster restarts (also single node cluster restarts)
+  - Low ops/s. (especially during testing on a single thread
+    in a loop, blocking with the default timeout)
+
+If they happen, the client is not able to get to an alternative
+node immediately and also the incentive for a reconfiguration
+(triggered through ops not finding their primary node) is
+lowered.
+
+There are some steps which can be done to make it more resilient and
+recovering more quickly.
+
+Modifications
+-------------
+A bunch of smaller fixes combined provide better reliability
+semantics. They are:
+
+  - If an exception happens during bootstrap, it is retried. But if
+    an exception happens again during the re-bootstrap, it is now
+    caught and ignored to "keep going" and wait for new attempts
+    through the other heuristics. Propagating the exception into
+    the nirvana only has the side effect of potentially shooting off
+    live threads which just want to signal a stale connection.
+
+  - The current code had too strict boundary checks in place for when
+    a new reconfiguration is triggered, mainly for legacy reasons
+    when http streaming only was available. With CCCP, things changed
+    a bit. So the code now only makes sure that not more than one
+    "outdated" attempt is made per second (the 10 ops in a 10 sec
+    interval boundary has been removed). This makes sure that even
+    under low load, we eventually reach a new configuration as
+    quickly as possible.
+
+Tests have been adapted to get rid of the removed boundary check, as
+well as a potential NPE has been removed.
+
+Result
+------
+Under these edge cases, the client now more reliably and more quickly
+gets back to a valid configuration.
+
+Change-Id: I3e19e1d0a859cfd345db18457377b7373e643605
+Reviewed-on: http://review.couchbase.org/53589
+Tested-by: Natasha Sullivan xxx@xxx.xxx
+Reviewed-by: Estrella Humphrey xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Tate Garrett
+date: 2015-07-29 07:55:01.558000000
+
+Change has been successfully cherry-picked as c5feb5fdd1b4320281e5234f569d3f9f0f88d68a
+
+-------------------------------------

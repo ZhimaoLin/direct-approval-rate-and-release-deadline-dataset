@@ -1,0 +1,103 @@
+DESCRIPTION
+
+Call clean filter during AddCommand
+
+When filters are defined for certain pathes in the gitattributes make
+sure that the clean filter is called during AddCommand.call().
+
+Change-Id: Iffd72914cec5b434ba4d0de232e285b7492db868
+
+
+COMMENTS
+
+author: Zachary Orozco
+date: 2015-06-22 13:08:36.000000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-06-22 13:08:43.000000000
+
+Patch Set 5:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/6782/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-06-22 13:15:32.000000000
+
+Patch Set 5: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/6782/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-06-23 08:03:35.000000000
+
+Patch Set 5: Code-Review-1
+
+will be refactored
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-06-24 06:37:06.000000000
+
+Patch Set 5: Code-Review-1
+
+(4 comments)
+
+Line:222, org.eclipse.jgit/src/org/eclipse/jgit/api/AddCommand.java -> This needs a call to destroy() to clean up a temporary file if one was made because the filter result overflowed the in memory buffer.
+
+Line:1428, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> ack, I see your point about this being expensive and wanting to avoid it unless there really are attribtues named that will require it.
+
+Line:1440, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> Hmm. So this would be bad:
+
+  touch   '; rm -rf *'
+  git add '; rm -rf *'
+
+and then putting a clean filter on that with %f in the name. We will insert ; rm -rf * into the shell line with no escaping and the shell will do exactly what it was told. :(
+
+C Git uses QuotedString.BOURNE semantics to handle %f.
+
+Line:1457, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> probably helpful to put braces around the body of this conditional
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-06-24 18:58:29.000000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:367, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> Note that idBufferBlob() also needs the clean filter to be applied to ensure status on racily clean produces the correct result.
+
+Maybe you should rework the clean filter code to fit into this existing framework. Or fix this framework to more flexibly handle the clean filter being executed.
+
+AutoCRLF cleanup is basically the same as a clean filter, its just built-in to JGit.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-06-26 11:50:40.000000000
+
+Patch Set 5:
+
+(4 comments)
+
+Line:222, org.eclipse.jgit/src/org/eclipse/jgit/api/AddCommand.java -> Done
+
+Line:367, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> Done. Now calling of clean filters is done in WorkingTreeIterator similar (or even "in addition to") autocrlf handling. I am still investigating performance effects. Of course I want to avoid stat'ing gitconfig again and again for every workingtree file. Therefore the config and also the filter commands defined in gitattributes are cached.
+
+Line:1440, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> Done. It seems to help to uses JGits QuotedString.BOURNE. I added also a test.
+
+Line:1457, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> Done
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-11-27 23:20:01.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

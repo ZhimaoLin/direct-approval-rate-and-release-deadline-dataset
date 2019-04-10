@@ -1,0 +1,149 @@
+DESCRIPTION
+
+MB-19952: Ensure that simultaneous tasks use separate file/kvstore handles
+
+ForestDB doesn't allow separate file and KV store handles be used
+simultaneously by 2 different threads. As part of this commit, the
+following changes are made to ForestKVStore
+
+- Use separate file handles for readers and writers.
+- Synchronize the writer tasks (flusher, snapshot, delete vbucket, flush bucket).
+- Open a separate file and kvstore handle for the infrequent tasks. For
+  example, stat calls, backfill, getAllKeys.
+- There is a possibility that as compaction is running, a file is being moved
+  from 0.fdb.1 to 0.fdb.2. A thread trying to open a handle on 0.fdb.1 could
+  fail as soon as compaction completes. In order to prevent that, use a
+  handleLock to synchronize closing the handle before compaction and a
+  separate thread opening a new handle. As long as there is an open
+  file handle on the file, the file should ideally not be removed
+  according to ForestDB semantics.
+
+Change-Id: I34e4b610755d694e72e2d5080f6eac52e6afebdc
+
+
+COMMENTS
+
+author: Bobby Buck
+date: 2016-07-07 16:40:47.769000000
+
+Uploaded patch set 18.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-07-07 16:40:57.534000000
+
+Patch Set 18:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/982/ (1/3)
+
+-------------------------------------
+author: Bobby Buck
+date: 2016-07-07 16:45:01.540000000
+
+Patch Set 18:
+
+The patch addresses a much broader issue than just compaction running at the same time as other tasks. The existing set of unit tests should cover most of them if not all of them. It is just that I haven't had a chance to enable them yet with forestdb as backend.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-07-07 16:46:12.317000000
+
+Patch Set 18:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/905/ (2/3)
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-07-07 17:14:24.482000000
+
+Patch Set 18: Code-Review+2
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-07-07 19:37:15.225000000
+
+Patch Set 18:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/759/ (3/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-07-07 19:42:13.828000000
+
+Patch Set 18: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/759/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/905/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/982/ : SUCCESS
+
+-------------------------------------
+author: Keira Washington
+date: 2016-07-07 20:15:51.670000000
+
+Patch Set 18: Code-Review-1
+
+(11 comments)
+
+Line:1017, src/ep_engine.cc -> ditto
+
+Line:255, src/couch-kvstore/couch-kvstore.h -> Whitespace only change in an unrelated file, please undo
+
+Line:976, src/forest-kvstore/forest-kvstore.cc -> nit: prefer nullptr
+
+Line:977, src/forest-kvstore/forest-kvstore.cc -> nit: prefer nullptr
+
+Line:994, src/forest-kvstore/forest-kvstore.cc -> nit: would prefer snprintf and checking the return value for safety
+
+Line:1422, src/forest-kvstore/forest-kvstore.cc -> I don't see why this should be necessary, unique_ptr supports the `->` operator (ditto in other places)
+
+Line:1703, src/forest-kvstore/forest-kvstore.cc -> Prefer nullptr over NULL
+
+Line:1761, src/forest-kvstore/forest-kvstore.cc -> ditto (Also unique_ptr will initialise itself to null)
+
+Line:46, src/forest-kvstore/forest-kvstore.h -> For safety I think you should probably delete the copy constructor since this is basically a smart pointer.
+
+Line:61, src/forest-kvstore/forest-kvstore.h -> This is highly subjective but I feel if you're using a non-trivial destructor then you should define this as a class rather than a struct.
+
+Line:63, src/forest-kvstore/forest-kvstore.h -> style: Asterisk should be adjacent to type rather than property name
+
+-------------------------------------
+author: Bobby Buck
+date: 2016-07-08 03:36:50.566000000
+
+Patch Set 18:
+
+(11 comments)
+
+Line:1017, src/ep_engine.cc -> Done
+
+Line:255, src/couch-kvstore/couch-kvstore.h -> Done
+
+Line:976, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:977, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:994, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:1422, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:1703, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:1761, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:46, src/forest-kvstore/forest-kvstore.h -> Done
+
+Line:61, src/forest-kvstore/forest-kvstore.h -> Done
+
+Line:63, src/forest-kvstore/forest-kvstore.h -> Done
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-07-08 14:01:50.141000000
+
+Change has been successfully cherry-picked as fc94ef64099ea7a263f5f7ca561a08a5fadb6c8c by Bobby Buck
+
+-------------------------------------

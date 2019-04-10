@@ -1,0 +1,170 @@
+DESCRIPTION
+
+RevWalk performance enhancements
+
+Caching of the already inflated commit message gives significant
+performance enhancements. Especially on consecutive commit traversals.
+The cache use SoftHashMap from package org.apache.shiro.util.
+
+I authored 100% of this code, have the right to donate it to Eclipse
+and contribute it under the EPL and EDL
+
+Change-Id: I0f1b291a01882fa96fdf62683b87db31a9fe320e
+Signed-off-by: Zion Jenkins (Tieto Corporation)
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2012-12-06 14:10:59.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2552/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-12-06 14:23:29.000000000
+
+Patch Set 1: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2552/ : SUCCESS
+
+-------------------------------------
+author: Zion Jenkins
+date: 2012-12-06 14:31:14.000000000
+
+Patch Set 1: Looks good to me, but someone else must approve
+
+
+
+-------------------------------------
+author: Juliet Cantu
+date: 2012-12-07 00:15:45.000000000
+
+Patch Set 1: Do not submit
+
+We'd need to get Shiro into Orbit to accept this. Hence -2
+
+Here we add another cache, how does that affect memory usage? How big is the performance increase?
+
+We have some complaints about JGit using too much memory, this goes the other way, but unlike setRetainBody(true) this is is more GC-friendly.
+
+Doesn't SoftReferences stay in memory until we reach the maximum heap size (unless they become unreferenced of course).
+
+-------------------------------------
+author: Zion Jenkins
+date: 2012-12-07 09:16:45.000000000
+
+Patch Set 1:
+
+Performance and memory testing was both done by traversing the 350000+ commits of the Linux repository.
+The performance was measured on a high end 64 bit Linux desktop with the repository on a SSD, 64-bit Java 7u9 was used.
+
+Q: how does that affect memory usage?
+It's complicated to answer the question, it could be either better or worse; and I will investigate it further. If memory is a huge concern a cache that is very limited in size would still provide performance benefits. 
+I did some testing with "Java -Xmx 8m", the performance went down but it was still 3 times faster than without the cache for consecutive runs in my test-setup. That is 3 times faster than runs with no heap-size limitations.
+
+
+Q: How big is the performance increase?
+It's about 1.6 times faster on the first run. (7700 ms -> 4700 ms)
+It's about 8 times faster on consecutive runs. (4200 ms -> 500 ms)
+
+Q: Doesn't SoftReferences stay in memory until we reach the maximum heap size (unless they become unreferenced of course).
+
+http://docs.oracle.com/javase/1.4.2/docs/api/java/lang/ref/SoftReference.html
+http://www.oracle.com/technetwork/java/hotspotfaq-138619.html#gc_softrefs
+
+I started to investigate this because we didn’t get the performance needed in a server application that traverses commit messages (No memory concerns and all runs are consecutive except the first one).
+
+-------------------------------------
+author: Zion Jenkins
+date: 2012-12-07 20:11:09.000000000
+
+Patch Set 1:
+
+I made a typo in my last post. The least amount of memory I can use during testing is "-Xmx588m"
+If I use less I get "java.lang.OutOfMemoryError: GC overhead limit exceeded".
+
+I can not run with a heap size of 588m without my commit, the least amount of memory I can run with is "-Xmx788m". 
+778m gives "java.lang.OutOfMemoryError: Java heap space".
+
+When I do memory profiling of 100 consecutive Linux traversals without memory limitations both the memory, CPU and GC profile looks better with my commit than without it.
+
+Very few repositories have 350000+ commits in them so this is an extreme case.
+
+-------------------------------------
+author: Malia Sampson
+date: 2012-12-30 22:33:58.000000000
+
+Patch Set 1:
+
+If we decided to add this layer of caching, I prefer we just copy Shiro's implementation into JGit as it's self contained: http://shiro.apache.org/static/1.1.0/apidocs/src-html/org/apache/shiro/util/SoftHashMap.html
+
+If we move forward, I can handle the CQ on this but I think we need commentary from Shawn if this the right direction. (memory vs. perf)
+
+-------------------------------------
+author: Malia Sampson
+date: 2012-12-30 22:34:07.000000000
+
+Patch Set 1: Unclean IP, do not check in
+
+
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2012-12-31 19:16:07.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(4 inline comments)
+
+
+
+Line:124, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/RevCommit.java -> Soft references don't always work. WindowCache uses SoftReference to hold blocks from pack files. The Java GC tends to kill about 50% of the soft references on each full heap GC it performs. So this may help some but in practice we have found using strong references like DfsBlockCache does to be better for caching. Unfortunately we haven't yet back-ported this to WindowCache because using strong references steals heap space from the application JGit is embedded into. Big applications like Eclipse that JGit is trying to run inside of may not have the memory to give JGit a dedicated slice of the heap. Big applications like Gerrit or our own Git servers can do that, and using strong references there works better than soft references.
+
+So I am somewhat skeptical that just adding yet another soft reference cache is the best thing.
+
+Line:147, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/RevCommit.java -> This should be avoided. You are allocating a new ObjectId on every parse operation because the map doesn't support our AnyObjectId lookup behavior? Don't do that.
+
+Line:151, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/RevCommit.java -> So actually what you are trying to do is avoiding parsing the commit headers?
+
+This thread on the git mailing list is actually going in a more productive direction: http://thread.gmane.org/gmane.comp.version-control.git/210419/focus=212329
+
+Line:9, /COMMIT_MSG -> Please quantify this improvement. RevWalk is a critical part of JGit that is used for a lot of important algorithms. When making a change like this we prefer to see a/b performance results on workloads that matter, e.g. UploadPack/PackWriter and Log.
+
+Please explain why this improvement is necessary. Are you just trying to boost PackWriter performance and found this helps? We already have bitmap support pending for PackWriter that is like 445x faster. There is no way a simple soft reference based map can get that sort of improvement.
+
+-------------------------------------
+author: Zion Jenkins
+date: 2013-01-02 23:29:48.000000000
+
+Patch Set 1: (4 inline comments)
+
+Chris: Depending on JVM and operation this could lower the amount of memory needed and increase performance at the same time.
+
+
+Shawn: It's a little bit unclear, should I abandon this patch or send in a correction.
+
+Line:124, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/RevCommit.java -> If the JVM is started in server mode soft references should stay in memory until the heap limit is reached but it do vary with JVM implementation. The cache keep 100 hard references (default value).
+
+In my testing; less (not more) memory is needed for a traversal that is equivalent to "git log" for the linux repository. I have used HotSpot for 64-bit Linux version 1.6 and 1.7 and the only command line options to the JVM during memory testing has been " -Xmx".
+
+Line:147, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/RevCommit.java -> True; there is however still a need to make a copy before adding the object as a key to the cache in order to avoid strong references from the outside, but the copy can wait until after the check.
+
+Line:151, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/RevCommit.java -> I don't understand what you mean with avoiding commit header parsing.
+
+The point is to avoid "org.eclipse.jgit.revwalk.RevWalk.getCachedBytes" that takes about 80-90% of the execution time during a warm rev-walk in my testing.
+The big gain is to avoid "org.eclipse.jgit.storage.file.WindowCursor.inflate".
+
+The parse method is still called just as before.
+
+If the performance problems get solved in another way then there is no need for this patch. We had  performance issues with a server application using JGit and this boosted the performance 10x with minimal code changes so I decided to send it in.
+
+Line:9, /COMMIT_MSG -> Thanks for the comments, I will rewrite the commit message. I'm boosting "git log" performance 8x for the linux repository when the cache is warm (1.5x when the cache is cold).
+
+I saw the PackWriter improvement slides but my conclusion was that the PackWriter changes wouldn't help when searching in commit messages.
+
+-------------------------------------

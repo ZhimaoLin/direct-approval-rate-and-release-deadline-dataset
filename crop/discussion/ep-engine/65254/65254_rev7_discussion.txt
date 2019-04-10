@@ -1,0 +1,173 @@
+DESCRIPTION
+
+MB-18453: Make task scheduling fairer
+
+Sort the readyQueue by priority + time.
+
+However we don't want to rely on real time and
+the fun that could bring, so ReadyQueue has a
+uint64 acting as an 'age' value. When a task
+is popped from the queue, we advance time.
+When we push a task onto the queue it takes
+the current time value.
+
+When the queue compare method is invoked
+tasks are compared using their priority+time,
+allowing for tasks that are old, to move to the
+front even if they have a low priority.
+
+Change-Id: I6d2f9f6759d1647d7ccca587c89de180efbf8741
+
+
+COMMENTS
+
+author: Jim WNathalie Landryer
+date: 2016-06-28 14:38:25.905000000
+
+Uploaded patch set 7: Patch Set 6 was rebased.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-06-28 14:38:35.166000000
+
+Patch Set 7:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-sherlock/596/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-06-28 14:38:35.505000000
+
+Patch Set 7:
+
+Permission granted to commit: 
+
+http://server.jenkins.Piper Jefferson.com/job/restricted-branch-check/17300/artifact/restricted.html : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-06-28 14:47:47.515000000
+
+Patch Set 7: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-sherlock/596/ : FAILURE
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-06-28 15:10:47.432000000
+
+Patch Set 7: -Verified
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-sherlock/598/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-06-28 15:20:18.003000000
+
+Patch Set 7: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-sherlock/598/ : FAILURE
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-06-28 15:28:20.307000000
+
+Patch Set 7: -Verified
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-sherlock/604/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-06-28 15:28:22.947000000
+
+Patch Set 7: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-sherlock/604/ : FAILURE
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-06-28 15:28:55.881000000
+
+Patch Set 7: -Verified
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-sherlock/605/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-06-28 15:28:58.451000000
+
+Patch Set 7: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-sherlock/605/ : FAILURE
+
+-------------------------------------
+author: Ellie Kidd
+date: 2016-06-28 20:53:45.517000000
+
+Patch Set 7:
+
+Jim, Can you please clarify how this will solve MB-18453 in the presence of MB-18452?
+Suppose 2 super long running, non-yielding Processor Tasks are scheduled.
+Soon after the stats task is enqueued.
+Now a particular tick, all 4 Processor tasks along with the Stats Task get enqueued into the readyQueue.
+Now won't they all age evenly, which means the stats task can still starve right?
+Thanks
+
+-------------------------------------
+author: Ellie Kidd
+date: 2016-06-28 20:54:38.197000000
+
+Patch Set 7:
+
+Sorry please ignore the number 4 from my question above
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-06-29 08:10:27.308000000
+
+Patch Set 7:
+
+> Jim, Can you please clarify how this will solve MB-18453 in the
+ > presence of MB-18452?
+ > Suppose 2 super long running, non-yielding Processor Tasks are
+ > scheduled.
+ > Soon after the stats task is enqueued.
+ > Now a particular tick, all 4 Processor tasks along with the Stats
+ > Task get enqueued into the readyQueue.
+ > Now won't they all age evenly, which means the stats task can still
+ > starve right?
+ > Thanks
+
+If we have "super long running" tasks then no scheduling fix will have any affect because we don't do preempting. If we applied a preemption fix (signals or something) then we're just doing the job of the OS kernel.
+
+So with MB-18452 (which is committed ahead of this fix) the processor task will yield. So with this fix if many Processor tasks are scheduled at the same time then they will likely get the same 'enqueuTime' and they will compare the same when sorting the readyQueue, if a stats task is also scheduled it will get the same enqueueTime too, but will compare differently because his enqueueTime + priority is greater than the Processor tasks. The processor tasks all get serviced first, each time one his popped from readyQueue, the enqueueTime goes up.
+
+So now if a Processor finishes and gets re-scheduled he may (depending on the stat task enqueueTime+priority) now be sorted to behind the stats-task because the enqueueTime+priority is greater than the stats tasks enqueueTime+priority, thus the statTask will move forward.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-06-29 08:11:05.009000000
+
+Patch Set 7: -Verified
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-sherlock/611/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-06-29 08:20:15.320000000
+
+Patch Set 7: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-sherlock/611/ : FAILURE
+
+-------------------------------------

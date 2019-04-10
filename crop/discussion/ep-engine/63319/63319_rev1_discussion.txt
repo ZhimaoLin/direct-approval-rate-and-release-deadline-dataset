@@ -1,0 +1,228 @@
+DESCRIPTION
+
+MB-19359: Address lock inversion with vb's state lock and snapshot lock
+
++ This scenario should not occur in real operation.
++ Most DCP unit tests would however flag this as an issue because
+  of how we do things in the tests --> [setting vbucket's state to
+  replica at the very beginning (by the main thread)].
++ Suppressing this lock inversion, by moving the function call to
+  update the vbucket's snapshot range outside the state lock context
+  in setState(), as it isn't necessary to acquire the state lock to
+  update the snapshot range.
+
+WARNING: ThreadSanitizer: lock-order-inversion (potential deadlock) (pid=39750)
+  Cycle in lock order graph: M43306 (0x7d640000fcf0) => M43309 (0x7d640000fe18) => M43306
+
+  Mutex M43309 acquired here while holding mutex M43306 in main thread:
+    #0 pthread_mutex_lock <null> (engine_testapp+0x000000474420)
+    #1 cb_mutex_enter /home/daver/repos/Piper Jefferson/server/platform/src/cb_pthreads.c:85 (libplatform.so.0.1.0+0x0000000034a0)
+    #2 Mutex::acquire() /home/daver/repos/Piper Jefferson/server/ep-engine/src/mutex.cc:31 (ep.so+0x0000001c611e)
+    #3 LockHolder::lock() /home/daver/repos/Piper Jefferson/server/ep-engine/src/locks.h:71 (ep.so+0x00000006a4e3)
+    #4 LockHolder /home/daver/repos/Piper Jefferson/server/ep-engine/src/locks.h:48 (ep.so+0x00000006a172)
+    #5 VBucket::setCurrentSnapshot(unsigned long, unsigned long) /home/daver/repos/Piper Jefferson/server/ep-engine/src/vbucket.h:217 (ep.so+0x0000000e5ee5)
+    #6 VBucket::setState(vbucket_state_t, server_handle_v1_t*) /home/daver/repos/Piper Jefferson/server/ep-engine/src/vbucket.cc:196 (ep.so+0x0000002932e9)
+    #7 EventuallyPersistentStore::setVBucketState(unsigned short, vbucket_state_t, bool, bool) /home/daver/repos/Piper Jefferson/server/ep-engine/src/ep.cc:1060 (ep.so+0x0000000c0b61)
+    #8 EventuallyPersistentEngine::setVBucketState(unsigned short, vbucket_state_t, bool) /home/daver/repos/Piper Jefferson/server/ep-engine/src/ep_engine.h:628 (ep.so+0x000000188a12)
+    #9 setVBucket(EventuallyPersistentEngine*, void const*, protocol_binary_request_header*, bool (*)(void const*, unsigned short, void const*, unsigned char, void const*, unsigned int, unsigned char, unsigned short, unsigned long, void const*)) /home/daver/repos/Piper Jefferson/server/ep-engine/src/ep_engine.cc:824 (ep.so+0x00000014aaaa)
+    #10 processUnknownCommand(EventuallyPersistentEngine*, void const*, protocol_binary_request_header*, bool (*)(void const*, unsigned short, void const*, unsigned char, void const*, unsigned int, unsigned char, unsigned short, unsigned long, void const*)) /home/daver/repos/Piper Jefferson/server/ep-engine/src/ep_engine.cc:1118 (ep.so+0x000000147707)
+    #11 EvpUnknownCommand(engine_interface*, void const*, protocol_binary_request_header*, bool (*)(void const*, unsigned short, void const*, unsigned char, void const*, unsigned int, unsigned char, unsigned short, unsigned long, void const*)) /home/daver/repos/Piper Jefferson/server/ep-engine/src/ep_engine.cc:1312 (ep.so+0x00000011a055)
+    #12 mock_unknown_command /home/daver/repos/Piper Jefferson/server/memcached/programs/engine_testapp/engine_testapp.c:335 (engine_testapp+0x0000004be97a)
+    #13 set_vbucket_state(engine_interface*, engine_interface_v1*, unsigned short, vbucket_state_t) /home/daver/repos/Piper Jefferson/server/ep-engine/tests/ep_test_apis.cc:484 (ep_testsuite.so+0x0000000e1562)
+    #14 test_dcp_replica_stream_backfill(engine_interface*, engine_interface_v1*) /home/daver/repos/Piper Jefferson/server/ep-engine/tests/ep_testsuite.cc:5278 (ep_testsuite.so+0x00000008c84a)
+    #15 execute_test /home/daver/repos/Piper Jefferson/server/memcached/programs/engine_testapp/engine_testapp.c:1042 (engine_testapp+0x0000004ba8ff)
+    #16 main /home/daver/repos/Piper Jefferson/server/memcached/programs/engine_testapp/engine_testapp.c:1296 (engine_testapp+0x0000004b8861)
+
+  Mutex M43306 acquired here while holding mutex M43309 in thread T17:
+    #0 pthread_rwlock_rdlock <null> (engine_testapp+0x000000457ca0)
+    #1 cb_rw_reader_enter /home/daver/repos/Piper Jefferson/server/platform/src/cb_pthreads.c:264 (libplatform.so.0.1.0+0x0000000042e0)
+    #2 RWLock::readerLock() /home/daver/repos/Piper Jefferson/server/ep-engine/src/rwlock.h:38 (ep.so+0x000000115cf0)
+    #3 ReaderLockHolder /home/daver/repos/Piper Jefferson/server/ep-engine/src/locks.h:167 (ep.so+0x0000000dbbe7)
+    #4 EventuallyPersistentStore::addTAPBackfillItem(Item const&, unsigned char, bool) /home/daver/repos/Piper Jefferson/server/ep-engine/src/ep.cc:851 (ep.so+0x0000000be35d)
+    #5 PassiveStream::commitMutation(MutationResponse*, bool) /home/daver/repos/Piper Jefferson/server/ep-engine/src/dcp-stream.cc:1370 (ep.so+0x00000027e8cc)
+    #6 PassiveStream::processMutation(MutationResponse*) /home/daver/repos/Piper Jefferson/server/ep-engine/src/dcp-stream.cc:1346 (ep.so+0x00000027d680)
+    #7 PassiveStream::processBufferedMessages(unsigned int&) /home/daver/repos/Piper Jefferson/server/ep-engine/src/dcp-stream.cc:1286 (ep.so+0x00000027cfbc)
+    #8 DcpConsumer::processBufferedItems() /home/daver/repos/Piper Jefferson/server/ep-engine/src/dcp-consumer.cc:599 (ep.so+0x0000002454cc)
+    #9 Processer::run() /home/daver/repos/Piper Jefferson/server/ep-engine/src/dcp-consumer.cc:48 (ep.so+0x0000002450ef)
+    #10 ExecutorThread::run() /home/daver/repos/Piper Jefferson/server/ep-engine/src/executorthread.cc:109 (ep.so+0x0000001c76d9)
+    #11 launch_executor_thread(void*) /home/daver/repos/Piper Jefferson/server/ep-engine/src/executorthread.cc:34 (ep.so+0x0000001c6caa)
+    #12 platform_thread_wrap /home/daver/repos/Piper Jefferson/server/platform/src/cb_pthreads.c:19 (libplatform.so.0.1.0+0x00000000325c)
+
+Change-Id: I2f3cf88e6aebbf6078f533fb1ed87bd9fe618616
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2016-04-25 18:04:26.113000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-25 18:04:32.821000000
+
+Patch Set 1:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/572/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-25 18:04:34.075000000
+
+Patch Set 1: Well-Formed+1
+
+Permission granted to commit: 
+
+http://server.jenkins.Piper Jefferson.com/job/restricted-branch-check/13082/artifact/restricted.html : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-25 18:20:26.809000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/572/ : SUCCESS
+
+-------------------------------------
+author: Abby Duran
+date: 2016-04-25 19:42:32.646000000
+
+Patch Set 1: Code-Review+2
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-04-26 09:13:45.105000000
+
+Patch Set 1: Code-Review-1
+
+(1 comment)
+
+Could you answer my query below. If it's not a problem then feel free to ignore the -1.
+
+Line:189, src/vbucket.cc -> What happens if another thread calls setState at the same time, and it changes the  previous state to a new value (i.e. that thread executes line 203 at this point in time)?
+
+Is there any issue in calling setCurrentSnapshot once the state has changed away from active?
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-26 09:50:10.202000000
+
+Patch Set 1: -Verified
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-3.0.x/178/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-26 10:00:21.103000000
+
+Patch Set 1:
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-3.0.x/178/ : FAILURE (skipped)
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-3.0.x/178/ )
+
+ThreadSanitizer issue: data race /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-3.0.x/memcached/programs/engine_testapp/mock_server.c:0 mock_cookie_release  ( http://cv.jenkins.couchbase.com//job/ep-engine-threadsanitizer-3.0.x/178/ )
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-04-26 10:34:25.039000000
+
+Patch Set 1:
+
+Note there's still a lock-order-inversion - see Hugo Blankenship comment on build 178:
+
+WARNING: ThreadSanitizer: lock-order-inversion (potential deadlock) (pid=245522)
+  Cycle in lock order graph: M21518 (0x7d640003e220) => M21515 (0x7d640003e0f0) => M21518
+
+  Mutex M21515 acquired here while holding mutex M21518 in thread T17:
+    #0 pthread_rwlock_rdlock <null> (engine_testapp+0x000000462260)
+    #1 cb_rw_reader_enter <null> (libplatform.so.0.1.0+0x000000004800)
+    #2 RWLock::readerLock() ep-engine/src/rwlock.h:38 (ep.so+0x000000132360)
+    #3 ReaderLockHolder::ReaderLockHolder(RWLock&) ep-engine/src/locks.h:167 (ep.so+0x0000000f8087)
+    #4 EventuallyPersistentStore::addTAPBackfillItem(Item const&, unsigned char, bool) ep-engine/src/ep.cc:851 (ep.so+0x0000000d9ba7)
+    #5 PassiveStream::commitMutation(MutationResponse*, bool) ep-engine/src/dcp-stream.cc:1370 (ep.so+0x00000029dd8c)
+    #6 PassiveStream::processMutation(MutationResponse*) ep-engine/src/dcp-stream.cc:1346 (ep.so+0x00000029cbd0)
+    #7 PassiveStream::processBufferedMessages(unsigned int&) ep-engine/src/dcp-stream.cc:1286 (ep.so+0x00000029c522)
+    #8 DcpConsumer::processBufferedItems() ep-engine/src/dcp-consumer.cc:599 (ep.so+0x000000262e04)
+    #9 Processer::run() ep-engine/src/dcp-consumer.cc:48 (ep.so+0x0000002629ff)
+    #10 ExecutorThread::run() ep-engine/src/executorthread.cc:109 (ep.so+0x0000001e38f1)
+    #11 launch_executor_thread(void*) ep-engine/src/executorthread.cc:34 (ep.so+0x0000001e2f1a)
+    #12 platform_thread_wrap platform/src/cb_pthreads.c (libplatform.so.0.1.0+0x00000000377c)
+
+  Mutex M21518 previously acquired by the same thread here:
+    #0 pthread_mutex_lock <null> (engine_testapp+0x00000047e9e0)
+    #1 cb_mutex_enter <null> (libplatform.so.0.1.0+0x0000000039c0)
+    #2 Mutex::acquire() ep-engine/src/mutex.cc:31 (ep.so+0x0000001e241e)
+    #3 LockHolder::lock() ep-engine/src/locks.h:71 (ep.so+0x000000080bc3)
+    #4 LockHolder::LockHolder(Mutex&, bool) ep-engine/src/locks.h:48 (ep.so+0x000000080832)
+    #5 VBucket::getSnapshotLock() ep-engine/src/vbucket.h:212 (ep.so+0x000000103e02)
+    #6 PassiveStream::processMutation(MutationResponse*) ep-engine/src/dcp-stream.cc:1345 (ep.so+0x00000029cb6d)
+    #7 PassiveStream::processBufferedMessages(unsigned int&) ep-engine/src/dcp-stream.cc:1286 (ep.so+0x00000029c522)
+    #8 DcpConsumer::processBufferedItems() ep-engine/src/dcp-consumer.cc:599 (ep.so+0x000000262e04)
+    #9 Processer::run() ep-engine/src/dcp-consumer.cc:48 (ep.so+0x0000002629ff)
+    #10 ExecutorThread::run() ep-engine/src/executorthread.cc:109 (ep.so+0x0000001e38f1)
+    #11 launch_executor_thread(void*) ep-engine/src/executorthread.cc:34 (ep.so+0x0000001e2f1a)
+    #12 platform_thread_wrap platform/src/cb_pthreads.c (libplatform.so.0.1.0+0x00000000377c)
+
+  Mutex M21518 acquired here while holding mutex M21515 in main thread:
+    #0 pthread_mutex_lock <null> (engine_testapp+0x00000047e9e0)
+    #1 cb_mutex_enter <null> (libplatform.so.0.1.0+0x0000000039c0)
+    #2 Mutex::acquire() ep-engine/src/mutex.cc:31 (ep.so+0x0000001e241e)
+    #3 LockHolder::lock() ep-engine/src/locks.h:71 (ep.so+0x000000080bc3)
+    #4 LockHolder::LockHolder(Mutex&, bool) ep-engine/src/locks.h:48 (ep.so+0x000000080832)
+    #5 VBucket::getCurrentSnapshot(unsigned long&, unsigned long&) ep-engine/src/vbucket.h:233 (ep.so+0x0000000fae05)
+    #6 EventuallyPersistentEngine::doSeqnoStats(void const*, void (*)(char const*, unsigned short, char const*, unsigned int, void const*), char const*, int) ep-engine/src/ep_engine.cc:4255 (ep.so+0x00000014f202)
+    #7 EventuallyPersistentEngine::getStats(void const*, char const*, int, void (*)(char const*, unsigned short, char const*, unsigned int, void const*)) ep-engine/src/ep_engine.cc:4372 (ep.so+0x000000150bcb)
+    #8 EvpGetStats(engine_interface*, void const*, char const*, int, void (*)(char const*, unsigned short, char const*, unsigned int, void const*)) ep-engine/src/ep_engine.cc:214 (ep.so+0x000000136a72)
+    #9 mock_get_stats memcached/programs/engine_testapp/engine_testapp.c (engine_testapp+0x0000004c8403)
+    #10 get_int_stat(engine_interface*, engine_interface_v1*, char const*, char const*) ep-engine/tests/ep_test_apis.cc:771 (ep_testsuite.so+0x0000000e21ea)
+    #11 wait_for_stat_to_be(engine_interface*, engine_interface_v1*, char const*, int, char const*) ep-engine/tests/ep_test_apis.cc:860 (ep_testsuite.so+0x0000000e8d2b)
+    #12 test_dcp_replica_stream_backfill(engine_interface*, engine_interface_v1*) ep-engine/tests/ep_testsuite.cc:5306 (ep_testsuite.so+0x00000008e601)
+    #13 execute_test memcached/programs/engine_testapp/engine_testapp.c (engine_testapp+0x0000004c4e9f)
+    #14 main crtstuff.c (engine_testapp+0x0000004c2e01)
+
+  Mutex M21515 previously acquired by the same thread here:
+    #0 pthread_rwlock_rdlock <null> (engine_testapp+0x000000462260)
+    #1 cb_rw_reader_enter <null> (libplatform.so.0.1.0+0x000000004800)
+    #2 RWLock::readerLock() ep-engine/src/rwlock.h:38 (ep.so+0x000000132360)
+    #3 ReaderLockHolder::ReaderLockHolder(RWLock&) ep-engine/src/locks.h:167 (ep.so+0x0000000f8087)
+    #4 EventuallyPersistentEngine::doSeqnoStats(void const*, void (*)(char const*, unsigned short, char const*, unsigned int, void const*), char const*, int) ep-engine/src/ep_engine.cc:4252 (ep.so+0x00000014f18b)
+    #5 EventuallyPersistentEngine::getStats(void const*, char const*, int, void (*)(char const*, unsigned short, char const*, unsigned int, void const*)) ep-engine/src/ep_engine.cc:4372 (ep.so+0x000000150bcb)
+    #6 EvpGetStats(engine_interface*, void const*, char const*, int, void (*)(char const*, unsigned short, char const*, unsigned int, void const*)) ep-engine/src/ep_engine.cc:214 (ep.so+0x000000136a72)
+    #7 mock_get_stats memcached/programs/engine_testapp/engine_testapp.c (engine_testapp+0x0000004c8403)
+    #8 get_int_stat(engine_interface*, engine_interface_v1*, char const*, char const*) ep-engine/tests/ep_test_apis.cc:771 (ep_testsuite.so+0x0000000e21ea)
+    #9 wait_for_stat_to_be(engine_interface*, engine_interface_v1*, char const*, int, char const*) ep-engine/tests/ep_test_apis.cc:860 (ep_testsuite.so+0x0000000e8d2b)
+    #10 test_dcp_replica_stream_backfill(engine_interface*, engine_interface_v1*) ep-engine/tests/ep_testsuite.cc:5306 (ep_testsuite.so+0x00000008e601)
+    #11 execute_test memcached/programs/engine_testapp/engine_testapp.c (engine_testapp+0x0000004c4e9f)
+    #12 main crtstuff.c (engine_testapp+0x0000004c2e01)
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-04-26 10:35:56.785000000
+
+Patch Set 1:
+
+(To clarify, the new race can be fixed in a separate commit.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-04-26 17:40:03.881000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:189, src/vbucket.cc -> Hmm, I don't believe that should cause any problems, but just to be on the safer side, I will move this code to after updating the state.
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-04-27 23:32:34.525000000
+
+Change has been successfully cherry-picked as a07305ed777eb1c484763918a92d3199412c0ff5 by Abby Duran
+
+-------------------------------------

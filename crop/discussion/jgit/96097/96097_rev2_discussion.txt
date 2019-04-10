@@ -1,0 +1,106 @@
+DESCRIPTION
+
+Fix stack overflow in MergeBaseGenerator
+
+Some repository topologies can cause carryOntoHistory to overflow the
+thread stack, due to its strategy of recursing into the 2nd+ parents
+of a merge commit.  This can easily happen if a project maintains a
+local fork, and frequently pulls from the upstream repository, which
+itself may have a branchy history.
+
+Rewrite the carryOntoHistory algorithm to use a fixed amount of thread
+stack, pushing the save points onto the heap.  By using heap space the
+thread stack depth is no longer a concern.  Repositories are instead
+limited by available memory.
+
+The algorithm is now structured as two loops:
+
+  carryOntoHistory: This outer loop pops saved commits off the top of
+  the stack, allowing the inner loop algorithm to dive down that path
+  and carry bits onto commits along that part of the graph.  The loop
+  ends when there are no more stack elements.
+
+  carryOntoHistoryInner: The inner loop walks along a single path of
+  the graph. For a string of pearls (commits with one parent each)
+
+    r <- s <- t <- u
+
+  the algorithm walks backwards from u to r by iteratively updating
+  its local variable 'c'.  This avoids heap allocation along a simple
+  path that does not require remembering state.
+
+  The inner loop breaks in the HAVE_ALL case, when all bits have been
+  found to be previously set on the commit.  This occurs when a prior
+  iteration of the outer loop (carryOntoHistory) explored a different
+  path to this same commit, and copied the bits onto it.
+
+  When the inner loop encounters a merge commit, it pushes all parents
+  onto the heap based stack by allocating individual CarryStack
+  elements for each parent.  Parents are pushed in order, allowing
+  side branches to be explored first.
+
+  A small optimization is taken for the last parent, avoiding pushing
+  it and instead updating 'c', allowing the side branch to be entered
+  without allocating a CarryStack.
+
+Change-Id: Ib7b67d90f141c497fbdc61a31b0caa832e4b3c04
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2017-05-02 00:23:21.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-05-02 00:23:27.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/10208/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-05-02 00:38:39.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/10208/ : SUCCESS
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2017-05-02 15:53:57.000000000
+
+Patch Set 2: Code-Review+1
+
+(1 comment)
+
+Line:237, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/MergeBaseGenerator.java -> Style-wise we don't use "break" at the bottom of a for loop very often, we more often test for the break condition and break like on line 218 above. Save a line by inverting the condition and leaving the "continue" as implied. Same above in the carryOntoHistory loop.
+
+-------------------------------------
+author: Paloma Kennedy
+date: 2017-05-02 17:53:32.000000000
+
+Patch Set 2: Code-Review+1
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2017-05-02 18:39:21.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:237, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/MergeBaseGenerator.java -> Ooh, good catch, thanks. Done.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2017-05-02 19:12:30.000000000
+
+Change has been successfully merged into the git repository by Yoselin Hanna
+
+-------------------------------------

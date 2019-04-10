@@ -1,0 +1,123 @@
+DESCRIPTION
+
+Don't invalidate pack file on InterruptedIOException
+
+If the thread reading a pack file is interrupted don't invalidate that
+pack file.
+
+This could happen when Gerrit invoked JGit for computing a diff in one
+thread and waited for the call to finish from another thread, with a
+timeout. When the timeout was reached the "diff" thread was interrupted.
+If it happened to be in an IO operation, reading a pack file, an
+InterruptedIOException was thrown and the pack file was marked as
+invalid and removed from the pack list.
+
+Invalidating the pack in that case could cause the project disappearing in
+Gerrit as discussed in [1] and [2].
+
+[1] https://groups.google.com/forum/#!topic/repo-discuss/CYYoHfDxCfA
+[2] https://groups.google.com/forum/#!topic/repo-discuss/ZeGWPyyJlrM
+
+Change-Id: I2eb1f98370936b5be541d96d70c3973cbfc39238
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+Signed-off-by: Dillon Cross xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Dillon Cross
+date: 2015-05-20 15:05:52.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-05-20 15:05:58.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/6465/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-05-20 15:13:19.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/6465/ : SUCCESS
+
+-------------------------------------
+author: Keenan Rosario
+date: 2015-05-21 05:46:27.000000000
+
+Patch Set 1: Code-Review+1
+
+(1 comment)
+
+Line:183, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackFile.java -> Can we add a unit test for it?
+
+-------------------------------------
+author: Eden Lin
+date: 2015-05-21 20:55:35.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:184, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackFile.java -> Would it make sense to catch FileNotFoundException instead?
+
+That would avoid invalidating the pack when other temporary I/O errors are encountered (e.g., ENOMEM or EIO). But I'm not sure I understand v0.4.9~101 (Rescan packs if a pack is modified in-place (part 1), 2009-04-20) well enough yet to see if that's the intent.
+
+-------------------------------------
+author: Eden Lin
+date: 2015-05-21 21:01:31.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+v0.4.9~101 (Rescan packs if a pack is modified in-place) says that offsets might be different within the same packfile due to changing pack creation settings. So catching FileNotFoundException wouldn't be enough.
+
+Can we remember the 20-byte SHA-1 trailer from the pack and use that to decide when to reopen?
+
+Why does marking the PackFile invalid cause objects from the pack to be considered missing instead of forcing a rescan and reopen?
+
+Line:183, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackFile.java -> (nit) inconsistent indentation
+
+-------------------------------------
+author: Eden Lin
+date: 2015-05-21 21:54:18.000000000
+
+Patch Set 1:
+
+The behavior of treating objects as missing when reading from the pack produced IOException comes from v0.4.0~768 (Pack reading bug fixes, 2006-06-14).
+
+It would be nice to distinguish between actual corruption and cases where rescanning will help, but that's going to be a more invasive change.
+
+Catching InterruptedIOException instead of invalidating the pack seems like a reasonable targeted fix in the meantime. So I like this patch (modulo the whitespace nit).
+
+-------------------------------------
+author: Eden Lin
+date: 2015-05-21 21:58:18.000000000
+
+Patch Set 1:
+
+(comes from v0.4.0~773 (Mounted packs as part of the repository, 2006-05-27), rather. That is, that's been the behavior since day one.)
+
+-------------------------------------
+author: Dillon Cross
+date: 2015-05-22 14:35:19.000000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:183, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackFile.java -> Done
+
+Line:183, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackFile.java -> I am not sure how to do that without changing the code in the try-catch block. Basically, the test would have to mock the static PackIndex.open method and the mock would throw the InterruptedIOException. Looks like JGit tests don't make use of a mocking framework.
+
+However, I am open for a proposal how to test this.
+
+-------------------------------------

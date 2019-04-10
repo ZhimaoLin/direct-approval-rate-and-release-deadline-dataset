@@ -1,0 +1,157 @@
+DESCRIPTION
+
+MB-14191: Implement rollback for ForestKVStore
+
+Change-Id: Ibc0e4a0079aac9911b9f38ba32f93d7dc3598779
+
+
+COMMENTS
+
+author: Hugo Blankenship
+date: 2015-10-08 21:10:33.920000000
+
+Patch Set 8:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1215/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-10-08 21:39:20.758000000
+
+Patch Set 8: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1215/ : FAILURE
+
+-------------------------------------
+author: Abby Duran
+date: 2015-10-09 05:03:10.296000000
+
+Patch Set 8: Code-Review-1
+
+(14 comments)
+
+Some of them are minor comments, but I found some functional bugs too. Please take a look at them and let me know if you have any questions or more clarifications.
+
+Line:221, src/forest-kvstore/forest-kvstore.cc -> I suggest to do the sanity check on kvsHandle:
+
+if (kvsHandle != nullptr) {
+ ...
+} else {
+    LOG(...);
+}
+
+Line:1026, src/forest-kvstore/forest-kvstore.cc -> Please log this error with the vbucket id and rollbackSeqno.
+
+Line:1034, src/forest-kvstore/forest-kvstore.cc -> ditto
+
+Line:1048, src/forest-kvstore/forest-kvstore.cc -> ditto
+
+Line:1055, src/forest-kvstore/forest-kvstore.cc -> Using an iterator to get the doc count is quite expensive. Instead, you can get the number of doc count from fdb_kvs_info API above.
+
+Line:1064, src/forest-kvstore/forest-kvstore.cc -> ditto
+
+Line:1068, src/forest-kvstore/forest-kvstore.cc -> This will cause a compiler warning due to type mismatch with num_kvs_markers
+
+Line:1090, src/forest-kvstore/forest-kvstore.cc -> Same as above comment
+
+Line:1125, src/forest-kvstore/forest-kvstore.cc -> Please log the rollback seq number too.
+
+Line:1139, src/forest-kvstore/forest-kvstore.cc -> Suggestion: please use C++11 style iteration using auto
+
+Line:1141, src/forest-kvstore/forest-kvstore.cc -> This won't return the rollbacked item because the rollback operation was already performed above and consequently fdb_get would not return the rollbacked item anymore. For this, we need to retrieve each rollbacked item's disk offset while iterating in line 1096 - 1111, and then use fdb_get_byoffset API here and finally check if an rollbacked item was deletion or regular set.
+
+Line:1143, src/forest-kvstore/forest-kvstore.cc -> I'm not sure why we need to create a dummy item and pass it to the compaction expiry callback below.
+
+Line:1152, src/forest-kvstore/forest-kvstore.cc -> This log message seems the same as the line 1033. Can we differentiate this by adding more context.
+
+Line:284, src/forest-kvstore/forest-kvstore.h -> Let's use std::vector given the fact that we have the fix number of vbuckets. Please refer to the corresponding variables in CouchKVStore.
+
+-------------------------------------
+author: Abby Duran
+date: 2015-10-09 05:26:43.059000000
+
+Patch Set 8:
+
+(1 comment)
+
+Line:1098, src/forest-kvstore/forest-kvstore.cc -> Using fdb_iterator_get_metaonly API will be less expensive as it doesn't need to fetch a doc body. In addition, you may want to pre-allocate fdb_doc instance as we only need to retrieve an item's key and metadata whose max size are known.
+
+-------------------------------------
+author: Bobby Buck
+date: 2015-10-09 15:50:30.002000000
+
+Patch Set 8:
+
+(2 comments)
+
+Line:1141, src/forest-kvstore/forest-kvstore.cc -> Yes, calling get on a rolled back item would result in a ENGINE_KEY_ENOENT. The callback in Rollback class handles it as a deletion.
+
+Line:1143, src/forest-kvstore/forest-kvstore.cc -> ENGINE_KEY_ENOENT handling in the callback needs an Item to hold the key and vbucket id
+
+-------------------------------------
+author: Abby Duran
+date: 2015-10-09 15:57:32.650000000
+
+Patch Set 8:
+
+(2 comments)
+
+Line:1141, src/forest-kvstore/forest-kvstore.cc -> Yeah, you're right. I think fdb_get on the rollbacked KV store makes sense to me.
+
+Line:1143, src/forest-kvstore/forest-kvstore.cc -> Then, can we change queue_op_empty to queue_op_del?
+
+-------------------------------------
+author: Bobby Buck
+date: 2015-10-09 19:53:36.304000000
+
+Patch Set 8:
+
+(15 comments)
+
+Line:221, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:1026, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:1034, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:1048, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:1055, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:1064, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:1068, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:1090, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:1098, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:1125, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:1139, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:1141, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:1143, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:1152, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:284, src/forest-kvstore/forest-kvstore.h -> Done
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-10-09 21:55:19.221000000
+
+The change could not be merged due to a path conflict.
+
+Please rebase the change locally and upload the rebased commit for review.
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-10-09 22:18:54.232000000
+
+Change has been successfully cherry-picked as 9d4d2a540b16e1896751ca3602f7dddd969660c3
+
+-------------------------------------

@@ -1,0 +1,184 @@
+DESCRIPTION
+
+Improve ours/theirs conflict markers for rebase, cherry-pick
+
+On conflicts in rebase or cherry-pick, the conflict markers were like
+this:
+
+    <<<<<<< OURS
+    a
+    =======
+    b
+    >>>>>>> THEIRS
+
+This is technically correct, but it could be better.
+
+It's especially confusing during a rebase, where the meaning of
+OURS/THEIRS is not obvious. The intuition is that "ours" is the commits
+that "I" did before the rebase, but it's the other way around because of
+the way rebase works. See various bug reports and stackoverflow
+discussions.
+
+With this change, in the case of a cherry-pick while on master, the
+markers will be like this:
+
+    <<<<<<< master
+    a
+    =======
+    b
+    >>>>>>> bad1dea Message of the commit I'm cherry-picking
+
+In the case of a "git rebase master":
+
+    <<<<<<< Upstream, based on master
+    a
+    =======
+    b
+    >>>>>>> b161dea Message of a commit I'm rebasing
+
+It's not "master" because that would only be correct for the first
+cherry-pick during a rebase, after that, it's master + already
+cherry-picked commits.
+
+And in the case of a "git pull --rebase":
+
+    <<<<<<< Upstream, based on branch 'master' of xxx@xxx.xxx
+    a
+    =======
+    b
+    >>>>>>> b161dea Message of a commit I'm rebasing
+
+Bug: 336819
+Change-Id: I1333a8dd170bb0077f491962013485efb6f2a926
+Signed-off-by: Danika Greer xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2012-08-14 16:27:39.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2119/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-08-14 16:33:51.000000000
+
+Patch Set 1: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2119/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2012-08-14 22:22:13.000000000
+
+Patch Set 1: (4 inline comments)
+
+great, this will help a lot
+
+- I think we should also keep OURS and THEIRS and append what you proposed to make this easier to understand, this way it's easier to compare these markers to the conflict markers created by c git
+- also for normal merge conflict we could provide more details in the conflict marker
+- maybe it makes sense to always add short commitid and shortlog ?
+
+Line:318, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> so this leaves a TODO to be fixed when we implement -onto ?
+
+Line:320, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> when doing "rebase origin/master" I get "Upstream, based on <SHA1>" instead I would like to see "Upstream, based on origin/master (<SHA1>)
+
+Line:953, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> can we enforce this ?
+
+Line:246, org.eclipse.jgit/src/org/eclipse/jgit/api/CherryPickCommand.java -> looks really strange that setter is public but getter is private
+
+-------------------------------------
+author: Danika Greer
+date: 2012-08-15 09:35:09.000000000
+
+Patch Set 1: (4 inline comments)
+
+* I'm not sure about keeping OURS and THEIRS. It brings back some of the confusion for new people. Advanced people familiar with C Git will already know that the top part is OURS, and the bottom THEIRS.
+* More details for merge conflicts: Yes, in a separate change.
+* Always add short commit id:
+The problem is that this case would get very long for a single line:
+
+Upstream, based on branch 'master' of xxx@xxx.xxx 1234567 My commit message title which could be long
+
+Also, on the second commit to cherry-pick on a rebase, this would show the commit message of the previous cherry-pick, which could be confusing.
+
+(By the way, maybe we should better discuss this on the bug report, for quoting)
+
+Line:318, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Hm, yes. Do you have an idea how to improve this?
+
+Basically, to be correct, it should always be "Onto, based on ...", but "onto" is not really a noun and AFAICS, there is no terminology for this. So I like "Upstream" much better, but if onto is different from upstream, it would be no longer correct.
+
+So I'd only like to call it onto when necessary, as is the case when onto and upstream are not the same.
+
+Line:320, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> How did you do that? Using EGit's History View, or Repositories View? I suspect it passes the resolved ID instead of the ref name, which would have to be fixed in EGit.
+
+Line:953, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Yes, will add a check like this here:
+
+if (upstreamCommit == null) {
+  throw new IllegalStateException("setUpstreamName must be called after calling setUpstream");
+}
+
+Line:246, org.eclipse.jgit/src/org/eclipse/jgit/api/CherryPickCommand.java -> It's not really a getter (as in the normal sense). I'll rename it to calculateOurName().
+
+-------------------------------------
+author: Danika Greer
+date: 2012-08-15 10:39:20.000000000
+
+Patch Set 1: (2 inline comments)
+
+
+
+Line:953, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Done
+
+Line:246, org.eclipse.jgit/src/org/eclipse/jgit/api/CherryPickCommand.java -> Done
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2012-08-16 22:15:41.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:320, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> this happens when doing conflicting rebase in History View. In repositories view it shows the branch name instead. If there is a local and a remote tracking branch I'd prefer to see the remote tracking branc (or both)
+
+-------------------------------------
+author: Danika Greer
+date: 2012-08-17 09:32:43.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:320, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> So in EGit's RebaseCurrentHandler, we need to examine the refs on the PlotCommit and pick one, and then pass that to the rebase machinery. Agreed? I'll work on the EGit change.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2012-08-17 14:25:02.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:320, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> yes, this seems to be the right place. 
+
+If there are multiple refs pointing to the selected commit 
+- and if the branch being rebased tracks another one this tracked branch should be the one to pick if it's in the list
+- otherwise pick a remote tracking branch if it's in the list
+
+-------------------------------------
+author: Danika Greer
+date: 2012-08-17 19:55:51.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:320, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Done: https://git.eclipse.org/r/7279
+
+-------------------------------------

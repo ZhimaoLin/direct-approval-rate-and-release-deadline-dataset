@@ -1,0 +1,104 @@
+DESCRIPTION
+
+Fix endless loop of GenerateHistoryJob
+
+The GenerateHistoryJob was scheduled over and over when the following
+precondiations were met:
+
+ - The preference "Team > Git > History > Maximum number of commits to 
+   show" has to be set to a numer smaller than the number of commits
+   in a repository
+ - The history of the repository is fully loaded into the History view
+ - The user scrolls down to the end or
+ - The user selects a reference which is not yet loaded into the 
+   History view
+
+Scrolling triggers the event listener added in the constructor of 
+CommitGraphTable (This is done to implement incremental loading).
+The event listener calls the method loadItem of GitHistory Page to load
+a given commit specified by its index. This method asks the 
+GenerateHistoryJob if the commit is less than BATCH_SIZE / 2 away from 
+the end, and if so, triggers a new GenerateHistoryJob.
+
+After loading the commits the GenerateHistoryJob wrongly computed the
+value of the incomplete variable. It did not check if all commits of 
+the history were loaded. Because of that the updateUI method did render
+the UI again leading to another call of the event listener above.
+
+This commit adds a check if all commits are loaded. 
+This is unfortunately not easily done with the SWTCommitList.
+
+So we check if no new commits were loaded in the current invocation of 
+the GenerateHistoryJob and in that case step out of the loop before 
+the check for incomplete is done. Then the method updateUI in 
+GenerateHistoryJob will not render the UI again and not start the 
+endless loop anymore.
+
+But the updateUI method has to render the UI once more after all 
+commits are loaded. This is ensured by the new field
+forcedRedrawsAfterListIsCompleted.
+
+The case that a certain commit should be selected but is not found is 
+handled differently. The UI is not drawn again, but the incomplete
+warning is updated.
+
+Bug: 425691
+Change-Id: Ice8c59d537156a52acb80c8e004e838e279cdbe3
+
+
+COMMENTS
+
+author: Carlie Harper
+date: 2014-01-24 09:44:22.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-01-24 09:44:28.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/5489/
+
+-------------------------------------
+author: Carlie Harper
+date: 2014-01-24 09:48:33.000000000
+
+Patch Set 3:
+
+I know that the code is getting more and more messy. But I also do not see an easy refactoring at the moment. Please test the code extensively with all combinations of maximum number of commits, toolbar on and off, selection of branches, filter, repository sizes. I tried that and found no issue. 
+
+An easy check if the bug is fixed is to switch on "Show Heap Status" in the preferences.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-01-24 09:57:45.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/5489/ : SUCCESS
+
+-------------------------------------
+author: Danika Greer
+date: 2014-01-25 16:02:37.000000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:100, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/history/GenerateHistoryJob.java -> Comparing with ==, is that safe here?
+
+-------------------------------------
+author: Carlie Harper
+date: 2014-01-27 15:12:01.000000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:100, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/history/GenerateHistoryJob.java -> Done
+
+-------------------------------------

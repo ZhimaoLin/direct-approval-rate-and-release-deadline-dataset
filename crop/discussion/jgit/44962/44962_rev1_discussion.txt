@@ -1,0 +1,258 @@
+DESCRIPTION
+
+ResolveMerge only needs to visit differing TreeEntries
+
+This should considerably speed up the treewalk on larger repositories.
+
+Found by discussing new EGit API to support model merge in change
+eda23bb556d342f421f03b93c7faa160998598aa
+
+Change-Id: I822721c76c64e614f87a080ced2457941f53adcd
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+cc: Maleah Marks xxx@xxx.xxx
+
+COMMENTS
+
+author: Douglas Trujillo
+date: 2015-04-01 00:46:26.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-04-01 00:53:04.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/6179/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-04-01 01:01:05.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/6179/ : SUCCESS
+
+-------------------------------------
+author: Maleah Marks
+date: 2015-04-01 07:17:58.000000000
+
+Patch Set 1: Code-Review+1
+
+Yes, as discussed before, that looks good!
+Did you test it on large repositories? I'm curious as to the impact.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-04-01 19:29:43.000000000
+
+Patch Set 1: Code-Review+2
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-04-01 19:32:48.000000000
+
+Change has been successfully merged into the git repository.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-04-10 05:50:53.000000000
+
+Patch Set 1:
+
+Sorry, I was on easter vacation and couldn't respond early enough.
+Could we please revert this change?  It dramatically reduces the
+performance in case of non-bare repositories. Hey Shawn, what's
+up? I have not seen such a small change with such a bad performance
+impact passing your review eyes :-)
+
+Semantically I think this change is correct. We want to avoid
+dealing with pathes where there are no diffs. How to achieve that?
+You could either apply a ANY_DIFF filter to the treewalk or compare
+the tree entries manually when walking over the unfiltered trees.
+Previously ResolveMerger was manually comparing TreeEntries
+and skipped over those where there are no diffs. Now you added 
+the ANY_DIFF filter.
+
+ANY_DIFF sounds logical but performance wise it's not soo good.
+Its a very generic filter which compares content-IDs of all participating
+TreeIterators. It doesn't differentiate between the different
+iterators and blindly computes id's for the content unless it finds
+different ids. If the treewalk happens to have a FileSystem based
+WorkingTreeIterator included this means that you will have to read
+nearly every single File in the working tree and compute it's content SHA1
+to do the merge. ANY_DIFF has no idea that there may be a DirCacheIterator
+also in the TreeWalk which already contains the SHA1 of the non-dirty
+workingtree files. ANY_DIFF will always compute the SHA1 again. Only
+exception: if ANY_DIFF detects already a difference between e.g.
+OURS and THEIRS then it knows early that there is a diff and can
+skip calculating SHA1's for filesystem content.
+
+If we manually do the detection of diffs in an unfiltered treewalk
+we can be much faster. Look at ResolveMerger.processEntry() to look
+at all the cheap shortcuts we can use. E.g. if the index is dirty
+(somebody added something for that path) we can let the merge fail because
+of that.
+If OURS, THEIRS, BASE don't contain anything for that path we know
+it's only index and working tree which may contain something for the
+file - no need to process this path during the merge. If OURS
+is equal to BASE then the merge result is clear: It must be in THEIRS.
+All these are decisions we can take and completely ignoring whats
+in the expensive working tree.
+
+Long talk - but here comes real world performance measurements showing
+how this change compares performance wise to it's predecessor commit. 
+We are reading a few 100.000 more file content due to this change when
+merging in the linux repo. 
+
+My environment:
+  
+  ~/git/jgit> uname -a
+  Linux vblub14 3.13.0-46-generic #79-Ubuntu SMP Tue Mar 10 20:06:50 UTC 2015 x86_64 x86_64 x86_64 GNU/Linux
+  ~/git/jgit> java -version
+  java version "1.7.0_75"
+  OpenJDK Runtime Environment (IcedTea 2.5.4) (7u75-2.5.4-1~trusty1)
+  OpenJDK 64-Bit Server VM (build 24.75-b04, mixed mode)
+
+Get the change and build it
+  
+  ~/git/jgit> git fetch https://git.eclipse.org/r/jgit/jgit refs/changes/62/44962/1
+  From https://git.eclipse.org/r/jgit/jgit
+   * branch            refs/changes/62/44962/1 -> FETCH_HEAD
+  ~/git/jgit> git checkout FETCH_HEAD
+  Previous HEAD position was 3cd7d0d... Do not add a newline at the end if neither merged side had one
+  HEAD is now at bda5e76... ResolveMerge only needs to visit differing TreeEntries
+  ~/git/jgit> git status
+  HEAD detached at FETCH_HEAD
+  nothing to commit, working directory clean
+  ~/git/jgit> mvn -q clean install -DskipTests
+
+Go into a linux repo, create two branches which add the same file with different contents.
+
+  ~/git/jgit> cd ../linux
+  ~/git/linux> git remote -v
+  origin	https://github.com/torvalds/linux.git (fetch)
+  origin	https://github.com/torvalds/linux.git (push)
+  ~/git/linux> git show --oneline
+  e5e02de Merge tag 'pm+acpi-4.0-rc8' of git://git.kernel.org/pub/scm/linux/kernel/git/rafael/linux-pm
+  
+  ~/git/linux> git branch a
+  ~/git/linux> git branch b
+  ~/git/linux> git checkout a
+  Switched to branch 'a'
+  ~/git/linux> echo a >foo
+  ~/git/linux> git add foo
+  ~/git/linux> git commit -m add_foo
+  [a 3f770c6] add_foo
+   1 file changed, 1 insertion(+)
+   create mode 100644 foo
+  ~/git/linux> git checkout b
+  Switched to branch 'b'
+  ~/git/linux> echo b >foo
+  ~/git/linux> git add foo
+  ~/git/linux> git commit -m add_foo2
+  [b 5480a0d] add_foo2
+   1 file changed, 1 insertion(+)
+   create mode 100644 foo
+
+Measure the time for a jgit merge (5.7sec). (I repeated that multiple times - similiar results)
+Warm up the filesystem cache by doing one additional merge in the beginning.
+  
+  ~/git/linux> java -jar ../jgit/org.eclipse.jgit.pgm/target/jgit-cli.jar merge a
+  CONFLICT(content): Merge conflict in foo
+  Automatic merge failed; fix conflicts and then commit the result
+  ~/git/linux> git reset --hard
+  HEAD is now at 5480a0d add_foo2
+  ~/git/linux> time java -jar ../jgit/org.eclipse.jgit.pgm/target/jgit-cli.jar merge a
+  CONFLICT(content): Merge conflict in foo
+  Automatic merge failed; fix conflicts and then commit the result
+  
+  real	0m5.777s
+  user	0m7.326s
+  sys	0m0.671s
+
+Measure file system calls of the java process during a merge (350.000 reads). (I repeated that multiple times - similar results)
+
+  ~/git/linux> git reset --hard
+  HEAD is now at 5480a0d add_foo2
+  ~/git/linux> strace -f -e trace=desc,file -c java -jar ../jgit/org.eclipse.jgit.pgm/target/jgit-cli.jar merge a
+  ...
+  CONFLICT(content): Merge conflict in foo
+  Automatic merge failed; fix conflicts and then commit the result
+  % time     seconds  usecs/call     calls    errors syscall
+  ------ ----------- ----------- --------- --------- ----------------
+   50.33    4.783392          14    352480           read
+   13.42    1.275846          12    102903         1 lstat
+   12.71    1.208351          12     98119           fcntl
+  ...
+  ------ ----------- ----------- --------- --------- ----------------
+  100.00    9.503942                726342      3927 total
+
+Go back to JGit and build the previous commit. Then measure the same things again
+to see that time (now 3.9sec) and especially file sytem reads (now 36.000) is much better.
+On systems which don't have such fast file system as linux the effect for the runtime
+will be even more significant
+
+  ~/git/linux> cd ../jgit
+  ~/git/jgit> git checkout FETCH_HEAD~
+  Previous HEAD position was bda5e76... ResolveMerge only needs to visit differing TreeEntries
+  HEAD is now at 3cd7d0d... Do not add a newline at the end if neither merged side had one
+  ~/git/jgit> mvn -q clean install -DskipTests
+  ~/git/jgit> cd ../linux
+  ~/git/linux> git reset --hard
+  HEAD is now at 5480a0d add_foo2
+  ~/git/linux> java -jar ../jgit/org.eclipse.jgit.pgm/target/jgit-cli.jar merge a
+  CONFLICT(content): Merge conflict in foo
+  Automatic merge failed; fix conflicts and then commit the result
+  ~/git/linux> git reset --hard
+  Checking out files: 100% (48958/48958), done.
+  HEAD is now at 5480a0d add_foo2
+  ~/git/linux> time java -jar ../jgit/org.eclipse.jgit.pgm/target/jgit-cli.jar merge a
+  CONFLICT(content): Merge conflict in foo
+  Automatic merge failed; fix conflicts and then commit the result
+  
+  real	0m3.980s
+  user	0m5.832s
+  sys	0m0.564s
+  ...
+  ~/git/linux> git reset --hard
+  Checking out files: 100% (48958/48958), done.
+  HEAD is now at 5480a0d add_foo2
+  ~/git/linux> strace -f -e trace=desc,file -c java -jar ../jgit/org.eclipse.jgit.pgm/target/jgit-cli.jar merge a
+  ...
+  CONFLICT(content): Merge conflict in foo
+  Automatic merge failed; fix conflicts and then commit the result
+  % time     seconds  usecs/call     calls    errors syscall
+  ------ ----------- ----------- --------- --------- ----------------
+   44.80    0.725085          12     59495         1 lstat
+   23.06    0.373190          12     32185           read
+    5.51    0.089190          13      7130           close
+    5.47    0.088479          13      7050           getdents
+  ...
+  ------ ----------- ----------- --------- --------- ----------------
+  101.00    1.618318                136369      4060 total
+
+-------------------------------------
+author: Maleah Marks
+date: 2015-04-10 07:11:01.000000000
+
+Patch Set 1:
+
+In the light of your explanation it seems clear that this change needs to be reverted.
+Thanks for the detailed explanations, I wasn't aware of the way ANY_DIFF works.
+Lesson learned: always test the impact of a change intended to improve performance... Are there such tests to check performance in hudson already?
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-04-10 07:35:12.000000000
+
+Patch Set 1:
+
+Having automated performance would be great ... but up to know I was not able to create stable performance tests which work on all the supported platforms. E.g. Windows & Linux differ much when it comes to filesystem performance, filesystem timers have different granularity, etc. I gave up on automating this and do it manually. I personally use the linux repo or some really huge internal repos for performance checks. And I most of the time just compare the performance to the predecessor commit.
+
+I was thinking what could be introduced in that area is that JGit publishes (e.g. as MBeans) some counters (number/size of working tree contents read, number of pathes visited in treewalks, number of pathes where content merge was triggered, number of pushes/fetches). AFAIK this doesn't cost anything if the published values are not read but would allow to do better validations if e.g. EGit is slow.
+
+-------------------------------------

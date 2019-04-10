@@ -1,0 +1,124 @@
+DESCRIPTION
+
+MB-17030: Persist right snap range by considering the backfill items on replica
+
+When persisting items on a replica vbucket, the items can either be persisted
+from the checkpoint or from the backfill queue. We need to persist the
+correct snapshot start and end by taking into account the backfill items as
+well.
+
+Change-Id: Ib326ac0b7c45c4a3f699922354d5a5829062db3c
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2015-12-17 02:32:45.376000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-12-17 02:32:49.020000000
+
+Patch Set 1:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1816/ (2/2)
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2015-12-17 02:35:44.545000000
+
+Patch Set 1:
+
+This bug is present in sherlock (4.1.1) as well.
+
+Because of this is a blocker for watson, fixing it here first.
+Will later backport to sherlock and consider writing a testcasea
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-12-17 02:48:25.707000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1816/ : SUCCESS
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1067/ : SUCCESS
+
+-------------------------------------
+author: Abby Duran
+date: 2015-12-17 03:48:43.373000000
+
+Patch Set 1: Code-Review-1
+
+(1 comment)
+
+If possible, can you implement the unit test too?
+
+Line:1018, src/checkpoint.cc -> I'm not sure what this change tries to address. If a replica vbucket is still in the backfill phase and this function returns snapshot_range(0, 0), then we can set the snapshot start and end range properly by checking the items from the backfill queue. Please do not put the backfill-related logic in this checkpoint queue function.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2015-12-17 06:04:52.544000000
+
+Patch Set 1:
+
+(1 comment)
+
+I will write a unit test.
+But since this for blocker, if there an urgency then this maybe merged if there is approval from reviewers. I have verified the fix by running the original test
+
+Line:1018, src/checkpoint.cc -> I see that we persist the vbstate in the function flushVBucket(). And it uses the snapshot range returned from this function which maybe {0, 0}.
+
+More explanation:
+If you just consider the function getAllItemsForCursor(), it should copy all the items for the cursor in the vector passed and return the appropriate snapshot. This snapshot is then used for disk persistence.
+
+But, it can also happen that the input vector to this function is non empty and the checkpoint does not contain any items for the cursor. (This can happen for a replica due to vb->getBackfillItems(items) call in flushVBucket()). In that case we end persisting backfill items but with snapshot range of {0, 0}.
+
+-------------------------------------
+author: Abby Duran
+date: 2015-12-17 06:31:11.020000000
+
+Patch Set 1:
+
+(1 comment)
+
+Even if this is a blocker issue (not test blocker), I suggest to add the unit test along with the fix.
+
+Line:1018, src/checkpoint.cc -> I think we should identify the case that you mentioned (i.e., the input vector is not empty) in flushVBucket() instead of this checkpoint queue function.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-12-17 09:18:39.912000000
+
+Patch Set 1:
+
+> (1 comment)
+ > 
+ > Even if this is a blocker issue (not test blocker), I suggest to
+ > add the unit test along with the fix.
+
+Agreed - how do you know you've fixed the problem you think? 
+
+Just because something is a blocker doesn't mean we shouldn't have tests for it - in fact if it's a blocker that implies a significant bug and hence makes it *even more* important we have good unit test coverage to defend the code from a future regression.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2015-12-18 03:25:07.570000000
+
+Patch Set 1:
+
+Folks, this is not the correct fix. Though it fixed the problem symptom by a hack. Have found the actual problem and the fix for it. Will upload that in a separate code review with a test case as well.
+
+Abandoning this review as it does not describe the root cause correctly
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2015-12-18 03:25:12.141000000
+
+Abandoned
+
+-------------------------------------

@@ -1,0 +1,46 @@
+DESCRIPTION
+
+JCBC-418: Fix potential deadlock when reconfiguring.
+
+This changeset fixes a potential deadlock which can happen during
+reconfiguration and a failing node. When a 500 error response comes
+back from the server, the httpcore IO pool handles the retry and
+passes it back to our logic, where it grabs a new node to ask. This
+node list is synchronized.
+
+In parallel, when a reconfiguration happens, we synchronize on this
+list and mark the appropriate node in the pool for shutdown. We
+arrive in a deadlock situation because in our code the node list
+is synchronized (waiting/holding) and in the httpcore code there
+is a lock (waiting/holding) on the internal node to shutdown, but
+it is still hold by the retry process.
+
+This changeset moves the actual shutdown out of the synchronized
+block, making sure that parallel requests can progress. The node
+has been removed out of the list already, so it will not be
+tried again for a regular view request (and we can shut down the
+open connections behind the scenes).
+
+Change-Id: I0f65d440ce593d0a795ee068e5d84348b9207b5b
+
+
+COMMENTS
+
+author: Natasha Sullivan
+date: 2014-02-21 17:33:22.444000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2014-02-21 17:33:48.489000000
+
+Patch Set 1: Verified+1
+
+-------------------------------------
+author: Andreas Short
+date: 2014-02-21 17:36:11.706000000
+
+Patch Set 1: Code-Review+2
+
+-------------------------------------

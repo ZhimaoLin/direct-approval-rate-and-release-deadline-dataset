@@ -1,0 +1,66 @@
+DESCRIPTION
+
+don't fail join if net_kernel:connect_node failed
+
+For whatever reason it reliably fails on windows, however second
+attempt succeeds. It looks like some race-condition inside net_kernel
+because at around same time as we call connect_node other node tries
+to connect to us too. This is visible because net_kernel logs failed
+attempt to connect to us.
+
+Pre-rewrite cluster join code didn't depend on result of that check
+either.
+
+Inspection of net_kernel code revealed that there is at least one tiny
+race here which is:
+
+* other node establishes tcp connection to us
+
+* incoming connection is marked as pending and is placed in net_kernel
+  dictionary
+
+* incoming connection handling process continues handshake and reads
+  old cookie value....
+
+* we update cookie and enter net_kernel:connect_node
+
+* net_kernel finds pending connection to that node and puts us into
+  wait list for that connection
+
+* incoming connection handling process finds cookie mismatch and dies
+
+* net_kernel sees 'EXIT' message from incoming connection handling
+  process and notifies waiters (us) that connection establishment
+  failed
+
+The fix for that race would be to try calling connect_node twice. But
+because that race looks so tiny I decided not to risk and converted
+connect_node back into purely diagnostic call.
+
+Change-Id: I69fcfac8454609cd785c5253170b0416c1fe3837
+
+
+COMMENTS
+
+author: Nathalie Landry
+date: 2010-12-14 14:42:06.490000000
+
+Patch Set 1: Verified
+
+
+
+-------------------------------------
+author: Nora Conway
+date: 2010-12-14 16:46:34.184000000
+
+Patch Set 1: Looks good to me, approved
+
+
+
+-------------------------------------
+author: Nora Conway
+date: 2010-12-14 16:46:34.720000000
+
+Change has been successfully cherry-picked as aabd563c744e8c8a86df5e574a5fd221bfcd6e78.
+
+-------------------------------------

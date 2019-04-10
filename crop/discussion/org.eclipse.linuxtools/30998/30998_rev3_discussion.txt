@@ -1,0 +1,80 @@
+DESCRIPTION
+
+pcap: make PacketStream compute useful information
+
+The PacketStream now computes Nb of packets/bytes, duration of
+the conversation, Bytes per seconds, etc. Also, it now does not
+store indexes to packet, since it makes the size of PacketStream
+proportional to the size of the trace. This is unwanted since we
+have to be able to open traces that are bigger than memory.
+
+Change-Id: I8f6bde99ceabc20c4a66786a2dbd25d49251cc9e
+Signed-off-by: Itzel Singleton xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Itzel Singleton
+date: 2014-08-05 18:56:17.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-08-05 19:27:57.000000000
+
+Patch Set 3: Code-Review-1
+
+(7 comments)
+
+Interesting, some comments.
+
+Is it much slower to update the values every time we add a packet, compared to storing all the events and calculating them on demand?
+
+Line:62, lttng/org.eclipse.linuxtools.pcap.core.tests/src/org/eclipse/linuxtools/pcap/core/tests/stream/StreamBuildTest.java -> you could store the "delta" as a private static final field, if it's always the same that's being used
+
+also applies below
+
+Line:66, lttng/org.eclipse.linuxtools.pcap.core/src/org/eclipse/linuxtools/pcap/core/stream/PacketStream.java -> fEndTime maybe? It's "start" as the noun, the start of the trace, not the verb. So the opposite of start is end in this case.
+
+Line:93, lttng/org.eclipse.linuxtools.pcap.core/src/org/eclipse/linuxtools/pcap/core/stream/PacketStream.java -> if this really cannot happen because of the code's logic, you could do a throw IllegalStateException() instead, so if it does happen, we want to catch it and fix it right away.
+
+Line:111, lttng/org.eclipse.linuxtools.pcap.core/src/org/eclipse/linuxtools/pcap/core/stream/PacketStream.java -> fStartTime = Math.min(fStartTime, timestamp)
+
+(initialize it at Integer.MAX_VALUE in that case though)
+
+Line:113, lttng/org.eclipse.linuxtools.pcap.core/src/org/eclipse/linuxtools/pcap/core/stream/PacketStream.java -> fStopTime = Math.max(fStopTime, timestamp)
+
+Line:255, lttng/org.eclipse.linuxtools.pcap.core/src/org/eclipse/linuxtools/pcap/core/stream/PacketStream.java -> comparing doubles with == is always risky, because computer precision etc.
+
+Luckily, there is Guava's DoubleMath.fuzzyEquals() !
+
+Line:267, lttng/org.eclipse.linuxtools.pcap.core/src/org/eclipse/linuxtools/pcap/core/stream/PacketStream.java -> idem
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-08-05 20:02:54.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/8094/
+
+-------------------------------------
+author: Itzel Singleton
+date: 2014-08-05 20:10:46.000000000
+
+Patch Set 3:
+
+I don't think it is much slower (although this should be benchmarked) since the same computation will have to be performed for both cases. The reason for not holding the events is that we are supposed to be able to read traces that are bigger than memory. Thus, I think this solution is better :)
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-08-05 20:54:03.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/8094/ : SUCCESS
+
+-------------------------------------

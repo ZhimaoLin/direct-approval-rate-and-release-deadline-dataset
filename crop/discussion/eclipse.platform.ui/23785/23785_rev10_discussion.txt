@@ -1,0 +1,173 @@
+DESCRIPTION
+
+Bug 430988 - Show View should work on application model instead of
+ViewRegistry 
+
+
+Change-Id: I418d41a2fdf4fe381ec8602b16bb7ee362cf0d42
+Signed-off-by: Zaid Mosley xxx@xxx.xxx
+
+COMMENTS
+
+author: Zaid Mosley
+date: 2014-04-23 16:25:54.000000000
+
+Uploaded patch set 10.
+
+-------------------------------------
+author: Zaid Mosley
+date: 2014-04-23 16:34:30.000000000
+
+Patch Set 10: Code-Review+1 Verified+1
+
+New patch set should contain your suggestions. Except the "activity" support. I don't think this information is available at model level so to preserve existing functionality I need to check the view registry.
+
+-------------------------------------
+author: Slade Moran
+date: 2014-04-23 16:41:15.000000000
+
+Patch Set 10:
+
+This is a pretty big change, and I won't have time to review it before M7.  I'd suggest you find someone to review it fully if you still want to get it in.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-04-23 17:06:27.000000000
+
+Patch Set 10:
+
+Build Started https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/1979/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-04-23 17:18:45.000000000
+
+Patch Set 10: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/1979/ : SUCCESS
+
+-------------------------------------
+author: Zaid Mosley
+date: 2014-04-23 19:20:30.000000000
+
+Patch Set 10:
+
+Brian, do you have the chance to review this change? If applied this would allow to open PartDescriptors contributed via model fragments / processors in the IDE via the Show View dialog.
+
+-------------------------------------
+author: Teagan Marsh
+date: 2014-04-23 21:07:22.000000000
+
+Patch Set 10: Code-Review-1
+
+(12 comments)
+
+I'm generally ok with this change. High-level comments:
+
+  * The view descriptions are a specific item, distinct from the tooltips.  They are thrown away by the ViewRegistry, but shouldn't be.  This is a blocker, IMHO.
+
+  * I don't much like the category story, especially with how the "general" category is pulled out. But this is forced due to how our current model is built, where an MPartDescriptor's category is not the actual category id and the category is actually encoded as a tag (and hence not localizable?).  ViewRegistry should be fixed, but that doesn't have to be done as part of this work.  I'd at least like this category-finding code pulled out with a comment.  I wonder if we could use the MCategory for this purpose too.
+
+  * Change CapabilityFilter to know how to build an activity-style IIdentifier for model elements. It's not hard to do: go a bit deeper into the WorkLeon OchoachActivityHelper#getIdentifier().
+
+Line:36, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/dialogs/ViewPatternFilter.java -> Do we need to pass in this context?  LocalizationHelper#getLocalized(String, MAppElement) will find the appropriate context.
+
+Line:111, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/dialogs/ViewContentProvider.java -> This category-finding is rather grotty.  Shouldn't we want to use the MPartDescriptor's category instead?
+
+Line:136, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/dialogs/ViewContentProvider.java -> isFilteredByActivity() should be using the MPartDescriptor's contributorURI to build up an IIdentity
+
+Line:141, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/dialogs/ViewContentProvider.java -> Please pull these out into separate methods: isView(MPartDescriptor) and getCategory(MPartDescriptor).  Going over the tag list isn't expensive.
+
+Line:168, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/dialogs/ViewContentProvider.java -> I'd rather that we push this into CapabilityFilter.  We can test whether the object is a MAppElement and if so build up the IIdentifier using the contributorURI and elementId.
+
+Line:44, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/dialogs/ViewLabelProvider.java -> I wonder why the original code didn't use an ImageRegistry?
+
+Line:239, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/dialogs/ShowViewDialog.java -> We should teach CapabilityFilter how to deal with MApplicationElements (piece together an IIdentifier from the contributorURI and the elementId)
+
+Line:63, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/dialogs/ShowViewDialog.java -> This seems a strange comment given that this is org.eclipse.ui.internal.dialogs.ShowViewDialog.
+
+Line:140, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/dialogs/ShowViewDialog.java -> Should be able to get the help system from the context
+
+Line:390, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/dialogs/ShowViewDialog.java -> tooltip != null && tooltip.length() > 0
+
+Line:433, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/dialogs/ShowViewDialog.java -> The description isn't copied into the tooltip.  It appears we don't copy that into the model
+
+Line:34, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/dialogs/ViewComparator.java -> Ugh
+
+-------------------------------------
+author: Zaid Mosley
+date: 2014-04-24 16:17:48.000000000
+
+Patch Set 10:
+
+(4 comments)
+
+Thanks Brian for the detailed review. One clarification question from my side: Do you think the support of model elements for the Activities should be handled with this change? It will to me that this should be handled by a separate bug and the dialog should be adjusted once this change is done or marked dependent on this change.
+
+Line:63, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/dialogs/ShowViewDialog.java -> I remove this in the next update
+
+Line:390, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/dialogs/ShowViewDialog.java -> Fixed in the next update
+
+Line:433, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/dialogs/ShowViewDialog.java -> Is that something we need to solve in this change or would that be another bug report?
+
+Line:34, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/dialogs/ViewComparator.java -> I copied the logic from the original code. Any improvement suggestions are welcome.
+
+-------------------------------------
+author: Teagan Marsh
+date: 2014-04-25 15:55:16.000000000
+
+Patch Set 10:
+
+Sorry Lars for this delayed reply.  Since the existing dialog supports activities, it would be a breaking change to not support it :-(
+
+-------------------------------------
+author: Zaid Mosley
+date: 2014-04-25 16:40:38.000000000
+
+Patch Set 10:
+
+We would still support activities but only via the ViewRegistry, so this would not be a break. Does this change you opinion?
+
+-------------------------------------
+author: Teagan Marsh
+date: 2014-04-28 14:37:23.000000000
+
+Patch Set 10:
+
+My concern here is that this is changing a pretty fundamental workflow, and it's not fully backwards compatible.  It may well be that the ViewRegistry's use of activities is sufficient (though it seems strange that we still have ViewRegistry).  But we're still missing the view description.
+
+-------------------------------------
+author: Zaid Mosley
+date: 2014-04-28 16:58:35.000000000
+
+Patch Set 10:
+
+I agree that we must also support the View Description in the model. I don't think we want to add activities support for the model, AFAIK Paul avoided that to reduce the complexity or the whole model. Lets move that to 4.5.
+
+-------------------------------------
+author: Zaid Mosley
+date: 2014-08-14 10:06:07.000000000
+
+Patch Set 11: Patch Set 10 was rebased
+
+-------------------------------------
+author: Zaid Mosley
+date: 2014-10-06 22:08:56.000000000
+
+Patch Set 10:
+
+(4 comments)
+
+Line:111, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/dialogs/ViewContentProvider.java -> No. This category does not contains the category from the view extension point but something used to position the part, e.g., org.eclipse.e4.secondaryDataStack
+
+I created Bug https://bugs.eclipse.org/bugs/show_bug.cgi?id=446093 for that.
+
+Line:136, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/dialogs/ViewContentProvider.java -> Implementing Activities for MPartDescriptors should be handled by its own bug.
+
+Line:141, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/dialogs/ViewContentProvider.java -> Done
+
+Line:168, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/dialogs/ViewContentProvider.java -> I think support for Activities should be done via its own bug.
+
+-------------------------------------

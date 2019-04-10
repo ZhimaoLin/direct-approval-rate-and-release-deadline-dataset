@@ -1,0 +1,171 @@
+DESCRIPTION
+
+Preliminary implementation of option strings
+
+Example usage:
+$ ./jgit push --push-options xxx@xxx.xxx --push-options "<arbitrary string>" origin HEAD:refs/for/master
+
+Change-Id: I6797e50681054dce3bd179e80b731aef5e200d77
+Signed-off-by: Austin Swanson xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Austin Swanson
+date: 2016-06-07 00:36:41.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-06-07 00:36:47.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/8480/
+
+-------------------------------------
+author: Beau Terry
+date: 2016-06-07 01:06:20.000000000
+
+Patch Set 4:
+
+(6 comments)
+
+The implementation looks good to me; now we need to think how to add an actual test for it as that helps convincing us it that it is actually good. :)
+
+Line:98, org.eclipse.jgit/src/org/eclipse/jgit/api/PushCommand.java -> = null; // by default?
+
+Line:216, org.eclipse.jgit/src/org/eclipse/jgit/transport/GitProtocolConstants.java -> If this is the constant to describe what the server advertises, I'd name it CAPABILITY_PUSH_OPTIONS to be consistent with other server capabilities.
+
+Line:116, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackPushConnection.java -> I used server in our office discussions, although it is a bit colloquial in the sense that the remote may not be a server.
+You can also push to another lab computer for example. So I would suggest to replace it with remote, as that is more exact.
+
+Line:209, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackPushConnection.java -> In writeCommands, you use `(pushOptions != null && !capablePushOptions)` as a condition for the error message.
+
+So we have capablePushOptions as the binary flag if the remote side supports the push option and we use `pushOptions != null` as the condition if we want to enable it.
+
+So if both sides are in agreement to use the push options, (i.e. `(pushOptions != null && capablePushOptions)` we actually make use of it.
+
+For clarity I would use that exact condition here and the transmitOptions only deals with actually transmitting them.
+
+Line:290, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackPushConnection.java -> When going with the suggestion in line 209, you can drop this condition.
+
+Line:307, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackPushConnection.java -> wantCapability(line, ...); does 2 things, First it checks if the remote side supports it and the second step is adding the 
+option to the line, which we then transmit back to the server as the selection of options that we want to use.
+
+If the remote advertises it is capable of doing a push options phase, we may not necessarily want to use it. (We could have `pushOptions == null` because no command line argument was given), so I would make this line conditional
+on `pushOptions == null`
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-06-07 01:06:54.000000000
+
+Patch Set 4: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/8480/ : ABORTED
+
+-------------------------------------
+author: Beau Terry
+date: 2016-06-07 01:07:14.000000000
+
+Patch Set 4:
+
+> Strategy: Cannot Merge
+
+Can you rebase this on the latest version of the master branch?
+
+    git fetch origin/master
+    git rebase origin/master
+
+-------------------------------------
+author: Beau Terry
+date: 2016-06-07 16:38:49.000000000
+
+Patch Set 4:
+
+I think we need to check for the spelling, as there is a subtle thing going on:
+./jgit push
+Exception in thread "main" java.lang.ExceptionInInitializerError
+	at org.eclipse.jgit.transport.Transport.push(Transport.java:1269)
+	at org.eclipse.jgit.api.PushCommand.call(PushCommand.java:159)
+	at org.eclipse.jgit.pgm.Push.run(Push.java:134)
+	at org.eclipse.jgit.pgm.TextBuiltin.execute(TextBuiltin.java:199)
+	at org.eclipse.jgit.pgm.Main.execute(Main.java:246)
+	at org.eclipse.jgit.pgm.Main.run(Main.java:138)
+	at org.eclipse.jgit.pgm.Main.main(Main.java:110)
+Caused by: org.eclipse.jgit.errors.TranslationStringMissingException: Translation missing for [org.eclipse.jgit.internal.JGitText, en_US, pushOptionsNotSupported]
+	at org.eclipse.jgit.nls.TranslationBundle.load(TranslationBundle.java:178)
+	at org.eclipse.jgit.nls.GlobalBundleCache.lookupBundle(GlobalBundleCache.java:96)
+	at org.eclipse.jgit.nls.NLS.get(NLS.java:132)
+	at org.eclipse.jgit.nls.NLS.getBundleFor(NLS.java:118)
+	at org.eclipse.jgit.internal.JGitText.get(JGitText.java:59)
+	at org.eclipse.jgit.transport.PushProcess.<clinit>(PushProcess.java:73)
+	... 7 more
+Caused by: java.util.MissingResourceException: Can't find resource for bundle java.util.PropertyResourceBundle, key pushOptionsNotSupported
+	at java.util.ResourceBundle.getObject(ResourceBundle.java:450)
+	at java.util.ResourceBundle.getString(ResourceBundle.java:407)
+	at org.eclipse.jgit.nls.TranslationBundle.load(TranslationBundle.java:175)
+	... 12 more
+
+-------------------------------------
+author: Austin Swanson
+date: 2016-06-07 18:30:43.000000000
+
+Patch Set 4:
+
+(2 comments)
+
+> I think we need to check for the spelling, as there is a subtle
+ > thing going on:
+ > ./jgit push
+ > Exception in thread "main" java.lang.ExceptionInInitializerError
+ > at org.eclipse.jgit.transport.Transport.push(Transport.java:1269)
+ > at org.eclipse.jgit.api.PushCommand.call(PushCommand.java:159)
+ > at org.eclipse.jgit.pgm.Push.run(Push.java:134)
+ > at org.eclipse.jgit.pgm.TextBuiltin.execute(TextBuiltin.java:199)
+ > at org.eclipse.jgit.pgm.Main.execute(Main.java:246)
+ > at org.eclipse.jgit.pgm.Main.run(Main.java:138)
+ > at org.eclipse.jgit.pgm.Main.main(Main.java:110)
+ > Caused by: org.eclipse.jgit.errors.TranslationStringMissingException:
+ > Translation missing for [org.eclipse.jgit.internal.JGitText, en_US,
+ > pushOptionsNotSupported]
+ > at org.eclipse.jgit.nls.TranslationBundle.load(TranslationBundle.java:178)
+ > at org.eclipse.jgit.nls.GlobalBundleCache.lookupBundle(GlobalBundleCache.java:96)
+ > at org.eclipse.jgit.nls.NLS.get(NLS.java:132)
+ > at org.eclipse.jgit.nls.NLS.getBundleFor(NLS.java:118)
+ > at org.eclipse.jgit.internal.JGitText.get(JGitText.java:59)
+ > at org.eclipse.jgit.transport.PushProcess.<clinit>(PushProcess.java:73)
+ > ... 7 more
+ > Caused by: java.util.MissingResourceException: Can't find resource
+ > for bundle java.util.PropertyResourceBundle, key pushOptionsNotSupported
+ > at java.util.ResourceBundle.getObject(ResourceBundle.java:450)
+ > at java.util.ResourceBundle.getString(ResourceBundle.java:407)
+ > at org.eclipse.jgit.nls.TranslationBundle.load(TranslationBundle.java:175)
+ > ... 12 more
+
+Yeah, I think something weird happened during the rebase. I think I've fixed it now, however.
+
+Line:98, org.eclipse.jgit/src/org/eclipse/jgit/api/PushCommand.java -> Aren't all Java objects null by default unless otherwise initialised?
+
+Line:216, org.eclipse.jgit/src/org/eclipse/jgit/transport/GitProtocolConstants.java -> Done
+
+-------------------------------------
+author: Beau Terry
+date: 2016-06-07 19:42:54.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:98, org.eclipse.jgit/src/org/eclipse/jgit/api/PushCommand.java -> oh, right.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-07-22 23:27:20.000000000
+
+Change has been successfully merged into the git repository by Ariel Sawyer
+
+-------------------------------------

@@ -1,0 +1,95 @@
+DESCRIPTION
+
+MB-21884: Add REST API support to create ephemeral buckets.
+
+The following are the changes done:
+[1] The 'bucketType' parameter now accepts a new value called
+    'ephemeral'. This is allowed only in spock clusters.
+[2] Internally, it'll be stored as 'membase' type in the bucket
+    config and additional parameter called 'storage_mode' gets
+    stored in the bucket config. The 'storage_mode' parameter
+    stores either 'couchstore' or 'ephemeral' as values.
+[3] The bucket config string has been updated to pass this
+    info down to the ep-engine. The 'couchstore' and
+    'ephemeral' values get mapped to 'persistent' and
+    'ephemeral' respectively.
+
+Change-Id: I58b4132a6d694ab5d7d65638e67c71653a16bffe
+
+
+COMMENTS
+
+author: Noe Perry
+date: 2017-02-01 21:42:50.365000000
+
+Uploaded patch set 5: Patch Set 4 was rebased.
+
+-------------------------------------
+author: Noe Perry
+date: 2017-02-01 21:46:19.339000000
+
+Patch Set 5: Verified+1
+
+-------------------------------------
+author: Ella Beltran
+date: 2017-02-02 02:57:03.942000000
+
+Patch Set 5:
+
+(2 comments)
+
+Line:252, src/ns_bucket.erl -> It will fail here during the upgrade. 
+
+Consider a cluster of 4.x nodes with some buckets. A Spock node is added to that cluster - so its mixed version some 4.x nodes & some Spock nodes.
+The Spock nodes  will try to add "storage_mode" to the config string while creating the bucket. But, there is no storage_mode in BucketConfig so it will be set to "undefined". There is no clause for "undefined" in storage_mode_to_bucket_type() so it will fail.
+
+Also, when all nodes have been upgraded to Spock, "storage_mode=couchstore" needs to be added to the config of existing buckets.
+
+Line:1005, src/menelaus_web_buckets.erl -> Please add a clause here for "couchbase" bucketType because that is also accepted by the create bucket REST API.
+
+ CLI, testrunner etc pass bucketType as "couchbase".  
+It will fail here when they or if anyone else passes 
+bucketType=couchbase while creating a bucket.
+
+-------------------------------------
+author: Noe Perry
+date: 2017-02-02 05:41:25.646000000
+
+Patch Set 5: Verified-1
+
+(2 comments)
+
+Line:252, src/ns_bucket.erl -> I was thinking of taking the upgrade approach similar to the one we had taken for the conflict resolution type change.
+
+The idea here is that the "ns_bucket:storage_mode" function will return "couchstore" as the default value when the bucket config doesn't have the storage_mode field in it. So when constructing the config string we would default to couchstore. I had tested it using the swap rebalance upgrade method. 
+
+But here it would still fail as the ns_bucket:storage_mode function is returning "undefined" as the default value. I forgot to change this back to "couchstore" after my experiments. Will fix it.
+
+Line:1005, src/menelaus_web_buckets.erl -> You are right! Will fix it!
+
+-------------------------------------
+author: Noe Perry
+date: 2017-02-02 18:49:50.310000000
+
+Patch Set 5:
+
+(2 comments)
+
+-------------------------------------
+author: Noe Perry
+date: 2017-02-02 18:55:56.159000000
+
+Patch Set 5:
+
+I have tested creating all the 3 bucket types (and updating membase & ephemeral buckets).
+
+-------------------------------------
+author: Ella Beltran
+date: 2017-02-02 18:04:52.231000000
+
+MISMATCHED INLINE COMMENT
+Line:252, src/ns_bucket.erl -> couchbase buckets that have been inherited via upgrades will not have the storage_mode. Where as buckets created after the upgrade will have it. This can cause confusion down the line since the config of different buckets will have different set of fields.
+
+This just a thought. I am not suggesting to change this.
+
+-------------------------------------

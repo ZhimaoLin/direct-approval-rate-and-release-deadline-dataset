@@ -1,0 +1,159 @@
+DESCRIPTION
+
+Add support for special symref FETCH_HEAD and MERGE_HEAD
+
+the RefDirectory class was not returning FETCH_HEAD and
+MERGE_HEAD when trying to get all refs via getRefs(RefDatabase.ALL).
+This fix adds a constant for FETCH_HEAD (MERGE_HEAD already
+existed) and makes RefDirectory look for these two new
+refs.
+
+Change-Id: Ie114ca92e9d5e7d61d892f4413ade65acdc08c32
+Signed-off-by: Zachary Orozco xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-10-21 17:49:26.000000000
+
+Patch Set 1: Do not submit
+
+(1 inline comment)
+
+
+
+Line:321, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/RefDirectory.java -> NAK.  These must not show up in protocol advertisements, etc.  If an application needs them it should read them.
+
+Besides both files are *not* standard ref format.  They can contain more than one ref.  And in FETCH_HEAD's case, they also have URL data and branch data.  The fact that they can work like a ref is a bug in the C Git implementation that only looks at the first 40 bytes of a "ref like file" to see if it is a SHA-1.  In hindsight we might never have permitted these files to be "ref like" by having a stricter ref file parser.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-10-21 22:05:48.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:321, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/RefDirectory.java -> ok, I understand that argument.
+
+On the other hand: JGit is writing these files! If we write them we should allow applications to read them from us. If for example an IDE integration like EGit wants to show all available refs to their end-users should it really hard-code this list of MERGE_HEAD, ORIG_HEAD, FETCH_HEAD?
+If this would be strange internal refs with no real-world use case I can understand. But an EGit user might really want to compare to ORIG_HEAD or to fetch a change from gerrit and then rebase current branch on FETCH_HEAD.
+Whats about having an option to getRefs() telling to report also these special refs.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-10-22 00:48:48.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:321, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/RefDirectory.java -> Repository.readMergeHeads() will return you the content from MERGE_HEAD, or null if the file isn't present.  When there is more than one item in the resulting list the UI probably should have a notion of this and offer the user a way to deal with the 2nd, 3rd, etc. items.  Its a UI wart that C Git accepts MERGE_HEAD and always assumes the 1st item.
+
+We don't have a reader for FETCH_HEAD, that's true.  We should implement one.  But again here, FETCH_HEAD may have multiple results, and the UI might want to be smarter about how it uses the information that is contained in FETCH_HEAD.  That is, if I say "cherry-pick FETCH_HEAD" I might want an option to include the URL and branch that I cherry-picked this from, similar to the way `git pull` works.  And even better, if I say "merge FETCH_HEAD" I should be offered a default merge message similar to the way pull would have done it... and that needs the URL and branch data from FETCH_HEAD, data that wouldn't normally be available in a Ref object.
+
+Since the two data objects (FETCH_HEAD and MERGE_HEAD) contain different information beyond what a simple Ref is, I think its reasonable to say that these are *not* treated as a Ref and aren't returned by default in the Ref collections that an application can access.  If you do want this data, you should inquire for it against Repository... and we already have one of those accessors implemented, we just need FETCH_HEAD to re-create the FetchResult object that the prior fetch() call would have created in-memory anyway.
+
+If an application Just Doesn't Care (tm), it can always do:
+
+  Map<String, Ref> all = repo.getAllRefs();
+  Ref r =  repo.getRef("MERGE_HEAD");
+  if (r != null)
+    r.put("MERGE_HEAD", r);
+  r = repo.getRef("FETCH_HEAD");
+  if (r != null)
+    r.put("FETCH_HEAD", r);
+
+but my argument above is, applications that want to support these two names in a way that is more sophisticated than simply taking a users-specified revision string and passing it into Repository.resolve(String) should be using other APIs that provide the full richness of the data they are accessing, rather than trying to shoe-horn the data into the rather limited Ref interface.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-10-22 13:31:02.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:321, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/RefDirectory.java -> I agree that FETCH_HEAD and MERGE_HEAD are not really refs because they 
+point potentially to a set of objects and not to a single one. Since there 
+are valid use-cases using these ref'ish objects like refs (e.g. fetching a 
+changeset from gerrit with the commands gerrit publishes) we should support 
+using this ref-like objects as refs as native git does. And yes, we	 
+support that already because you can call repo.getRef("FETCH_HEAD") already.
+Nothing to be done here. I'll only propose a good getter for FETCH_HEAD 
+like for MERGE_HEAD.
+
+Only one thing is where I disagree: I still think it is responsibility of 
+JGit to tell which refs it accept. Let's talk Java:
+
+if (repo.getRef("FETCH_HEAD")!=null)
+	assert(repo.getAllRefs().containsKey("FETCH_HEAD"));
+
+Currently this assert might fail and that looks strange to me. If the 
+RefDatabase accepts FETCH_HEAD and returns a single ref then why shouldn't 
+it be exposed it when asking for all refs? 
+
+By the way: adding ORIG_HEAD to the RefsDatabase is ok, or? We are
+working on rebase and I would like to offer users the possibility to compare
+with ORIG_HEAD.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-10-23 07:30:19.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:321, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/RefDirectory.java -> OK, I don't have a good answer for you as to why repo.getRef("FETCH_HEAD") works but repo.getAllRefs().containsKey("FETCH_HEAD") should return false.
+
+I can try to justify myself by saying that FETCH_HEAD isn't really a ref, and thus isn't returned by getAllRefs().  And getRef() just takes its input relative to $GIT_DIR and tries to treat the thing you named as a ref... if it smells enough like a ref to be read as a ref, it is, even if it isn't really a ref.  My justification for this getRef() behavior is that it is what is needed to be compatible with C Git, in case someone does something like:
+
+  echo somesha1 >.git/MY_NAME
+  jgit log MY_NAME
+
+I can also try to justify my position by saying that C Git's implementation of `git for-each-ref` does not report ORIG_HEAD, FETCH_HEAD or MERGE_HEAD.  JGit's getAllRefs() method is our internal API equivalent to `git for-each-ref`.  If we want to behave the same way under the same repository state, we shouldn't report those names.
+
+But it sounds like you disagree with me.  The current behavior is all rooted around mirroring C Git behavior around the same concepts.  I'm not going to try and say C Git is correct, though I'm sure that if you ask this sort of stuff over on the C Git list you will get a whole bunch of people trying to justify the way it its, and the real reason is really "it just is, that's just how it evolved over the years, we didn't design this stuff, it just got patched and patched and patched and uh... it is the way it it is".
+
+As far as adding ORIG_HEAD goes, same deal as above.  `git for-each-ref` doesn't recognize ORIG_HEAD, and so getAllRefs() doesn't either.  But at least ORIG_HEAD is more like a proper ref... its not like FETCH_HEAD or MERGE_HEAD, because it doesn't carry additional data in it.  (Though it has been proposed to add more data onto the end of the file for use during rebase and bisect.)
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-10-23 11:55:59.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:321, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/RefDirectory.java -> Then we are near to a solution. Beeing compatible with C Git is a
+valid argument for me. I was just not aware about 'git for-each-ref'
+functionality regarding ORIG_HEAD, FETCH_HEAD or
+MERGE_HEAD. Just for being compatible I agree that
+repo.getAllRefs() should not return the implicit ref-like things
+ORIG_HEAD, FETCH_HEAD and MERGE_HEAD (only HEAD
+will be returned by getAllRefs()).
+My suggestion: if we would add a 'getImplictRefsNames()' or even
+only expose a 'public static String[] implicitRefsNames' to the
+RefsDatabase my problem is solved.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-10-23 19:00:48.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:321, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/RefDirectory.java -> OK, but I wouldn't call it implicit.  Perhaps this on RefDatabase?
+
+  /**
+   * Get the additional reference-like entities from the repository.
+   *
+   * The result list includes non-ref items such as MERGE_HEAD,
+   * and FETCH_RESULT cast to be refs.
+   */
+  List<Ref> getAdditionalRefs()
+
+-------------------------------------

@@ -1,0 +1,125 @@
+DESCRIPTION
+
+Bug 501404 - Workspace save outside of locks
+
+Change-Id: I27c56c7153f52c2d861af1f3eb6ff1e418c3769e
+Signed-off-by: Erin Fritz xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Erin Fritz
+date: 2016-10-14 08:07:20.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-10-14 08:07:26.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/10929/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-10-14 08:36:45.000000000
+
+Patch Set 1: Code-Review-1
+
+Build Unstable 
+
+https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/10929/ : UNSTABLE
+
+-------------------------------------
+author: Jayvion Booth
+date: 2016-10-14 08:48:09.000000000
+
+Patch Set 1: Code-Review-1
+
+(7 comments)
+
+Thanks for the patch, but please see comments below.
+
+Line:8, /COMMIT_MSG -> Can you please add commit message about the problem and proposed solution.
+
+Line:2208, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/WorkbenchWindow.java -> Can you please explain why is this needed, in context of the deadlock bug? If this is just something which need to be fixed but not needed for the deadlock fix, can we please separate this to a different issue?
+
+File Comment: tests/org.eclipse.ui.ide.application.tests/src/org/eclipse/ui/internal/ide/application/IDEWorkLeon OchoachAdvisorTest.java -> Please add license header
+
+Line:40, tests/org.eclipse.ui.ide.application.tests/src/org/eclipse/ui/internal/ide/application/IDEWorkLeon OchoachAdvisorTest.java -> Can you please place the test annotation after the javadoc, not before?
+
+Line:50, tests/org.eclipse.ui.ide.application.tests/src/org/eclipse/ui/internal/ide/application/IDEWorkLeon OchoachAdvisorTest.java -> The test can't work as it is, see 
+java.lang.IllegalStateException: null
+	at org.eclipse.ui.internal.ide.application.IDEWorkLeon OchoachAdvisor.<init>(IDEWorkbenchAdvisor.java:160)
+	at org.eclipse.ui.internal.ide.application.IDEWorkLeon OchoachAdvisorTest$1.<init>(IDEWorkbenchAdvisorTest.java:50)
+	at org.eclipse.ui.internal.ide.application.IDEWorkLeon OchoachAdvisorTest.testShutdownWithLockedWorkspace(IDEWorkbenchAdvisorTest.java:50)
+
+Line:311, bundles/org.eclipse.ui.ide.application/src/org/eclipse/ui/internal/ide/application/IDEWorkLeon OchoachAdvisor.java -> Can display be already null here?
+
+Line:334, bundles/org.eclipse.ui.ide.application/src/org/eclipse/ui/internal/ide/application/IDEWorkLeon OchoachAdvisor.java -> I understand the problem, but I somehow dislike that we introduce an unconditional, absolutely uncontrolled asynchronous disconnect here.
+
+The problem I see here is that  WorkLeon Ochoach.shutdown() (or any other client who exends IDEWorkbenchAdvisor) code which expected to be run after postShutdown() and expected that the disconnect already happened, now may run in parallel with that task, in unpredictable order.
+
+I think we should at least add here same check for the WS lock as you've added above. Name it "isWorkspaceLocked()".
+
+-------------------------------------
+author: Erin Fritz
+date: 2016-10-15 03:35:06.000000000
+
+Patch Set 1:
+
+(3 comments)
+
+Line:2208, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/WorkbenchWindow.java -> With deadlock, this code is unreachable, which is why NPE never happened. After deadlock is fixed, this NPE happens on shutdown.
+
+The fix has been introduced here because steps to reproduce it match exactly test steps for deadlock in question (https://bugs.eclipse.org/bugs/show_bug.cgi?id=501404) and this bug was hidden by deadlock itself.
+
+This is the only exception that happens while testing the deadlock bug and error log is clean after tests with this applied.
+
+Line:311, bundles/org.eclipse.ui.ide.application/src/org/eclipse/ui/internal/ide/application/IDEWorkLeon OchoachAdvisor.java -> Display is never null here, but it could be disposed.
+If it is disposed, original implementation would fail too.
+I will skip the whole disconnect if display is disposed but, this still feels wrong. Maybe disconnectFromWorkspace() method should support headless mode.
+
+Line:334, bundles/org.eclipse.ui.ide.application/src/org/eclipse/ui/internal/ide/application/IDEWorkLeon OchoachAdvisor.java -> I will change this, but here is my concern:
+
+If disconnect will have alternate between synchronous and asynchronous depending on situation, other clients (implemented with synchronous disconnect in mind) will not notice failures caused by asynchronous branch. I've intentionally introduced the change, which will break offending code always, instead of occasionally in production.
+
+-------------------------------------
+author: Erin Fritz
+date: 2016-10-15 03:58:14.000000000
+
+Patch Set 1:
+
+(5 comments)
+
+Andrey, thank you for the review. Most of requests were implemented, but I'm still reluctant about https://git.eclipse.org/r/#/c/83185/1/bundles/org.eclipse.ui.workLeon Ochoach/Eclipse+UI/org/eclipse/ui/internal/WorkbenchWindow.java 
+could you please see my reply there and check is the reasoning is sound?
+
+Line:8, /COMMIT_MSG -> Done
+
+Line:40, tests/org.eclipse.ui.ide.application.tests/src/org/eclipse/ui/internal/ide/application/IDEWorkLeon OchoachAdvisorTest.java -> Done
+
+Line:50, tests/org.eclipse.ui.ide.application.tests/src/org/eclipse/ui/internal/ide/application/IDEWorkLeon OchoachAdvisorTest.java -> Done
+
+Line:311, bundles/org.eclipse.ui.ide.application/src/org/eclipse/ui/internal/ide/application/IDEWorkLeon OchoachAdvisor.java -> Done
+
+Line:334, bundles/org.eclipse.ui.ide.application/src/org/eclipse/ui/internal/ide/application/IDEWorkLeon OchoachAdvisor.java -> Done
+
+-------------------------------------
+author: Erin Fritz
+date: 2016-10-24 00:49:40.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:2208, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/WorkbenchWindow.java -> I've moved this to another patch after all.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-12-02 15:39:30.000000000
+
+Change has been successfully merged into the git repository by Jayvion Booth
+
+-------------------------------------

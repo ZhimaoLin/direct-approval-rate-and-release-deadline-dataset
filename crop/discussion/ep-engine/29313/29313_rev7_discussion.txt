@@ -1,0 +1,111 @@
+DESCRIPTION
+
+MB-8606: Parallelizing warmup as a READER task
+
+Increase the efficiency of warmup, by having multiple
+threads catering to it, rather than a single thread.
+Taking into considering GIO, the warmup task will now
+be made a READER_QUEUE task rather than an AUX_QUEUE
+task.
+
+The advantage will be with spliting up the keyDump,
+LoadingKVPairs and LoadingData state_tasks during
+the warmup process into shard level tasks, and have
+multiple reader threads cater to each of the sub-
+scheduled tasks.
+
+This shouldnt affect any other READER_QUEUE pertinent
+task, as traffic is disabled during warmup anyway.
+
+Change-Id: I74fbe3fd97ed34e5af9a1df121ec1988b88be651
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2013-10-04 01:52:39.531000000
+
+Uploaded patch set 7.
+
+-------------------------------------
+author: Abby Duran
+date: 2013-10-04 06:20:29.683000000
+
+Patch Set 7: Code-Review-1
+
+(17 comments)
+
+Line:117, src/warmup.h -> Please do not use "friend class" if possible, but instead move some of private functions to public, which will be invoked by those classes.
+
+Line:173, src/warmup.h -> Please rename it to "allVbStates"
+
+Line:174, src/warmup.h -> Please rename it to "shardVbStates"
+
+Line:177, src/warmup.h -> Please populate this vector in populateShardVbStates() instead of KeyDump phase.
+
+Line:241, src/warmup.h -> Before for loop, please first get the reference to the map instance like
+
+std::map<....> &shardVBState = _warmup->initialVbState[_shard->getId()];
+
+and then use that reference in the for loop.
+
+Line:257, src/warmup.h -> Please define keyDump(uint16_t shard_id) in Warmup class and move the entire logic of this function to that new function. This run() function simply invokes warmup->keyDump(shard_id)
+
+Line:262, src/warmup.h -> We don't need KVShard pointer. shard_id should be enough.
+
+Line:288, src/warmup.h -> Similarly, please define loadingKVPairs(shard_id) in Warmup class and move the entire logic of this function to that new function.
+
+Line:293, src/warmup.h -> We don't need KVShard pointer. shard_id should be enough.
+
+Line:319, src/warmup.h -> Please define loadingData()(shard_id) in Warmup class and move the entire logic of this function to that new function.
+
+Line:324, src/warmup.h -> We don't need KVShard pointer. shard_id should be enough.
+
+Line:265, src/kvstore.h -> Please use the reference to the vector:
+
+std::vector<uint16_t> &vbids,
+
+Line:247, src/kvstore.h -> Please rename it to "dump(...)" to be consistent with the other dump functions.
+
+In addition, please use the reference to the vector:
+
+std::vector<uint16_t>  &vbids,
+
+Line:369, src/warmup.cc -> Please use [] instead of ()
+
+Line:431, src/warmup.cc -> Please initialize them to false in the constructor through for loop.
+
+Line:783, src/warmup.cc -> This line does too many things. Please split it into
+
+std::map<...> &shardVBStates = initialVbState[it->first % store->vbMap.numShards];
+shardVBStates.insert(...);
+
+Line:434, src/couch-kvstore/couch-kvstore.h -> std::vector<uint16_t> &vbids
+
+-------------------------------------
+author: Abby Duran
+date: 2013-10-04 06:37:03.444000000
+
+Patch Set 7:
+
+(3 comments)
+
+Line:257, src/warmup.h -> Please name the new function to Warmup::loadKeysForShard(uint16_t shard_id)
+
+Line:288, src/warmup.h -> Please name the new function to Warmup::loadKVPairsForShard(uint16_t shard_id)
+
+Line:319, src/warmup.h -> Please name the new function to Warmup::loadDataForShard(uint16_t shard_id)
+
+-------------------------------------
+author: Abby Duran
+date: 2013-10-04 16:47:34.241000000
+
+Patch Set 7:
+
+(1 comment)
+
+Line:594, src/warmup.cc -> I don't think this is the way that we discussed for synchronizing sub tasks. The master task shouldn't be blocked here because it will block warming up other buckets.
+
+It seems that we don't need to create a master task, but instead let a subtask change the warmup state and create subsequent subtasks. Let's tNathalie Landry more offline.
+
+-------------------------------------

@@ -1,0 +1,90 @@
+DESCRIPTION
+
+MB-10117: ALL_DOCS api
+
+- CMD_GET_ALL_DOCS: 0xb8
+- extlen: 5B
+- ext:  | COUNT(4B) | SORTING(1B) |
+- SORTING:: 0x00: ascending, 0x01: descending
+- Defaults:: Count: 1000 (or max entries), Sorting: ascending
+- Response:: Body: |key1len(2B) |key1 |key2len(2B) |key2 |....
+
+Change-Id: I885f93e90114b62f63fa43822caac56cce15ac2a
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2014-02-26 22:44:38.902000000
+
+Uploaded patch set 13.
+
+-------------------------------------
+author: Abby Duran
+date: 2014-02-27 18:54:48.224000000
+
+Patch Set 13: Code-Review-1
+
+(16 comments)
+
+Line:4129, src/ep_engine.cc -> This will cause a seg fault because we erase the map element pointed by "it" above. Can you also simply remove an element if it exists in the map? I don't think we need to check the result code here.
+
+Line:5324, src/ep_engine.cc -> Please check the existence of a vbucket from vbucket_map and whether it is active or not. Then return ENGINE_NOT_MY_VBUCKET appropriately.
+
+Line:5340, src/ep_engine.cc -> We don't need to allocate the memory for this. If keylen is zero, please return ENGINE_EINVAL. Otherwise, you can simply create a string instance  as follows:
+
+char *keyptr = request->bytes + sizeof(request->bytes) + extlen;
+
+std::string start_key(keyptr, keylen);
+
+Line:5357, src/ep_engine.cc -> We don't need to define this function separately. Please move this function's logic to FetchAllKeysTask::run()
+
+Line:5363, src/ep_engine.cc -> Where do we free this object?
+
+Line:329, src/kvstore.h -> Please change ptr to shared_ptr<...> cb.
+
+Line:397, src/kvstore.h -> getAllKeysPtr
+
+Line:398, src/kvstore.h -> getAllKeysLen
+
+Line:405, src/kvstore.h -> Why do we need this struct? Can you simply declare them as member variables separately?
+
+Line:2267, src/couch-kvstore/couch-kvstore.cc -> As I mentioned, we can use the temporary buffer like vector or linkedlist to store all the keys temporarily.
+
+Line:2276, src/couch-kvstore/couch-kvstore.cc -> std::string &start_key
+
+Line:2297, src/couch-kvstore/couch-kvstore.cc -> Please log the failed errCode as well.
+
+Line:114, src/kvstore.cc -> sizeof(uint16_t) instead of "2"
+
+Line:115, src/kvstore.cc -> Same as above.
+
+Line:119, src/kvstore.cc -> I don't think we need this function. This function is too costly as it does unnecessary memory copy and allocations. You can store all the keys in a temporary buffer (like vector or linkedlist), and then traverse it in a forward or backward through the iterator.
+
+Line:847, src/ep_engine.h -> please use unordered_map for a faster lookup.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2014-02-28 01:46:18.742000000
+
+Patch Set 13:
+
+(3 comments)
+
+Line:4129, src/ep_engine.cc -> By not erasing if it->second is ENGINE_EWOULDBLOCK, i wouldn't need to add an entry another time in getAllKeys (ep_engine:5321) for ENGINE_EWOULDBLOCK until it changes to ENGINE_SUCCESS.
+
+Line:329, src/kvstore.h -> Will make it as AllKeysCB*, instead of shared_ptr, as I am not inheriting Callback in AllKeysCB's class declaration.
+
+Line:405, src/kvstore.h -> Done
+
+-------------------------------------
+author: Abby Duran
+date: 2014-02-28 01:50:28.439000000
+
+Patch Set 13:
+
+(1 comment)
+
+Line:4129, src/ep_engine.cc -> EWOULDBLOCK means that the socket is blocked (i.e., client is blocked) until the background operation is completed. We don't need to worry about that case.
+
+-------------------------------------

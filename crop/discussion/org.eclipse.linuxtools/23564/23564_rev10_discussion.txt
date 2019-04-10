@@ -1,0 +1,191 @@
+DESCRIPTION
+
+lttng: Add Lttng relayd connector
+
+This allows connections to the lttng session daemon so that live trace
+reading can work
+
+Change-Id: Ida7f76f09d3f01a25b67cc552cb5869dc5e4c3a4
+Signed-off-by: Ivy Mitchell xxx@xxx.xxx
+Signed-off-by: Alivia Ritter xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Ivy Mitchell
+date: 2014-04-21 13:27:23.000000000
+
+Uploaded patch set 10.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-04-21 13:27:29.000000000
+
+Patch Set 10:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/6526/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-04-21 14:07:55.000000000
+
+Patch Set 10: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/6526/ : SUCCESS
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-04-22 20:39:46.000000000
+
+Patch Set 10: Code-Review-1
+
+(26 comments)
+
+Second pass of comments.
+
+In general:
+- See if we can make IRelaydConnector AutoCloseable
+- Use final fields, instead of constructor call immediately followed by setters. There's a couple instances of that left.
+- Perhaps the various size() methods could be public static final values, already calculated so they don't get recalculated at run-time:
+
+  /* 2x int + 2x long */
+  public static final int SIZE = 24;
+
+Line:39, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/lttngviewerCommands/ViewerCommand.java -> The fields should be final, with a constructor to set them. Everywhere it's being used as
+
+  command = new ViewCommand();
+  command.setSomething(a);
+  command.setSomethingElse(b);
+
+Line:59, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/lttngviewerCommands/AttachSessionResponse.java -> no no no, that would do an extra copy for nothing. Use an ImmutableList.Builder
+
+Line:91, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/lttngviewerCommands/AttachSessionResponse.java -> This could be a public static final attribute. Would be nice for all response/commands to have that. (with proper comments explaining where the values come from)
+
+Line:2, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/lttngviewerCommands/LttngViewerCommands.java -> see previous comment
+
+Line:16, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/lttngviewerCommands/LttngViewerCommands.java -> BSD-licensed (needs a hyphen)
+
+Line:13, lttng/org.eclipse.linuxtools.lttng2.core.tests/src/org/eclipse/linuxtools/lttng2/core/tests/live/relayd/connector/LttngRelayd24Test.java -> update package name to match the new one in lttng2.core
+
+also add it to the manifest
+
+Line:30, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/lttngviewerCommands/MetadataPacketResponse.java -> do you need to save the length separately? You can do fData.length.
+
+Line:37, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/lttngviewerCommands/GetPacket.java -> more final fields, less setters
+
+Line:27, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/lttngviewerCommands/SeekCommand.java -> haha! add empty line.
+
+Line:35, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/lttngviewerCommands/GetNextIndex.java -> final field, add constructor, remove setter
+
+Line:50, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/impl/LttngRelaydConnector_2_4.java -> These never get closed. How about making ILttngRelaydConnector extend AutoCloseable?
+
+Line:71, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/impl/LttngRelaydConnector_2_4.java -> sometimes you call .flush(), sometimes you don't. Is there any logic to it?
+
+Line:24, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/lttngviewerCommands/IRelayCommand.java -> space before {
+
+Line:71, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/lttngviewerCommands/AttachSessionRequest.java -> If you add a static SIZE to the commands too, then you can do:
+
+  (Long.SIZE + Integer.SIZE + SeekCommand.SIZE)/8;
+
+And maybe have defines somewhere for 4, 8, etc. so you don't have to divide by 8 every single time.
+
+However, I'm not sure if the compiler is smart enough to "internalize" those operations. Perhaps it's better do just do:
+
+  /* 1 Long + 3 Integers */
+  return 20;
+
+Line:32, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/lttngviewerCommands/TracePacketResponse.java -> probably not needed, fData.length
+
+Line:40, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/ILttngRelaydConnector.java -> > iterable would mean I lose Immutable list, do we want that?
+
+No, ImmutableList is a List, and a List is Iterable. It's just about exposing less functionality through the API. Now behavior-wise it's the same, it's just that you have more methods that can fail at run-time.
+
+At some point I was wondering if we should use ImmutableList directly in the return value. That would provide the "deprecated" warnings for the methods you shouldn't use, etc. But then that means that users would have to depend on Guava themselves, which they might not want to do. So "pure" java returns are probably better.
+
+Anyway, here the same old question: does getSessions().get(i) mean anything here? Does the client refer to things like "session #2"? If so List may make sense. If not, it should be Set or Iterable.
+
+Line:66, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/lttngviewerCommands/ConnectResponse.java -> That bug was fixed in lttng 2.4. What does this comment mean?
+
+Line:15, lttng/org.eclipse.linuxtools.lttng2.core/META-INF/MANIFEST.MF -> com.google.guava.collect should be imported-package, not required-bundle
+
+Line:21, lttng/org.eclipse.linuxtools.lttng2.core/META-INF/MANIFEST.MF -> If it's meant to be API then, it should not be called "internal".
+
+Line:33, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/LttngRelaydConnectorFactory.java -> Utility classes should be final with a private constructor, not abstract. Sorry I missed that on the first pass.
+
+Line:50, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/LttngRelaydConnectorFactory.java -> This class seems version-agnostic, but you hardcode version 2.4 here. Perhaps this should be a parameter to getNewConnector?
+
+Line:35, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/lttngviewerCommands/GetMetadata.java -> final field, set it at the constructor + remove setter
+
+Line:43, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/StreamInput.java -> space before {
+
+Line:86, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/StreamInput.java -> other fields in this file have a javadoc, you could add it to this one too.
+
+and move it up there next to fFileChannel
+
+Line:121, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/StreamInput.java -> perhaps also close fFileChannel in here. closing the input streams also closes it, but since we keep a local reference we should also close() it ourselves for completion's sake (and to keep future class-wide resource leak analyzers happy)
+
+Line:61, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/lttngviewerCommands/NewStreamsResponse.java -> here too, use ImmutableList.Builder
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2014-04-22 22:00:40.000000000
+
+Patch Set 10:
+
+(26 comments)
+
+Line:39, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/lttngviewerCommands/ViewerCommand.java -> Done
+
+Line:59, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/lttngviewerCommands/AttachSessionResponse.java -> Done
+
+Line:91, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/lttngviewerCommands/AttachSessionResponse.java -> it's not the true size(), it's for the first half of a packet
+
+Line:2, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/lttngviewerCommands/LttngViewerCommands.java -> Done
+
+Line:16, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/lttngviewerCommands/LttngViewerCommands.java -> Done
+
+Line:13, lttng/org.eclipse.linuxtools.lttng2.core.tests/src/org/eclipse/linuxtools/lttng2/core/tests/live/relayd/connector/LttngRelayd24Test.java -> Done
+
+Line:30, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/lttngviewerCommands/MetadataPacketResponse.java -> Done
+
+Line:37, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/lttngviewerCommands/GetPacket.java -> Done
+
+Line:27, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/lttngviewerCommands/SeekCommand.java -> Done
+
+Line:35, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/lttngviewerCommands/GetNextIndex.java -> Done
+
+Line:50, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/impl/LttngRelaydConnector_2_4.java -> Done
+
+Line:71, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/impl/LttngRelaydConnector_2_4.java -> flush before read,
+
+Line:24, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/lttngviewerCommands/IRelayCommand.java -> Done
+
+Line:71, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/lttngviewerCommands/AttachSessionRequest.java -> I understand what you're going for, I think it needs a different solution though. To be discussed
+
+Line:32, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/lttngviewerCommands/TracePacketResponse.java -> Done
+
+Line:40, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/ILttngRelaydConnector.java -> We need to keep List<> since we get() stuff in it.
+
+Line:66, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/lttngviewerCommands/ConnectResponse.java -> I will remove the comment but the dataflow appears to be correct
+
+Line:15, lttng/org.eclipse.linuxtools.lttng2.core/META-INF/MANIFEST.MF -> Done
+
+Line:21, lttng/org.eclipse.linuxtools.lttng2.core/META-INF/MANIFEST.MF -> Done
+
+Line:33, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/LttngRelaydConnectorFactory.java -> Done
+
+Line:50, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/LttngRelaydConnectorFactory.java -> Done
+
+Line:35, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/lttngviewerCommands/GetMetadata.java -> Done
+
+Line:43, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/StreamInput.java -> Done
+
+Line:86, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/StreamInput.java -> Done
+
+Line:121, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/trace/StreamInput.java -> Done
+
+Line:61, lttng/org.eclipse.linuxtools.lttng2.core/src/org/eclipse/linuxtools/internal/lttng2/core/relayd/lttngviewerCommands/NewStreamsResponse.java -> Done
+
+-------------------------------------

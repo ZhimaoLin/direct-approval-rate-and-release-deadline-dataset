@@ -1,0 +1,256 @@
+DESCRIPTION
+
+Toolbar button to switch repositories in git views
+
+Enable the user to quickly switch the staging view, the reflog
+view, the rebase interactive view, or the history view from one
+repository to another via a toolbar button with a drop-down menu
+listing all currently configured git repositories. Switching in
+one view makes all other EGit views that are linked to the current
+selection also switch. The current repository of a view, if any,
+is marked by a check mark in the menu.
+
+Use the "repository" image for the new button. Change the icon
+for "no filter" in history view to avoid a clash: instead of the
+repository icon, use a struck-out filter icon.
+
+Make sure all Git views provide selections that do adapt to
+Repository. This was already the case for the repositories view,
+the history view, and partly the staging view. For the reflog
+view, add an adaptable DTO wrapper around ReflogEntry for the tree.
+In staging view, add a MultiViewerSelectionProvider modeled after
+the JDT's SelectionProviderMediator that can provide the selection
+from whichever viewer has the focus. In the rebase interactive view,
+make PlanElement adapt to Repository, and fix some other minor bugs:
+don't clear when the linked selection is empty, don't show "No
+Repository Selected" briefly when a bare repo is selected, react on
+the initial selection in createControl() instead of remembering the
+selection when the view was created. (If the view is hidden, the
+selection may have changed by the time it is activated and its
+control is created.)
+
+Make the repositories view react on selection changes not only for
+IResource or File but also for Repository.
+
+Add special-purpose selection providers (RepositorySelectionProvider)
+to the staging view, the reflog view, the history view, and the
+rebase interactive view that provide a selection that identifies the
+current repository in those views if it is otherwise empty. Use a
+RepositoryNode for this to avoid multiple entries in the history
+view's navigation history. Since all views' selection listener
+mechanisms do handle a selection that adapts to Repository, this
+makes all EGit views nicely switch in sync when the "current"
+repository is changed in one of them.
+
+Includes initial UI tests. However, for some unknown reason I cannot
+get the test for the new button and the selection handling to work,
+so it is ignored. Somehow the selection in the other views does not
+get updated when run as a SWTBot test. Testing this is tricky anyway
+because most of our views load asynchronously one way or another. To
+be able to detect that for the staging view, I have made it use a
+WorkbenchJob instead of a plain Display.asyncExec(). Alas, that didn't
+help for that test.
+
+Bug: 518607
+Change-Id: I976df6e3bf0363c27b877d995344487bb622f037
+Signed-off-by: Alayna Houston xxx@xxx.xxx
+
+COMMENTS
+
+author: Alayna Houston
+date: 2017-07-13 09:04:56.000000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-07-13 09:08:11.000000000
+
+Patch Set 5:
+
+> > (2 comments)
+ > 
+ > ok, I see
+ > * can you try to fade the upper arrow a bit more ?
+ > * what's the purpose of the yellow arrow which seems to be also
+ > striked through ?
+ > Maybe put the yellow arrow in the foreground on top of the
+ > strikethrough ?
+
+Both done in ps 5.
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-07-13 09:08:54.000000000
+
+Patch Set 5:
+
+> > Second comment: For the view menu itself I suggest to use radio
+ > > button style for the items and to check the current repository.
+ > > Right now, the menu itself does not help me to identify the
+ > current
+ > > repository.
+ > 
+ > That's a good idea. I'll do that. Note that if the "current" repo
+ > is a bare repo, there will be no checkmark in the menu except in
+ > the history view. The history view is the only one that shows bare
+ > repos in that menu at all; in the other views, bare repos don't
+ > make sense.
+
+Done in ps 5.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-07-13 09:24:53.000000000
+
+Patch Set 5:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/10029/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-07-13 09:49:06.000000000
+
+Patch Set 5: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/10029/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-07-13 11:31:55.000000000
+
+Patch Set 5:
+
+icon and checking the selected repository looks good now, thanks
+
+I tried to run the test you ignored. It seems to fail when selecting the cloned repository via swtbot. I always get an NPE at this step:
+
+java.lang.NullPointerException: while trying to invoke the method org.eclipse.core.runtime.dynamichelpers.IExtensionTracker.registerHandler(org.eclipse.core.runtime.dynamichelpers.IExtensionChangeHandler, org.eclipse.core.runtime.dynamichelpers.IFilter) of a null object loaded from local variable 'tracker'
+	at org.eclipse.ui.internal.statushandlers.StatusHandlerRegistry.<init>(StatusHandlerRegistry.java:72)
+	at org.eclipse.ui.internal.statushandlers.StatusHandlerRegistry.getDefault(StatusHandlerRegistry.java:91)
+	at org.eclipse.ui.statushandlers.StatusManager.getStatusHandler(StatusManager.java:145)
+	at org.eclipse.ui.statushandlers.StatusManager.handle(StatusManager.java:204)
+	at org.eclipse.ui.statushandlers.StatusManager.handle(StatusManager.java:246)
+	at org.eclipse.ui.statushandlers.StatusManager$StatusManagerLogListener.logging(StatusManager.java:317)
+	at org.eclipse.core.internal.runtime.RuntimeLog.logToListeners(RuntimeLog.java:161)
+	at org.eclipse.core.internal.runtime.PlatformLogWriter.logged(PlatformLogWriter.java:103)
+	at org.eclipse.osgi.internal.log.ExtendedLogReaderServiceFactory.safeLogged(ExtendedLogReaderServiceFactory.java:88)
+	at org.eclipse.osgi.internal.log.ExtendedLogReaderServiceFactory.logPrivileged(ExtendedLogReaderServiceFactory.java:217)
+	at org.eclipse.osgi.internal.log.ExtendedLogReaderServiceFactory.log(ExtendedLogReaderServiceFactory.java:189)
+	at org.eclipse.osgi.internal.log.ExtendedLogServiceFactory.log(ExtendedLogServiceFactory.java:65)
+	at org.eclipse.osgi.internal.log.ExtendedLogServiceImpl.log(ExtendedLogServiceImpl.java:87)
+	at org.eclipse.osgi.internal.log.LoggerImpl.log(LoggerImpl.java:54)
+	at org.eclipse.core.internal.runtime.Log.log(Log.java:65)
+	at org.eclipse.core.internal.utils.Policy.log(Policy.java:159)
+	at org.eclipse.core.internal.resources.SaveManager.reportSnapshotRequestor(SaveManager.java:657)
+	at org.eclipse.core.internal.resources.Workspace.close(Workspace.java:575)
+	at org.eclipse.core.resources.ResourcesPlugin.stop(ResourcesPlugin.java:434)
+	at org.eclipse.osgi.internal.framework.BundleContextImpl$4.run(BundleContextImpl.java:830)
+	at org.eclipse.osgi.internal.framework.BundleContextImpl$4.run(BundleContextImpl.java:1)
+	at java.security.AccessController.doPrivileged(Native Method)
+	at org.eclipse.osgi.internal.framework.BundleContextImpl.stop(BundleContextImpl.java:823)
+	at org.eclipse.osgi.internal.framework.EquinoxBundle.stopWorker0(EquinoxBundle.java:946)
+	at org.eclipse.osgi.internal.framework.EquinoxBundle$EquinoxModule.stopWorker(EquinoxBundle.java:314)
+	at org.eclipse.osgi.container.Module.doStop(Module.java:636)
+	at org.eclipse.osgi.container.Module.stop(Module.java:498)
+	at org.eclipse.osgi.container.ModuleContainer$ContainerStartLevel.decStartLevel(ModuleContainer.java:1661)
+	at org.eclipse.osgi.container.ModuleContainer$ContainerStartLevel.doContainerStartLevel(ModuleContainer.java:1580)
+	at org.eclipse.osgi.container.SystemModule.stopWorker(SystemModule.java:270)
+	at org.eclipse.osgi.internal.framework.EquinoxBundle$SystemBundle$EquinoxSystemModule.stopWorker(EquinoxBundle.java:147)
+	at org.eclipse.osgi.container.Module.doStop(Module.java:636)
+	at org.eclipse.osgi.container.Module.stop(Module.java:498)
+	at org.eclipse.osgi.container.SystemModule.stop(SystemModule.java:202)
+	at org.eclipse.osgi.internal.framework.EquinoxBundle$SystemBundle$EquinoxSystemModule$1.run(EquinoxBundle.java:165)
+	at java.lang.Thread.run(Thread.java:805)
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-07-13 11:44:59.000000000
+
+Patch Set 5:
+
+> I tried to run the test you ignored. It seems to fail when
+ > selecting the cloned repository via swtbot. I always get an NPE at
+ > this step:
+ > 
+ > java.lang.NullPointerException: while trying to invoke the method
+ > org.eclipse.core.runtime.dynamichelpers.IExtensionTracker.registerHandler(org.eclipse.core.runtime.dynamichelpers.IExtensionChangeHandler,
+ > org.eclipse.core.runtime.dynamichelpers.IFilter) of a null object
+ > loaded from local variable 'tracker'
+ > at org.eclipse.ui.internal.statushandlers.StatusHandlerRegistry.<init>(StatusHandlerRegistry.java:72)
+ > ...
+ > at org.eclipse.core.internal.resources.Workspace.close(Workspace.java:575)
+ > ...
+
+No, that's the SWTBot runtime Eclipse shutting down at the end of the test. I have been getting that always when I run tests locally. It can be safely ignored. If the JUnit test runs green, it is fine; if it is red, it didn't work.
+
+I tried now on two different machines (Mac 10.7.5 (JDK 8u65, using Neon target; started from a Neon.3) and 10.9.5 (JDK 8u131; using Oxygen target; started from Neon.2); and on both I now need to add this Djava.awt.headless=true to get _any_ SWTBot to run at all. Maybe it's time to upgrade to the latest OS X...).
+
+Otherwise they deadlock in native classloader code when loading the AWT libraries, which happens inside SWTBot when it tries to figure out what keyboard we have; via the init of EGitTestCase.bot = new SWTWorkbenchBot(). Perhaps doing that statically is not such a good idea; what if the workbench isn't running yet?
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-07-13 12:50:39.000000000
+
+Patch Set 5:
+
+> > I tried to run the test you ignored. It seems to fail when
+ > > selecting the cloned repository via swtbot. I always get an NPE
+ > at
+ > > this step:
+ > >
+ > > java.lang.NullPointerException: while trying to invoke the method
+ > > org.eclipse.core.runtime.dynamichelpers.IExtensionTracker.registerHandler(org.eclipse.core.runtime.dynamichelpers.IExtensionChangeHandler,
+ > > org.eclipse.core.runtime.dynamichelpers.IFilter) of a null object
+ > > loaded from local variable 'tracker'
+ > > at org.eclipse.ui.internal.statushandlers.StatusHandlerRegistry.<init>(StatusHandlerRegistry.java:72)
+ > > ...
+ > > at org.eclipse.core.internal.resources.Workspace.close(Workspace.java:575)
+ > > ...
+ > 
+ > No, that's the SWTBot runtime Eclipse shutting down at the end of
+ > the test. I have been getting that always when I run tests locally.
+ > It can be safely ignored. If the JUnit test runs green, it is fine;
+ > if it is red, it didn't work.
+ 
+ok
+
+ > I tried now on two different machines (Mac 10.7.5 (JDK 8u65, using
+ > Neon target; started from a Neon.3) and 10.9.5 (JDK 8u131; using
+ > Oxygen target; started from Neon.2); and on both I now need to add
+ > this Djava.awt.headless=true to get _any_ SWTBot to run at all.
+ > Maybe it's time to upgrade to the latest OS X...).
+ 
+I am using Mac OS 10.12.5 and don't have this problem
+
+ > Otherwise they deadlock in native classloader code when loading the
+ > AWT libraries, which happens inside SWTBot when it tries to figure
+ > out what keyboard we have; via the init of EGitTestCase.bot = new
+ > SWTWorkbenchBot(). Perhaps doing that statically is not such a good
+ > idea; what if the workbench isn't running yet?
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-07-13 13:20:55.000000000
+
+Patch Set 5:
+
+BTW, for the first time I looked closely at this exception trace. It's actually completely wrong: by the time the resources bundle is stopped, the UI bundles all should also be stopped, so one definitely shouldn't log through the UI StatusManager anymore. I suppose somebody forgets to de-register a listener somewhere.
+
+This appears to be bug 391488. Duplicates are in bug 462145 and bug 516447 (both reported as "during Eclipse startup", but both show the same UI access when JobActivator.stop() is called).
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-07-13 14:03:21.000000000
+
+Patch Set 5:
+
+> This appears to be bug 391488. Duplicates are in bug 462145 and bug
+ > 516447 (both reported as "during Eclipse startup", but both show
+ > the same UI access when JobActivator.stop() is called).
+
+Found the culprit; reported at bug 516447. Now somebody has just to fix it.
+
+-------------------------------------

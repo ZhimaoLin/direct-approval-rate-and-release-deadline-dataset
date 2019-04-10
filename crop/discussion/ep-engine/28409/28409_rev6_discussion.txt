@@ -1,0 +1,142 @@
+DESCRIPTION
+
+CBD-1051: Global IO Manager thread pool, comments
+
+Change-Id: Ic44c03250d11b87db7f5497503915bc56a1c7a18
+
+
+COMMENTS
+
+author: Ellie Kidd
+date: 2013-08-27 23:30:38.706000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Abby Duran
+date: 2013-09-03 23:37:30.721000000
+
+Patch Set 6:
+
+(23 comments)
+
+Thanks Sundar for the good work.
+
+I have bunch of comments, most of which are probably minor ones. Let's discuss them offline if you want.
+
+Line:74, src/tasks.cc -> I don't understand exactly why we need to grab the lock here. Is it because more than one write tasks (e.g., vb snapshot task and flusher) can access the same shard at the same time?. If it is, then please move the lock from the flusher to the shard class.
+
+Instead of using lock, can we simply use the atomic variable to figure out if a given shard is accessed by any write task. If so, then we can simply reschedule the other tasks that try to access that shard.
+
+Line:79, src/tasks.cc -> whitespace
+
+Line:202, src/flusher.cc -> Why did you remove "shard->highPriorityCount.get() > 0"? It's very important condition to support the high priority vbucket persistence.
+
+Line:140, src/scheduler.h -> taskStart is not the pointer type. Please use 0 instead of NULL
+
+Line:261, src/scheduler.h -> Please move this out of the class definition
+
+Line:265, src/scheduler.h -> The same comment as above.
+
+Line:44, src/iomanager/iomanager.cc -> whitespace
+
+Line:189, src/ep.hh -> I saw bunch of minor formatting changes in ep.hh and ep.cc that are NOT related to this commit. Please do not include them in this commit because it takes more time for me to understand the changes that are necessary for this commit. Minor formatting things can be made as a separate commit.
+
+Line:90, src/mutex.cc -> I prefer to not use this API because I'm not sure of windows platform. If you think there can be heavy lock contention, we have to come up with a different approach.
+
+Line:270, configuration.json -> If this parameter means a bucket priority, please rename the parameter name for a better readability.
+
+Line:80, src/iomanager/iomanager.h -> Please move these out of the class definition or declare them as static const variable for this class.
+
+Line:74, src/scheduler.cc -> Shouldn't we start with 0?
+
+Line:83, src/scheduler.cc -> We don't embed the comment inside the code. Please put that comment after the statement termination ";".
+
+Line:113, src/scheduler.cc -> whitespace. Btw, I think we don't need to explicitly cancel the current task as long as it is not rescheduled. So, we don't need to check the other cases through "else if" and "else" here.
+
+Line:183, src/scheduler.cc -> This can cause the starvation on the lower priority jobs on the readyQueue. If this is not necessary for this GIO optimization, please use the previous implementation.
+
+Line:223, src/scheduler.cc -> We should NOT push a new task directly into the ready queue. It will cause the serious starvation issue that we observed in the XDCR tests.
+
+Line:263, src/scheduler.cc -> whitespace
+
+Line:315, src/scheduler.cc -> Please simply use the reference type for the index parameter. We don't use the reference type for a pointer parameter, which can confuse us.
+
+Line:413, src/scheduler.cc -> Please remove this commented line.
+
+Line:442, src/scheduler.cc -> I can't see the place where this bool variable is set to true.
+
+Line:554, src/scheduler.cc -> There is a memory leak I guess. We should delete all the ExecutorThread instances before clearing them from the array.
+
+Line:572, src/scheduler.cc -> It is not clear for me to understand this statement. What are we trying to figure out the start index here?
+
+Line:44, src/priority.hh -> This priority class is intended for dispatcher threads, not for bucket IO priority. Please define the new class or use enum type for this.
+
+-------------------------------------
+author: Abby Duran
+date: 2013-09-03 23:51:45.650000000
+
+Patch Set 6:
+
+(1 comment)
+
+Line:533, src/scheduler.cc -> This is going to cause unnecessary high CPU overhead.
+
+-------------------------------------
+author: Ellie Kidd
+date: 2013-09-05 00:55:00.823000000
+
+Patch Set 6:
+
+(23 comments)
+
+Thanks Chiyoung, all your suggestions are implemented.. Will upload as soon a local testing comes out ok...
+
+Line:74, src/tasks.cc -> Done
+
+Line:79, src/tasks.cc -> Done
+
+Line:202, src/flusher.cc -> It seems that even if we have 1 high priority shard with no dirty items then this causes the flusher thread to continuously run wasting cpu.. If there are any dirty items then canSnooze automatically returns false so this should take care of the highPriority shard too right?
+thanks
+
+Line:140, src/scheduler.h -> Done
+
+Line:261, src/scheduler.h -> Done
+
+Line:265, src/scheduler.h -> Done
+
+Line:44, src/iomanager/iomanager.cc -> Done
+
+Line:189, src/ep.hh -> Done
+
+Line:90, src/mutex.cc -> Done
+
+Line:270, configuration.json -> Done
+
+Line:80, src/iomanager/iomanager.h -> Done
+
+Line:74, src/scheduler.cc -> No, we are using tick with modulus operator to determine poll frequencies for different priority buckets. If tick==0 then it will satisfy all the priorities - this may be ok but to be safe, we prevent 0 value.
+
+Line:83, src/scheduler.cc -> Done
+
+Line:113, src/scheduler.cc -> GIO manages its own task mapping using taskLocator. If we do not call cancel here, then we may leave garbage entries in the taskLocator which might not be desirable. thanks
+
+Line:183, src/scheduler.cc -> Done
+
+Line:223, src/scheduler.cc -> Done
+
+Line:263, src/scheduler.cc -> Done
+
+Line:315, src/scheduler.cc -> Done
+
+Line:413, src/scheduler.cc -> Done
+
+Line:442, src/scheduler.cc -> Done
+
+Line:554, src/scheduler.cc -> Done
+
+Line:572, src/scheduler.cc -> simplified the expression. thanks
+
+Line:44, src/priority.hh -> Done
+
+-------------------------------------

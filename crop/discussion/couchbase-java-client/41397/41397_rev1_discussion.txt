@@ -1,0 +1,85 @@
+DESCRIPTION
+
+JCBC-228: WIP: 'extract' connection establishing from Cluster constructor
+
+diff --git c/src/main/java/com/couchbase/client/java/CouchbaseCluster.java i/src/main/java/com/couchbase/client/java/CouchbaseCluster.java
+index 9e013be..9c12d59 100644
+--- c/src/main/java/com/couchbase/client/java/CouchbaseCluster.java
++++ i/src/main/java/com/couchbase/client/java/CouchbaseCluster.java
+@@ -24,10 xxx@xxx.xxx package com.couchbase.client.java;
+ import com.couchbase.client.core.ClusterFacade;
+ import com.couchbase.client.core.CouchbaseCore;
+ import com.couchbase.client.core.message.CouchbaseResponse;
+-import com.couchbase.client.core.message.cluster.DisconnectRequest;
+-import com.couchbase.client.core.message.cluster.DisconnectResponse;
+-import com.couchbase.client.core.message.cluster.OpenBucketRequest;
+-import com.couchbase.client.core.message.cluster.SeedNodesRequest;
++import com.couchbase.client.core.message.cluster.*;
+ import com.couchbase.client.java.cluster.ClusterManager;
+ import com.couchbase.client.java.cluster.CouchbaseClusterManager;
+ import com.couchbase.client.java.document.Document;
+@@ -47,11 xxx@xxx.xxx public class CouchbaseCluster implements Cluster {
+     private static final String DEFAULT_BUCKET = "default";
+     private static final String DEFAULT_HOST = "127.0.0.1";
+
+-    private final ClusterFacade core;
+-    private final CouchbaseEnvironment environment;
+-    private final ConnectionString connectionString;
++    private ClusterFacade core;
++    private CouchbaseEnvironment environment;
++    private ConnectionString connectionString;
+
+-    private final boolean sharedEnvironment;
++    private boolean sharedEnvironment;
+
+     public static CouchbaseCluster create() {
+         return create(DEFAULT_HOST);
+@@ -85,8 xxx@xxx.xxx public class CouchbaseCluster implements Cluster {
+         return new CouchbaseCluster(environment, ConnectionString.create(connectionString), true);
+     }
+
++    CouchbaseCluster() { }
++
+     CouchbaseCluster(final CouchbaseEnvironment environment, final ConnectionString connectionString, final boolean sharedEnvironment) {
++        this();
++        connect(environment, connectionString, sharedEnvironment).toBlocking().single();
++    }
++
++    Observable<Boolean> connect(final CouchbaseEnvironment environment, final ConnectionString connectionString, final boolean sharedEnvironment) {
+         this.sharedEnvironment = sharedEnvironment;
++        this.environment = environment;
++        this.connectionString = connectionString;
+         core = new CouchbaseCore(environment);
+         List<String> seedNodes = new ArrayList<String>();
+         for (InetSocketAddress node : connectionString.hosts()) {
+@@ -95,10 xxx@xxx.xxx public class CouchbaseCluster implements Cluster {
+         if (seedNodes.isEmpty()) {
+             seedNodes.add(DEFAULT_HOST);
+         }
+-        SeedNodesRequest request = new SeedNodesRequest(seedNodes);
+-        core.send(request).toBlocking().single();
+-        this.environment = environment;
+-        this.connectionString = connectionString;
++        return core
++                .<SeedNodesResponse>send(new SeedNodesRequest(seedNodes))
++                .flatMap(new Func1<SeedNodesResponse, Observable<Boolean>>() {
++                   xxx@xxx.xxx
++                    public Observable<Boolean> call(SeedNodesResponse seedNodesResponse) {
++                        return Observable.just(seedNodesResponse.status().isSuccess());
++                    }
++                });
+     }
+
+    xxx@xxx.xxx
+
+Change-Id: I7a340c4555e4170cce577ffd6d9024ec5f8ab400
+
+
+COMMENTS
+
+author: Cory Peck
+date: 2014-09-12 20:18:42.749000000
+
+Uploaded patch set 1.
+
+-------------------------------------

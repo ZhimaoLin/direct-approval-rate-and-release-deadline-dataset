@@ -1,0 +1,64 @@
+DESCRIPTION
+
+JCBC-20: ViewConnection blocks when no ops pending
+
+When getting the next op in the queue we were using the poll()
+function which immediately returns null if the queue is empty. This
+immediate return causes the IO thread to spin and consumes a lot of
+cpu. What we really want is to block when getting an item from the
+queue until one is available. In order to do this we should be using
+the take() function.
+
+Change-Id: I9a5bcb4c3852976b55b3162fad513156e94aaaf6
+
+
+COMMENTS
+
+author: Kenny Maynard
+date: 2012-06-05 18:19:24.092000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Andreas Short
+date: 2012-06-15 16:53:08.536000000
+
+Patch Set 3: Do not submit
+
+(5 inline comments)
+
+Huge apologies for the delay on this review.
+
+I'm -2 on this mostly because of the interrupt() in ViewConnection.  There may be something I'm missing here, but it looks incorrect currently.
+
+There are some other clear violations of synchronization of things mutated upon interruption in ViewNode.
+
+Line:189, src/main/java/com/couchbase/client/ViewConnection.java -> This is the one I was slightly concerned about and would like to discuss.  This would happen on the thread in the application calling us, and we really have no idea what we'd trigger if interrupting there.  Is this trying to interrupt one of our threads?
+
+Line:107, src/main/java/com/couchbase/client/ViewNode.java -> Might be nice to drop a debug log message in with the operation being canceled.
+
+Line:108, src/main/java/com/couchbase/client/ViewNode.java -> the boolean modified by this call is not volatile, and thus it may not be seen as canceled by another thread after cancellation here.  this is actually a concern for multiple fields of HttpOperationImpl
+
+Line:114, src/main/java/com/couchbase/client/ViewNode.java -> same log note as above
+
+Line:115, src/main/java/com/couchbase/client/ViewNode.java -> same as above.
+
+-------------------------------------
+author: Andreas Short
+date: 2012-06-19 23:19:35.060000000
+
+Patch Set 3: I would prefer that you didn't submit this
+
+I totally got that review wrong.  The interrupt is okay, but it would be good to have a test for this since it can be done separately.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2012-06-20 01:15:00.119000000
+
+Patch Set 3:
+
+Matt,
+
+You other comments are valid, but should be addressed in another commit.
+
+-------------------------------------

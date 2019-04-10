@@ -1,0 +1,577 @@
+DESCRIPTION
+
+MB-18453: Make task scheduling fairer
+
+Create a wrapper around std::priority_queue
+that enables the queue to be sorted by priority + 'time'
+
+The code however does not rely on a real-time API
+(e.g. gethrtime) because the brings problems e.g. clock
+changes. So ReadyQueue has a monotonic atomic u64 integer
+that acts as an 'age' value.
+
+When tasks are pushed into the queue they are given
+the current time value and then the compare function
+uses the priority value + 'time' when comparing against
+tasks in the queue.
+
+This has the outcome that old tasks with low priority
+will eventually move forward and 'beat' new tasks
+with high priority, making it impossible for a task
+to be overlooked indefinitley.
+
+Remember that in terms of priority value, less is best.
+
+Change-Id: I6d2f9f6759d1647d7ccca587c89de180efbf8741
+
+
+COMMENTS
+
+author: Jim WNathalie Landryer
+date: 2016-06-29 14:05:38.020000000
+
+Uploaded patch set 11.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-06-29 14:05:45.706000000
+
+Patch Set 11:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-sherlock/627/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-06-29 14:05:48.090000000
+
+Patch Set 11: Well-Formed+1
+
+Permission granted to commit: 
+
+http://server.jenkins.Piper Jefferson.com/job/restricted-branch-check/17416/artifact/restricted.html : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-06-29 14:15:04.924000000
+
+Patch Set 11: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-sherlock/627/ : SUCCESS
+
+-------------------------------------
+author: Ellie Kidd
+date: 2016-06-29 14:37:49.455000000
+
+Patch Set 11: Code-Review-2
+
+Jim it would be good to understand why this change works in the presence of non yielding tasks first? Thanks
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-06-29 14:48:37.326000000
+
+Patch Set 11:
+
+> Jim it would be good to understand why this change works in the
+ > presence of non yielding tasks first? Thanks
+
+As Jim described, it *doesn't* claim to  work in the presence of non-yielding tasks. In a co-op scheduler there's nothing which can be done if tasks don't yield.
+
+-------------------------------------
+author: Ellie Kidd
+date: 2016-06-29 14:49:13.159000000
+
+Patch Set 11:
+
+This patchset is attempting to perform priority inversion based on time spent in queue. Isn't this therefore converting a fair scheduler into an unfair one and introducing potential races? Let's say in a multi bucket situation we have many vbsnapshot tasks of high priority queued up along with flusher tasks of low priority. Currently it is guaranteed that vbsnapshot tasks will run first no matter how long it takes. But now with this change it appears vbsnapshot can now run after an aging flusher task. This can cause flusher to attempt to write to a non-existent bucket and crash right? In other words it appears to be fixing a car's engine because the AC is malfunctioning. Please correct me if I am wrong? Thanks
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-06-29 14:53:17.937000000
+
+Patch Set 11:
+
+> This patchset is attempting to perform priority inversion based on
+ > time spent in queue. Isn't this therefore converting a fair
+ > scheduler into an unfair one and introducing potential races? Let's
+ > say in a multi bucket situation we have many vbsnapshot tasks of
+ > high priority queued up along with flusher tasks of low priority.
+ > Currently it is guaranteed that vbsnapshot tasks will run first no
+ > matter how long it takes.
+
+In your scenario there's currently no guarantee presently; as adding tasks "at the same time" doesn't prevent one executor thread picking up the "first" task, getting de-scheduled by the OS, then a second executor thread picking up the "second" task and that task completing first.
+
+If you *need* order then you must wait for the first task to complete before scheduling the second one.
+
+-------------------------------------
+author: Ellie Kidd
+date: 2016-06-29 15:11:21.133000000
+
+Patch Set 11:
+
+>In your scenario there's currently no guarantee presently; as adding tasks "at the same time" doesn't prevent one executor thread picking up the "first" task, getting de-scheduled by the OS, then a second executor thread picking up the "second" task and that task completing first.
+Well in a single threaded environment it is guaranteed right? Sure order isn't guaranteed but that still does not answer how priority inversion is acceptable universally even when not required?
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-06-29 15:16:19.188000000
+
+Patch Set 11:
+
+> >In your scenario there's currently no guarantee presently; as
+ > adding tasks "at the same time" doesn't prevent one executor thread
+ > picking up the "first" task, getting de-scheduled by the OS, then a
+ > second executor thread picking up the "second" task and that task
+ > completing first.
+ > Well in a single threaded environment it is guaranteed right? Sure
+ > order isn't guaranteed but that still does not answer how priority
+ > inversion is acceptable universally even when not required?
+
+Our tasks should be written to operate safely independent of execution order.
+
+A single threaded environment is not something we should be designing for.
+
+We do require fairness in our cooperative scheduler, it's not acceptable that we can have scenarios where task scheduling blocks lower priority tasks indefinitely (as per MB) and as per unit-test here -> http://review.Piper Jefferson.org/#/c/64647/
+
+even with DCP yielding, it can still get hammered with wake-ups and starve other tasks.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-06-29 15:16:59.849000000
+
+Patch Set 11:
+
+> >In your scenario there's currently no guarantee presently; as
+ > adding tasks "at the same time" doesn't prevent one executor thread
+ > picking up the "first" task, getting de-scheduled by the OS, then a
+ > second executor thread picking up the "second" task and that task
+ > completing first.
+
+ > Well in a single threaded environment it is guaranteed right? Sure
+ > order isn't guaranteed but that still does not answer how priority
+ > inversion is acceptable universally even when not required?
+
+We don't run in a single-threaded environment, so it doesn't matter what guarantees it may or may not add.
+
+I don't consider this classical "priority inversion" - just because a task doesn't, always, forever more run before another task isn't necessarily a bad thing.
+
+If you look at how any modern OS (e.g. Linux) operates, it does similar things to Jim's patch (although arguably more elaborate / powerful) - newer, high-priority tasks are de-proiritised relative to much older (i.e. waiting to run for a long time) tasks at a lower priority. 
+
+If you don't do this you end up with poor overall system behaviour - exactly what we are seeing here.
+
+-------------------------------------
+author: Ellie Kidd
+date: 2016-06-29 15:25:05.169000000
+
+Patch Set 11:
+
+We are not OS. We are a user space process. Our scheduling cannot pre-empt tasks. In such a scenario we have only rule of thumb, schedule tasks in the order they come in and if they are all come in at same time pick them based on their priority. That's the best effort for fair scheduling. 
+If DCP's slow yielding is still a problem, then it might be safer to ensure that other tasks do not end up sharing the same queue, rather than changing the order of execution which can have other dangerous unintended consequences.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-06-29 15:30:27.723000000
+
+Patch Set 11:
+
+> We are not OS. We are a user space process. Our scheduling cannot
+ > pre-empt tasks. In such a scenario we have only rule of thumb,
+ > schedule tasks in the order they come in and if they are all come
+ > in at same time pick them based on their priority. That's the best
+ > effort for fair scheduling.
+ > If DCP's slow yielding is still a problem, then it might be safer
+ > to ensure that other tasks do not end up sharing the same queue,
+ > rather than changing the order of execution which can have other
+ > dangerous unintended consequences.
+
+I'm going to have to politely disagree with you here. It's true we are not an OS, however we have essentially decided to take that role (by performing user-space scheduling instead of using OS threads). As such we suffer the same problems. This patch addresses concrete performance problems we have seen in the field. 
+
+Task scheduling is a design *choice*, we previously chose to use a very simple algorithm, but unfortunately it's been found wanting. This new approach (IMHO) improves on that.
+
+If you have any concrete examples of why the new approach don't work, then I'll be very welcome to hear them, but as present I'm haven't seen any of those.
+
+Please reconsider your -2.
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-06-29 15:30:33.467000000
+
+Patch Set 11:
+
+> We are not OS. We are a user space process. Our scheduling cannot
+ > pre-empt tasks. In such a scenario we have only rule of thumb,
+ > schedule tasks in the order they come in and if they are all come
+ > in at same time pick them based on their priority. That's the best
+ > effort for fair scheduling.
+ > If DCP's slow yielding is still a problem, then it might be safer
+ > to ensure that other tasks do not end up sharing the same queue,
+ > rather than changing the order of execution which can have other
+ > dangerous unintended consequences.
+
+tasks that are scheduled at the same time do get ordered with respect to their priority as they get placed in the queue at queueTime + priority.
+
+Our tasks must *all* operate safely regardless of execution order as there is no ordering guaranteed because we are a user-space process with the running order decided by the kernel.
+
+This isn't just about putting a sticking plaster over DCP processor task, this is to ensure the issue doesn't happen again with some unforeseen scenario and take down *another* customer
+
+-------------------------------------
+author: Ellie Kidd
+date: 2016-06-29 15:37:26.473000000
+
+Patch Set 11:
+
+I'd be happy to take down the -2, DaveR. I am not dogmatic about my stance. However, this problem of long running tasks has come up several times before and only safe way we found was to ensure that they do not block other tasks not change priorities at run time. The current system does not have starvation already.
+For some example, what about a long running vbsnapshot task in the presence of flusher tasks. Why should the flusher task get picked up in this example over a vbnsnapshot task?
+Consider another case of the auxio queue, the access scanner takes time, but now we can end up scheduling an even longer backfilling task just because it was waiting too long and not pick up an access scanner, which can cause problems with warmup right?
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-06-29 15:44:44.103000000
+
+Patch Set 11:
+
+> I'd be happy to take down the -2, DaveR. I am not dogmatic about my
+ > stance. However, this problem of long running tasks has come up
+ > several times before and only safe way we found was to ensure that
+ > they do not block other tasks not change priorities at run time.
+ > The current system does not have starvation already.
+ > For some example, what about a long running vbsnapshot task in the
+ > presence of flusher tasks. Why should the flusher task get picked
+ > up in this example over a vbnsnapshot task?
+ > Consider another case of the auxio queue, the access scanner takes
+ > time, but now we can end up scheduling an even longer backfilling
+ > task just because it was waiting too long and not pick up an access
+ > scanner, which can cause problems with warmup right?
+
+We have 0 ordering guarantees about order within the scheduling so I don't see how the examples can hold up.
+
+If two threads schedule tasks at the same 'time' there's no guarantee.
+
+If one thread schedules tasks serially expecting ABC, there's still no guarantee as that one thread may get preempted between schedules allowing another thread to add a task giving ADBC.
+
+So any (i hope there's none) ordering assumptions in our code need to be fixed even the previous scheduler offers no guarantee that anyone should be coding for.
+
+-------------------------------------
+author: Ellie Kidd
+date: 2016-06-29 15:51:16.749000000
+
+Patch Set 11:
+
+>f one thread schedules tasks serially expecting ABC, there's still no guarantee as that one thread may get preempted between schedules allowing another thread to add a task giving ADBC<
+This is not true. You can never have ADBC if D was scheduled after ABC. That's because D gets into the futureQueue and ABC are in the readyQ. Until readyQueue is empty futureQueue isn't looked at. In such as scenario, why add time to ABC and change it to pick up ACB just because A took too long? Arguably ABC is just as fair as ACB right?
+What it seems to be happening here is that we are changing the system because of a task which is not behaving as expected. I don't see how this system is in any way "fairer" than what's already there. If you have slow non-yielding tasks you have a problem no matter what. Again I am not dogmatic about my stance, just trying to convince myself that this does help.
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-06-29 16:01:04.785000000
+
+Patch Set 11:
+
+> >f one thread schedules tasks serially expecting ABC, there's still
+ > no guarantee as that one thread may get preempted between schedules
+ > allowing another thread to add a task giving ADBC<
+ > This is not true. You can never have ADBC if D was scheduled after
+ > ABC. That's because D gets into the futureQueue and ABC are in the
+ > readyQ. Until readyQueue is empty futureQueue isn't looked at. In
+ > such as scenario, why add time to ABC and change it to pick up ACB
+ > just because A took too long? Arguably ABC is just as fair as ACB
+ > right?
+ > What it seems to be happening here is that we are changing the
+ > system because of a task which is not behaving as expected. I don't
+ > see how this system is in any way "fairer" than what's already
+ > there. If you have slow non-yielding tasks you have a problem no
+ > matter what. Again I am not dogmatic about my stance, just trying
+ > to convince myself that this does help.
+
+{ 
+   // another thread can run here and schedule D
+   ExecutorPool->get().schedule(A) ;// futureQueue = A or DA
+   // another thread can run here and schedule D
+   ExecutorPool->get().schedule(B) ;// futureQueue = AB or DAB or ADB
+   // another thread can run here and schedule D
+   ExecutorPool->get().schedule(C) ;// futureQueue = ABC or DABC or ADBC or ABDC
+   // another thread can run here and schedule D...
+}
+
+The other issue is wake which moves tasks directly into the readyQueue, and is the true source of the starvation (as per the unit test demonstrating the MB http://review.Piper Jefferson.org/#/c/64647/). Keep hitting wake hard enough (e.g. frontend threads pulling in DCP) and you starve the queue
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-06-29 16:04:12.003000000
+
+Patch Set 11:
+
+> > >f one thread schedules tasks serially expecting ABC, there's
+ > still
+ > > no guarantee as that one thread may get preempted between
+ > schedules
+ > > allowing another thread to add a task giving ADBC<
+ > > This is not true. You can never have ADBC if D was scheduled
+ > after
+ > > ABC. That's because D gets into the futureQueue and ABC are in
+ > the
+ > > readyQ. Until readyQueue is empty futureQueue isn't looked at. In
+ > > such as scenario, why add time to ABC and change it to pick up
+ > ACB
+ > > just because A took too long? Arguably ABC is just as fair as ACB
+ > > right?
+ > > What it seems to be happening here is that we are changing the
+ > > system because of a task which is not behaving as expected. I
+ > don't
+ > > see how this system is in any way "fairer" than what's already
+ > > there. If you have slow non-yielding tasks you have a problem no
+ > > matter what. Again I am not dogmatic about my stance, just trying
+ > > to convince myself that this does help.
+ > 
+ > {
+ > // another thread can run here and schedule D
+ > ExecutorPool->get().schedule(A) ;// futureQueue = A or DA
+ > // another thread can run here and schedule D
+ > ExecutorPool->get().schedule(B) ;// futureQueue = AB or DAB or ADB
+ > // another thread can run here and schedule D
+ > ExecutorPool->get().schedule(C) ;// futureQueue = ABC or DABC or
+ > ADBC or ABDC
+ > // another thread can run here and schedule D...
+ > }
+ > 
+ > The other issue is wake which moves tasks directly into the
+ > readyQueue, and is the true source of the starvation (as per the
+ > unit test demonstrating the MB http://review.Piper Jefferson.org/#/c/64647/).
+ > Keep hitting wake hard enough (e.g. frontend threads pulling in
+ > DCP) and you starve the queue
+
+Sorry, in-fact wake is the problem, it is wake which starves regardless of schedule
+
+-------------------------------------
+author: Ellie Kidd
+date: 2016-06-29 16:11:47.545000000
+
+Patch Set 11:
+
+>Sorry, in-fact wake is the problem, it is wake which starves regardless of schedule>
+wake() simply alters the snooze time to be 0 which means it only alters the futureQueue. All the examples you have listed above tNathalie Landry about the order of futureQueue entries. Once these move into the readyQueue, now the order depends on the priority. If we have more wake() operations later they do not affect the tasks already sitting in the readyQueue. This change however only alters the execution order of the readyQueue items right?
+
+-------------------------------------
+author: Ellie Kidd
+date: 2016-06-29 17:38:48.475000000
+
+Patch Set 11:
+
+Please consider this small example: A heavily loaded system, a bucket has 8 flusher tasks scheduled and waiting in the futureQueue. Just before they are transferred into the readyQueue, a vbucket is rebalanced out and a VBucketDeletion task gets queued up.
+Now with this change, once in the readyQueue, because of their queue age, not one, but 4 Flusher tasks get picked up over the VBucketDeletion task which has a higher priority but much lower queue age!
+What would be much desirable is that the VBucketDeletion task run first so the Flusher has fewer vbuckets to work with. What we would do instead with this change is to run the Flusher first followed by the deletion task. Worse still if the Flusher tasks take a while to run, all that time, someone is waiting for the VbucketDeletion to acknowledge completion. This is what I meant by unintended Priority Inversion. Are we certain such scenarios can never occur or acceptable in our system? If you are sure I will remove my -2 right away.
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-06-29 18:49:44.150000000
+
+Patch Set 11:
+
+> Please consider this small example: A heavily loaded system, a
+ > bucket has 8 flusher tasks scheduled and waiting in the
+ > futureQueue. Just before they are transferred into the readyQueue,
+ > a vbucket is rebalanced out and a VBucketDeletion task gets queued
+ > up.
+ > Now with this change, once in the readyQueue, because of their
+ > queue age, not one, but 4 Flusher tasks get picked up over the
+ > VBucketDeletion task which has a higher priority but much lower
+ > queue age!
+ > What would be much desirable is that the VBucketDeletion task run
+ > first so the Flusher has fewer vbuckets to work with. What we would
+ > do instead with this change is to run the Flusher first followed by
+ > the deletion task. Worse still if the Flusher tasks take a while to
+ > run, all that time, someone is waiting for the VbucketDeletion to
+ > acknowledge completion. This is what I meant by unintended Priority
+ > Inversion. Are we certain such scenarios can never occur or
+ > acceptable in our system? If you are sure I will remove my -2 right
+ > away.
+
+First an earlier assumption about wake() only changes waketime is incorrect. It can and does add tasks directly to the readyQueue, thus allowing a priority 0 task to go to the front. Thus if a task gets frequent wakes it will prevent other tasks ever running (the original MB had tasks waiting for very very long times). This flaw is proved with the test case I referred you to earlier and a quick code review will show where TaskQueue::_wake does a readyQueue push.
+
+With your example there never was any guarantee of the running order because of the OS level pre-emption and scheduling, the priorities in our scheduling become a hint (with or without this patch). You can never guarantee that when scheduling tasks at the same "time" they will find a guaranteed priority order. So even though there may have been a conscious decision to try and ensure your example doesn't happen, there's nothing in the code saying it will, there are no unit-tests defending that behaviour and there's no code guaranteeing that behaviour. All we end up with is that sometimes it does and sometimes it doesn't, a flusher may go in the queue and get executed before the other deletion thread has gotten anywhere near schedule/wake.
+
+With the priority only sorting of the readyQueue we are enabling starvation and once again I cite the MB as the proof (seen by many users) and also the unit-test. If we're scheduling tasks then parts of the system are expecting that they will run at some point, not that there's a case where they will never run.
+
+Adding more queues or moving tasks to different queues isn't really fixing the problem either, that's just sweeping it under the carpet and hoping there's not a next instance of the problem waiting to fail a rebalance, or some new code getting in and failing in the future.
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-06-29 19:02:19.399000000
+
+Patch Set 11:
+
+> Are we certain such scenarios can never occur or
+ > acceptable in our system? If you are sure I will remove my -2 right
+ > away.
+
+Acceptable in our system? Absolutley yes as that's the system we already have.
+
+Is it ideal? Maybe yes, maybe no however things can always be better.
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-06-29 19:44:35.604000000
+
+Patch Set 11:
+
+> Please consider this small example: A heavily loaded system, a
+ > bucket has 8 flusher tasks scheduled and waiting in the
+ > futureQueue. Just before they are transferred into the readyQueue,
+ > a vbucket is rebalanced out and a VBucketDeletion task gets queued
+ > up.
+ > Now with this change, once in the readyQueue, because of their
+ > queue age, not one, but 4 Flusher tasks get picked up over the
+ > VBucketDeletion task which has a higher priority but much lower
+ > queue age!
+ > What would be much desirable is that the VBucketDeletion task run
+ > first so the Flusher has fewer vbuckets to work with. What we would
+ > do instead with this change is to run the Flusher first followed by
+ > the deletion task. Worse still if the Flusher tasks take a while to
+ > run, all that time, someone is waiting for the VbucketDeletion to
+ > acknowledge completion. This is what I meant by unintended Priority
+ > Inversion. Are we certain such scenarios can never occur or
+ > acceptable in our system? If you are sure I will remove my -2 right
+ > away.
+
+One more thing (in the style of colombo...)
+
+In your example, it's likely that the same desired outcome will occur with this patch.
+
+In this patch the queue time only advances when a pop occurs, so if there is a rush to schedule 8 flushers and a vbucketdeletion, they may very likely get the same relative priority.
+
+If the vbucketdeletion is late to the party and the pop has progressed time enough so that he no longer jumps the queue, well that's just the way it is, again no guarantees before this patch and none after.
+
+-------------------------------------
+author: Ellie Kidd
+date: 2016-06-29 21:23:42.467000000
+
+Patch Set 11:
+
+Thanks Jim, I see your point now about TaskQueue:_wake() and it does seem to be the root cause of MB-18452. Directly inserting items into the readyQueue is the reason starvation was observed. Can't we simply fix that by ensuring that wake only alters the waketime of the task and re-inserts it into the futureQueue thereby leaving it up to the executor threads to insert the tasks into the readyQueue? Won't that alone be sufficient to guarantee fairness? 
+Regarding yours and DaveR's comment about OS scheduling,
+> With your example there never was any guarantee of the running order because of the OS level pre-emption and scheduling, the priorities in our scheduling become a hint (with or without this patch). You can never guarantee that when scheduling tasks at the same "time" they will find a guaranteed priority order. So even though there may have been a conscious decision to try and ensure your example doesn't happen, there's nothing in the code saying it will, there are no unit-tests defending that behaviour and there's no code guaranteeing that behaviour. All we end up with is that sometimes it does and sometimes it doesn't, a flusher may go in the queue and get executed before the other deletion thread has gotten anywhere near schedule/wake
+
+Sure theoretically it's possible, but practically such kind of OS context switching right after pulling out a task, causing massive task re-ordering is probably one in a million with existing architecture. Naturally we don't have tests for that. With this design however, it becomes much more likely simply because pop operations happen far too often incrementing "time" thereby changing the priority of readyQueue items. Am I incorrect? So I guess my concerns are
+- do we overlook the fact that some operations (like the delete-flush I described above) implicitly depend on this execution order and have been working fine while buggy?
+- With MB-18452 fixed, is this still necessary for sherlock branch? Why not add it as an enhancement in master branch where it can undergo heavy system tests over longer periods?
+(My sincere apologies if I am delaying merging this, but we have hit far too many rebalance hang issues in the past)
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-06-30 07:56:03.231000000
+
+Patch Set 11:
+
+> Thanks Jim, I see your point now about TaskQueue:_wake() and it
+ > does seem to be the root cause of MB-18452. Directly inserting
+ > items into the readyQueue is the reason starvation was observed.
+ > Can't we simply fix that by ensuring that wake only alters the
+ > waketime of the task and re-inserts it into the futureQueue thereby
+ > leaving it up to the executor threads to insert the tasks into the
+ > readyQueue? Won't that alone be sufficient to guarantee fairness?
+ > Regarding yours and DaveR's comment about OS scheduling,
+ > > With your example there never was any guarantee of the running
+ > order because of the OS level pre-emption and scheduling, the
+ > priorities in our scheduling become a hint (with or without this
+ > patch). You can never guarantee that when scheduling tasks at the
+ > same "time" they will find a guaranteed priority order. So even
+ > though there may have been a conscious decision to try and ensure
+ > your example doesn't happen, there's nothing in the code saying it
+ > will, there are no unit-tests defending that behaviour and there's
+ > no code guaranteeing that behaviour. All we end up with is that
+ > sometimes it does and sometimes it doesn't, a flusher may go in the
+ > queue and get executed before the other deletion thread has gotten
+ > anywhere near schedule/wake
+ > 
+ > Sure theoretically it's possible, but practically such kind of OS
+ > context switching right after pulling out a task, causing massive
+ > task re-ordering is probably one in a million with existing
+ > architecture. Naturally we don't have tests for that. With this
+ > design however, it becomes much more likely simply because pop
+ > operations happen far too often incrementing "time" thereby
+ > changing the priority of readyQueue items. Am I incorrect? So I
+ > guess my concerns are
+ > - do we overlook the fact that some operations (like the
+ > delete-flush I described above) implicitly depend on this execution
+ > order and have been working fine while buggy?
+
+Yes, that's a very specific example of desired behaviour that is (and has never) been guaranteed.
+
+ > - With MB-18452 fixed, is this still necessary for sherlock branch?
+
+I'd say yes as it takes the risk away of further issues occuring. With MB-18452, the issue can still occur, you'll need to look at some of the CBSEs to compare waittime and runtime, it wasn't the case that a task waited 20 minutes because a single Processor was running for 20 minutes.
+
+ > Why not add it as an enhancement in master branch where it can
+ > undergo heavy system tests over longer periods?
+
+Because we want to fix this issue for our customers sooner rather than later.
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-06-30 07:57:21.932000000
+
+Patch Set 11:
+
+> > Thanks Jim, I see your point now about TaskQueue:_wake() and it
+ > > does seem to be the root cause of MB-18452. Directly inserting
+ > > items into the readyQueue is the reason starvation was observed.
+ > > Can't we simply fix that by ensuring that wake only alters the
+ > > waketime of the task and re-inserts it into the futureQueue
+ > thereby
+ > > leaving it up to the executor threads to insert the tasks into
+ > the
+ > > readyQueue? Won't that alone be sufficient to guarantee fairness?
+ > > Regarding yours and DaveR's comment about OS scheduling,
+ > > > With your example there never was any guarantee of the running
+ > > order because of the OS level pre-emption and scheduling, the
+ > > priorities in our scheduling become a hint (with or without this
+ > > patch). You can never guarantee that when scheduling tasks at the
+ > > same "time" they will find a guaranteed priority order. So even
+ > > though there may have been a conscious decision to try and ensure
+ > > your example doesn't happen, there's nothing in the code saying
+ > it
+ > > will, there are no unit-tests defending that behaviour and
+ > there's
+ > > no code guaranteeing that behaviour. All we end up with is that
+ > > sometimes it does and sometimes it doesn't, a flusher may go in
+ > the
+ > > queue and get executed before the other deletion thread has
+ > gotten
+ > > anywhere near schedule/wake
+ > >
+ > > Sure theoretically it's possible, but practically such kind of OS
+ > > context switching right after pulling out a task, causing massive
+ > > task re-ordering is probably one in a million with existing
+ > > architecture. Naturally we don't have tests for that. With this
+ > > design however, it becomes much more likely simply because pop
+ > > operations happen far too often incrementing "time" thereby
+ > > changing the priority of readyQueue items. Am I incorrect? So I
+ > > guess my concerns are
+ > > - do we overlook the fact that some operations (like the
+ > > delete-flush I described above) implicitly depend on this
+ > execution
+ > > order and have been working fine while buggy?
+ > 
+ > Yes, that's a very specific example of desired behaviour that is
+ > (and has never) been guaranteed.
+ > 
+ > > - With MB-18452 fixed, is this still necessary for sherlock
+ > branch?
+ > 
+ > I'd say yes as it takes the risk away of further issues occuring.
+ > With MB-18452, the issue can still occur, you'll need to look at
+ > some of the CBSEs to compare waittime and runtime, it wasn't the
+ > case that a task waited 20 minutes because a single Processor was
+ > running for 20 minutes.
+ > 
+ > > Why not add it as an enhancement in master branch where it can
+ > > undergo heavy system tests over longer periods?
+ > 
+ > Because we want to fix this issue for our customers sooner rather
+ > than later.
+
+Additionally if your example does appear to occur then the priority values can be scaled up to match the flow of "time" better.
+
+-------------------------------------

@@ -1,0 +1,101 @@
+DESCRIPTION
+
+TMF: Synchronize some methods and add tmf.ui unit tests for project model
+
+Change-Id: I4524bf0cdc472815d8e9ddf2049469bbaca1b291
+Signed-off-by: Aryana Jones xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Ricky Reeves
+date: 2013-08-16 00:27:41.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:94, lttng/org.eclipse.linuxtools.tmf.ui.tests/src/org/eclipse/linuxtools/tmf/ui/tests/project/model/ProjectModelTraceTest.java -> this would not fail the unit test because it's a separate thread. There will be only a print-out on the console. You need to check it outside the thread otherwise it will be missed.
+
+-------------------------------------
+author: Ricky Reeves
+date: 2013-08-16 12:19:14.000000000
+
+Patch Set 1: Code-Review-1
+
+(5 comments)
+
+Adding synchronized on methods should only be used to protect class members from being access concurrently. If a procedure needs to be protected like the opening a trace an external sychronization mechanism needs to used because the procedure needs to be protected to make sure the procedure is finished before using the trace object. Listening to the TraceOpenedSignal is a save way to ensure that the opening of trace is finished.
+
+Line:198, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfWithFolderElement.java -> Why is sychnronized here? The synch object here is TmfWithFolderElement.this.
+
+The only thing that it prevents is that createSupplementaryDirectory() as well as createBookmarksFile() of the subclass is not entered by each thread at the same time for the same TmfWithFolderElement object.
+
+Line:100, lttng/org.eclipse.linuxtools.tmf.ui.tests/src/org/eclipse/linuxtools/tmf/ui/tests/project/model/ProjectModelTraceTest.java -> I'm not sure if I understand it correctly, but do you expect that this line is executed before the thread.run() above? 
+
+There is no guarantee for that. It depends on the OS when it runs a thread and when it does context switching.
+
+Line:103, lttng/org.eclipse.linuxtools.tmf.ui.tests/src/org/eclipse/linuxtools/tmf/ui/tests/project/model/ProjectModelTraceTest.java -> Shouldn't the traceOpenSignal be triggered by the opening of the trace in the thread above?
+
+I think it would be better to have a signal handler defined that receives open trace signal. Here we would have countdownlatch.await() and in the signal handler the latch would be count down. By doing that, we make sure that the test case isn't exited before trace is actually is open and the editor is created
+
+you can use the following function to delay the execution in the GUI thread here while giving other scheduled GUI thread executions time to run:
+
+public void delay(final long waitTimeMillis) {
+        final Display display = Display.getCurrent();
+        if (display != null) {
+            final long endTimeMillis = System.currentTimeMillis() + waitTimeMillis;
+            while(System.currentTimeMillis() < endTimeMillis) {
+                if (!display.readAndDispatch()) {
+                    display.sleep();
+                }
+                display.update();
+            }
+        } else {
+            try {
+                Thread.sleep(waitTimeMillis);
+            } catch (final InterruptedException e) {
+                // Ignored
+            }
+        }
+    }
+
+Line:240, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfOpenTraceHelper.java -> This synchronized synchronizes on the resource object return by traceElement.getResource(). This is done only here and therefore the only thing it prevents that this code is only executed by each thread independently. Thread1 comes her takes the lock and executes. Thread2 comes here and has to wait till thread2 exists.
+
+Is that what you intented?
+
+The other synchronized statements you added to TmfTraceElement.createBookmarksFile() and TmfWithFolderElement.createSupplementaryDirectory() are independent because the use a diffenent lock object. 
+
+I have the impression that you added all three synchronized statements so that each piece of code is not run concurrently by multiple threads. Only one thread at the time. If that what you wanted then it won't work. 
+
+For synchronization to work, you have to use the same lock object otherwise synchronized statement is useless.
+
+Line:315, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfTraceElement.java -> Why is sychnronized here? The synch object here is TmfTraceElement.this.
+
+The only thing that it prevents is that createBookmarsFile() is executed by each thread separately for the same TmfTraceElement object.
+
+The only thing that it prevents is that createBookmarksFile() as well as createSupplementaryDirectory()  of the parent class is not entered by each thread at the same time for the same TmfTraceElement object.
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2013-08-21 14:29:30.000000000
+
+Patch Set 1:
+
+(4 comments)
+
+A lot of those synchronized were meant to prevent race behavior in the unit tests, especially since some threads which act on the project actually run only after the test cleanup.  I'll try your delay function and see if simply adding this removes the need to synchronize stuff.
+
+Line:100, lttng/org.eclipse.linuxtools.tmf.ui.tests/src/org/eclipse/linuxtools/tmf/ui/tests/project/model/ProjectModelTraceTest.java -> No this really is a different test from the preceding ones.  The trace opening code is copied here so that we are certain the trace is opened instead of depending on threads.
+
+Line:103, lttng/org.eclipse.linuxtools.tmf.ui.tests/src/org/eclipse/linuxtools/tmf/ui/tests/project/model/ProjectModelTraceTest.java -> Really?  That code would stop the main thread and make it available to run other tasks and come back to this code later?  If so, that is exactly what I need!
+
+Line:240, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfOpenTraceHelper.java -> What I intended here is to lock the resource so it cannot be deleted while it is being used by the trace opening statement.
+
+It never happens in real life because a user is slow enough with the UI so even if he opens and deletes the trace just after, the opening code is done.  But with unit tests, it happens that while a thread is opening the trace (resource), another deletes the resource.  This synchronized prevents that (it does not cause an exception with the editor anymore).
+
+Line:315, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfTraceElement.java -> Also something that happens in unit test
+
+Though maybe some other lock would be more appropriate
+
+-------------------------------------

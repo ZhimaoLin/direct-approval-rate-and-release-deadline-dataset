@@ -1,0 +1,140 @@
+DESCRIPTION
+
+Fix recognition of submodules in folders.
+
+Most of the basic plumbing for this was already in place, but it looks
+as if the implementation was never really finished. For instance,
+GitProjectData is prepared to record RepositoryMApping on container
+level, not just for projects. The feature was just not used, and many
+places in EGit make assumptions that imply that a project is fully
+within one repository. This is a first commit to get rid of this
+assumption, and to properly deal with submodules that exist only as
+folders in the Eclipse workspace.
+
+Augment the already existing resource change listener in GitProjectData
+to also handle additions of DOT_GIT resources. In that way it'll pick
+up submodules as they appear in the Eclipse resource tree.
+
+RepositoryMapping.getMapping(IResource) must consider mappings
+entered for folders below the project level. One mustn't jump directly
+to project level; that will skip any submodules that might have been
+applicable.
+
+StagingView: no need anymore to use a submodule walk. The
+RepositoryMapping for any resource will point to the correct
+repository, even if it's a submodule. Not using a submodule walk also
+avoids problem with the walk returning non-normalized git directory
+paths that may contain ".." segments, while our RepositoryCache uses
+normalized paths. This might lead to us having two versions of the
+same repo in the cache, and listening for index diff changes on one
+wouldn't trigger on the other.
+
+GitResourceDeltaVisitor: must descend into folders even if the
+repository doesn't match on project level. Otherwise submodules are not
+updated.
+
+For scheduling rule calculation, it is not sufficient to search for
+projects in the repository's working directory. One also needs to
+include projects containing the repository working directory.
+
+Deprecated:
+* RepositoryMapping.getSubmoduleRepository(IResource)
+
+Also changed some uses of RepositoryMapping.getMapping(IProject) to
+RepositoryMapping.getMapping(IResource). I'd like to have deprecated
+the project variant, but this needs more careful analysis of the
+remaining places its used.
+
+Properly adding submodule mappings and considering them fixes at least
+bug 446344, comment 11. Also related is bug 401556, though that was
+reported for the behavior in the Repositories view, which isn't fixed by
+this commit yet. However, a selection in the project explorer for a
+folder belonging to a submodule showed the same erroneous behavior.
+
+New tests added.
+
+Bug: 446344
+Bug: 401556
+Change-Id: I4caa06113b5280114a7816f2c3932711b2fedf08
+Signed-off-by: Alayna Houston xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Alayna Houston
+date: 2016-02-23 22:40:20.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-02-23 22:54:29.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/8171/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-02-23 22:59:38.000000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/8171/ : ABORTED
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2016-02-24 07:50:37.000000000
+
+Patch Set 2:
+
+(4 comments)
+
+this is a great improvement, thanks for working on this
+
+decorators (e.g. in package explorer and dirty marker in repositories view) don't get updated when modifying a class located in a submodule, refreshing the staging view fixes that, looks like some event goes unnoticed
+
+Line:1, org.eclipse.egit.ui.test/src/org/eclipse/egit/ui/internal/submodules/SubmoduleFolderTest.java -> missing license header
+
+Line:11, /COMMIT_MSG -> s/RepositoryMApping/RepositoryMapping/
+
+Line:32, /COMMIT_MSG -> s/This might lead to us having/This may yield/
+
+Line:58, /COMMIT_MSG -> Added new tests ?
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-02-24 21:54:32.000000000
+
+Patch Set 2:
+
+(4 comments)
+
+Line:1, org.eclipse.egit.ui.test/src/org/eclipse/egit/ui/internal/submodules/SubmoduleFolderTest.java -> Done in PS 6
+
+Line:11, /COMMIT_MSG -> Done in PS 6
+
+Line:32, /COMMIT_MSG -> Done in PS 6
+
+Line:58, /COMMIT_MSG -> Done in PS 6
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-02-24 21:56:04.000000000
+
+Patch Set 2:
+
+> decorators (e.g. in package explorer and dirty marker in
+ > repositories view) don't get updated
+
+Fixed in PS 6 (and tested for, too).
+
+-------------------------------------
+author: Gerrit Johnathan Pham
+date: 2016-02-25 23:41:39.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

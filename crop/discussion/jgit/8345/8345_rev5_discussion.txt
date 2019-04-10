@@ -1,0 +1,176 @@
+DESCRIPTION
+
+RevWalk-support for shallow clones.
+
+StartGenerator now processes .git/shallow to have the
+RevWalk stop for shallow commits.
+
+Change-Id: Ia5af1dab3fe9c7888f44eeecab1e1bcf2e8e48fe
+
+
+COMMENTS
+
+author: Saniya Hill
+date: 2012-10-26 17:28:54.000000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-10-26 17:29:00.000000000
+
+Patch Set 5:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2427/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-10-26 17:34:24.000000000
+
+Patch Set 5: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2427/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2012-10-26 18:05:32.000000000
+
+Patch Set 5: I would prefer that you didn't submit this
+
+(3 inline comments)
+
+
+
+Line:941, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/RevWalk.java -> I would suggest just doing this in the constructor, and in dispose, rather than before each commit is processed.
+
+Line:64, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/FileObjectDatabase.java -> Unnecessary blank line
+
+Line:633, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/ObjectDirectory.java -> This is a bit shorter:
+
+  while ((line = reader.readLine()) != null)
+    ids.add(ObjectId.fromString(line));
+  return ids;
+
+-------------------------------------
+author: Saniya Hill
+date: 2012-10-26 18:22:53.000000000
+
+Patch Set 5: (1 inline comment)
+
+
+
+Line:941, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/RevWalk.java -> This would require to add IOException to the constructor, what I wanted to avoid. So let's stay with this solution?
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2012-10-26 18:25:31.000000000
+
+Patch Set 5: (1 inline comment)
+
+
+
+Line:941, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/RevWalk.java -> The problem is you have added this new method call, field load and conditional test into the critical code path used during iteration. So its going to slow every commit down slightly to check if we have initialized this object. Which we most certainly have done if we are already returning results to the caller.
+
+-------------------------------------
+author: Saniya Hill
+date: 2012-10-26 18:37:13.000000000
+
+Patch Set 5: (1 inline comment)
+
+
+
+Line:941, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/RevWalk.java -> I tend to disagree: everyone using RevWalk is possibly affected by introducing IOException in constructor (definitely many occurrences in jgit). On the other hand, the overhead compared to the remaining functionality is minimal:
+
+		final long start = System.currentTimeMillis();
+		for (int index = 0; index < 1000000; index++) {
+			initializeShallowCommits();
+		}
+		final long stop = System.currentTimeMillis();
+		System.out.println((stop - start) + "ms.");
+
+outputs "3ms" and "4ms" on my average powered laptop.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2012-10-26 19:01:07.000000000
+
+Patch Set 5: (8 inline comments)
+
+
+
+Line:390, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/RevWalk.java -> Not necessary here.
+
+Line:424, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/RevWalk.java -> Not necessary here.
+
+Line:733, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/RevWalk.java -> Not necessary here. Its handled within parseAny.
+
+Line:835, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/RevWalk.java -> This needs to be rewritten. The init may have created the RevCommit, so you can't create it again. Instead say:
+
+  RevCommit c;
+  if (initShallow) {
+    c = createCommit(id);
+  } else {
+    initShallow();
+    c = lookupCommit(id);
+  }
+
+Line:941, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/RevWalk.java -> Arrrrrgh. You are right, we don't have a good way to get the shallow file loaded in by the constructor without risking the exception being tossed or forced into a RuntimeException. Robin was running into a similar problem with grafts.
+
+I disagree with your method invocation sites. The initializeShallowCommits needs to be before we probe the objects map with objects.get() as it inserts commit objects for us. The commit it inserts might be the one we are trying to create.
+
+This particular line isn't necessary. The init was handled by parseNew on the first commit being parsed.
+
+Line:979, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/RevWalk.java -> We may need a check here:
+
+  if ((obj.flags & PARSED) == 0) {
+    if (obj instanceof RevCommit && !initShallow)
+      initShallow();
+    obj.parseHeaders(this);
+  }
+
+This catches cases where the application did lookupCommit() and then later calls parseAny or parseHeaders on them.
+
+Line:997, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/RevWalk.java -> Same problem as parseHeaders.
+
+Line:1335, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/RevWalk.java -> This could be shorter:
+
+  for (ObjectId id : reader.getShallowCommits())
+    lookupCommit(id).parents = RevCommit.NO_PARENTS;
+
+Using the static array we already have will a tiny amount of memory, as we aren't making new instances on every shallow commit.
+
+-------------------------------------
+author: Saniya Hill
+date: 2012-10-29 15:39:04.000000000
+
+Patch Set 5: (10 inline comments)
+
+
+
+Line:390, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/RevWalk.java -> Done
+
+Line:424, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/RevWalk.java -> Done
+
+Line:733, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/RevWalk.java -> Done
+
+Line:835, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/RevWalk.java -> Not necessary anymore
+
+Line:941, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/RevWalk.java -> When trying with your suggested invocation sites, RevWalkShallowTest were failing as initializeShallowCommits was never called. I've moved this invocation now to the RevCommit.parseCanonical as this is the only site where RevCommit.parents of new commits are assigned (AFAIU the other sites where RevCommit.parents are assigned can't be affected by shallow commits). It's a less error-prone construction than having multiple calls and the overhead of:
+
+if (!walk.shallowCommitsInitialized)
+
+should be acceptable.
+
+Line:979, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/RevWalk.java -> Not necessary anymore
+
+Line:997, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/RevWalk.java -> Not necessary anymore
+
+Line:1335, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/RevWalk.java -> Done
+
+Line:64, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/FileObjectDatabase.java -> Done
+
+Line:633, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/ObjectDirectory.java -> Done
+
+-------------------------------------

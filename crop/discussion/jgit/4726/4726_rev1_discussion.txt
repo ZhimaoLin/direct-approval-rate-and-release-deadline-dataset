@@ -1,0 +1,151 @@
+DESCRIPTION
+
+Fix broken TagCommand API
+
+Tags can be un-annotated whereby there is no RevTag object, only
+a ref pointing to the tagged object.
+
+Bug: 360650
+Change-Id: I06309c45c0a896fe2a0a874700febf78c9fb87e8
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2011-12-03 11:06:42.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1111/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-12-03 11:09:52.000000000
+
+Patch Set 1: Build Successful
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1111/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2011-12-05 23:46:29.000000000
+
+Patch Set 1:
+
+Did you see Shawn's comment in http://egit.eclipse.org/r/#patch,unified,4346,1,org.eclipse.jgit.test/tst/org/eclipse/jgit/api/TagCommandTest.java ?
+
+-------------------------------------
+author: Juliet Cantu
+date: 2011-12-07 22:49:23.000000000
+
+Patch Set 1:
+
+Nope, didn't see that. I picked up the issue from Bugzilla.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2011-12-07 22:51:41.000000000
+
+Patch Set 1:
+
+We can add a fixed-up version of Tomasz test case to master once this is merged and rely on manual testing in between.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2011-12-08 16:06:59.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:109, org.eclipse.jgit/src/org/eclipse/jgit/api/TagCommand.java -> Is Ref the right type here? Shouldn't we introduce a type which can hold lightweight and annotated tags. Like Shawn suggested in http://egit.eclipse.org/r/#patch,unified,4346,1,org.eclipse.jgit.test/tst/org/eclipse/jgit/api/TagCommandTest.java
+If we don't introduce it then the user of this API has to care for the details (checking that the ref is under 'refs/tags', differentiate between the different types of tags). Since this belongs to the public API we should get it right in the first shot.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-12-08 16:26:14.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(1 inline comment)
+
+
+
+Line:109, org.eclipse.jgit/src/org/eclipse/jgit/api/TagCommand.java -> Yup, I agree with Christian here. We need a new tag object for both lightweight and annotated tag data to return in the API package.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2011-12-10 00:53:56.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:109, org.eclipse.jgit/src/org/eclipse/jgit/api/TagCommand.java -> This is already the second attempt. I think a Ref is good enough. It's easy to convert to an object once you get it, but
+it may be any object type actually. Once you resolve the Ref you get to see what it is and handle it, should you care. In
+most cases I don't think you do, it's just a name. Whether we
+have a special type here or not makes no difference in the
+amount of work the caller has to do. The reality behind tags
+aren't very complicated and abstracting things too much is
+not very good and in this case doesn't simplify anything. It will just give us an extra object and class to handle.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2011-12-12 22:42:07.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:109, org.eclipse.jgit/src/org/eclipse/jgit/api/TagCommand.java -> Annotated tags have special attributes (taggerIdents, message) which I may want to process. How would you write code which list's all annotated tags which are tagged by a person X? The TagCommand.call() method would instantiate all the RevTag objects I need to get to this data, but you throw that info away and give me refs instead. As a caller I have to use RevWalks now to distinguish which of the refs you gave me are annotated tags and then to recreate these RevTag objects, or?
+
+-------------------------------------
+author: Juliet Cantu
+date: 2011-12-14 07:26:01.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:109, org.eclipse.jgit/src/org/eclipse/jgit/api/TagCommand.java -> Yes. Most listing of tags wants the names only, so should be parse the RevTag regardless? Isn't that the opposite of what we
+are trying to do elsewhere, i.e. don't do things the caller didn't ask for. An yes, you have to examine what you get so we don't have
+to do unnecessary work unless you really want the information and regardless of how we design this you have to check whether is an annotated tag and what kind of object it points to etc. If you try to abstract a type you'll wind up with something very close to a Ref anyway. 
+
+I suppose we could play we subclasses of Ref, but I doubt that will help. 
+
+An option could be to the the command to preparse the objectId
+in the ref so you could cast, but you still need to check the type before casting since it could be any type.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2011-12-20 10:00:45.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:109, org.eclipse.jgit/src/org/eclipse/jgit/api/TagCommand.java -> The GitAPI was meant as a high-level API. It is for developers willing to sacrifice performance in order to get an API which offers exactly the same methods as native-git commandline commands. Who don't want this penalty should use our tradiditional API (Repository, ..:Walk, DirCacheCheckout,....).
+
+For such an API I find it ok that if I explicitly create a tag that I get back something tag specific. There are quite some use-cases where I have handle tags differently from other refs. Tags can point to other tags or even to other object types while e.g. branches always point to commits. If I want to know the commit a tag is pointing too (I very common use case I guess) I do that in a tag specific way. Reasons enough for me to introduce a type representing all our tags in our high-level API. Especially when I look at ListTagCommand.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2011-12-21 06:49:29.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:109, org.eclipse.jgit/src/org/eclipse/jgit/api/TagCommand.java -> Be my guest. I don't see the need, so I'm not qualified.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2012-03-09 11:05:02.000000000
+
+Patch Set 1: Abandoned
+
+Moved to master
+
+-------------------------------------

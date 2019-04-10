@@ -1,0 +1,99 @@
+DESCRIPTION
+
+MB-24291 Delete pidfile on graceful shutdown
+
+Due to the requirements of the System V init scripts on Centos 6 and other
+allied platforms  we write the pid of the couchbbase server to the
+couchbase-server.pid file. This file is not deleted on graceful shutdown on
+the couchbase server.
+In order to fix this we spawn a new process during init of the ns_server_sup
+which is tasked only with waiting for an exit signal when the parent is in
+the process of terminating and deleting the pidfile when it receives
+the signal. We do this only on the affected platforms.
+
+Change-Id: I5aa58e7aa21600ef48af7b7fd34eeaaf4eda44e1
+
+
+COMMENTS
+
+author: Alexander Wagner
+date: 2017-05-17 23:05:51.342000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2017-05-18 01:26:26.378000000
+
+Patch Set 1:
+
+The pidfile creation code is sitting in ns_server mainly for historical reasons. In fact, it's probably not entirely correct to store the pid of ns_server vm. The pid file is used by the init script to check the status of the server. So if ns_server vm is in the middle of restart, init script might incorrectly believe that the server is not running.
+
+So we should probably move all of this to the babysitter. You can put the pid file creation into ns_babysitter_bootstrap:start/0 and the deletion into ns_babysitter_bootstrap:stop/0.
+
+-------------------------------------
+author: Alexander Wagner
+date: 2017-05-19 19:56:53.738000000
+
+Patch Set 1:
+
+I was looking into implementing this and I had one issue with this. Please correct me if I've understood this wrong.
+ns_babysitter_bootstrap is called from within the encryption_service and the encryption_service is called from within ns_babysitter_sup conditionally.
+In ns_babysitter_sup.erl:34 the encryption_service is called only when is_init_enterprise is true.
+Following that code into ns_server/src/ns_config_default.erl there are some cases when this returns false. My assumption is that ns_server_bootstrap is not called in this case.
+I was unable to surmise from the code what category of systems would return false.
+My question is do those systems on which is_init_enterprise would return false come under the subset of systems affected by this bug?
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2017-05-19 20:22:34.223000000
+
+Patch Set 1:
+
+No, ns_babysitter_bootstrap is called before anything else. ns_babysitter_bootstrap:start is called when the server starts, ns_babysitter_boostrap:stop is called when the server is terminated gracefully.
+
+See also couchbase-server.sh.in script.
+
+-------------------------------------
+author: Alexander Wagner
+date: 2017-05-19 20:36:57.546000000
+
+Patch Set 1:
+
+got it. thanks!
+
+-------------------------------------
+author: Alexander Wagner
+date: 2017-05-20 01:53:45.097000000
+
+Patch Set 1:
+
+I couldn't find a way to pass an env to bootstrap from couchbase-server.sh.in. So I had to write a bit of code to check for the presence of the pidfile in ns_bootstrap.
+I'm compulsively checking for the pidfile because I'm assuming the presence of that env implies this is a system affected by this bug. Is that correct?
+Also if this approach is ok would it make sense to have this inside ns_babysitter instead of ns_babysitter_bootstrap?
+
+-------------------------------------
+author: Alexander Wagner
+date: 2017-05-20 01:55:03.859000000
+
+Patch Set 1:
+
+Correction: The above comment was for Patch Set 2 not 1.
+
+-------------------------------------
+author: Alexander Wagner
+date: 2017-05-22 18:59:32.246000000
+
+Patch Set 1:
+
+> > I couldn't find a way to pass an env to bootstrap from
+ > couchbase-server.sh.in. So I had to write a bit of code to check
+ > for the presence of the pidfile in ns_bootstrap.
+ > 
+ > I don't understand this. Can you elaborate?
+
+In couchbase-server.in.sh, line 166-171, the environment variables of cookiefile etc are being set only for ns_server and for ns_babysitter and not for ns_babysitter_bootstrap.
+Since the code to add and delete the pidfile is in ns_babysitter_bootstrap I was wondering if there was a way to set a pidfile environment variable for ns_babysitter_bootstrap directly?
+The way I've done it now is to set pidfile for ns_babysitter and from ns_babysitter_bootstrap check for this using application:get_env/2.
+
+-------------------------------------

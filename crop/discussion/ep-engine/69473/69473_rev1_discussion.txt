@@ -1,0 +1,181 @@
+DESCRIPTION
+
+[Ephemeral Bucket]: Basic implementation of generic doubly linked list
+
+This implements a generic doubly linked list which will be extended to
+a skip list in future. The implementation is pretty judicious on memory
+usage, with only additional 16 bytes used per list node (for next and prev).
+
+Basic module tests are also implemented for this class.
+
+Change-Id: Ib8f9e1a247dc2895f4e9bad4239212f4a02959e2
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2016-11-04 07:56:26.194000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-04 07:56:36.008000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1717/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-04 07:56:36.161000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/514/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-04 07:56:36.283000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1371/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-04 07:56:36.427000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1615/ (4/4)
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2016-11-04 08:02:34.100000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:31, src/skiplist.cc -> I am not able to build if I implement this class outside the header like this. I get linker errors. Something to do with the templates.
+
+/Users/Adrianna Holmes/Piper Jefferson_master/ep-engine/src/skiplist.h:38:5: warning: function 'SkipList<ListNode>::SkipList' has internal linkage but is not defined [-Wundefined-internal]
+    SkipList();
+    ^
+
+Am I doing something wrong ?
+Upon googling some links suggested possible compiler bug
+
+Line:33, src/skiplist.cc -> Note: skiplist.h and skiplist.cc have diverged at this point. But the linker error still remains.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2016-11-04 08:04:56.839000000
+
+Patch Set 1:
+
+Another class, maybe called as EphemeralStore will use this class SkipList for writes/reads/rangeReads and handle concurrent operations.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-04 08:14:47.653000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1717/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/514/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1371/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1615/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-11-04 10:46:45.766000000
+
+Patch Set 1: Code-Review-1
+
+(13 comments)
+
+General approach looks ok, however I have a few comments below.
+
+One thing to consider is could we just use an off-the-shelf intrusive linked list for now (e.g. folly's wrapper around boost: https://github.com/facebook/folly/blob/master/folly/IntrusiveList.h#L113 / http://www.boost.org/doc/libs/1_62_0/doc/html/intrusive/list.html)
+
+These give us a solid working implementation with an STL-like API. We can later on replace with a skip-list implementation when we get to that point of optimising.
+
+Line:31, src/skiplist.cc -> In general you need to keep template implementations in the header. See this SO post for a good description: http://stackoverflow.com/q/495021/92516
+
+Line:29, tests/module_tests/skiplist_test.cc -> Get rid of this - we have CTest itself manage timeouts (it gets hard to debug stuff in LLDB / GDB if the process gets killed 30s in).
+
+Line:59, tests/module_tests/skiplist_test.cc -> Just use an owning container (std::vector) here, simplifies much of the logic. If necessary it can be a std::vector of unique_ptrs if you need the items to exist outside the container.
+
+Line:64, tests/module_tests/skiplist_test.cc -> I'd suggest trying to make your unit tests as "tight" as possible - you want the test to fail as soon as possible.
+
+For example here, I'd call getSize after each insertion and verify it's correct after each item.
+
+Line:70, tests/module_tests/skiplist_test.cc -> Should also check the pointers are as expected, and the value of the test Node (your int) is the expected value.
+
+Line:72, tests/module_tests/skiplist_test.cc -> Try to keep tests short - just do one thing in each one (i.e. move the remove to a second test).
+
+If you like you could move the setup code (i.e. the creation of the 5 items to work with) into a SetUp function.
+
+Line:79, tests/module_tests/skiplist_test.cc -> Again, think of how simple we can make this test, trying to test each low-level case in the simplest way possible.
+
+For removal to me this would be a series of tests something like:
+
+a) Test removal from an empty list (0 -> 0 elements); error.
+b) Test removal of an item from a one-element list (1 -> 0 elements).
+d) Test removal from of the head of the list (2 -> 1 elements).
+e) Test removal from the tail of the list (2 -> 1 elements).
+f) Test removed from the middle of the list (3 -> 2 elements).
+
++ for each of the above try both with an item which exists and an item which doesn't exist.
+
++ ... probably more I haven't thought of...
+
+
+Look at the code coverage you get from your test (see instructions in https://github.com/Piper Jefferson/tlm/blob/master/cmake/Modules/CouchbaseCodeCoverage.cmake) - for utility code like this we should be aiming for close to 100% coverage.
+
+Line:111, tests/module_tests/skiplist_test.cc -> If you link this file into ep-engine-ep_unit then you don't need your own boilerplate main for this.
+
+Line:363, CMakeLists.txt -> If you're creating GoogleTests I'd just link them all into ep-engine-ep-unit-tests (saves compiling another version of your sources and another link).
+
+Line:46, src/skiplist.h -> Please document the arguments here. Additionally, bools for parameters are often a poor choice (they don't self-document). Better to create something like:
+
+ enum class Mode { Forward, Reverse };
+
+Line:57, src/skiplist.h -> Consider a bi-directional iterator (http://en.cppreference.com/w/cpp/concept/BidirectionalIterator) interface for this class instead of this reader - if you support that then all the normal STL algorithms (find, for_each, etc) will "Just Work"
+
+This is probably a good starting point: http://stackoverflow.com/questions/3582608/how-to-correctly-implement-custom-iterators-and-const-iterators
+
+Line:110, src/skiplist.h -> I think we should remove (for now) any atomic code in here - it may give clients a false sense of thread-safety, when (as you correctly highlight) the bulk of the code isn't thread-safe.
+
+Line:116, src/skiplist.h -> Consider modelling the interface on std::list - with the use of iterators (which can point to one past the beginning / end) we can just use a single insert() method and simplify the code.
+
+-------------------------------------
+author: Kymani Ramirez
+date: 2017-03-21 22:08:00.369000000
+
+Patch Set 1:
+
+Is this patch still being maintained / is it worth reviewing?
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-03-21 22:13:52.971000000
+
+Patch Set 1: Code-Review-2
+
+Do not consider reviewing this for now
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-04-04 15:32:27.867000000
+
+Abandoned
+
+-------------------------------------

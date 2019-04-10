@@ -1,0 +1,88 @@
+DESCRIPTION
+
+Introduce GitSynchronizer for logical model support
+
+This allows to provide distinct implementations when doing
+synchronizations depending on whether or not the user is interested in
+logical models.
+The default synchronizer implementation does not deal with logical
+models at all and thus provides the best performance.
+The ModelAwareGitSynchronizer consults the logical model providers to
+determine the set of resources involved in synchronization operations
+and thus can have important performance impact especially on large
+repositories. It uses a 'lazy' implementation of subscriber to load
+additional resource revisions lazily when needed.
+Preference 'allow models to participate...' now defaults to false.
+This has an impact on the test cases that require logical model support,
+where we now set-up the preference before running them.
+
+Bug: 501990
+Change-Id: I9322cef70c037e0b2c270a7c2bab7d2ffd278f60
+Signed-off-by: Maleah Marks xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Maleah Marks
+date: 2016-10-24 15:47:52.000000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-10-24 20:46:22.000000000
+
+Patch Set 5:
+
+(4 comments)
+
+Line:703, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/CompareUtils.java -> I wouldn't get the display here. It forces you to have a ModelAwareGitSynchronizer(Display) constructor even though that class itself doesn't need it.
+
+I'd just go with parameterless constructors, and use PlatformUI.getWorkbench().getDisplay() in DefaultGitSynchronizer.openGitTreeCompare() instead.
+
+Line:38, org.eclipse.egit.core/src/org/eclipse/egit/core/synchronize/GitLazyResourceVariantTreeSubscriber.java -> I don't quite see what's lazy about this. Won't it still pre-load the whole cache in init(), which isn't overridden here?
+
+Line:79, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/synchronize/ModelAwareGitSynchronizer.java -> Somehow I find this control flow fragile. Creating the context here, then calling super.compare and relying on that calling canCompareDirectly(IFile) where the context then is used... plus also in synchronize below. "Parameter passing" through a local field...
+
+But maybe resolving this is for a later follow-up change. Right now I only have a feeling that something isn't quite as it should be yet. Have to think more on this.
+
+Line:226, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/synchronize/ModelAwareGitSynchronizer.java -> Doesn't this still pre-load the whole GitSyncCache from the repository? I don't see GitLazyResourceVariantTreeSubscriber override init()...
+
+-------------------------------------
+author: Maleah Marks
+date: 2016-10-25 06:32:32.000000000
+
+Patch Set 5:
+
+(4 comments)
+
+Hello Thomas,
+
+Thank you for your quick answers!
+I'll push a new patch-set to get rid of the stupid Display thing, but I'll wait for your answers to my comments about the 'lazyness'.
+
+Line:703, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/CompareUtils.java -> Of course you're right. I had an issue with Display.getCurrent/getDefault an I forgot about PlatformUI.getWorkbench().getDisplay()!
+
+Line:38, org.eclipse.egit.core/src/org/eclipse/egit/core/synchronize/GitLazyResourceVariantTreeSubscriber.java -> Probably the name of this class is not well chosen.
+The idea is that it can be initialized with a restricted set of resources (those that are selected) but will anyway allow access to any other resource in the repo.
+If necessary, I can also investigate an approach where absolutely nothing would be cached (and init() would not be necessary probably) and any resource would be loaded on-demand.
+
+Line:79, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/synchronize/ModelAwareGitSynchronizer.java -> Well, I see what you mean...
+That is the simplest solution I could come up with to be able to display a progress bar while making a minimal amount of changes...
+If you have any idea to improve that please tell me!
+
+Line:226, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/synchronize/ModelAwareGitSynchronizer.java -> Actually it will only load the resources provided in the given set of resources, which is constituted of the selected file or folder on which the comparison was triggered.
+
+Before, we ignored the set of resources and called init() on a subscriber with gsd that described the synchronization of the whole repo.
+
+So no, it does not pre-load the whole repo. In the most common case it will only cache one resource.
+
+Alos, a big difference with before is that the preference to support logical models will not be active by default, which means most users won't trigger that. Only those who check this preference will use this subscriber.
+
+-------------------------------------
+author: Gerrit Johnathan Pham
+date: 2016-12-06 23:26:29.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

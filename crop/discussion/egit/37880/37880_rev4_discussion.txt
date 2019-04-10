@@ -1,0 +1,140 @@
+DESCRIPTION
+
+Don't let ignored resources cause index update jobs.
+
+Changes to ignored resources cause deltas fired by eclipse. These deltas
+will cause index update jobs even though there is nothing to do. In the
+worst case, a lot of resources are changed, and even though nothing
+happened to tracked files, a full re-index is done because the changed
+resource count threshold was reached.
+
+Change-Id: Ic8ab3a93cb877a7a896c9bd88a878eb35c29d046
+Signed-off-by: Bryanna Douglas xxx@xxx.xxx
+
+COMMENTS
+
+author: Bryanna Douglas
+date: 2014-12-10 13:04:11.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Jayvion Booth
+date: 2014-12-10 13:22:08.000000000
+
+Patch Set 4: Code-Review-1
+
+(1 comment)
+
+Beside the possible optimization (see comment below) I'm still missing tests. 
+
+In general the change makes sense, but without tests it is really hard to see if we miss something obvious.
+
+Line:151, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/indexdiff/GitResourceDeltaVisitor.java -> Calling isIgnoredInOldIndex() for files could be still expensive (will split paths for each file and do in worst case filesInDelta * path.segmentsCount() lookups).
+
+Before returning false or true here we could collect *known* ignored/not ignored directories state in the temporary map (key = path, value = boolean) and so remember the "known" path state there, saving us the lookup.
+
+For files which are located in the same directory structure the lookup will be fast because the map will contain already all parents after first "while" round.
+
+At the end we will have something like filesInDelta*2 + max (segmentsCount()) lookups for files from the same tree.
+
+-------------------------------------
+author: Bryanna Douglas
+date: 2014-12-10 13:34:52.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+regarding test: i have only 1 or 2 hours left that my boss gave me to propose this change. It took quite a few hours to get the change itself to how far it is now. I can try to come up with tests, but might not be able to finish them :| let's see.
+
+Line:151, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/indexdiff/GitResourceDeltaVisitor.java -> Hm, I know what you mean. I'm not sure whether this wouldn't cause more overhead than it would shove off the times. The visitor is re-created for every resource change event. It could potentially be a lot of resources, yes, but it's just as common that it's only a few. This code is not sooo expensive, I think.
+
+Still I can give it a try if you insist.
+
+-------------------------------------
+author: Jayvion Booth
+date: 2014-12-10 13:55:56.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Regarding test: your boss just don't need to know what you are doing here :-)
+
+But seriously you can't only add code without adding tests, not on the code which can affect lot of people.
+
+The egit project needs tests as much as it needs fixes, otherwise it will not survive on long term.
+
+Line:151, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/indexdiff/GitResourceDeltaVisitor.java -> My problem is my huge repository and after spending lot of time to optimize j/egit performance I fear any new possible regression :-)
+Look, if I have only 1000 ignored directories in the repo (and I fear I have much more) and the average path segments count of files is over 15, for only 10 delta files I have here 1000 * 15 * 10 = 150000 lookups which sounds a bit more then 35 (10*2 + 15).
+
+For sure, for a small projects like e/jgit this optimization doesn't make sense, because the absolute times here are probably equal for any solution one can imagine.
+
+-------------------------------------
+author: Bryanna Douglas
+date: 2014-12-10 14:02:41.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Sure you need tests, I will do my best (I have a handfull now), but the alternative to contributing without much tests would be to write a bug and not propose any code change at all. So I think (and I have OS projects myself), that contributions even without tests have some value ;) OFC I'll try to come up with a complete change - time is short in business, you know...
+
+Line:151, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/indexdiff/GitResourceDeltaVisitor.java -> Yes, we also have a huge repository, and our workspace has very, very easily more than 1000 ignored directories. The thing I'm saying is that it might bring not the benefit you expect to cache this information, as eclipse will fire deltas that include at the very most deltas for a single plugin (if you're lucky), not more (at least that's what I see during builds). Thus that optimization will only hit inside a single plugin. I can still do it, as I said.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-12-10 14:20:53.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/6543/
+
+-------------------------------------
+author: Bryanna Douglas
+date: 2014-12-10 14:58:55.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:151, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/indexdiff/GitResourceDeltaVisitor.java -> I did a performance comparision, one version as we have it here, and one with a cache. It basically remembers the result for every path that it checks. When compiling (that is removing and adding the .class files) 40.000 java sources in my workspace, the caching version is quite a bit slower (reproducible). I took three samples each, and on average it's ~5:20 for the current version vs. ~5:30 for the optimized version ... 10 seconds slower?! I re-measured everything, and get the same results. The optimization is basically what you suggested. I would have guessed that it improves, but only a little - on the contrary:
+
+	private boolean isIgnoredInOldIndex(IndexDiffCacheEntry entry, String path) {
+		// fall back to processing all changes as long as there is no old index.
+		if (entry == null || gitIgnoreChanged)
+			return false;
+
+		Boolean cached = knownIgnoredPaths.get(path);
+		if (cached != null) {
+			return cached.booleanValue();
+		}
+
+		IndexDiffData indexDiff = entry.getIndexDiff();
+		if (indexDiff == null)
+			return false;
+
+		boolean result = false;
+		String p = path;
+		Set<String> ignored = indexDiff.getIgnoredNotInIndex();
+		Set<String> candidates = new HashSet<String>();
+		while (p != null) {
+			candidates.add(p);
+
+			if (ignored.contains(p)) {
+				result = true;
+				break;
+			}
+
+			p = skipLastSegment(p);
+		}
+
+		for (String candidate : candidates) {
+			knownIgnoredPaths.put(candidate, Boolean.valueOf(result));
+		}
+
+		return result;
+	}
+
+-------------------------------------

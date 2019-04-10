@@ -1,0 +1,125 @@
+DESCRIPTION
+
+MB-18580: Fix failing CV testcase "tap_filter_stream"
+
+Testcase fails with segv with the following error message:
+"CouchKVStore::getDbFileInfo: Failed to open database file
+for vBucket = 1 rev = 1 with error:no such file"
+The reason of this failure is race condition between thread
+which creates couch-db and thread which opens this file for
+read operation (to get DbFileInfo).
+Fix for the failure:
+1. prevents core dump if couch-db has not been created
+ at the time when it is being opened for read;
+2. reschedules VBucket backfill task requesting to open
+couch-db if task to create couch-db has been scheduled already;
+3. issues proper error message that couch-db does not exist
+and cancels VBucket backfill task requesting to open couch-db
+if task to create couch-db has not been scheduled already.
+Change-Id: I1bc83c7c9e335d0729e273d5f37e383dc17aa46d
+
+
+COMMENTS
+
+author: Cora Mccarty
+date: 2016-03-15 18:38:42.491000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-03-15 18:39:13.940000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/273/ (1/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-03-15 18:42:15.822000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/225/ (2/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-03-15 18:42:41.160000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/250/ (3/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-03-15 19:03:11.997000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/250/ : FAILURE
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/250/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/225/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/273/ : SUCCESS
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-03-15 19:43:24.404000000
+
+Patch Set 2: Code-Review-1
+
+(2 comments)
+
+Line:547, src/warmup.cc -> Watch out for white spaces.
+
+Line:266, src/forest-kvstore/forest-kvstore.h -> Aren't you deprecating this with this change, I suggest keeping the above comments however.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-03-15 19:48:09.294000000
+
+Patch Set 2:
+
+(3 comments)
+
+Line:544, src/warmup.cc -> Make return type couchstore_error_t and check if != COUCHSTORE_SUCCESS ?
+
+Line:2226, src/couch-kvstore/couch-kvstore.cc -> Why not make the return type couchstore_error_t?
+
+Line:119, src/backfill.cc -> Make return type couchstore_error_t and check if err_code != COUCHSTORE_SUCCESS, this way you could put a log with the returned error code in case of failure.
+
+-------------------------------------
+author: Cora Mccarty
+date: 2016-03-15 22:45:08.336000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:266, src/forest-kvstore/forest-kvstore.h -> I was trying to minimize changes on forest-kvstore side for not, but I agree, this is minor. I'l' change this as well.
+
+Line:119, src/backfill.cc -> Here are few reasons "uint16_t" is used as a return type and not a couchstore_error_t:
+- couch-kvstore and forest-kvstore have different types for error handling: couchstore_error_t vs fdb_status. So casting to "uint16_t" will allow to support both of them.
+- type couchstore_error_t is not available at ep-engine/src level at this point, and it's my understanding that was done intentionally to hide implementation of underlying store from ep-engine level. Is not it?
+- in one of the future projects (kvstore error/warning improvement project) I believe we should have same set of error messages (same enum) for couch_kvstore as well as forest_kvstore, and at that time we should expose return value of error code to application at ep-engine/src level.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-03-15 23:20:43.067000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:266, src/forest-kvstore/forest-kvstore.h -> Replacing the above function with the one below is what you're doing in this change, so this would need to be done.
+
+Line:119, src/backfill.cc -> You'll need to add a common function in kvstore that would decipher error messages from couch-kvstore or forest-kvstore.
+This means that you'd need to invoke the new kvstore api, that would call into the couchkvstore or the forestkvstore api based on the underlying store.
+
+p.s couchstore_error_t should be available to use.
+
+-------------------------------------

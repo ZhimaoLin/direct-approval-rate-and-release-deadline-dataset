@@ -1,0 +1,215 @@
+DESCRIPTION
+
+[WIP]: [Ephemeral Buckets]: Add basic LL data structure to hold items in seq.
+[TBD in commit]: Update the set path in ht, vbucket to write items to the LL,
+                 add comments, test code.
+
+Change-Id: I31bde3ea25509504fa8cc23a5506e7b14fa16bc8
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2016-11-23 07:59:27.314000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-23 07:59:33.842000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/670/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-23 07:59:34.145000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1799/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-23 07:59:34.341000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1509/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-23 07:59:34.554000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1886/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-23 08:12:08.677000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1886/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/670/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1509/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1799/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-11-23 08:50:58.261000000
+
+Patch Set 1: Code-Review-1
+
+(26 comments)
+
+General approach looks good. Bunch of comments / suggestions for you - although you may have been planning on changing this - I know it's WIP.
+
+Line:18, src/seqlist.h -> Please add a block comment to this file describing its purpose.
+
+Line:27, src/seqlist.h -> Please add block comments to this class, and the public methods.
+
+Line:30, src/seqlist.h -> Style: break the line at the initialiser list marker (:)
+
+Line:46, src/seqlist.h -> If this is immutable once the object is created (I expect it is), make it const.
+
+Line:55, src/seqlist.h -> Long line - please wrap.
+
+Line:79, src/seqlist.h -> Worth describing exactly what member(s) each lock guards.
+
+Line:82, src/seqlist.h -> Same here
+
+Line:21, CMakeLists.txt -> Note: tabs
+
+Line:534, src/vbucket.h -> Long line - wrap.
+
+Line:539, src/vbucket.h -> Please add a comment describing this class.
+
+Line:560, src/vbucket.h -> If the VBucket owns this seqeneceList, then use an owning pointer (unique_ptr).
+
+Line:22, src/seqlist.cc -> I'd suggest creating a Range type (simply a object with a min & max), and then you can pass in two Range objects - see for example `draw_rect` in http://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#a-nameri-typedai4-make-interfaces-precisely-and-strongly-typed
+
+You can then move this code to a`isOverlapping(const Range& other)` - which will give a cleaner, more explicit interface.
+
+Line:33, src/seqlist.cc -> Similar here - make it a reset() method on a Range object.
+
+Line:38, src/seqlist.cc -> Style: Given you have a few elements in the initialiser list (and hence any future changes to one will cause a conflict on the whole line), just put one per line.
+
+Line:48, src/seqlist.cc -> Generally speaking acquiring locks in destructors is a bad idea - if you've got as far as just about to free the memory then no-one else should be using the object.
+
+I suspect you might hit deadlocks with this lock acquisition.
+
+I'd instead suggest using a higher-level lock - e.g. a shard_ptr to the BasicLinkedList object itself - and use that to serialise destruction.
+
+Line:64, src/seqlist.cc -> As previous comments, change this method to pass in a reference to the lock_quard, ensuring that people don't call it without a lock
+
+(Also - the style elsewhere in KV-engine has generally been to name these methods foo_UNLOCKED - I don't really mind what naming we use, but we should be consistent).
+
+Line:68, src/seqlist.cc -> Don't use an assert (at least in final production code) - it'll immediately terminate the whole program if it fails.
+
+Instead throw an invalid_argument exception or similar (e.g. logic_error if you've broken a class invariant).
+
+Line:85, src/seqlist.cc -> I think seqnos are logically signed (int64_t). Probably cleaner to just represent them as that in this class, saves all the casting.
+
+Line:114, src/seqlist.cc -> Given this is the result of the method, nicer to make it the return value.
+
+This also makes it less ambiguous - the caller knows that `items` is exactly the elements which were read, they don't need to consider if items has been cleared or not by this function.
+
+Line:115, src/seqlist.cc -> Consider declaring a seqno_type or similar type in this class (using seqno_type = (u)int64_t) - I think it will make it easier to follow what is s seqno and what isn't.
+
+Line:130, src/seqlist.cc -> If this statement is true - i.e. the seqList is empty - then wouldn't the conditional at line 118 have been true?
+
+Line:179, src/seqlist.cc -> Kind of a pointless comment :)
+
+Line:93, src/stored-value.h -> Worth explaining what Stale means in this context.
+
+Line:518, src/stored-value.h -> Given this is a new use of boost in the codebase, it's worth adding a comment describing the purpose of this.
+
+Line:567, src/stored-value.h -> Again, worth explaining this.
+
+Line:337, src/hash_table.h -> For new `unlocked` methods I'd suggest passing in a reference to a lock_holder - this enforces that a lock is actually held when this method is called.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2016-11-28 06:56:41.994000000
+
+Patch Set 1:
+
+(26 comments)
+
+Line:18, src/seqlist.h -> Done
+
+Line:27, src/seqlist.h -> Done
+
+Line:30, src/seqlist.h -> Done
+
+Line:46, src/seqlist.h -> Done
+
+Line:55, src/seqlist.h -> Done
+
+Line:79, src/seqlist.h -> Done
+
+Line:82, src/seqlist.h -> Done
+
+Line:21, CMakeLists.txt -> Done
+
+Line:534, src/vbucket.h -> Done
+
+Line:539, src/vbucket.h -> Done
+
+Line:560, src/vbucket.h -> Done
+
+Line:22, src/seqlist.cc -> Done
+
+Line:33, src/seqlist.cc -> Done
+
+Line:38, src/seqlist.cc -> Done
+
+Line:48, src/seqlist.cc -> Done
+
+Line:64, src/seqlist.cc -> Done
+
+Line:68, src/seqlist.cc -> Done
+
+Line:85, src/seqlist.cc -> Done
+
+Line:114, src/seqlist.cc -> 'std::deque<Item*> items' as a return type will invoke copy ctor of the deque. It will copy over all the items to be returned which could be very costly when copying say 1 million items.
+
+Line:115, src/seqlist.cc -> Done
+
+Line:130, src/seqlist.cc -> Done
+
+Line:179, src/seqlist.cc -> Done
+
+Line:93, src/stored-value.h -> Done
+
+Line:518, src/stored-value.h -> Done
+
+Line:567, src/stored-value.h -> Done
+
+Line:337, src/hash_table.h -> Done
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-11-28 09:50:44.305000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:114, src/seqlist.cc -> So this definitely won't get copied until C++11, and even under C++03 it it very likely it wouldn't:
+
+* Under C++11, the return value from a function is an rvalue (from the pov of the caller), and the move constructor will be invoked which has constant complexity (http://en.cppreference.com/w/cpp/container/deque/deque).
+
+* Under C++03 (and also C++11) the compiler is permitted to perform return-value-optimization (would be named-RVO here), which elides the copy and essentially constructs immediately into the returned value.
+
+Therefore we can safely use the cleaner, more explicit code here with no performance overheads.
+
+-------------------------------------

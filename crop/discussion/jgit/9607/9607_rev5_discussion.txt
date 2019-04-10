@@ -1,0 +1,82 @@
+DESCRIPTION
+
+Speed up PathFilterGroup for largs sets of paths
+
+Bug: 397185
+Change-Id: Ife0cc2da6cc46431be94a6b14f64f6adbe983afb
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2013-01-16 00:45:31.000000000
+
+Patch Set 5:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2769/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-01-16 00:50:04.000000000
+
+Patch Set 5: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2769/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2013-01-16 01:37:08.000000000
+
+Patch Set 5: I would prefer that you didn't submit this
+
+(9 inline comments)
+
+
+
+Line:87, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/filter/PathFilterGroup.java -> unnecessary delta caused by the formatter line breaking.
+
+Line:136, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/filter/PathFilterGroup.java -> unnecessary delta
+
+Line:194, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/filter/PathFilterGroup.java -> #paths instead of #aths?
+
+Line:199, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/filter/PathFilterGroup.java -> p.length can't be 0. so you can avoid the max==null test below if you perform max = p[0] before the loop starts.
+
+Line:200, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/filter/PathFilterGroup.java -> hoist pf.getPath() into a local variable. This code is a mess otherwise. I would suggest renaming the input array from p to be "inputPaths" as its used less often. Then use "p" as the pf.getPath() inside of the loop.
+
+Line:214, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/filter/PathFilterGroup.java -> Ouch. getPathString is not fast. There isn't a good way to implement this using the byte[] form?
+
+For example imagine we compute a hash across the raw path buffer of the TreeWalk. Each time we reach a '/' the hashing stops and probes a private hash table implementation to see if any PathFilter matches the current hash code. If it does we test isPathPrefix on that subset of PathFilter nodes.
+
+Similar implementation to what you have here, but avoiding the hideously slow byte[]->String conversion required to perform the 2 hash table lookups you do before you split the path on '/' and look at each level individually... with more hash table lookups.
+
+Line:226, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/filter/PathFilterGroup.java -> inline cmp there is no point in this variable
+
+Line:235, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/filter/PathFilterGroup.java -> You can drop this boolean and use !prefixes.isEmpty(). If we have prefixes, we need to look deeper than the root.
+
+Line:7, /COMMIT_MSG -> s/largs/large/
+
+-------------------------------------
+author: Juliet Cantu
+date: 2013-01-19 17:55:52.000000000
+
+Patch Set 5: (6 inline comments)
+
+
+
+Line:136, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/filter/PathFilterGroup.java -> The formatting rules in Eclipse insists.
+
+Line:194, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/filter/PathFilterGroup.java -> Done
+
+Line:199, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/filter/PathFilterGroup.java -> Done
+
+Line:200, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/filter/PathFilterGroup.java -> Done
+
+Line:214, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/filter/PathFilterGroup.java -> Well, HashMap does not understand byte[] as a string. Can't understand why it doesn't have a setHashFunction().
+I tried to measure this in with only one path and did not find any difference. I think it drows in the noise.
+ Somehow I suspected you might have performance considerations
+
+Line:235, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/filter/PathFilterGroup.java -> Done
+
+-------------------------------------

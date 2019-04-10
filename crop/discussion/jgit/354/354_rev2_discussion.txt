@@ -1,0 +1,90 @@
+DESCRIPTION
+
+Adds a paranoid 'must be provided' option to ReceivePack
+
+    By default, a receive pack assumes that its user will only provide
+    references to objects that it can see. In certain cases, an additional
+    check that verifies that the objects that were provided are reachable
+    by a tree or a commit that the user can see is necessary.
+
+    For example, it is useful when the code doesn't trust the client not
+    to provide a forged SHA-1 reference to an object in an attempt to
+    access parts of the DAG that they weren't allowed to see by the
+    configured RefFilter.
+
+Change-Id: I3e4b8505cb2992e3e4be253abb14a1501e47b970
+
+
+COMMENTS
+
+author: Maddison Bishop
+date: 2010-03-15 18:52:36.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-17 00:30:49.000000000
+
+Patch Set 2: I would prefer that you didn't submit this; No score
+
+
+
+Line:759, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceivePack.java -> Must be needNewObjectIds || ensureObjectsProvidedVisible
+
+Line:796, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceivePack.java -> Please combine with the parent if statement, to reduce a level of nesting.
+
+Line:797, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceivePack.java -> Instead of reject(...), just do what we do in the missing blob case below:
+
+  throw new MissingObjectException(c, Constants.TYPE_COMMIT);
+
+The caller is required to catch and handle this by reporting errors already.  So you don't need to add your own reject method below.
+
+Line:809, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceivePack.java -> Please combine with the parent if statement, to reduce a level of nesting.
+
+Line:810, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceivePack.java -> Like above, but you should do:
+
+  throw new MissingObjectException(o, o.getType());
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-17 00:51:51.000000000
+
+Patch Set 2:
+
+Whoops, I missed checking the base objects used by deltas in the incoming pack.  More inline comments added to describe how to do that as well.
+
+Line:760, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceivePack.java -> Must be needBaseObjectIds || ensureObjectsProvidedVisible.
+
+Line:787, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceivePack.java -> If ensureObjectsProvidedVisible is true I think we also need to do something to verify the user can "see" the base objects they have used in the pack file.  I failed to really give you a way to implement that as part of this method.
+
+In theory, given how the send-pack/receive-pack protocol works in Git, the base objects *must* have been marked as UNINTERESTING above during the markUninteresting calls.  Therefore I think we can do this here:
+
+  for (ObjectId id : getBaseObjectIds()) {
+    RevObject b = ow.lookupAny(id);
+    if (!b.has(RevFlag.UNINTERESTING))
+      throw new MissingObjectException(b, b.getType());
+  }
+
+-------------------------------------
+author: Maddison Bishop
+date: 2010-03-18 00:00:29.000000000
+
+Patch Set 2: No score
+
+
+
+Line:787, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceivePack.java -> Good point. I don't think that this code works, though, because there is no way to get a plain RevObject from the RevWalk. I looked at lookupAny(id, int), and it doesn't seem safe to call it and assume that this is a RevBlob or something else, because that ends up adding it to the revwalk.
+
+I've added another method that does something which I think is safer. Let me know what you think.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-18 01:26:40.000000000
+
+MISMATCHED INLINE COMMENT
+Line:787, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceivePack.java -> The thing is, lookupAny(id, int) is safe, because if the object didn't exist in the walk before this point, it will be added, but we will discover the UNINTERESTING flag is missing and immediately abort with the exception.  So yea, the walk is polluted for a short period with an assumption of an object of a certain type... but it won't have the flag.
+
+I'd rather not change the API of RevWalk right now just to implement this feature.  I'm too afraid we might be forced to live with that new method forever, and its semantics.  So just use lookupAny(id, Constants.OBJ_BLOB) here and accept that the walk gets partially polluted right before the crash.
+
+-------------------------------------

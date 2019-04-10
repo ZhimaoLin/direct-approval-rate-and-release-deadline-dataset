@@ -1,0 +1,112 @@
+DESCRIPTION
+
+Fix CommonUtils.STRING_ASCENDING_COMPARATOR for equal strings
+
+Equal strings resulted in -1, but should return 0. The same applies when
+comparing two empty strings.
+
+This became apparent since the Switch-To menu uses this comparator now
+(https://git.eclipse.org/r/#/c/22911/). This results in duplicated menu
+entries, e.g. if a branch appears in the reflog too.
+
+Change-Id: I9ba316e9eb078b4f97c8c9e9d9749aadea0b5068
+Signed-off-by: Kaden Henson xxx@xxx.xxx
+Signed-off-by: Danika Greer xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Kaden Henson
+date: 2014-03-15 13:58:22.000000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Kaden Henson
+date: 2014-03-15 14:02:15.000000000
+
+Patch Set 6:
+
+I just noticed I forget xxx@xxx.xxx on the test method. I also added assertions that show, that comparing for equality at the beginning is not enough. When the compared strings only differ by leading zeros in the number parts, the strings are not equals, but the comparison should return 0.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-03-15 14:04:21.000000000
+
+Patch Set 6:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/5615/
+
+-------------------------------------
+author: Kaden Henson
+date: 2014-03-15 14:17:58.000000000
+
+Patch Set 6:
+
+Hm, thinking a bit more about it, two strings differing only by  zeros should not return 0. Because if it does return 0 and you have a branches named "b1" and "b01" only one of them would be shown in the switch-to menu.
+
+Instead, when both string are equal disregarding zeros, one has to redo-the comparisons left-to-right and compare the number-parts as strings.
+
+Since this is expensive, comparing with equalsIgnoreCase at the start would improve the (common) case that the two strings are actually the same.
+
+What do you think?
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-03-15 14:17:59.000000000
+
+Patch Set 6: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/5615/ : SUCCESS
+
+-------------------------------------
+author: Juliet Cantu
+date: 2014-03-15 14:39:05.000000000
+
+Patch Set 6: Code-Review-1
+
+-------------------------------------
+author: Juliet Cantu
+date: 2014-03-15 14:40:49.000000000
+
+Patch Set 6:
+
+We cannot just use a case ignoring compare here. TreeMaps's primary purpose is to eliminate duplicates which means it must not consider two different strings equals, ever. As it happened, it also sorted the items. Got two-in-one.
+
+One way is to use a hashmap for eliminating duplicates and then sort.
+
+-------------------------------------
+author: Danika Greer
+date: 2014-03-15 14:51:11.000000000
+
+Patch Set 6: Code-Review-1
+
+Juliet Cantu is spot on.
+
+This comparator "imposes orderings that are inconsistent with equals" (to use the terms in Comparator's documentation). The simplest case is "a" and "A", where equals is false, but they should be sorted the same.
+
+To see the difference, run this in CommonUtils:
+
+	public static void main(String[] args) {
+		TreeMap<String, String> map = new TreeMap<String, String>(
+				STRING_ASCENDING_COMPARATOR);
+		map.put("a", "1");
+		map.put("A", "2");
+		map.put("B", "3");
+		System.out.println(map);
+
+		List<String> list = Arrays.asList("a", "A", "B");
+		Collections.sort(list, STRING_ASCENDING_COMPARATOR);
+		System.out.println(list);
+	}
+
+It returns the following:
+
+  {a=2, B=3}
+  [A, B, a]
+
+So the fix is to change SwitchToMenu to use a normal HashSet for eliminating duplicates, and use Collections.sort for sorting the elements.
+
+-------------------------------------

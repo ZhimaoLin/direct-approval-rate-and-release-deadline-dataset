@@ -1,0 +1,92 @@
+DESCRIPTION
+
+MB-23936: Use Threadlocal variables to accumulate stats
+
+Currently when we allocate/deallocate memory, we update the per bucket
+variable `totalMemory`. Mutiple threads contend on this variable heavily
+as mem allocation/deallocation happen often. The primary idea of
+this commit is to maintain threadlocal mem counters for each bucket and
+merge it to the `totalMemory` once the local counter reaches a threshold
+either based on size or no.of times the local counter has been updated.
+
+Performance Improvement (30%-35%):
+--------------------------------
+- Tests were run on a cluster of 2 nodes spec: 40 core/2.2 Ghz/64G memory
+- On a high throughput read heavy test of 256B values we noticed a
+  [30%] increase in total ops (3.5M ops/s)
+- On a similar write heavy test, we noticed a [35%] increase in ops (1.9M ops/s)
+
+Limitations:
+-----------
+- We create one thread local variable per bucket. Different OS'es seem
+  to enforce different limits on the no.of tlv. Although we have a hard
+  limit of 10 buckets, I'm noting this here for future reference.
+  -> [NetBSD:256 Linux:1024 OSX:512 Windows:1088]
+
+- Because we merge local mem stats after certain thresholds are reached, there
+  might be some small delays in reflecting the precise memory usage of a
+  bucket. On an active system, the delay should be minimal and not noticeable.
+
+- Windows does not seem to provide an api for releasing the mem
+  allocated for a thread-local on thread exit in a way like pthreads do.
+  So there will be a small leak of about (3*long) on every bucket
+  unload on each thread.
+
+- Valgrind might say that the unit tests have leaks on the
+  threadlocals. This is because, in the tests, bucket init happens on
+  the main thread & when main thread exits the program it does not
+  call pthread_exit, so the dtors are not called.
+
+Change-Id: Id14ced2776a29afae18831b372140dd028136b32
+
+
+COMMENTS
+
+author: Trace Williamson
+date: 2017-04-25 18:41:43.312000000
+
+Uploaded patch set 9.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-04-25 19:12:54.652000000
+
+Patch Set 9: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6232/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/5978/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5456/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4755/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/jameseh-ep-engine-threadsanitizer-master/9/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-04-26 09:21:24.340000000
+
+Patch Set 9: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/5978/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5456/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4755/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/jameseh-ep-engine-threadsanitizer-master/9/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6248/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-26 11:19:18.534000000
+
+Patch Set 9: Code-Review+2
+
+-------------------------------------

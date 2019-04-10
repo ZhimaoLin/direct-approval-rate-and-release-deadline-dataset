@@ -1,0 +1,57 @@
+DESCRIPTION
+
+keep cookie refcount for backfill thread life duration.
+
+When new tap connection replaces old with same name we release cookie,
+which will likely free it and allow memcached to reuse same cookie for
+later connections. Which will make validity check in backfill thread
+to succeed when backfill thread is in fact stale. This was observed in
+'real-world' by Abby Duran.
+
+In order to prevent that we just increment refcount before starting
+backfill thread and decrement it when backfill thread is dying.
+
+Because memcached refcount ops implementation is not synchronized and
+refcount decrementing from tap thread and backfill thread may race
+each other, we have to use some own lock. TapConnMap#notifyLock was
+choosen.
+
+Change-Id: If640823152e1d0912f5f038b2a0e0ac4cd3e04b3
+
+
+COMMENTS
+
+author: Asher Vang
+date: 2011-05-31 05:27:20.427000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(1 inline comment)
+
+
+
+Line:443, tapconnmap.cc -> This can potentially deadlock the server... you can't call back into the core with the tap notify lock held, because notify_io_complete will try to grab the workerthread in the core and it may be blocked waiting for the tap notify mutex..
+
+-------------------------------------
+author: Nathalie Landry
+date: 2011-05-31 05:33:04.885000000
+
+Patch Set 1: (1 inline comment)
+
+See comment. Can you elaborate?
+
+Line:443, tapconnmap.cc -> hm. We're calling release() on cookie. Which doesn't do any locking in core. It does some locking in bucket_engine, but it bucket_engine doesn't call ep-engine with those locks. So should be safe.
+
+-------------------------------------
+author: Asher Vang
+date: 2011-05-31 05:39:21.837000000
+
+Patch Set 1: Looks good to me, approved
+
+(1 inline comment)
+
+
+
+Line:443, tapconnmap.cc -> Sorry... I looked at this before I had my coffee.. initially this code path would also call notify_io_complete, which did the locking ;)
+
+-------------------------------------

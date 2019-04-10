@@ -1,0 +1,86 @@
+DESCRIPTION
+
+Work around smart HTTP bugs in C Git
+
+I have unfortunately introduced a few bugs in the native Git client
+over the years. 1.7.5 is unable to send chunked requests correctly,
+resulting in corrupt data at the server. Ban this client whenever
+it uses chunked encoding with an error message.
+
+Prior to some more recent versions, git push over HTTP failed to
+report status information and error messages due to a race within
+the client and its helper process. Check for these bad versions and
+send errors as messages before the status report, enabling users
+to see the failures on their terminal.
+
+Change-Id: Ic62d6591cbd851d21dbb3e9b023d655eaecb0624
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2012-06-27 18:19:57.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2053/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-06-27 18:25:37.000000000
+
+Patch Set 1: Verified
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2053/ : SUCCESS
+
+-------------------------------------
+author: Santos Moore
+date: 2012-06-27 18:48:38.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(6 inline comments)
+
+
+
+Line:165, org.eclipse.jgit.http.server/src/org/eclipse/jgit/http/server/UploadPackServlet.java -> Worth factoring this block into GitSmartHttpTools?
+
+Line:44, org.eclipse.jgit.http.server/src/org/eclipse/jgit/http/server/ClientVersionUtil.java -> I wonder if this wouldn't be better off in a non-HTTP package; there could be non-HTTP bugs to work around too, yes?
+
+Line:93, org.eclipse.jgit.http.server/src/org/eclipse/jgit/http/server/ClientVersionUtil.java -> I could see the argument that 1.7.6.1.XXX is "newer" than 1.7.6.1 (even if two different values of XXX are not comparable). 
+
+It just so happens that the only thing you're using version comparison for to say "is version B one that is known to contain a fix to a bug that was present in version A", which is a question you can't answer given a non-tagged version number.
+
+I guess you could clarify this a bit, or just ignore my comment :)
+
+Line:99, org.eclipse.jgit.http.server/src/org/eclipse/jgit/http/server/ClientVersionUtil.java -> But you seem to be discarding the rc#? What's the intended output of this method on release candidates? Is it reversible?
+
+Line:129, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceivePack.java -> Maybe I missed it, but I didn't see where you call setEchoCommandFailures(true)
+
+Line:58, org.eclipse.jgit.http.test/tst/org/eclipse/jgit/http/server/ClientVersionUtilTest.java -> Um, surely 1.6.6 is closer to 1.6.5 than it is to 1.6.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2012-06-27 19:42:35.000000000
+
+Patch Set 1: (6 inline comments)
+
+
+
+Line:165, org.eclipse.jgit.http.server/src/org/eclipse/jgit/http/server/UploadPackServlet.java -> Not really. Its only used twice.
+
+Line:44, org.eclipse.jgit.http.server/src/org/eclipse/jgit/http/server/ClientVersionUtil.java -> Yes, but we don't have version number support in any other protocol. That is partly intentional, servers aren't supposed to try and work around client bugs. Clients are just supposed to fail randomly and email Yoselin Hanna with their woes.
+
+Shawn wants to stop certain emails from arriving in his inbox every day. So... we violate the Git conventions and try and test for versions on HTTP that we know are bad.
+
+Line:93, org.eclipse.jgit.http.server/src/org/eclipse/jgit/http/server/ClientVersionUtil.java -> So this is of course the problem, without the Git commit graph available its hard to test these sorts of versions for containing any given fix or not. We make an educated guess here and say a build based on 1.7.6.1 that isn't exactly 1.7.6.1 or 1.7.6.2 is more similar in behavior to 1.7.6.1. :-)
+
+Line:99, org.eclipse.jgit.http.server/src/org/eclipse/jgit/http/server/ClientVersionUtil.java -> Yes, we discard the -rcN component. It doesn't really fit into an integer coding scheme. I think that is OK.
+
+Line:129, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceivePack.java -> Done
+
+Line:58, org.eclipse.jgit.http.test/tst/org/eclipse/jgit/http/server/ClientVersionUtilTest.java -> Done
+
+-------------------------------------

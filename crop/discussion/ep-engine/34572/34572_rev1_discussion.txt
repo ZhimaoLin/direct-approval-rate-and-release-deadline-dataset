@@ -1,0 +1,72 @@
+DESCRIPTION
+
+MB-10488: Add a notifier upr connection type
+
+The upr notifier connection is used to get updates through an upr
+stream about when new items are available to stream.
+
+Change-Id: I276e558bf36c43f427d221351495587ee5063154
+
+
+COMMENTS
+
+author: Kenny Maynard
+date: 2014-03-17 19:16:01.419000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2014-03-17 20:33:15.523000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-300/311/ : SUCCESS
+
+-------------------------------------
+author: Abby Duran
+date: 2014-03-19 17:38:57.382000000
+
+Patch Set 1: Code-Review-1
+
+(6 comments)
+
+Line:453, src/upr-stream.cc -> This will cause the deadlock because it requires us to grab the producer's lock again, which was already grab by the same thread.
+
+Line:568, src/upr-stream.cc -> start_seqno < seqno?
+
+Line:573, src/upr-stream.cc -> This will cause the deadlock too.
+
+Line:606, src/upr-stream.cc -> I don't see the case where the state is transitioned from pending to reading for notifier_stream.
+
+Line:1024, src/tapconnmap.cc -> I really concern about this function because it can affect the frontend ops/sec significantly. As I mentioned in the other commit, it grabs the connsLock and then grab the producer lock, and finally stream lock while the hashtable partition lock is still grabbed by the same thread in EPStore::queueDirty(). At this time, I'm not comfortable in merging this change without fixing this issue.
+
+Line:278, src/upr-producer.cc -> dynamic_cast requires much more CPU cycles. Even though its overhead isn't significant, we should avoid it if possible. I know that we used it in some places before, but we can avoid it by defining the type info in stream class and doing static_cast based on the type info. Let's make it as a separate commit.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2014-03-20 18:53:00.026000000
+
+Patch Set 1:
+
+(8 comments)
+
+Line:453, src/upr-stream.cc -> We unlock the queueLock in the UprProducer class before calling this function. If there is something else I am missing let me know.
+
+Line:549, src/upr-stream.cc -> Should just be >
+
+Line:568, src/upr-stream.cc -> Done
+
+Line:573, src/upr-stream.cc -> We unlock the queueLock in the UprProducer class before calling this function. If there is something else I am missing let me know.
+
+Line:606, src/upr-stream.cc -> That must have been an accidental copy. I'll fix it.
+
+Line:1024, src/tapconnmap.cc -> I have a bug filed for this (MB-10403) which is to switch this over to the code used when doing tap notifications. I have this planned for a separate commit. Please let me know if doing that will alleviate your concerns. Also let me know if you want me to make that change before merging this.
+
+Line:87, src/upr-producer.cc -> Should be (notifyOnly && start_seqno > vb->getHighSeqno())
+
+Line:278, src/upr-producer.cc -> I filed MB-10521 to track this change.
+
+-------------------------------------

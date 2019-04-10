@@ -1,0 +1,100 @@
+DESCRIPTION
+
+Move ArchiveCommand into its own OSGi bundle
+
+Allow use of ArchiveCommand without depending on the jgit command-line
+tools.
+
+Ideally this functionality would be part of the org.eclipse.jgit.api
+package and callable through a Git object, but that would make the
+org.eclipse.jgit bundle depend on commons-compress, unnecessarily
+complicating the process of installing and upgrading JGit.
+
+So this patch puts the functionality that requires an archiver into
+its own bundle for people who want it.
+
+Change-Id: I418e7e7d76422dc6f010d0b3b624d7bec3b20c6e
+
+
+COMMENTS
+
+author: Eden Lin
+date: 2013-04-30 22:03:53.000000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2013-04-30 22:09:44.000000000
+
+Patch Set 6:
+
+we could put ArchiveCommand into the api package in a separate OSGi fragment  [1] with org.eclipse.jgit as fragment host, this would enable OSGi consumers to extend org.eclipse.jgit at runtime by installing the fragment org.eclipse.jgit.archive. OSGi fragments share the same class loader with their host bundle so at runtime they really extend the host bundle and installation of a fragment is optional.
+
+I don't see a problem to add commons compress as a new dependency to org.eclipse.jgit.pgm so the archive pgm command could stay in org.eclipse.jgit.pgm, this would also have the advantage that this command ends up in the shaded jgit command line tool emitted by the maven build. 
+
+does anyone have a different opinion on that ?
+
+[1] http://wiki.osgi.org/wiki/Fragment
+
+-------------------------------------
+author: Eden Lin
+date: 2013-04-30 22:18:41.000000000
+
+Patch Set 6:
+
+Thanks. I'll look into whether making it a fragment improves things. That wouldn't add a method to class Git, so it still would not really be integrated into the porcelain API.
+
+The point of moving ArchiveCommand out of the .pgm module is that it lets others use the API without depending on .pgm.  I don't think it makes sense for it to stay in .pgm.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-04-30 22:36:38.000000000
+
+Patch Set 6:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3463/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-04-30 22:42:29.000000000
+
+Patch Set 6: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3463/ : SUCCESS
+
+-------------------------------------
+author: Eden Lin
+date: 2013-05-01 00:25:40.000000000
+
+Patch Set 6:
+
+Thinking about this more:
+
+What would you think of splitting ArchiveCommand into two parts: a high-level interface in org.eclipse.jgit.api with a static method to register formats, and formats implemented somewhere else?  That way, org.eclipse.jgit would not need to depend on any kind of archive support and if someone wants to try adding support for a new format with exotic dependencies (like xz once was), they can do that without changing the ArchiveCommand class itself.
+
+I don't know what the right time for archive formats to register themselves would be. Is that the kind of thing that happens in a BundleActivator's start() method?
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2013-05-01 04:44:18.000000000
+
+Patch Set 6:
+
+Yes, a bundle's start method can be used to register something, and stop to unregister later. Unregister is important to allow the plugin to unload and actually garbage collect.
+
+In Eclipse proper its encourage to instead use extension points, but JGit doesn't currently link to the necessary extension point code. Extension points allow the Eclipse platform to manage the wiring/un-wiring as plugins load and unload, reducing the risk that any particular plugin has a faulty activator and doesn't unlink itself.
+
+Given that JGit already allows plugins to globally register itself for repository events its probably also OK if we allowed plugins to register archiver format support.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2013-05-01 04:46:53.000000000
+
+Patch Set 6: Looks good to me, but someone else must approve
+
+Looks good, but holding off on submitting due to the discussion about registration of formats.
+
+-------------------------------------

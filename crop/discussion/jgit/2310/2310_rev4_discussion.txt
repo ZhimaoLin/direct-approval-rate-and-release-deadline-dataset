@@ -1,0 +1,167 @@
+DESCRIPTION
+
+Added TreeWalk.findObject() utility method
+
+This method allows a provided path to be searched for in a provided tree
+object. The method will search subtrees accordingly to find the path.
+
+Change-Id: I0752a1f5fc7fef32064d8f921b33187c0bdc7227
+Signed-off-by: Malia Sampson xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Malia Sampson
+date: 2011-01-31 15:34:36.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Malia Sampson
+date: 2011-02-01 20:05:22.000000000
+
+Patch Set 4: I would prefer that you didn't submit this
+
+(1 inline comment)
+
+Besides the small doc change Jesse will do, do you see anything wrong with this Shawn?
+
+Line:203, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/TreeWalk.java -> Can you add some documentation on when these exceptions would occur?
+
+Other than that, I think we're good to go after that small doc change.
+
+Thanks Jesse!
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-02-01 21:09:58.000000000
+
+Patch Set 4: I would prefer that you didn't submit this
+
+(8 inline comments)
+
+
+
+Line:207, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/TreeWalk.java -> This entire method is pretty complex for what it does.  I think if you rebase this onto current master you can take advantage of the changes I made to AbstractTreeIterator recently:
+
+  
+  private static int nextSlash(byte[] pathBuf, int ptr, int end) {
+    while (ptr < end && pathBuf[ptr] != '/')
+      ptr++;
+    return ptr;
+  }
+
+  public static TreeWalk forPath(final ObjectReader reader, final String path,
+			final AnyObjectId... trees) throws MissingObjectException,
+			IncorrectObjectTypeException, CorruptObjectException, IOException {
+    byte[] pathBuf = Constants.encode(path);
+
+    TreeWalk tw = new TreeWalk(reader);
+    tw.reset(trees);
+
+    int ptr = 0;
+    int end = nextSlash(pathBuf, ptr, pathBuf.length);
+    int mode = end < path.length
+      ? FileMode.TREE.getBits()
+      : -1;
+
+    while (tw.next()) {
+      int cmp = tw.currentHead.pathCompare(pathBuf, ptr, end, mode);
+      if (cmp < 0)
+        continue;
+      if (cmp > 0)
+        return null;
+      if (end == path.length)
+        return tw;
+
+      ptr = end + 1;
+      end = nextSlash(pathBuf, ptr, pathBuf.length);
+      mode =  mode = end < pathBuf.length
+        ? FileMode.TREE.getBits()
+        : -1; 
+      tw.enterSubtree();
+    }
+
+    return null;
+  }
+
+And you'll need to make a tiny change to AbstractTreeIterator.pathCompare.  On line 353 before the mode of both entries is considered insert:
+
+    if (bMode == -1)
+      return 0;
+    return lastPathChar(mode) - lastPathChar(bMode);
+
+Basically lets fix forPath() instead of adding a new special method.
+
+Line:214, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/TreeWalk.java -> This is a Java 6 method, we stick to Java 5 API in JGit.
+
+Line:216, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/TreeWalk.java -> Style-nit: With two "lines" in the then block, wrap it in curly braces.
+
+Line:217, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/TreeWalk.java -> This case occurs if path == null || path.length() == 0.  For anything else, you should have a next token.  So rework the logic:
+
+  if (path == null || path.length() == 0)
+    return tree.toObjectId();
+
+  TreeWalk tw = new TreeWalk(or);
+  tw.addTree(tree);
+  ...
+
+Line:221, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/TreeWalk.java -> Style-nit: Unnecessary blank line.
+
+Line:239, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/TreeWalk.java -> Style-nit: Unnecessary blank line.
+
+Line:241, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/TreeWalk.java -> Style-nit: Unnecessary blank line.
+
+Line:245, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/TreeWalk.java -> Style-nit: Unnecessary blank line.
+
+-------------------------------------
+author: Khalil Bernard
+date: 2011-02-03 14:34:00.000000000
+
+Patch Set 4: (1 inline comment)
+
+
+
+Line:207, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/TreeWalk.java -> There is already a method with the same name and signature in TreeWalk as what you have above.  Are you suggesting that this new method replace that existing one?  Or should a different name or signature be used for this new method?
+
+-------------------------------------
+author: Khalil Bernard
+date: 2011-02-03 15:03:01.000000000
+
+Patch Set 4: (1 inline comment)
+
+
+
+Line:207, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/TreeWalk.java -> Also, with the implementation above, paths like "/foo/bar" or "//foo///bar" wouldn't work even if a path such as "foo/bar" exists.
+
+I don't think it would be too hard to fix, but is the expectation for jgit API users to handle cleaning up their inputs for methods like these?  Or should we try to be forgiving here?
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-02-03 16:41:52.000000000
+
+Patch Set 4: (2 inline comments)
+
+
+
+Line:207, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/TreeWalk.java -> Paths like /foo/bar and //foo//bar shouldn't be handed to this function.  Callers cannot expect TreeWalk to handle foo//bar as foo/bar; foo//bar is bar within a subdirectory of no name, within foo.  Likewise with leading slashes.
+
+Line:207, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/TreeWalk.java -> I propose replacing the existing method with the new one.
+
+But it occurred to me after I wrote the comment above that we might be able to replace the method with a smaller variant using the PathFilter code.  The existing PathFilter can mostly do the same thing; add it to the TreeWalk.  setRecursive(false).  Then when tw.isSubtree() is true and the PathFilter is not done, enter the subtree.  The "path filter is not done" part is new, we would need to add that to the PathFilter class to let it see if the TreeWalk's current length is equal to the PathFilter's path length.  If the lengths are the same, we know this is the target.  If TreeWalk's current path is shorter, we know we need to dive into the subtree.
+
+That may be a much cleaner solution because its less code, and we aren't going through this mess of parsing the path ourselves.
+
+-------------------------------------
+author: Khalil Bernard
+date: 2011-02-15 21:05:40.000000000
+
+Patch Set 4: (1 inline comment)
+
+
+
+Line:207, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/TreeWalk.java -> Done.
+
+Thanks for the tip.  It did indeed make the code much cleaner.
+
+-------------------------------------

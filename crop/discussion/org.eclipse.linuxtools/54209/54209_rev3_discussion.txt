@@ -1,0 +1,64 @@
+DESCRIPTION
+
+Bug 475327 - NullPointerException in DockerExplorerContentProvider.getChildren
+
+The NPE might have been caused by IDockerConnection#getContainers() that
+returned null.
+This patch proposes a simplified version of the code in which the risk
+of having a null result is removed.
+
+Change-Id: I4f24f05f893a006e3ffc8d3fc3cf1b17aa2eab51
+Signed-off-by: Zechariah Krause xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Zechariah Krause
+date: 2015-10-08 12:33:29.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-10-08 12:33:36.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/9931/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-10-08 12:57:34.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/9931/ : SUCCESS
+
+-------------------------------------
+author: Kaylin Maxwell
+date: 2015-10-08 16:18:18.000000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:894, containers/org.eclipse.linuxtools.docker.core/src/org/eclipse/linuxtools/internal/docker/core/DockerConnection.java -> The problem I worry about with this is that let's say Thread A asks for containers first and there are 20.  Let's say 5 Containers are being removed at the same time so Thread B gets in second and asks for its containers and finds 15.  If Thread A takes longer to process the 20 containers or the thread is delayed, it might finish last and update the container list after Thread B.  Now we still have 20 containers shown.  Same for status, if Thread A asks first and finishes last, we have erroneous information until a refresh.  The old method locked everything which is a bit much, but perhaps we can add another lock around the processing to the setting of the list and move that processing into the finally.  So, if the processing takes longer, it doesn't matter.  We still get improved concurrency in that the 2nd client call can occur while the first is being processed and readers can read the list.  Does this make sense?
+
+-------------------------------------
+author: Zechariah Krause
+date: 2015-10-15 09:50:49.000000000
+
+Patch Set 3:
+
+> (1 comment)
+
+Arianna Johns,
+
+Thanks for your feedback.
+In that case, what about wrapping all the logic of the 'try' block (including the containers transformations) into a 'synchronized(clientLock)' ? In that case, Thread A would be sure to finish its processing before Thread B starts, and Thread B would have the new data if changes occurred on the Docker daemon in the mean time (eg: user removed containers from CLI).
+What do you think ?
+If you agree with this idea, I'll update the pull request accordingly.
+
+-------------------------------------

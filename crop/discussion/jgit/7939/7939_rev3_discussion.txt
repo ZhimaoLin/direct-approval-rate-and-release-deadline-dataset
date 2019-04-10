@@ -1,0 +1,174 @@
+DESCRIPTION
+
+Added read/write support for pack index version E003.
+
+Pack index version E003 extends version 2 by including compressed
+bitmaps of the object graph. Furthermore, a logical API of the index
+functionality is included, as it is expected to be used by the
+PackWriter.
+
+Compressed bitmaps are created using the javaewah library, which is a
+word-aligned compressed variant of the Java bitset class based on
+run-length encoding. The library only works with positive integer
+values. Thus, the maximum number of ObjectIds in a pack file that
+this index can currently support is limited to Integer.MAX_VALUE.
+
+Every ObjectId is given an integer mapping. The integer is the
+position of the ObjectId in the complete ObjectId list, sorted
+by offset, for the pack file. That integer is what the bitmaps
+use to reference the ObjectId. Currently, the new index format can
+only be used with pack files that contain a complete closure of the
+object graph e.g. the result of a garbage collection.
+
+The index file includes four bitmaps for the Git object types i.e.
+commits, trees, blobs, and tags. In addition, a collection of
+bitmaps keyed by an ObjectId is also included. The bitmap for each entry
+in the collection represents the full closure of ObjectIds reachable
+from the keyed ObjectId (including the keyed ObjectId itself). The
+bitmaps are further compressed by XORing the current bitmaps against
+prior bitmaps in the index, and selecting the smallest representation.
+The XOR'd bitmap and offset from the current entry to the position
+of the bitmap to XOR against is the actual representation of the entry
+in the index file.
+
+Change-Id: Id328724bf6b4c8366a088233098c18643edcf40f
+
+
+COMMENTS
+
+author: Warren Watkins
+date: 2012-10-03 15:37:46.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-10-03 15:37:52.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2371/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-10-03 15:43:24.000000000
+
+Patch Set 3: Fails
+
+Build Failed 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2371/ : FAILURE
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2012-10-03 15:44:51.000000000
+
+Patch Set 3: (1 inline comment)
+
+
+
+Line:99, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/BasePackBitmapIndex.java -> nit: jgit spells this for (;;)
+
+-------------------------------------
+author: Juliet Cantu
+date: 2012-10-09 22:25:25.000000000
+
+Patch Set 3: (7 inline comments)
+
+
+
+Line:102, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/BasePackBitmapIndex.java -> Make this two statements
+
+Line:8, org.eclipse.jgit/META-INF/MANIFEST.MF -> Gosh, our first non-jdk dependency in the core :)
+
+Line:64, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/BitmapIndexImpl.java -> What are these for?
+
+Line:99, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/InflatingBitSet.java -> DId you measure whether this resizing is the best one?
+
+Line:63, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/BitSet.java -> Amortized doubling is more traditional that doubling. Perhaps there is a reason for doubling here, but I can't see it.
+
+Line:102, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/BitSet.java -> Long.SIZE avoids one magic number
+
+Line:112, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/BitSet.java -> I'd call this wordmask because it doesn't mask the whole bitset
+
+-------------------------------------
+author: Juliet Cantu
+date: 2012-10-09 22:25:37.000000000
+
+Patch Set 3: I would prefer that you didn't submit this
+
+
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2012-10-09 22:36:50.000000000
+
+Patch Set 3: (2 inline comments)
+
+
+
+Line:102, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/BitSet.java -> I would prefer not to use Long.SIZE here. Not many people know SIZE is the number of bits in a long in Java. But a lot of people know that a long is 64 bits in Java. The line is "64 - Long." I think its pretty damn clear as written. Using Long.SIZE to make someone happy about avoiding a magic number just obfuscates what we are trying to say.
+
+Line:112, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/BitSet.java -> Its not a wordmask either, its a mask for a single bit. I wouldn't name the method wordmask. mask is fine. Or singleBitMask.
+
+-------------------------------------
+author: Warren Watkins
+date: 2012-10-11 21:50:29.000000000
+
+MISMATCHED INLINE COMMENT
+Line:99, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/BasePackBitmapIndex.java -> Done
+
+-------------------------------------
+author: Warren Watkins
+date: 2012-10-11 21:50:29.000000000
+
+MISMATCHED INLINE COMMENT
+Line:102, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/BasePackBitmapIndex.java -> Done
+
+-------------------------------------
+author: Warren Watkins
+date: 2012-10-11 21:50:29.000000000
+
+MISMATCHED INLINE COMMENT
+Line:8, org.eclipse.jgit/META-INF/MANIFEST.MF -> Yes. Just rev'd it again since I optimized the implementation of int iterator.
+
+-------------------------------------
+author: Warren Watkins
+date: 2012-10-11 21:50:29.000000000
+
+MISMATCHED INLINE COMMENT
+Line:64, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/BitmapIndexImpl.java -> These are used to account for objects that are not in the base pack i.e. the MutableBitmapIndex. We won't know about all of the IDs until we start the traversal, so this is an attempt to decrease the number of required mem allocations and copies.
+
+It is a guess but it should be a non-zero number for most requests.
+
+-------------------------------------
+author: Warren Watkins
+date: 2012-10-11 21:50:29.000000000
+
+MISMATCHED INLINE COMMENT
+Line:99, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/InflatingBitSet.java -> No. It is difficult to say which is best because there is no representation workload.  I just took the approach that would work for all workloads at the expense of a little extra memory.
+
+-------------------------------------
+author: Warren Watkins
+date: 2012-10-11 21:50:29.000000000
+
+MISMATCHED INLINE COMMENT
+Line:63, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/BitSet.java -> what are you suggesting the resize function should be?
+
+My goal here is to grow the bitset as quickly as possible, so memory copying/allocation is not a significant overhead. Keep in mind that these are fairly short lived and small. Even if we have a 3M bits, the bitset would only take up 375K.
+
+-------------------------------------
+author: Warren Watkins
+date: 2012-10-11 21:50:29.000000000
+
+MISMATCHED INLINE COMMENT
+Line:102, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/BitSet.java -> left as is.
+
+-------------------------------------
+author: Warren Watkins
+date: 2012-10-11 21:50:29.000000000
+
+MISMATCHED INLINE COMMENT
+Line:112, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/BitSet.java -> I'll leave it as is. mask() makes sense in context of actual code.
+
+-------------------------------------

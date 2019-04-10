@@ -1,0 +1,107 @@
+DESCRIPTION
+
+C++11 modernization: Use std::shared_ptr for SingleThreadedRCPtr
+
+Remove our own implementation of SingleThreadedRCPtr, and instead just
+use std::shared_ptr<>.
+
+Couple of noteworthy changes / implementation details:
+
+1. std::shared_ptr doesn't generally require that a class T which is
+  owned by it inherit from a special base class (i.e. unlike
+  SingleThreadedRCPtr which requires inheriting from RCValue), so we
+  can remove inheriting from RCValue where no other Couchbase-specific
+  ref-counted pointers are used.
+
+2a. One exception to (1) is when an object wants to materialise a
+  shared_ptr to itself - e.g.
+
+    auto foo = std::shared_ptr<Foo>(this);
+
+  (assuming the object was originally created via make_shared().  This
+  is incorrect, as it creates a new, totally seperate shared_ptr and
+  will delete the object when it goes out of scope.  To solve this
+  problem C++11 provides a special method shared_from_this() if you
+  inherit from std::enable_shared_from_this<T>:
+
+    class Foo : public std::enable_shared_from_this<T> { ... };
+
+    ...
+
+    Foo::bar() {
+        func_requiring_shared_ptr(shared_from_this());
+    }
+
+2b. It is illegal to call shared_from_this() in the objects'
+  constructor - this is because until the contructor completes (and
+  std::make_shared<> completes the shared_ptr initialization) there
+  isn't a valid shared_ptr to return.
+  To solve this some classes which previously did attempt to create
+  shared pointers to this in the constructor (i.e. DcpConsumer) have
+  been refactored to move the shared_ptr construction into a separate
+  member function.
+
+3. As SingleThreadedRCPtr required all classes pointed-to to inherit
+  from RCValue, it was correct (but IMHO bad practice) to construct a
+  shared pointer, decay it to a raw pointer, then create a new shared
+  pointer from the raw pointer and still have correct refcounts -
+  e.g.:
+
+    SingleThreadedRCPtr<Foo> smart_ptr = new Foo(); // refcount == 1
+    Foo* raw_ptr = smart_ptr.get();
+    {
+        SingleThreadedRCPtr<Foo> smart_ptr2 = raw_ptr; // refcount == 2
+    }
+    // after smart_ptr2 destroyed, refcount == 1
+
+  This works because the refcount lives inside the object itself, and
+  hence the constructor for a SingleThreadedRCPtr can simply increment
+  the existing count.
+  However std::shared_ptr is implemented differently - the refcount
+  lives in a separate control block. Consequently the equivilant code
+  would result in smart_ptr2 taking ownership of the raw ptr (with
+  recfount == 1), and hence destroying the object when it goes out of
+  scope:
+
+    auto smart_ptr = std::make_shared<Foo>(); // refcount == 1
+    Foo* raw_ptr = smart_ptr.get();
+    {
+        auto smart_ptr2 = std::shared_ptr<Foo>(raw_ptr); // refcount == 1
+    }
+    // after smart_ptr2 destroyed, refcount == 0, object deleted.
+
+  As a result is is necessary to make sure that instances of such ptr
+  decaying / promoting (smart -> raw -> smart) are removed, and
+  instead we always maintain the pointer as a 'smart' one.
+
+Change-Id: Id246643ea14f421afc170ef682c1b03563e83b8c
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2015-12-02 12:18:50.881000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-12-02 13:28:02.311000000
+
+Patch Set 3:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/924/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-12-02 14:00:07.127000000
+
+Patch Set 3: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1680/ : FAILURE
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/924/ : FAILURE
+
+-------------------------------------

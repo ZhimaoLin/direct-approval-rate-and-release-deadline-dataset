@@ -1,0 +1,124 @@
+DESCRIPTION
+
+CBQE-2173: added tests for xdcr checkpointing
+
+Change-Id: I73ee6c99fa224bb4a6332b6cbdaa7425c0a57dc2
+
+
+COMMENTS
+
+author: Fisher Vargas
+date: 2014-04-30 16:05:39.050000000
+
+Uploaded patch set 9.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2014-04-30 16:05:48.351000000
+
+Patch Set 9:
+
+Build Started http://factory.couchbase.com/job/testrunner-Jasmin Rangel-master/1212/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2014-04-30 16:29:34.128000000
+
+Patch Set 9: Verified+1
+
+Build Successful 
+
+http://factory.couchbase.com/job/testrunner-Jasmin Rangel-master/1212/ : SUCCESS
+
+-------------------------------------
+author: Angelina Mayer
+date: 2014-05-01 01:06:47.419000000
+
+Patch Set 9:
+
+(2 comments)
+
+Comments:
+1. Apart from the node crashing scenarios and bucket flush, I think other tests already exist. Can we just refer the testcase in conf instead of duplicating code? Infact I'm wondering what we would achieve by rerunning the scenarios especially when there are no checkpoint specific validations for items in order of 1000s. So I'm more interested in the unit tests where actual checkpoint verification can be done.
+Copying from my mail -
+As long as you want to induce mutations
+{
+	Load(once, thereon update) an item into vbucket0
+ 	if checkpointing happened (for now, let us rely on changes in time_committing stat/secs in checkpointing, I've asked ns_server team for stats on total successful and failed checkpoints at vbucket level, this will be private API)
+		Validate most recent checkpointing doc for the vb
+		Check if replicator starts from the next sequence number specified in checkpoint document 
+	Else
+		Raise "no checkpoint made" exception
+	Sleep for 60s
+        <do_nothing/restart node/rebalance/failover node as needed by test>
+}
+So it would be good to create methods for these steps. I would also appreciate Andrei's input on the above.
+
+Line:8, conf/py-xdcr-checkpoint.conf -> checkpoint_interval is now 60 by default, you can remove these
+
+Line:10, pytests/xdcr/checkpointXDCR.py -> Comments:
+
+1. Apart from the node crashing scenarios and bucket flush, I think other tests already exist. Can we just refer the testcase in conf instead of duplicating code? Infact I'm wondering what we would achieve by rerunning the scenarios especially when there are no checkpoint specific validations for items in order of 1000s. So I'm more interested in the unit tests where actual checkpoint verification can be done.
+
+Copying from my mail -
+
+As long as you want to induce mutations
+{
+	Load(once, thereon update) an item into vbucket0
+ 	if checkpointing happened (for now, let us rely on changes in time_committing stat/secs in checkpointing, I've asked ns_server team for stats on total successful and failed checkpoints at vbucket level, this will be private API)
+		Validate most recent checkpointing doc for the vb
+		Check if replicator starts from the next sequence number specified in checkpoint document 
+	Else
+		Raise "no checkpoint made" exception
+	Sleep for 60s
+        <do_nothing/restart node/rebalance/failover node as needed by test>
+}
+
+So it would be good to create methods for these steps. I would also appreciate Andrei's input on the above.
+
+-------------------------------------
+author: Angelina Mayer
+date: 2014-05-01 17:56:18.141000000
+
+Patch Set 9: Code-Review-1
+
+-------------------------------------
+author: Esperanza Cherry
+date: 2014-05-02 07:11:42.193000000
+
+Patch Set 9:
+
+(2 comments)
+
+Line:10, pytests/xdcr/checkpointXDCR.py -> totally agree with Aruna. we do not need to have the same scenario in all tests. definitely better to have a new check and better start writing tests from them and not with common steps which have almost all tests. after writing validation logic you could enhance with general steps for the new tests.
+
+btw, i think that better to extend https://github.com/couchbase/testrunner/blob/master/pytests/checkpoint.py on xdcr part. it could be like: create XDCR replication, call method from checkpoint.py on any cluster and then verify that we have checkpoints on both clusters(positive case)
+
+Line:25, pytests/xdcr/checkpointXDCR.py -> this func only print logs, why it's named __wait_for_checkpoint_issued? there is no TODO?
+
+-------------------------------------
+author: Angelina Mayer
+date: 2014-05-02 19:03:24.849000000
+
+Patch Set 9:
+
+(1 comment)
+
+Line:10, pytests/xdcr/checkpointXDCR.py -> I like the part on verifying if both clusters have checkpoints. We no more replicate checkpoint documents to dest. So only replicating end will have checkpoints. Ns_server will give us private api for number of failed/successful checkpoints per vbucket. Also there are 2 checks on checkpointing we can do for all xdcr tests -
+
+1. For every key updated/deleted(assuming there is atleast 60s between load and update so the vb gets a checkpoint), get the vbucket_id, use private API to see if number of successful checkpoints != 0.
+2. Assert if number of failed checkpoints > successful checkpoints for any vb.
+
+The rest of the checkpointing checks(above) can only be part of unit tests.
+
+So I recommend-
+1. For all xdcr tests - adding _verify_checkpoint() in xdcrbasetests.py which can call its rest API (from rest_client.py).
+2. Unit tests+their verification methods can be kept here or moved to checkpoint.py. I'm not particular about that but since checkpoint.py deals with ep-engine checkpointing tests, I think it would be more organized to keep ep-engine and ns_server checkpointing separate to avoid confusion.
+
+-------------------------------------
+author: Fisher Vargas
+date: 2014-05-29 06:25:42.311000000
+
+Abandoned
+
+-------------------------------------

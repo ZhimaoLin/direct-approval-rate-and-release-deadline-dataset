@@ -1,0 +1,175 @@
+DESCRIPTION
+
+Monitor Eclipse editors changing workspace external text files
+
+Editing files which are outside workspace (not inside any project or
+inside closed projects) should trigger refresh of the index state. A
+buffer listener is added to the ITextFileBufferManager which updates the
+appropriate IndexDiffCacheEntry if the file is recognized as "external".
+
+Change-Id: I7f6d324d0238b49016a7189568ce2c492a39d0eb
+Signed-off-by: Jayvion Booth xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Jayvion Booth
+date: 2015-11-15 12:56:51.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-11-15 12:56:57.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/7807/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-11-15 13:20:23.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/7807/ : SUCCESS
+
+-------------------------------------
+author: Alayna Houston
+date: 2015-11-15 13:25:28.000000000
+
+Patch Set 3:
+
+(4 comments)
+
+Yeah, that looks pretty good. Just some minor points.
+
+Line:56, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/indexdiff/IndexDiffCache.java -> Why package visibility? Why not just private and non-static?
+
+Line:78, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/indexdiff/IndexDiffCache.java -> If non-static, you could just do
+
+  getIndexDiffCacheEntry(repo)
+
+here.
+
+Line:83, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/indexdiff/IndexDiffCache.java -> Ok for now (I realize we do similar tests elsewhere), but what about case-sensitivity? What do cgit and JGit do? Would a .Gitignore also be recognized by cgit as an ignore file on a case-insentive file system? (Only tangentially related to this change. Leave it for now as is, but we should check this some time.)
+
+Line:120, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/indexdiff/IndexDiffCache.java -> Nit: package can be removed; Activator is already imported.
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-11-15 14:11:33.000000000
+
+Patch Set 3:
+
+(4 comments)
+
+Line:56, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/indexdiff/IndexDiffCache.java -> "private" is not needed (no one inside package will ever use this class) and generates extra bytecode needed to access the constructor.
+
+I will remove static modifier.
+
+Line:78, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/indexdiff/IndexDiffCache.java -> Done
+
+Line:83, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/indexdiff/IndexDiffCache.java -> I don't think .Gitignore is valid.
+
+Line:120, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/indexdiff/IndexDiffCache.java -> Done
+
+-------------------------------------
+author: Alayna Houston
+date: 2015-11-15 14:43:18.000000000
+
+Patch Set 3:
+
+(2 comments)
+
+Line:56, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/indexdiff/IndexDiffCache.java -> Ok... though "extra bytecode..." sounds like premature optimization for something that is created exactly once when the plugin starts.
+
+Line:83, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/indexdiff/IndexDiffCache.java -> Actually, I think it is :-( Witness the following on a case-insensitive HFS+ partition:
+
+  $ ls -al
+  total 24
+  drwxr-xr-x   6 thomas  staff   204 Nov 15 14:41 .
+  drwxr-xr-x  32 thomas  staff  1088 Oct 25 19:00 ..
+  -rw-r--r--@  1 thomas  staff  6148 Nov 15 13:23 .DS_Store
+  drwxr-xr-x  12 thomas  staff   408 Nov 15 00:22 .git
+  -rw-r--r--@  1 thomas  staff    21 Nov 15 14:43 .gitignore
+  drwxr-xr-x  13 thomas  staff   442 Nov 15 13:25 testproject
+  $ git status
+  # On branch master
+  # Your branch is ahead of 'origin/master' by 1 commit.
+  #
+  # Changes not staged for commit:
+  #   (use "git add <file>..." to update what will be committed)
+  #   (use "git checkout -- <file>..." to discard changes in working directory)
+  #
+  #	modified:   testproject/File with blanks.txt
+  #
+  # Untracked files:
+  #   (use "git add <file>..." to include in what will be committed)
+  #
+  #	.gitignore
+  no changes added to commit (use "git add" and/or "git commit -a")
+  $ mv .gitignore .Gitignore
+  arcturus:testproject_b thomas$ ls -al
+  total 24
+  drwxr-xr-x   6 thomas  staff   204 Nov 15 15:28 .
+  drwxr-xr-x  32 thomas  staff  1088 Oct 25 19:00 ..
+  -rw-r--r--@  1 thomas  staff  6148 Nov 15 13:23 .DS_Store
+  -rw-r--r--@  1 thomas  staff    21 Nov 15 14:43 .Gitignore
+  drwxr-xr-x  12 thomas  staff   408 Nov 15 15:27 .git
+  drwxr-xr-x  13 thomas  staff   442 Nov 15 13:25 testproject
+  $ git status
+  # On branch master
+  # Your branch is ahead of 'origin/master' by 1 commit.
+  #
+  # Changes not staged for commit:
+  #   (use "git add <file>..." to update what will be committed)
+  #   (use "git checkout -- <file>..." to discard changes in working directory)
+  #
+  #	modified:   testproject/File with blanks.txt
+  #
+  # Untracked files:
+  #   (use "git add <file>..." to include in what will be committed)
+  #
+  #	.Gitignore
+  no changes added to commit (use "git add" and/or "git commit -a")
+  $ more .Gitignore 
+  .DS_Store
+  ignored.txt
+  $ ls -al testproject/i*
+  -rw-r--r--  1 thomas  staff  28 Nov 15 13:25 testproject/ignored.txt
+  $ 
+
+testproject/ignored.txt is a newly added file, and is ignored. EGit/JGit shows me three unstaged changes, .Gitignore, testproject/File with blanks.txt, and testproject/ignored.txt :-(
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-11-15 15:12:09.000000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:83, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/indexdiff/IndexDiffCache.java -> You should report bug for JGit, this affects more than .gitignore.
+
+org.eclipse.jgit.treewalk.WorkingTreeIterator.init(Entry[]) should use different code is FS.DETECTED.isCaseSensitive() returns false to detect .git, .gitignore and .gitattributes.
+
+-------------------------------------
+author: Alayna Houston
+date: 2015-11-15 15:33:48.000000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:83, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/indexdiff/IndexDiffCache.java -> Done: bug 482218.
+
+-------------------------------------
+author: Gerrit Johnathan Pham
+date: 2015-11-15 15:35:07.000000000
+
+Change has been successfully merged into the git repository by Jayvion Booth
+
+-------------------------------------

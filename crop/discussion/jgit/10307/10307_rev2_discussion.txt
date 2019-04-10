@@ -1,0 +1,182 @@
+DESCRIPTION
+
+Performance fixes in DateRevQueue
+
+When a lot of commits are added to DateRevQueue, the
+sort-on-insertion approach is very heavy on CPU cycles.
+
+One approach to fix this was made by Santos Moore:
+https://git.eclipse.org/r/#/c/5491/
+
+But using Java's PriorityQueue seems to have brought some
+extra overhead, and the desired performance could not be
+reached.
+
+This fix takes another approach to the insertion problem,
+without changing the expected behaviour or bringing extra
+memory overhead:
+
+If we detect over 1000 commits in the DateRevQueue, a
+"seek-index" is rebuilt every 1000th added commit.
+
+The index keeps track of every 100th commit in the
+DateRevQueue. During insertions, it will be used for a
+preliminary scanning of the queue, with the intention of
+helping add() find a good starting point to start walking
+from. After finding this starting point, add() will step
+commit-by-commit until the correct insertion place in
+the queue is found (today, the queue is expected to be
+sorted at all times).
+
+When applied to repositories with many refs, this approach
+has proven to bring huge performance gains and scales quite
+well.
+
+For instance, in a repository with close to 80000 refs,
+we could cut down the time a typical Gerrit replication
+of 1 commit would take (just a push from JGit's point of
+view) from 32sec down to 3.5sec.
+
+Below you see some typical times to add a specific amount
+of commits (with random commit times) to the DateRevQueue
+and the difference the preliminary seek-index makes:
+
+Commits | Index | No Index
+   1024     2ms        4ms
+   2048     5ms        4ms
+   4096     8ms       15ms
+   8192     9ms       69ms
+  16384    11ms      451ms
+  32768    41ms     3092ms
+  65536   130ms    15642ms
+ 131072   464ms    71960ms
+
+Only one extra LinkedList reference is needed for every 100
+inserted commits (and only when we see more than 1000 commits
+in the queue), so the memory overhead should be negligible.
+
+It may be worth noting that ties are still broken in FIFO
+order.
+
+Various index-stepping values were tested, and 100 seemed to
+scale very well and be effective from start.
+
+In the future, it should probably be dynamic and based on
+the number of refs in the queue, but this should serve well
+as a starting point.
+
+Note: While other fundamentally different data structures may
+be more suitable, the DateRevQueue is extremely central to
+many of the Git core operations. This approach was chosen,
+since the effect of the patch is easy to predict in conjuction
+with the current implementation. A totally new data structure
+will make it harder to predict behaviour in many common and
+uncommon cases (in terms of breaking ties, memory usage, cost
+when using few elements, object creation/disposing overhead,
+etc).
+
+Change-Id: Ie7b99f40eacf6324bfb4716d82073adeda64d10f
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2013-02-13 00:29:04.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2929/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-02-13 00:33:36.000000000
+
+Patch Set 2: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2929/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2013-02-13 00:46:22.000000000
+
+Patch Set 2: I would prefer that you didn't submit this; Unclean IP, do not check in
+
+(2 inline comments)
+
+please assert the contributor questions [1] as a comment on this review, this is required by the Eclipse IP process
+
+[1] http://wiki.eclipse.org/EGit/Contributor_Guide#Legal_Paperwork
+
+Line:97, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DateRevQueue.java -> style nit: we don't use braces around single line blocks
+
+Line:140, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DateRevQueue.java -> style nit: we don't use braces around single line blocks
+
+-------------------------------------
+author: Shyanne Larsen
+date: 2013-02-13 01:01:28.000000000
+
+Patch Set 2:
+
+> I tried jgit rev-list on a repo with a *lot* of refs and commits, but didn's seen any 
+
+Sounds very strange. While I mostly worked from more high level use cases like upload- and receive-packs, I do have great data from testing the patch in a widely used system and can show immense improvements in speed and CPU-utilization in a production environment. 
+
+I can post some data on Thursday when I get back to the office.
+
+How many refs and commits did the repository had that you tested?
+
+By issuing a push to a remote with lots and lots of refs (typical Gerrit servers/slaves where all patch sets have corresponding refs), you should be able to see a tenfold+ difference in push times. 
+
+It should also affect receive-packs too, especially when receiving commits with a bit older commit time-stamps (which would force JGit to traverse all the older and uninteresting commits until it reaches the newly received commit).
+
+-------------------------------------
+author: Shyanne Larsen
+date: 2013-02-13 01:04:54.000000000
+
+Patch Set 2:
+
+I (Sony Mobile) owns the copyright of the contributed content. 
+
+The patch have also been OK by Sony Mobile for contribution to the JGit project under EDL.
+
+-------------------------------------
+author: Shyanne Larsen
+date: 2013-02-13 01:30:10.000000000
+
+Patch Set 2:
+
+Sorry. It should say: "It should also affect receive-packs too, especially when receiving commits with a bit older commit time-stamps (which would force JGit to traverse all the _newer_ and uninteresting commits until it reaches the newly received, but older, commit)." This typically can happen when you get deliveries from 3rd parties.
+
+Anyways. I recommend a JGit push to remote repository to really see and demo the performance benefits. Especially when the local and remote repo is running 50k+ refs.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2013-02-13 16:21:55.000000000
+
+Patch Set 2: IP review completed
+
+
+
+-------------------------------------
+author: Juliet Cantu
+date: 2013-02-13 21:34:46.000000000
+
+Patch Set 2:
+
+Gustaf: It was the jgit repo. Only 5700 refs (incl refs/changes), so maybe that's not a lot.
+
+-------------------------------------
+author: Shyanne Larsen
+date: 2013-02-14 09:13:06.000000000
+
+Patch Set 2: (2 inline comments)
+
+
+
+Line:97, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DateRevQueue.java -> Done
+
+Line:140, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DateRevQueue.java -> Done
+
+-------------------------------------

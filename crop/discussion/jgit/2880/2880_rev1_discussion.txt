@@ -1,0 +1,99 @@
+DESCRIPTION
+
+Enhance RefDatabase with a refresh() method
+
+There is the chance that RefDirectory (our only implementation of the
+RefDatabase) doesn't notice updates to refs and therefore reports
+outdated data. The problem is that RefDirectory caches LooseRef's
+and relies on the filesystems lastModified data to detect whether
+the ref has changed. If we manage to update a ref once and afterwards
+update the ref externally (e.g. by a push operation) within one second
+we may fail to detect this ref update on linux. Egit's
+PusOperationTest.pushTest() was very unstable on linux without
+explicit sleeps.
+This change adds the possibility to clear all caches in RefDirectory
+in case you know that you may run into this problem. If you are
+writing tests against the JGit API which includes transports
+(causing 'external' updates of refs) you wan't to clear the
+cache of a receiving repo after a push.
+
+Signed-off-by: Zachary Orozco xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2011-03-22 12:08:12.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/164/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-03-22 12:10:31.000000000
+
+Patch Set 1: Build Successful
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/164/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-03-22 14:08:25.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:10, /COMMIT_MSG -> Have we tried fixing this?
+
+Ideally RefDatabase would consider refs "racily clean" if they were modified too close to the last scan and be scanned again, similar to what we have done with the "racily clean" files in the DirCache.
+
+Is the problem that my change I1556b7e7ea21c31ff76bca930269e0cc7d55cd26 ("RefDirectory: Use FileSnapshot for loose refs") is still outstanding?
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-03-22 14:11:50.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(2 inline comments)
+
+
+
+Line:381, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/FileRepository.java -> This shouldn't be necessary anymore.
+
+RefDirectory.refresh() should trigger an event listener if one or more refs was detected to be modified, which means we can drop the getAllRefs() call here.
+
+Line:221, org.eclipse.jgit/src/org/eclipse/jgit/lib/RefDatabase.java -> As much as I hate the idea that we might need this for the local system case, this may actually make a lot of sense for the DHT implementation. Right now the DHT code caches the refs on the first access, and then never looks at the backing database again. Its expected that the caller would close and re-open the Repository object before needing a refreshed set of references. This works OK in a server environment, where the Repository is only needed for a short time period for the current request. But is less than ideal for an IDE or GUI application.
+
+So as much as I dislike needing this, I'm actually pretty inclined to +2 the introduction of this method to the API.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2011-03-22 15:08:48.000000000
+
+Patch Set 1: (3 inline comments)
+
+
+
+Line:381, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/FileRepository.java -> If your FileSnapshot solution is in we don't need a modification in this file anymore, right?
+
+Line:221, org.eclipse.jgit/src/org/eclipse/jgit/lib/RefDatabase.java -> +1
+Therefore I leave this proposal open and don't just abandon it in favour of your FileSnapshot solution (which would solve my specific problem)
+
+Line:10, /COMMIT_MSG -> Sorry, I just overlooked your proposal. I think your proposal using FileSnapshot would solve my specific problem of instable EGit tests much better. I'll review your proposal. We could even abandon this change then, but if I understood you correctly you still need a refresh() method for DHT use cases. For that I would leave this one open.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-03-27 21:02:42.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:381, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/FileRepository.java -> Correct. The getAllRefs() should still trigger the listener to be fired, which is what this method exists for.
+
+-------------------------------------

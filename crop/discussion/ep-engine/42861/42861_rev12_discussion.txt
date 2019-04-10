@@ -1,0 +1,96 @@
+DESCRIPTION
+
+MB-12540: Refactor the way we track snapshot start/end seqnos
+
+For the 3.0 release I needed to add snapshot sequence number
+quickly and in doing so implemented an approach that was not
+very good and prone to errors. The correct approach is to track
+sequence numbers on disk and also to track them for each checkpoint
+in the checkpoint manager. This change moves us to the better
+approach.
+
+Change-Id: Ifbdd6c87b06767ff8c6504c1058ce11195fa2428
+
+
+COMMENTS
+
+author: Kenny Maynard
+date: 2014-11-12 02:05:27.004000000
+
+Uploaded patch set 12.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2014-11-12 02:07:05.452000000
+
+Patch Set 12:
+
+This passes all of the basis tests, but I will give a toy build to QE tomorrow to do further testing. This is change is required for me to implement the "backfilling from replica feature".
+
+-------------------------------------
+author: Abby Duran
+date: 2014-11-18 02:23:38.918000000
+
+Patch Set 12: Code-Review-1
+
+(6 comments)
+
+Line:471, src/dcp-stream.cc -> queued_item &qi = *itr;
+
+Please address it in a separate commit.
+
+Line:459, src/checkpoint.h -> Can we adapt this function to return {snapStartSeqno, snapEndSeqno} as a n enum type instead of passing them as a reference-type parameter? This will make a code readability better.
+
+Line:532, src/checkpoint.h -> Can we make this function return {snapStart, start, snapEnd} as an enum type "snapshot_info"?
+
+Line:2907, src/ep.cc -> Is it okay to set this state even before commit operation?
+
+Line:865, src/checkpoint.cc -> As this cursor is moved to the next checkpoint, snapEndSeqno won't be set correctly below if we want to get the snapshot end from the current checkpoint.
+
+Line:1132, src/checkpoint.cc -> I don't understand why we set snapStart using start variable here. Can we at least put some comments here why it is required.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2014-11-21 18:13:04.907000000
+
+Patch Set 12:
+
+(6 comments)
+
+FYI. I'm holding off on fixing this up and getting qe tests run because I don't want to merge it before I leave for vacation.
+
+Line:471, src/dcp-stream.cc -> Will do.
+
+Line:459, src/checkpoint.h -> I assume you mean a struct with two variables. If this is the case then I can do that.
+
+Line:532, src/checkpoint.h -> Same comment as above.
+
+Line:2907, src/ep.cc -> I actually had a comment to myself on this line earlier about exactly what you mentioned. I don't think we do because we will only be running on write task (flusher, snapshot, etc) at a time. When I also reviewed the old code we didn't hold a lock either. The main concern if we did is that the lock would be held during persistence and likely cause high contention. My current though is that we do not need to hold a lock here.
+
+Line:865, src/checkpoint.cc -> I'll fix this.
+
+Line:1132, src/checkpoint.cc -> Sure
+
+-------------------------------------
+author: Abby Duran
+date: 2014-11-21 19:09:52.904000000
+
+Patch Set 12:
+
+(2 comments)
+
+Line:459, src/checkpoint.h -> Yes, it does.
+
+Line:2907, src/ep.cc -> My point is that can we call this function after the commit is done below?
+
+-------------------------------------
+author: Kenny Maynard
+date: 2014-11-21 19:11:36.595000000
+
+Patch Set 12:
+
+(1 comment)
+
+Line:2907, src/ep.cc -> Yes, that should be fine.
+
+-------------------------------------

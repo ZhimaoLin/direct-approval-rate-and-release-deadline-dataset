@@ -1,0 +1,136 @@
+DESCRIPTION
+
+Tycho build for org.eclipse.egit.ui.test
+
+Following approach described in [1].
+
+Fixed dependencies:
+- correcting wrong version range for org.eclipse.core.filesystem
+- org.eclipse.ui and org.hamcrest need to be referenced via require-bundle
+
+Make GitCloneWizardTest.canCloneARemoteRepo() independent from Eclipse
+workspace name. This eliminates the need to configure the workspace used
+by the test run from Tycho.
+
+Introduce maven property "ui.test.vmargs" to enable passing VM parameters to the
+VM running the tests.
+
+Also introduce maven property "platform-version-name" to simplify building
+against different Eclipse platform releases. E.g. to build and test
+against helios platform release run
+
+mvn -Dplatform-version-name=helios clean install
+
+[1] https://docs.sonatype.org/display/TYCHO/How+to+run+SWTBot+tests+with+Tycho
+
+Change-Id: I06e94589589ad18b50daf641d89fd65a8c46f694
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Douglas Trujillo
+date: 2010-04-20 13:04:30.000000000
+
+Uploaded patch set 9.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2010-04-20 13:05:41.000000000
+
+Patch Set 9: Looks good to me, but someone else must approve; IP review completed
+
+
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-04-20 14:32:56.000000000
+
+Patch Set 9: I would prefer that you didn't submit this; No score
+
+I'm still getting WNFE on my Linux box while running the tests with the Helios platform.  I don't think the dialog is opening:
+
+canCloneARemoteRepo(org.eclipse.egit.ui.wizards.clone.GitCloneWizardTest)  Time elapsed: 5.254 sec  <<< ERROR!
+org.eclipse.swtbot.swt.finder.exceptions.WidgetNotFoundException: Could not find widget.
+Caused by: org.eclipse.swtbot.swt.finder.widgets.TimeoutException: Timeout after: 5000 ms.: Could not find shell matching: with text 'Import'
+
+The workbench seems to startup, just sits there, and then finally exits.  Seems to me that the import dialog doesn't start like expected, so all of the tests just time out and fail.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2010-04-20 15:12:59.000000000
+
+Patch Set 9: No score
+
+ok, I'll switch to Linux and try to reproduce your problem
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2010-04-21 20:26:53.000000000
+
+Patch Set 9: Looks good to me, but someone else must approve
+
+I tried on Ubuntu 9.10 against helios M6 using openjdk 6 and all tests passed successfully.
+
+Did you run maven on egit parent project or just on the ui test project ? The maven build installs egit and jgit features into the eclipse sdk used as test harness from the local update site built by the update site project using the maven property local-egit-site.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-04-21 20:50:41.000000000
+
+Patch Set 9:
+
+I ran it in the top-level, assuming that trying to run a single Maven project by itself wouldn't work out too good.
+
+If it works for you and not me, I must just have a cursed workstation.  We can still submit, we'll just probably see at least one other user with failing tests, and we can all scratch our heads again about that then.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-04-26 06:50:34.000000000
+
+Patch Set 9: No score; No score
+
+After wiping my .m2 directory and rebuilding with 
+
+cd jgit
+mvn clean install
+mvn clean install -f org.eclipse.jgit.packaging/pom.xml
+cd ../egit
+mvn clean install
+
+I get this:
+
+[INFO] Test Plug-in (Incubation) ......................... SUCCESS [18.073s]
+[INFO] EGit UI Test Plug-in (Incubation) ................. FAILURE [0.796s]
+
+and it finished with the following message:
+
+[ERROR] Failed to execute goal org.sonatype.tycho:maven-osgi-test-plugin:0.8.0:test (default-test) on project org.eclipse.egit.ui.test: Execution default-test of goal org.sonatype.tycho:maven-osgi-test-plugin:0.8.0:test failed: org.eclipse.equinox.internal.provisional.p2.core.ProvisionException: Problems resolving provisioning plan. -> [Help 1]
+
+If I run with the "test" target both test reports succes, but they are lying since they don't do anything.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-04-26 14:19:36.000000000
+
+Patch Set 9:
+
+Maven and Tycho seem to be confused about when to run tests.  I suspect this is a bug/feature in Tycho.  But you are right, when you run `mvn test` Tycho doesn't trigger its test suite.  It waits for `mvn install`.  No idea why the tests only execute during the install phase.  Its wrong.  But doesn't appear to be anything wrong with Matthias change.
+
+-------------------------------------
+author: Anonymous Coward
+date: 2010-04-26 14:29:22.000000000
+
+Patch Set 9: No score
+
+Tycho executes the tests in the integration-test phase by default, and that's why they are picked up by mvn install and not by mvn test.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2010-04-26 18:21:22.000000000
+
+Patch Set 9: No score
+
+The ganymede p2 repository  doesn't provide the org.eclipse.sdk.ide feature used to setup the test harness. Hence the build fails with a provisioning error when running it against ganymed. I'll try to find a workaround.
+
+-------------------------------------

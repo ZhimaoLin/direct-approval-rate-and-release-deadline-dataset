@@ -1,0 +1,118 @@
+DESCRIPTION
+
+WIP: Ephemeral Tombstone purging (VBucket-level)
+
+Change-Id: I937ed23317826c84cbdd0bb0b3749a99ff446497
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2017-04-06 16:48:15.515000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-04-06 17:38:16.099000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4315/ : FAILURE
+
+Compile error at /home/Piper Jefferson/jenkins/workspace/ep-engine-addresssanitizer-master/ep-engine/tests/module_tests/ephemeral_vb_test.cc:257:233:
+error: use of undeclared identifier 'findValue'
+ ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-addresssanitizer-master/4315/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/5533/ : FAILURE
+
+Compile error at /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/tests/module_tests/ephemeral_vb_test.cc:257:233:
+error: use of undeclared identifier 'findValue'
+ ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/5533/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5036/ : FAILURE
+
+Compile error at /home/Piper Jefferson/jenkins/workspace/ep-engine-clang_analyzer-master/ep-engine/tests/module_tests/ephemeral_vb_test.cc:257:44:
+error: 'findValue' was not declared in this scope
+ ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-clang_analyzer-master/5036/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/5743/ : FAILURE
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-04-06 20:59:23.013000000
+
+Patch Set 1:
+
+(4 comments)
+
+Dave some early comments
+
+Line:288, src/ephemeral_vb.cc -> Should call vb->setPurgeSeqno()
+
+Line:49, src/ephemeral_tombstone_purger.cc -> Actually it could be better purging the element from the list here itself if possible (that is if there are no range reads in the range where the item is purged).
+By this we are not grabbing the write lock for a long time and hence not blocking the front end writes.
+We can run the "delete_stale_items" post hashtable purging as we do now.
+
+I am also ok if we target this after functional complete. Your call
+
+Line:53, src/ephemeral_tombstone_purger.h -> whitespace ?
+
+Line:235, src/linked_list.h -> We will need a similar highestPurgeSeqno or purgeSeqno to keep track of last seqno that was purged
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-04-06 21:00:13.483000000
+
+Patch Set 1:
+
+Overall approach looks good
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-07 07:44:54.442000000
+
+Patch Set 1:
+
+(4 comments)
+
+Thanks for the comments Manu.
+
+Line:288, src/ephemeral_vb.cc -> Sure. what's the atomicity requirements here - is it safe for me to simply set it after the two pagers (not under any locks?)
+
+Line:49, src/ephemeral_tombstone_purger.cc -> I agree we could handle the Deleted stale items this way - and it's probably an optimisation we should implement - the issue is that you /still/ need to wNathalie Landry the whole list for Alive, Stale items. As such the overall complexity of the seqList walk is unchanged (although I agree we'll have fewer items to delete when walking).
+
+Given that in a real-world workload I expect Stale (Alive) items to be very small compared to the size of the sequenceList, the list wNathalie Landrying will likely dominate.
+
+I agree we need to consider ways to improve this - holding the writeLock while wNathalie Landrying the whole seqList isn't going to perform well. I haven't got any perfect ideas yet, but here's a couple of random ideas:
+
+1. Use fine-grained (per element) locking - add a (tiny, 2 bit packed into existing spare bits - e.g. https://github.com/facebook/folly/blob/master/folly/MicroLock.h) lock to each OSV which guards the membership of that node in the linked list. This would almost entirely remove contention (even for the front-end write case), but at the cost of extra locking (something like 3 locks to remove an element from the middle), 2 locks to re-insert at head. There's also lock acquisition ordering problems to deal with.
+
+2. Record a `previouslyStale` ptr which is used to resume from where we left off - would still need a linear scan under lock but could break the amount of work done in each chunk (similar to defragmenter). I say "previously stale" because any non-stale nodes could be moved / reused between runs. There's still complexity around managing that ptr - you can only stop on a stale node, as all others could be moved in the list.
+
+3. Introduce some kind of CleanupRange (similar to ReadRange) when the purging is occurring - this would inhibit node removal (like ReadRange). This would then allow the purge task to guarantee that no elements would be removed within it's CleanupRange; and hence it could defer taking the writeLock until it actually has found a stale item it wants to purge. (Normally the purger needs to take the writeLock to ensure no-one else re-uses items while the purger is iterating.)
+
+4. Related to 3 - define two (or more) ranges within the sequenceList (think generational GC) - the idea being you have an oldRange (from lowest seqNo to somewhere in middle) and newRange (middle to highest). Each range has it's own mutex. The purger would typically take the oldRangeLock and work on he older part; frontned-writes would look at the seqNo they are manipulating and acquire the correct lock (old or Young). This optimisation relies on the assumption that most front-end writes will be to "newer" keys (think 80/20 or a Zipfian distribution). As such, fronted-writes would rarely need to take the oldRangeLock.
+
+Line:53, src/ephemeral_tombstone_purger.h -> I'd actually rendered it that way to indent the "formula" to make it clearer - guess it didn't work! ;)
+
+Line:235, src/linked_list.h -> Will do.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-04-07 22:43:16.563000000
+
+MISMATCHED INLINE COMMENT
+Line:49, src/ephemeral_tombstone_purger.cc -> Noted these points. 
+Will send an email for potential perf improvements we could do, now that we are functional complete (or almost).
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-10 07:08:45.259000000
+
+MISMATCHED INLINE COMMENT
+Line:235, src/linked_list.h -> Done
+
+-------------------------------------

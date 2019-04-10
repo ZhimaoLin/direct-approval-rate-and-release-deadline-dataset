@@ -1,0 +1,77 @@
+DESCRIPTION
+
+MB-17766: Incorrect ordering of messages during ActiveStream's takeover-send phase
+
+A race between the step() and ActiveStreamCheckpointProcessorTask
+can cause mutations to be queued into the readyQ after the
+setVBucketState(active) message.
+
+Here's the scenario in chronology (T: Front-end thread, BT: IO thread):
+1. T1: ActiveStream::setVBucketStateAckRecieved()
+2. T1: transitionState(takeoverSend) => schedules ActiveStreamCheckpointProcessorTask
+3. BT1: manageConnections() notifies memcached about specific conn (max idle time: 5s)
+4. BT2: ActiveStreamCheckpointProcessorTask runs, gets all Items For Cursor
+5. T1: step() -> takeoverSendPhase() -> readyQ is empty
+        => nextCheckpointItem() return false, as getNumItemsForCursor returns 0
+        => setVbucketState(active) added to readyQ
+6. BT2: ActiveStreamCheckpointProcessorTask continues, adds mutations acquired into readyQ
+        -> Note the mutations were acquired in step 4
+        => Notified memcached connections
+7. T1: step() .. ships messages in incorrect order
+
+On the new master, the vbucket is promoted to active state and then more
+mutations are received from the old master. If there were front end ops
+at this time, there could be an inconsistency in highSeqno or in worst
+cases crashes in checkpoint manager due to highSeqno not belonging in
+the designated range.
+
+The fix: Add an atomic flag that is also checked for along with
+getNumItemsForCursor in nextCheckpointItem(). This flag is set before
+retrieving all items for a cursor (getAllItemsForCursor) and unset after
+all the retrieved items have been added to the ready queue of the stream.
+
+Change-Id: I5c04d47cc99c7dd3b2d87cb68dd30d36473226e5
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2016-02-09 22:18:28.670000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-09 22:18:34.685000000
+
+Patch Set 2:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/360/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-09 22:18:40.016000000
+
+Patch Set 2: Well-Formed+1
+
+Permission granted to commit to restricted branch
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-09 22:21:08.674000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/360/ : FAILURE
+
+Make encountered an error building one or more targets. ( http://factory.Piper Jefferson.com//job/ep-engine-Jasmin Rangel-3.0.x/360/ )
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-02-10 19:05:35.194000000
+
+Change has been successfully cherry-picked as ba305c4f083b3910d12f470bf9b39b3f4c2f2b97
+
+-------------------------------------

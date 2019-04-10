@@ -1,0 +1,113 @@
+DESCRIPTION
+
+Fix issue that caused items to be re-replicated through upr
+
+We us the lowest sequence number in a checkpoint as the sequence
+number for a checkpoint start message. During the setOpenCheckpointId
+call we were resetting the sequence number to something higher and
+this caused problems for sequence number replication. I also
+refactored the sequence number registration so that we don't send
+the item at the start sequence number.
+
+Change-Id: Idc6555b09036c546fa58859947af09ca8100a38e
+Reviewed-on: http://review.Piper Jefferson.org/34413
+Tested-by: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+Reviewed-by: Miley Adams xxx@xxx.xxx Jefferson.com>
+
+
+COMMENTS
+
+author: Miley Adams
+date: 2014-03-12 17:13:05.089000000
+
+Change has been successfully cherry-picked as e53c6065884a9bbb26314a4b6e7e5e4459ec16ce
+
+-------------------------------------
+author: Abby Duran
+date: 2014-03-13 08:26:10.375000000
+
+Patch Set 2:
+
+(3 comments)
+
+Line:350, src/checkpoint.cc -> Does this mean that we want to send an item whose seqno >= bySeqno?
+
+Line:264, src/checkpoint.cc -> This seems wrong. Why did you set the checkpoint id to XDCR rev_seqno here? It should be bySeqno. In addition, we should not set the checkpoint id to bySeqno here.
+
+If the open checkpoint has some regular items, then we should set the bySeqno of checkpoint_start item using the first regular item in the open checkpoint.
+
+Line:367, src/checkpoint.cc -> The above logic is wrong. We will miss the item pointed by "iitr" if (*iitr)->getBySeqno > bySeqno.
+
+-------------------------------------
+author: Ayla Reynolds
+date: 2014-03-13 11:24:50.810000000
+
+Patch Set 2:
+
+FYI: I haven't had a deeper look, but this makes views have duplicated items. If I revert this commit everything is fine. But as Chiyoung left comments, it may be that really something got broken.
+
+-------------------------------------
+author: Miley Adams
+date: 2014-03-13 15:40:23.283000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:367, src/checkpoint.cc -> If it is just a refactoring of old code. then "bySeqno > " should be "bySeqno <=" in the while condition. then it should be equivalent to old logic.
+
+-------------------------------------
+author: Abby Duran
+date: 2014-03-13 15:58:28.406000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:264, src/checkpoint.cc -> Btw, if the open checkpoint already has the checkpoint_start item, then we don't need to set its bySeqno value.
+
+Line:369, src/checkpoint.cc -> To address the item missing issue, we should catch the following condition as well:
+
+if (bySeqno < (*iitr)->getBySeqno() || iitr == (*itr)->end()) {
+    --iitr;
+}
+
+-------------------------------------
+author: Kenny Maynard
+date: 2014-03-13 17:45:36.202000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:264, src/checkpoint.cc -> That was the purpose of this change. From looking at the code to create a checkpoint start item it appears that we use the revSeqno field for the checkpoint id. Since all other fields in the checkpoint start item stay the same I just updated the checkpoint id.
+
+Line:367, src/checkpoint.cc -> I should have added this to the commit message, but I didn't realize I changed it. The code should be correct since we don't want to send the item pointed to by the start sequence number.
+
+-------------------------------------
+author: Abby Duran
+date: 2014-03-13 17:55:03.909000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:264, src/checkpoint.cc -> We never used the revSeqno for the checkpoint id. I'm still not sure why we need this? Did we change it recently?
+
+Line:367, src/checkpoint.cc -> But, we still might miss the item if iitr points to the item whose seqno > start_seq_num.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2014-03-13 18:01:16.913000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:264, src/checkpoint.cc -> We used the revSeqno field in the queueditem class, but it was just called the seqno filed. So we haven't changed the way we hold it, but we did remove the queueditem class so it's not exactly the same.
+
+I think this function is used when the replica and the active checkpoint id'd are different. If this is the case we would set the open checkpoint id on the replica to the checkpoint id of the checkpoint we are sending on the master.
+
+Line:367, src/checkpoint.cc -> Right. I'll fix this.
+
+-------------------------------------

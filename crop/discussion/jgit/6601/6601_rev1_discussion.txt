@@ -1,0 +1,107 @@
+DESCRIPTION
+
+Add manager to control multiple subscribers
+
+Change-Id: I98436066a0b5e23fe0f1299b81f60af10f83044b
+
+
+COMMENTS
+
+author: Karlee Dorsey
+date: 2012-07-04 02:31:50.000000000
+
+Patch Set 1:
+
+This is the final pubsub commit. Merging this and "Change Ib1a1aafe: Add Publisher http servlet implementation" will let you build and test the entire feature.
+ 
+- I am the author 100% of the content.
+- My employer, Google, owns the copyright of the content.
+- I have the right to contribute the content to Eclipse.
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-07-04 23:08:47.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2092/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-07-04 23:14:07.000000000
+
+Patch Set 1: Verified
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2092/ : SUCCESS
+
+-------------------------------------
+author: Santos Moore
+date: 2012-07-10 18:46:01.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(12 inline comments)
+
+
+
+Line:102, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscriptionManager.java -> Don't use System.currentTimeMillis() to measure elapsed time; it changes when the system clock changes. Use System.nanoTime().
+
+Line:140, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscriptionManager.java -> What does "have their state reset" mean?
+
+Line:146, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscriptionManager.java -> This method is getting a bit long. Maybe make the anonymous Thread class a nested class or something?
+
+Line:148, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscriptionManager.java -> Lots of unnecessary finals here. (Not all unnecessary due to the Thread, but still some.)
+
+Line:162, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscriptionManager.java -> Did you mean this to be inside the if, before the continue? Doesn't seem like you should be closing the instance right before using it on l. 177 below.
+
+Line:165, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscriptionManager.java -> Hoist this outside the try block so you can call instance.close() in the two continue cases?
+
+Line:184, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscriptionManager.java -> How is this time compared to the maximum validity time of a fast-restart token? Is it worth it to detect when we think our fast-restart token is no longer going to be valid, and then not send it? Or do we just assume it's good enough that the server will reject it and we'll have to connect one more time?
+
+Line:193, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscriptionManager.java -> Optional nit: "socket" seems too specific, perhaps "connection"
+
+Line:206, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscriptionManager.java -> Would this make more sense as a method on subscriber, so you could just call subscriber.reset() or something?
+
+Line:216, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscriptionManager.java -> Seems like the right thing to do here would be to let the thread die, i.e. return.
+
+Also, since you're doing a lot of work here, and there is only one obvious point that I see that can throw an InterruptedException, you may want to check Thread.interrupted() at the end of the loop as well.
+
+Line:96, org.eclipse.jgit.pgm/src/org/eclipse/jgit/pgm/SubscribeDaemon.java -> I think you want to use FileSnapshot for this.
+
+Line:106, org.eclipse.jgit.pgm/src/org/eclipse/jgit/pgm/SubscribeDaemon.java -> I wonder if this should be configurable?
+
+-------------------------------------
+author: Karlee Dorsey
+date: 2012-07-11 01:46:46.000000000
+
+Patch Set 1: (12 inline comments)
+
+
+
+Line:102, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscriptionManager.java -> Done
+
+Line:140, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscriptionManager.java -> Updated the javadoc. It means that the server didn't recognize the fast-restart token so the subscription needs to be started fresh again.
+
+Line:146, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscriptionManager.java -> Done, created a new SubscribeProcess class.
+
+Line:148, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscriptionManager.java -> All of those finals are needed: p, key, subscriber, initCmds are all used in the thread.
+
+Line:162, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscriptionManager.java -> No that's right: it checks to see if there are any new commands to send, then kills the connection+thread and restarts inside a new thread. If there aren't any new commands, it doesn't touch the existing connection and continues to the next publisher.
+
+Line:165, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscriptionManager.java -> I removed one of the continue cases and added a process.close().
+
+Line:184, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscriptionManager.java -> I'm expecting the client to disconnect when the server doesn't recognize it and reconnect again. The data size for fast-restart is small, especially when no new specs are being added. Individual servers may adjust their restart times as well, so no use invalidating ourselves early.
+
+Line:193, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscriptionManager.java -> Done
+
+Line:206, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscriptionManager.java -> I made it a method in SubscribeProcess.
+
+Line:216, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscriptionManager.java -> This is outside of the while loop so doing nothing is the same as returning. Added the interrupted check to the beginning of the loop because the continue will cut off the bottom of the loop.
+
+Line:96, org.eclipse.jgit.pgm/src/org/eclipse/jgit/pgm/SubscribeDaemon.java -> Done
+
+Line:106, org.eclipse.jgit.pgm/src/org/eclipse/jgit/pgm/SubscribeDaemon.java -> I'll make it a flag on this command.
+
+-------------------------------------

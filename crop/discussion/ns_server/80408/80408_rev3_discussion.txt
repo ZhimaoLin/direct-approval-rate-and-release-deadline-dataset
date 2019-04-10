@@ -1,0 +1,96 @@
+DESCRIPTION
+
+MB-25004 consider timestamps equal if they differ by 10sec
+
+this is needed to prevent ping-pong merges on big clusters if the
+value of the key is updated almost simultaniously on multiple nodes
+
+The infinite ping-pong happens because the time of previous merge
+(which is somewhat random) is a factor in a decision during the next merge.
+So if cluster is big enough and there are let's say 2 different values
+in play (A, B) distributed equally across the cluster with close, but slightly
+different timestamps, during the next merge round, the numbers of wins
+for A and B should be almost the same. Each win gets new timestamp, which
+is random inside of some short period of time. So after each round of merges
+we will see pretty much the same situation as before the round.
+
+If the timestamps match exactly, A wins over B, which gives A slightly bigger
+probability to win over the whole cluster, but it looks like with cluster
+big enough this advantage doesn't lead to A winning in a reasonable amount of time.
+
+Proposed solution:
+Let's consider timestamps equal if they differ by some short period of time,
+let's say 10sec. In this case we increase chances of A (smaller value) to win.
+
+The side effect will be that the order of changes made on different nodes inside
+of 10sec period will be ignored during the merge and smaller value will win.
+
+Change-Id: I906d208c4b6ad81eaed31bcfc1ef63c7250be8e1
+
+
+COMMENTS
+
+author: Philip Lara
+date: 2017-07-08 01:08:05.204000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-07-08 01:08:14.051000000
+
+Patch Set 3: Well-Formed+1
+
+Permission granted to commit: 
+
+http://server.jenkins.couchbase.com/job/restricted-branch-check/55455/artifact/restricted.html : SUCCESS
+
+-------------------------------------
+author: Philip Lara
+date: 2017-07-08 01:09:23.760000000
+
+Patch Set 3: Verified+1
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2017-07-10 18:18:57.137000000
+
+Patch Set 3:
+
+I can't see the logs. But if the conflict is resolved to the same value, regardless of the timestamps, it shouldn't trigger another conflict next time. If it somehow resolved to different values on different nodes, then the problem probably be solved differently.
+
+Also, whenever making changes to the conflict resolution, we need to consider how the change will interact with older nodes. We may introduce more ping pongs by solving ones this way.
+
+-------------------------------------
+author: Philip Lara
+date: 2017-07-10 22:10:14.146000000
+
+Patch Set 3:
+
+It doesn't resolve to the same value everywhere in the cluster, because the deciding factor in the merge is a timestamp of the previous merge. I don't think that this solution is in fact good, but I unfortunately cannot figure out the better one.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2017-07-10 22:22:01.879000000
+
+Patch Set 3:
+
+And what causes the very first conflict?
+
+-------------------------------------
+author: Philip Lara
+date: 2017-07-11 08:16:32.580000000
+
+Patch Set 3:
+
+goxdcr simultaneously updates one metakv key on 50 nodes with less than 50 values. See MB-25013
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2017-07-24 19:07:00.345000000
+
+Abandoned
+
+I think we're in agreement that this is not the right fix.
+
+-------------------------------------

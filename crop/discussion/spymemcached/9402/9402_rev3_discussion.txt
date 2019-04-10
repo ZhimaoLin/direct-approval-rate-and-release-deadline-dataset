@@ -1,0 +1,35 @@
+DESCRIPTION
+
+Fix concurrent access to operations objects, especially near timeouts.
+
+We discovered that having one thread call get() on futures with a
+timeout much shorter than the timeout built into the client could
+(after a while) reliably kill off the IO thread with a
+NullPointerException. After restarting with assertions enabled, we
+found many other ways to make the IO thread die relating mostly to
+operations that were canceled or timed out in one thread while they
+were being used in another thread.
+
+The solution to this is to make "timing out" an operation something
+similar to "cancel" - that is, not a state of the operation's state
+machine, but just a flag. Then, since this flag (as with the cancelled
+flag) can be read and set from multiple threads, synchronize the
+methods that do that.
+
+Ideally, transitionState and getState would never be called outside
+the IO thread; however, since at least getState is currently, both
+getState and transitionState should then also be synchronized.
+
+With these changes, we don't end up killing off the IO thread anymore.
+
+Change-Id: I280f31ed47922e27da3d5dc82f640c114d6014d7
+
+
+COMMENTS
+
+author: Jordyn Hooper
+date: 2011-09-06 17:25:22.208000000
+
+Uploaded patch set 3.
+
+-------------------------------------

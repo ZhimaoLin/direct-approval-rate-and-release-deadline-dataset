@@ -1,0 +1,83 @@
+DESCRIPTION
+
+PackWriter: Support reuse of entire packs
+
+The most expensive part of packing a repository for transport to
+another system is enumerating all of the objects in the repository.
+Once this gets to the size of the linux-2.6 repository (1.8 million
+objects), enumeration can take several CPU minutes and costs a lot
+of temporary working set memory.
+
+Teach PackWriter to efficiently reuse an existing "cached pack"
+by answering a clone request with a thin pack followed by a larger
+cached pack appended to the end.  This requires the repository
+owner to first construct the cached pack by hand, and record the
+tip commits inside of $GIT_DIR/objects/info/cached-packs:
+
+  cd $GIT_DIR
+  root=$(git rev-parse master)
+  tmp=objects/.tmp-$$
+  names=$(echo $root | git pack-objects --keep-true-parents --revs $tmp)
+  for n in $names; do
+    chmod a-w $tmp-$n.pack $tmp-$n.idx
+    touch objects/pack/pack-$n.keep
+    mv $tmp-$n.pack objects/pack/pack-$n.pack
+    mv $tmp-$n.idx objects/pack/pack-$n.idx
+  done
+
+  (echo "+ $root";
+   for n in $names; do echo "P $n"; done;
+   echo) >>objects/info/cached-packs
+
+  git repack -a -d
+
+When a clone request needs to include $root, the corresponding
+cached pack will be copied as-is, rather than enumerating all of
+the objects that are reachable from $root.
+
+For a linux-2.6 kernel repository that should be about 376 MiB,
+the above process creates two packs of 368 MiB and 38 MiB[1].
+This is a local disk usage increase of ~26 MiB, due to reduced
+delta compression between the large cached pack and the smaller
+recent activity pack.  The overhead is similar to 1 full copy of
+the compressed project sources.
+
+With this cached pack in hand, JGit daemon completes a clone request
+in 1m17s less time, but a slightly larger data transfer (+2.39 MiB):
+
+  Before:
+    remote: Counting objects: 1861830, done
+    remote: Finding sources: 100% (1861830/1861830)
+    remote: Getting sizes: 100% (88243/88243)
+    remote: Compressing objects: 100% (88184/88184)
+    Receiving objects: 100% (1861830/1861830), 376.01 MiB | 19.01 MiB/s, done.
+    remote: Total 1861830 (delta 4706), reused 1851053 (delta 1553844)
+    Resolving deltas: 100% (1564621/1564621), done.
+
+    real  3m19.005s
+
+  After:
+    remote: Counting objects: 1601, done
+    remote: Counting objects: 1828460, done
+    remote: Finding sources: 100% (50475/50475)
+    remote: Getting sizes: 100% (18843/18843)
+    remote: Compressing objects: 100% (7585/7585)
+    remote: Total 1861830 (delta 2407), reused 1856197 (delta 37510)
+    Receiving objects: 100% (1861830/1861830), 378.40 MiB | 31.31 MiB/s, done.
+    Resolving deltas: 100% (1559477/1559477), done.
+
+    real 2m2.938s
+
+Repository owners can periodically refresh their cached packs by
+repacking their repository, folding all newer objects into a larger
+cached pack.  Since repacking is already considered to be a normal
+Git maintenance activity, this isn't a very big burden.
+
+[1] In this test $root was set back about two weeks.
+
+Change-Id: Ib87131d5c4b5e8c5cacb0f4fe16ff4ece554734b
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+

@@ -1,0 +1,157 @@
+DESCRIPTION
+
+[ctf] Fix binary search for a long sequence of same timestamps.
+
+The binary search algorithm does not need a third case
+(when values are equals) if there is a guarantee to remove
+one element in the search space at each iteration.
+The actual binary search implementation performs a sequential
+search on elements with the same timestamp (to find the first
+one).
+
+The ETW2CTF traces produce many debug events for the debugging
+information at the module load timestamp. Which is the worse
+case for the actual implementation.
+
+We changed the algorithm to use the timestamp end of a packet
+instead of the beginning. We changed the way to choose a
+middle element to ease the recursion by using only two cases.
+
+Change-Id: I4f16d43b9533f8f1449cdb3c4c213bcb9f962daf
+Signed-off-by: Jordon Obrien xxx@xxx.xxx
+Signed-off-by: Ivy Mitchell xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Ivy Mitchell
+date: 2013-11-22 21:53:58.000000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2013-11-22 21:55:43.000000000
+
+Patch Set 6:
+
+Mathias, I like the way you think and would like to subscribe to your newsletter. 
+
+Etienne, how about using Java's built in search like this? Also, should it be in master or luna?
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2013-11-22 21:58:52.000000000
+
+Patch Set 6: IP-Clean-1
+
+Also, as Mathieu is co-author I would suggest adding both your names to the copyright on the top.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-23 01:09:26.000000000
+
+Patch Set 6:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4107/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-23 01:24:27.000000000
+
+Patch Set 6: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4107/ : FAILURE
+
+-------------------------------------
+author: Jordon Obrien
+date: 2013-11-23 07:01:14.000000000
+
+Patch Set 6:
+
+(3 comments)
+
+Please fix nits.
+
+I didn't give a try, but this patch-set should works.
+As there is not enough unittests for the search(...) method, we won't know by running tests. [This should be address in a separate commit].
+
+I read more code and as I said, there is a need for two variants: searchAfter and searchBefore.
+
+This is the searchBefore. When the element is not present, BinarySearch returns the preceding element. This won't help us to implement searchAfter.
+
+We need a searchAfter because the actual implementation of "move to the next timestamp" is a linear algorithm. By using the searchAfter, this could be solve in O(lg N). I don't want to elaborate on this issue now, but keep in mind we will need to variant.
+
+I see some advantages of the previous patch-set.
+  - searchAfter/searchBefore will be really similar.
+  - no memory allocation for "seeking".
+  - A faster comparator (now compare range to range, instead of range to timestamp).
+
+And the advantages of this one
+  - This implementation is smaller and use (probably) a optimized version of binary search.
+  - This is more Java-like.
+
+Line:129, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/internal/ctf/core/trace/StreamInputPacketIndex.java -> Please, be remove space after entries, add one after the first comma and remove a space after the next one.
+
+Collections.binarySearch(this.entries, key, new StreamInputPacketIndexEntryComparator());
+
+Line:131, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/internal/ctf/core/trace/StreamInputPacketIndex.java -> space before :
+
+Line:142, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/internal/ctf/core/trace/StreamInputPacketIndex.java -> space before and after <
+space before and after ==
+
+And, I'll add that nested ( ? : ) is hard for people to efficiently read your code without a headache. The code readability is important.
+
+-------------------------------------
+author: Jordon Obrien
+date: 2013-11-23 07:05:18.000000000
+
+Patch Set 6: Code-Review-1
+
+By reading the documentation, I strongly disagree with this fix for this reason:
+
+"If the list contains multiple elements equal to the specified object, there is no guarantee which one will be found."
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-23 07:28:27.000000000
+
+Patch Set 6: -Verified
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4108/
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-11-23 07:36:46.000000000
+
+Patch Set 6:
+
+I'd prefer we use Collections.binarySearch rather than rolling our own, code reuse etc., however its API is quite weird... The
+ if (val < 0) : val = ~val
+thing is good to do (in cases where you don't care about getting an exact match).
+
+But as Etienne mentioned there is also no guarantee that you get the first element in a series of equal elements. To do so you have iterate backwards until you find a smaller element. We do something like that in HTNode.java, line 388
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-23 07:40:22.000000000
+
+Patch Set 6: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4108/ : FAILURE
+
+-------------------------------------
+author: Tessa Dickson
+date: 2013-11-23 14:40:52.000000000
+
+Patch Set 6: Code-Review-1
+
+So, the in java binary search does not match our needs to seek before/after many events having the same timestamp (as Etienne pointed out).
+
+Matthew, I understand you probably have a lot of fun poking into this, but keep in mind what I told you on IRC: the change you propose is a re-design (which end up not having the semantic we need), and Etienne needs the fix him and I spent 4 hours working on ASAP so he can progress on _the rest of the things the TMF code base utterly need fixed in order to get user experience to an acceptable level_. The problem I see here Matthew is that your comments and review is getting in the way of contributor's progress rather than helping them progress faster, and this is very wrong. You might want to rethink your review strategy, unless you want to start losing contributors.
+
+-------------------------------------

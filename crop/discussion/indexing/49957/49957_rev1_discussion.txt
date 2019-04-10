@@ -1,0 +1,83 @@
+DESCRIPTION
+
+MB-14637 Add datastream pipeline library implementation
+
+This is a new abstraction introduced to simplify any
+pipelined datastream processing with 0 heap allocations.
+
+Features of the pipeline library are as follows:
+
+1. Bytes block pool
+Implements a 16KB global bytes block buffer pool
+GetBlock() *[]byte
+PutBlock(b)
+
+2. Implement pipelined processing using concurrent units
+
++------+     +-------+     +-------+     +-----+
+|SOURCE| ==> |FILTER1| ==> |FILTER2| ==> |SINK |
++------+     +-------+     +-------+     +-----+
+
+User needs to implement interfaces Source, Filter and Sink to
+execute a pipeline. We have three helper structs which already implements
+block based item read and writes (ItemWriter for Source, ItemReadWriter for Filter
+and ItemReader for Sink). Making them anonymous objects in the
+source, filter, sink implementation will take care of majority of the work.
+
+Each units have got a Routine() method in which unit logic needs to be
+implemented.
+
+From the Source Routine(), we should call WriteItem([]byte) to output an item from
+the source unit. Once all writes are complete, CloseWrite() should be invoked.
+
+From the Filter Routine(), we should call ReadItem() to obtain items pushed by
+its source. Output can be written out using WriteItem([]byte) method.
+After it has completed processing, CloseRead() and CloseWrite() should be
+invoked.
+
+From the Sink Routine(), we should call ReadItem() to obtain items pushed by
+its source and CloseRead() after all processing has finished.
+
+For any temporary buffer, please use GetBlock() and try reusing the buffer
+during the lifetime of the unit.
+
+Components in the pipelines can be connected and executed as follows:
+
+    var p Pipeline
+    // Connect sources
+    fi.SetSource(so)
+    si.SetSource(fi)
+
+    // Add units to pipeline executor
+    p.AddSource(so)
+    p.AddFilter(fi)
+    p.AddSink(si)
+
+    err := p.Execute()
+
+Currently pipeline filters supports only single source. But, it can be extended
+to support multiple sources for complex data stream processing usecases.
+
+Change-Id: Ib473b66ccb0f1394e5797daa39644e6e3a56417a
+
+
+COMMENTS
+
+author: Kinsley Fox
+date: 2015-04-21 12:30:13.082000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Leonel Abbott
+date: 2015-04-23 05:34:37.556000000
+
+Patch Set 1: Code-Review+1
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-04-24 07:03:45.709000000
+
+Change has been successfully merged into the git repository.
+
+-------------------------------------

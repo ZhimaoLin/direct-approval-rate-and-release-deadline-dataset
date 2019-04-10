@@ -1,0 +1,111 @@
+DESCRIPTION
+
+MB22015: Use unique_ptrs for fetched list
+
+Changes bgfetched_list to be a list of unique_ptrs as the
+VBucketBGFetchItems are owned by this list.
+
+Cleans up the various usages of bgfetched_list, such as clean up and
+iteration over the list.
+
+Change-Id: I5cf36d1e943bdd7298d2671eec976f9336bac294
+
+
+COMMENTS
+
+author: Aaliyah Proctor
+date: 2017-01-24 17:35:05.140000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-24 17:35:11.926000000
+
+Patch Set 5:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2603/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-24 17:35:12.518000000
+
+Patch Set 5:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2979/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-24 17:35:12.664000000
+
+Patch Set 5:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1808/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-24 17:35:12.814000000
+
+Patch Set 5:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/3141/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-24 17:55:01.379000000
+
+Patch Set 5: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2979/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2603/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1808/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/3141/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-01-24 18:22:24.381000000
+
+Patch Set 5: Code-Review-1
+
+(6 comments)
+
+Line:33, src/kvstore.h -> Sort alphabetically
+
+Line:87, src/kvstore.h -> Nit: For consistency list in the same order as the member variables in the class.
+
+Line:63, src/warmup.cc -> Intentation / formatting looks odd - run through `git clang-format`
+
+Line:77, src/warmup.cc -> Not sure if it matters, but you are changing the semantics here. Previously `fetchedItem` would go out of scope at the end of each loop iteration and hence delete the owned object (which would have the effect of reducing the memory needed for holding these items once they were finished with).
+
+With your change that no longer occurs - the item will continue to be owned by items2fetch until that itself is cleared sometime later. See the comment just above the code you've changed.
+
+I suggest you revert this - keep the concrete unique_ptr scoped to the loop body, using std::move() to transfer ownership.
+
+Line:68, src/bgfetcher.cc -> If you're calling .get() on a unique pointer it's a good pointer to think about the ownership semantics.
+
+For example, it /appears/ that you're "unwrapping" a unique_ptr (the itm ptr) and putting it into another container - is this correct? Would it be more correct to have fetchedItems hold a unique_ptr also, and just move item into it?
+
+The answer to this may be related to what happens to the original owner -  bg_item_ctx.bgfetched_list - does it need to still own the itm after this for() loop has completed?
+
+Line:483, src/vbucket.cc -> Unless there's some side-effect of deleting these items which we care about (I doubt there is, but check the destructor) you can simply delete this line - when the underlying container (pendingBGFetches) is clear()'d at line 488 below the (owning) unique_ptrs will delete what they point to automatically.
+
+-------------------------------------
+author: Tate Garrett
+date: 2017-01-25 13:46:49.089000000
+
+Change could not be merged due to a path conflict.
+
+Please rebase the change locally and upload the rebased commit for review.
+
+-------------------------------------
+author: Tate Garrett
+date: 2017-01-25 15:00:05.138000000
+
+Change has been successfully cherry-picked as dbe10d560a637fd861652d59fd17e1f3a3feeac8 by Ashlee Kent
+
+-------------------------------------

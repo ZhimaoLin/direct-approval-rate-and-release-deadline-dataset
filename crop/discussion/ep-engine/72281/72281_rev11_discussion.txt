@@ -1,0 +1,203 @@
+DESCRIPTION
+
+MB-22231: Use RAII for ep-engine entrypoints
+
+Adds a function to get a resource handle (unique_ptr) for
+EventuallyPersistentEngine rather than a bare pointer. This resource
+handler has a custom deleter that calls releaseHandle() rather than
+doing a delete.
+
+The entrypoints to EP-Engine have all been changed to use the new
+style. As such the old {get,release}Handle has been removed.
+
+Change-Id: Ic10fd7b1a693fc31de5ca7998f38976b185cfc8a
+
+
+COMMENTS
+
+author: Aaliyah Proctor
+date: 2017-01-23 15:05:23.226000000
+
+Uploaded patch set 11.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-23 15:05:30.877000000
+
+Patch Set 11:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1788/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-23 15:05:31.029000000
+
+Patch Set 11:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/3118/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-23 15:05:31.179000000
+
+Patch Set 11:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2583/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-23 15:05:31.333000000
+
+Patch Set 11:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2956/ (4/4)
+
+-------------------------------------
+author: Aaliyah Proctor
+date: 2017-01-23 15:16:40.772000000
+
+Patch Set 11:
+
+(1 comment)
+
+My concern with the code as it is at the moment is that, as you may have noticed, there are occasions that require the engine be made an lvalue if the result of an operation on the engine is used as you can see below. This feels a little fragile and easy to misuse in the future. Does anyone have anymore thoughts on this?
+
+A potential alternative may be to have something like:
+
+
+ template<typename T>
+ T useWithEngine(ENGINE_HANDLE*, std::function<T(EventuallyPersistentEngine*)> func){
+     auto engine = acquireEngine(handle);
+     return func(engine.get());
+ }
+
+The engine entry points could the use it like:
+
+ return useWithEngine<int>(handle, [](EventuallyPersistentEngine* eng){
+     //use eng
+     return 7;});
+
+Line:1620, src/ep_engine.cc -> An example of where we need to make the engine an lvalue in the function scope.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-23 15:21:54.236000000
+
+Patch Set 11: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/3118/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2956/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2583/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1788/ : SUCCESS
+
+-------------------------------------
+author: Keira Washington
+date: 2017-01-23 15:35:41.600000000
+
+Patch Set 11:
+
+I think as long as every use is an lvalue (rather than a mix) then it is acceptable as it's the same thing we have to do with lock holders.
+
+My issue with using std::function is you'll end up paying type erasure costs on every function call. Since you're using templates you can actually use any kind of callable instead of a std::function:
+
+     template<typename Callable>
+     typename std::result_of(Callable(ENGINE_HANDLE*))::type useWithEngine(ENGINE_HANDLE*, Callable func) {
+         auto engine = acquireEngine(handle);
+         return func(engine.get());
+     }
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-01-23 15:38:33.128000000
+
+Patch Set 11:
+
+(2 comments)
+
+Line:1620, src/ep_engine.cc -> I think this is fine. Ultimately we are aiming for clarity for the reader in the common cases. I think the current "lock-holder" style works well for this: As long as the (engine) variable is in scope it's valid to use it (make calls on etc).
+
+The point isn't that all call-sites (necessarily) look the same, it's that the code reads easily and the user can see what's going on. The fact that we can optimise away the explicit lvalue in the simple cases above isn't an "inconsistency", it's arguably a simplification.
+
+While we /could/ do something like your `useWithEngine` example, I feel here it doesn't really make the code any more readable - I think we end up with:
+
+ return useWithEngine<T>(... quite long arguments to lambda) {
+     ConnHandler* conn = eng->getConnHandler(cookie(;
+     if (conn) {
+        errCode = conn->control(opaque, key, nkey, value, nvalue);
+     }
+     return errCode;
+ };
+
+Which IMHO has a lot of line noise in the lambda definition, and I can't see a lot of benefit.
+
+Note I think the problem you're /actually/ trying to solve here it that the `conn` pointer's lifetime should be tied to that of engine - i.e. you'd create a similar RAII object for ConnHandlers (which would internally also "own" the engine). Then you could write code like:
+
+ ConnGuard conn = acquireConn(acquireEngine(handle));
+ // Now have a ConnHandle object which has as EngineHandle +
+ // a (potentially null) ConnHandler*.
+ if (conn) {
+     return conn->handleResponse(response);
+ }
+ return ENGINE_DISCONNECT;
+
+We /could/ do this, but I feel it's of diminishing value - we only need it for a subset of the engine API calls, and I don't think it adds that much - it's not like the EngineHandle where you *nned* to call releaseHandle to make the code be functional.
+
+Line:1625, src/ep_engine.cc -> As a slight tangent to the lvalue / rvalue discussion, you can simplify this code with your current classes - drop the separate errCode and just return straight away:
+
+    auto engine = acquireEngine(handle);
+    ConnHandler* conn = engine->getConnHandler(cookie);
+    if (conn) {
+        return conn->control(opaque, key, nkey, value, nvalue);
+    }
+    return ENGINE_DISCONNECT;
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-01-23 15:43:41.976000000
+
+Patch Set 11:
+
+> I think as long as every use is an lvalue (rather than a mix) then
+ > it is acceptable as it's the same thing we have to do with lock
+ > holders.
+ > 
+ > My issue with using std::function is you'll end up paying type
+ > erasure costs on every function call. Since you're using templates
+ > you can actually use any kind of callable instead of a
+ > std::function:
+ > 
+ > template<typename Callable>
+ > typename std::result_of(Callable(ENGINE_HANDLE*))::type
+ > useWithEngine(ENGINE_HANDLE*, Callable func) {
+ > auto engine = acquireEngine(handle);
+ > return func(engine.get());
+ > }
+
+As a (slight) aside, the API I'd like to ultimately move to for locking is Folly's Synchronized class - https://github.com/facebook/folly/blob/master/folly/docs/Synchronized.md
+
+This in fact use both an "rvalue-style":
+
+ object->lock().someFunction();
+
+and an "lvalue-style" when you need to call multiple functions with the lock held:
+
+    {
+      auto lockedQueue = requestQueue.lock();
+      lockedQueue->push_back(request1);
+      lockedQueue->push_back(request2);
+    }
+
+The point being you use whichever form is the simplest for the use-case at hand.
+
+-------------------------------------
+author: Tate Garrett
+date: 2017-01-24 16:21:43.338000000
+
+Change has been successfully cherry-picked as 703e11dfd1c2945a490cc48fa0982195fec680ad by Ashlee Kent
+
+-------------------------------------

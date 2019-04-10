@@ -1,0 +1,69 @@
+DESCRIPTION
+
+Refactor: Move the warmup logic out of the flusher
+
+The warmup logic should not run within the flusher thread, but as it's
+own dispatcher task with its own state machinery.
+
+Change-Id: Id3ce08865627ad7fa6e7eb66b7f59579c6b66f33
+
+
+COMMENTS
+
+author: Asher Vang
+date: 2012-03-12 19:37:57.483000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Abby Duran
+date: 2012-03-12 21:48:38.986000000
+
+Patch Set 2: Fails
+
+I frequently have the following unit test failures with this change:
+
+1. Running [0087/0164]: test restart (sqlite)... DIED                          
+
+Exception Type:  EXC_BAD_ACCESS (SIGSEGV)
+Exception Codes: 0x000000000000000d, 0x0000000000000000
+Crashed Thread:  1
+
+Thread 1 Crashed:
+0   ep.0.so                             0x00000001005ebcd6 sqlite3VdbeMemGrow + 262 (sqlite3.c:17683)
+1   ep.0.so                             0x0000000100662240 sqlite3VdbeExec + 22592 (sqlite3.c:61945)
+2   ep.0.so                             0x0000000100669b76 sqlite3_step + 1734 (sqlite3.c:57947)
+3   ep.0.so                             0x00000001005a028a PreparedStatement::execute() + 42 (sqlite-pst.cc:73)4   ep.0.so                             0x000000010059defd bool StrategicSqlite3::storeMap<std::pair<unsigned short, unsigned short>, vbucket_state>(PreparedStatement*, PreparedStatement*, std::map<std::pair<unsigned short, unsigned short>, vbucket_state, std::less<std::pair<unsigned short, unsigned short> >, std::allocator<std::pair<std::pair<unsigned short, unsigned short> const, vbucket_state> > > const&) + 173 (sqlite-
+kvstore.cc:230)5   ep.0.so                             0x000000010059a85e StrategicSqlite3::snapshotVBuckets(std::map<std::pair<unsigned short, unsigned short>, vbucket_state, std::less<std::pair<unsigned short, unsigned short> >, std::allocator<std::pair<std::pair<unsigned short, unsigned short> c
+onst, vbucket_state> > > const&) + 30 (sqlite-kvstore.cc:200)
+6   ep.0.so                             0x0000000100526810 EventuallyPersistentStore::snapshotVBuckets(Priority const&) + 240 (ep.cc:1012)7   ep.0.so                             0x000000010053a2e1 SnapshotVBucketsCallback::callback(Dispatcher&, std::tr1::shared_ptr<Task>) + 17 (e
+p.cc:226)
+8   ep.0.so                             0x000000010051a4f1 Task::run(Dispatcher&, std::tr1::shared_ptr<Task>) + 65 (dispatcher.hh:139)
+9   ep.0.so                             0x00000001005193f0 Dispatcher::run() + 944 (dispatcher.cc:123)
+10  ep.0.so                             0x0000000100519c0c launch_dispatcher_thread + 28 (dispatcher.cc:39)
+11  libSystem.B.dylib                   0x00007fff8a4fafd6 _pthread_start + 331
+12  libSystem.B.dylib                   0x00007fff8a4fae89 thread_start + 13
+
+
+
+2. Running [0108/0164]: disk>RAM set bgfetch race (wal) (sqlite)...terminate called after throwing an instance of 'std::runtime_error'
+  what():  near "pragn": syntax error while building query: ``pragma journal_mode''
+ DIED
+
+Thread 0 Crashed:  Dispatch queue: com.apple.main-thread
+0   libSystem.B.dylib                   0x00007fff8a5100b6 __kill + 10
+1   libSystem.B.dylib                   0x00007fff8a5b09f6 abort + 83
+2   libstdc++.6.dylib                   0x00007fff879255d2 __tcf_0 + 0
+3   libstdc++.6.dylib                   0x00007fff87923ae1 __cxxabiv1::__terminate(void (*)()) + 11
+4   libstdc++.6.dylib                   0x00007fff87923b16 __cxxabiv1::__unexpected(void (*)()) + 0
+5   libstdc++.6.dylib                   0x00007fff87923bfc __gxx_exception_cleanup(_Unwind_Reason_Code, _Unwind_Exception*) + 0
+6   ep.0.so                             0x00000001005a087e PreparedStatement::PreparedStatement(sqlite3*, char const*) + 926 (sqlite-pst.cc:23)
+7   ep.0.so                             0x000000010059b8b4 StrategicSqlite3::getStorageProperties() + 68 (sqlite-kvstore.cc:318)
+8   ep.0.so                             0x000000010051db91 EventuallyPersistentStore::initialize() + 2897 (ep.cc:650)
+9   ep.0.so                             0x0000000100546c04 EventuallyPersistentEngine::initialize(char const*) + 868 (ep_engine.cc:1237)
+10  libmemcached_utilities.0.dylib      0x000000010000ba3b init_engine + 235 (engine_loader.c:95)
+11  engine_testapp                      0x00000001000015e6 start_your_engines + 326 (engine_testapp.c:603)
+12  engine_testapp                      0x0000000100002291 main + 3105 (engine_testapp.c:682)
+13  engine_testapp                      0x0000000100001414 start + 52
+
+-------------------------------------

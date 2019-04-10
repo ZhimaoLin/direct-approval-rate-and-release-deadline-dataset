@@ -1,0 +1,92 @@
+DESCRIPTION
+
+MB-16596: Add menelaus_pluggable_ui.erl
+
+menelaus_pluggable_ui add suport for proxying requests to service
+nodes that support pluggable UI.
+
+Change-Id: If9581e9a94a21ecea211337390c402e979aba59c
+
+
+COMMENTS
+
+author: Leah Mcdaniel
+date: 2015-11-02 21:56:34.907000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Kian Santos
+date: 2015-11-03 07:40:26.695000000
+
+Patch Set 5:
+
+(5 comments)
+
+not completely done, need a little more time, but overall looks pretty good. Let me know your thoughts to the comments so far.
+
+Line:147, src/menelaus_pluggable_ui.erl -> What's the plan to generalize this to support different services? Or are you just thinking to hard code the mapping in this "port_for" function?
+
+Line:148, src/menelaus_pluggable_ui.erl -> I imagine ns_config:latest() is fine, but we should get Aliaksey's view on this one.
+
+Line:197, src/menelaus_pluggable_ui.erl -> Can you open a response and send the StatusCode back as a REST API response? We should log as error here, I think.
+
+Line:202, src/menelaus_pluggable_ui.erl -> suggest a 500 response with the reason as the body. Also log as error here I think.
+
+Line:211, src/menelaus_pluggable_ui.erl -> I don't imagine we can log debug the responses to every request.
+
+-------------------------------------
+author: Leah Mcdaniel
+date: 2015-11-03 13:26:14.544000000
+
+Patch Set 5:
+
+(4 comments)
+
+Line:147, src/menelaus_pluggable_ui.erl -> I see three possibilities.
+1) hardcoded lookups like this
+2) a convention that forces all pluggable services to have that same portname so it is possible to do the lookup something like {Node, Service, rest_port}
+3) put the name of the port config parameter in the pluggable-ui-SERVICE.config file.
+
+I would prefer #2
+
+Line:197, src/menelaus_pluggable_ui.erl -> will do
+
+Line:202, src/menelaus_pluggable_ui.erl -> My understanding of all things web is that it is not a good idea to expose internal errors, i.e. error reasons/stack dumps, to the users. May be better to give a plain text error message with some identifying information that can be used to identify the corresponding error log message.
+
+Line:211, src/menelaus_pluggable_ui.erl -> This and the next one are just for my testing to see that it is doing something, will be removed later.
+
+-------------------------------------
+author: Kian Santos
+date: 2015-11-03 17:44:08.324000000
+
+Patch Set 5:
+
+(3 comments)
+
+Line:147, src/menelaus_pluggable_ui.erl -> Or (4) we consult a mapping from external service name to internal config key. I don't think we can enforce this conventionally (option 2) as that horse has already left the yard.  (indexer, n1ql, etc)
+
+For now, I guess we can hard code and return a clean error when there's no match for the port lookup. Can you do this?
+
+Line:202, src/menelaus_pluggable_ui.erl -> Yes that's true. Let's respond with a 500 with body "Unexpected server error".
+
+It's a nice idea to generate a unique error value and say something like: "Unexpected server error. Error code '~p'." and then put the same error code in the logs. This is a generic service we'll ultimately need but let's consider it separately for now. 
+
+We should log Reason to file though. Can you do that?
+
+Line:228, src/menelaus_pluggable_ui.erl -> mochiweb returns a 404 for not found. Function is below. So 404 should be fine.
+
+xxx@xxx.xxx not_found(ExtraHeaders, request()) -> response()
+xxx@xxx.xxx Alias for <code>respond({404, [{"Content-Type", "text/plain"}
+%% | ExtraHeaders], &lt;&lt;"Not found."&gt;&gt;})</code>.
+not_found(ExtraHeaders, {?MODULE, [_Socket, _Method, _RawPath, _Version, _Headers]}=THIS) ->
+    respond({404, [{"Content-Type", "text/plain"} | ExtraHeaders],
+             <<"Not found.">>}, THIS).
+
+-------------------------------------
+author: Roselyn Villegas Code Review
+date: 2015-11-18 01:20:39.595000000
+
+Change has been successfully cherry-picked as d974ffd661c5d1c8a73ffb3138f90a5ada0fece8
+
+-------------------------------------

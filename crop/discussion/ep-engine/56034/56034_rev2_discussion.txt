@@ -1,0 +1,80 @@
+DESCRIPTION
+
+Address potential deadlock while shutting down consumer
+
+Do not process buffered items for any stream when the consumer
+closes all its passive streams i.e, upon disconnection during shutdown.
+This is to a avoid potential deadlock scenarios caused by
+lock-inversion.
+
+WARNING: ThreadSanitizer: lock-order-inversion (potential deadlock) (pid=13589)
+Cycle in lock order graph: M48662 (0x7d500005fd40) => M12632 (0x7d5000018120) => M48662
+
+  Mutex M12632 acquired here while holding mutex M48662 in thread T12:
+    #0 pthread_mutex_lock <null> (engine_testapp+0x000000474bf0)
+    #1 cb_mutex_enter /home/abhinav/Piper Jefferson/platform/src/cb_pthreads.c:115 (libplatform.so.0.1.0+0x000000004268)
+    #2 Mutex::acquire() /home/abhinav/Piper Jefferson/ep-engine/src/mutex.cc:31 (ep.so+0x0000001090f9)
+    #3 LockHolder::lock() /home/abhinav/Piper Jefferson/ep-engine/src/locks.h:71 (ep.so+0x0000000e1516)
+    #4 ExecutorPool::wake(unsigned long) /home/abhinav/Piper Jefferson/ep-engine/src/executorpool.cc:345 (ep.so+0x0000000e1641)
+    #5 Flusher::wake() /home/abhinav/Piper Jefferson/ep-engine/src/flusher.cc:158 (ep.so+0x0000000eeb86)
+    #6 Flusher::notifyFlushEvent() /home/abhinav/Piper Jefferson/ep-engine/src/flusher.h:89 (ep.so+0x00000007f433)
+    #7 EventuallyPersistentStore::setWithMeta(Item const&, unsigned long, unsigned long*, void const*, bool, bool, unsigned char, bool, ExtendedMetaData*, bool) /home/abhinav/Piper Jefferson/ep-engine/src/ep.cc:2305 (ep.so+0x00000008cc84)
+    #8 PassiveStream::processMutation(MutationResponse*) /home/abhinav/Piper Jefferson/ep-engine/src/dcp/stream.cc:1301 (ep.so+0x0000000730b1)
+    #9 PassiveStream::messageReceived(DcpResponse*) /home/abhinav/Piper Jefferson/ep-engine/src/dcp/stream.cc:1176 (ep.so+0x000000072b82)
+    #10 DcpConsumer::mutation(unsigned int, void const*, unsigned short, void const*, unsigned int, unsigned long, unsigned short, unsigned int, unsigned char, unsigned int, unsigned long, unsigned long, unsigned int, unsigned char, void const*, unsigned short) /home/abhinav/Piper Jefferson/ep-engine/src/dcp/consumer.cc:291 (ep.so+0x000000056fcb)
+    #11 EvpDcpMutation(engine_interface*, void const*, unsigned int, void const*, unsigned short, void const*, unsigned int, unsigned long, unsigned short, unsigned int, unsigned char, unsigned long, unsigned long, unsigned int, unsigned int, void const*, unsigned short, unsigned char) /home/abhinav/Piper Jefferson/ep-engine/src/ep_engine.cc:1633 (ep.so+0x0000000ad79a)
+    #12 mock_dcp_mutation(engine_interface*, void const*, unsigned int, void const*, unsigned short, void const*, unsigned int, unsigned long, unsigned short, unsigned int, unsigned char, unsigned long, unsigned long, unsigned int, unsigned int, void const*, unsigned short, unsigned char) /home/abhinav/Piper Jefferson/memcached/programs/engine_testapp/engine_testapp.cc:618 (engine_testapp+0x0000004bbc85)
+    #13 dcp_thread_func(void*) /home/abhinav/Piper Jefferson/ep-engine/tests/ep_testsuite.cc:14228 (ep_testsuite.so+0x0000000889ac)
+    #14 platform_thread_wrap /home/abhinav/Piper Jefferson/platform/src/cb_pthreads.c:23 (libplatform.so.0.1.0+0x000000004131)
+
+Hint: use TSAN_OPTIONS=second_deadlock_stack=1 to get more informative warning message
+
+  Mutex M48662 acquired here while holding mutex M12632 in main thread:
+    #0 pthread_mutex_lock <null> (engine_testapp+0x000000474bf0)
+    #1 cb_mutex_enter /home/abhinav/Piper Jefferson/platform/src/cb_pthreads.c:115 (libplatform.so.0.1.0+0x000000004268)
+    #2 Mutex::acquire() /home/abhinav/Piper Jefferson/ep-engine/src/mutex.cc:31 (ep.so+0x0000001090f9)
+    #3 LockHolder::lock() /home/abhinav/Piper Jefferson/ep-engine/src/locks.h:71 (ep.so+0x000000071a73)
+    #4 PassiveStream::setDead_UNLOCKED(end_stream_status_t, LockHolder*) /home/abhinav/Piper Jefferson/ep-engine/src/dcp/stream.cc:1033 (ep.so+0x00000007134a)
+    #5 PassiveStream::setDead(end_stream_status_t) /home/abhinav/Piper Jefferson/ep-engine/src/dcp/stream.cc:1056 (ep.so+0x000000072007)
+    #6 DcpConsumer::closeAllStreams() /home/abhinav/Piper Jefferson/ep-engine/src/dcp/consumer.cc:874 (ep.so+0x000000055a01)
+    #7 ~DcpConsumer /home/abhinav/Piper Jefferson/ep-engine/src/dcp/consumer.cc:112 (ep.so+0x000000055491)
+    #8 ~DcpConsumer /home/abhinav/Piper Jefferson/ep-engine/src/dcp/consumer.cc:110 (ep.so+0x000000055b75)
+    #9 ~SingleThreadedRCPtr /home/abhinav/Piper Jefferson/ep-engine/src/atomic.h:271 (ep.so+0x00000005493d)
+    #10 ~SingleThreadedRCPtr /home/abhinav/Piper Jefferson/ep-engine/src/atomic.h:271 (ep.so+0x0000000e5b02)
+    #11 ExecutorPool::stopTaskGroup(unsigned long, task_type_t, bool) /home/abhinav/Piper Jefferson/ep-engine/src/executorpool.cc:585 (ep.so+0x0000000e624e)
+    #12 ~EventuallyPersistentStore /home/abhinav/Piper Jefferson/ep-engine/src/ep.cc:471 (ep.so+0x00000007d716)
+    #13 ~EventuallyPersistentEngine /home/abhinav/Piper Jefferson/ep-engine/src/ep_engine.cc:6342 (ep.so+0x0000000ca2aa)
+    #14 EvpDestroy(engine_interface*, bool) /home/abhinav/Piper Jefferson/ep-engine/src/ep_engine.cc:144 (ep.so+0x0000000ac277)
+    #15 mock_destroy(engine_interface*, bool) /home/abhinav/Piper Jefferson/memcached/programs/engine_testapp/engine_testapp.cc:98 (engine_testapp+0x0000004ba6f7)
+    #16 destroy_bucket(engine_interface*, engine_interface_v1*, bool) /home/abhinav/Piper Jefferson/memcached/programs/engine_testapp/engine_testapp.cc:995 (engine_testapp+0x0000004b9d37)
+    #17 __libc_start_main /build/buildd/eglibc-2.19/csu/libc-start.c:287 (libc.so.6+0x000000021ec4)
+
+Change-Id: If3658d50ff8f20251c1349e820842f4f5d6f86ab
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2015-10-13 02:54:29.316000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-10-13 02:54:37.335000000
+
+Patch Set 2:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1274/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-10-13 02:57:00.081000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1274/ : ABORTED
+
+-------------------------------------

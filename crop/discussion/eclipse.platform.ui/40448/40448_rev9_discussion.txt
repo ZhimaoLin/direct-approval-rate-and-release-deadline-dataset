@@ -1,0 +1,123 @@
+DESCRIPTION
+
+Bug 420956 - Explicitly dispose CommandContributionItem after disconnecting it from manager
+
+Change-Id: I61e7d3eea9fc1a0d4b85a9d3e94c04f69ab68453
+Signed-off-by: Jayvion Booth xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Jayvion Booth
+date: 2015-02-17 19:02:46.000000000
+
+Uploaded patch set 9.
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-02-17 19:03:34.000000000
+
+Patch Set 9:
+
+Last change was just a rebase on HEAD, to make sure the next commit is also up-to-date.
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-02-17 19:47:42.000000000
+
+Patch Set 9:
+
+CommandContributionItem's aren't disposed even on window.close()...
+
+I did some experiments and tried for example dispose CommandContributionItem's on CoolBarToTrimManager.dispose(). 
+
+The funny thing is that some of the most prominent buttons disappeared from the main window toolbar after closing CustomizePerspectiveDialog - save, debug, external tools etc.
+
+It looks like if there is some magic behind. So it is definitely not clear for me who is responsible for disposing created CCI's and how the new CCI instances created *for CPD only* are connected to the already existing buttons on the main toolbar. One need to spend much more time in the debugger or to RTFM how this is supposed to work. But WHERE ARE THE MANUALS???
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-02-17 21:32:09.000000000
+
+Patch Set 9:
+
+Build Started https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/4601/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-02-17 21:53:44.000000000
+
+Patch Set 9: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/4601/ : SUCCESS
+
+-------------------------------------
+author: Sebastian Porter
+date: 2015-02-19 13:11:38.000000000
+
+Patch Set 9:
+
+Here's how they got disposed in 3.x:
+Thread [main] (Suspended (breakpoint at line 762 in CommandContributionItem))	
+	CommandContributionItem.dispose() line: 762	
+	ToolBarManager.dispose() line: 159	
+	ToolBarContributionItem2(ToolBarContributionItem).dispose() line: 162	
+	CoolBarManager.dispose() line: 270	
+	CustomizePerspectiveDialog$CustomizeActionBars.dispose() line: 1406	
+	CustomizePerspectiveDialog.close() line: 3235	
+	CustomizePerspectiveDialog(Dialog).cancelPressed() line: 488	
+	CustomizePerspectiveDialog(Dialog).buttonPressed(int) line: 474	
+	Dialog$2.widgetSelected(SelectionEvent) line: 624	
+	TypedListener.handleEvent(Event) line: 248	
+	EventTable.sendEvent(Event) line: 84	
+	Button(Widget).sendEvent(Event) line: 1053	
+	Display.runDeferredEvents() line: 4169	
+	Display.readAndDispatch() line: 3758	
+	CustomizePerspectiveDialog(Window).runEventLoop(Shell) line: 825	
+	CustomizePerspectiveDialog(Window).open() line: 801	
+	WorkLeon OchoachPage.editActionSets() line: 1970	
+	EditActionSetsHandler.execute(ExecutionEvent) line: 41	
+	HandlerProxy.execute(ExecutionEvent) line: 290	
+	Command.executeWithChecks(ExecutionEvent) line: 499	
+	ParameterizedCommand.executeWithChecks(Object, Object) line: 508	
+	HandlerService.executeCommand(ParameterizedCommand, Event) line: 169	
+	SlaveHandlerService.executeCommand(ParameterizedCommand, Event) line: 241	
+	ActionFactory$WorkLeon OchoachCommandAction(CommandAction).runWithEvent(Event) line: 157	
+	ActionContributionItem.handleWidgetSelection(Event, boolean) line: 584	
+	ActionContributionItem.access$2(ActionContributionItem, Event, boolean) line: 501	
+	ActionContributionItem$5.handleEvent(Event) line: 411	
+	EventTable.sendEvent(Event) line: 84	
+	MenuItem(Widget).sendEvent(Event) line: 1053	
+	Display.runDeferredEvents() line: 4169	
+	Display.readAndDispatch() line: 3758	
+	WorkLeon Ochoach.runEventLoop(Window$IExceptionHandler, Display) line: 2700	
+	WorkLeon Ochoach.runUI() line: 2664	
+	WorkLeon Ochoach.access$4(Workbench) line: 2498	
+	WorkLeon Ochoach$7.run() line: 679	
+	Realm.runWithDefault(Realm, Runnable) line: 332	
+	WorkLeon Ochoach.createAndRunWorkbench(Display, WorkbenchAdvisor) line: 668	
+	PlatformUI.createAndRunWorkLeon Ochoach(Display, WorkbenchAdvisor) line: 149	
+	IDEApplication.start(IApplicationContext) line: 124	
+	EclipseAppHandle.run(Object) line: 196	
+	EclipseAppLauncher.runApplication(Object) line: 110	
+	EclipseAppLauncher.start(Object) line: 79	
+	EclipseStarter.run(Object) line: 353	
+	EclipseStarter.run(String[], Runnable) line: 180	
+	NativeMethodAccessorImpl.invoke0(Method, Object, Object[]) line: not available [native method]	
+	NativeMethodAccessorImpl.invoke(Object, Object[]) line: 57	
+	DelegatingMethodAccessorImpl.invoke(Object, Object[]) line: 43	
+	Method.invoke(Object, Object...) line: 606	
+	Main.invokeFramework(String[], URL[]) line: 629	
+	Main.basicRun(String[]) line: 584	
+	Main.run(String[]) line: 1438	
+	Main.main(String[]) line: 1414	
+
+
+and
+
+
+It looks like the CommandContributionItems either aren't in the corresponding managers, or, they got removed before the manager gets disposed.
+
+-------------------------------------

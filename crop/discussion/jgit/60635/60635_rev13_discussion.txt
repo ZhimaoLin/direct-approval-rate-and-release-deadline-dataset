@@ -1,0 +1,229 @@
+DESCRIPTION
+
+Add EOL stream type detection to TreeWalk
+
+TreeWalk provides the new method getEolStreamType. This new method can
+be used with EolStreamTypeUtil in order to create a wrapped InputStream
+or OutputStream when reading / writing files. The implementation
+implements support for the git configuration options core.crlf, core.eol
+and the .gitattributes "text", "eol" and "binary"
+
+CQ: 10896
+Bug: 486563
+Change-Id: Ie4f6367afc2a6aec1de56faf95120fff0339a358
+Signed-off-by: Nicolas Patterson xxx@xxx.xxx
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+
+COMMENTS
+
+author: Nicolas Patterson
+date: 2016-02-26 15:29:51.000000000
+
+Uploaded patch set 13.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-02-26 15:29:57.000000000
+
+Patch Set 13:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/8137/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-02-26 15:40:49.000000000
+
+Patch Set 13: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/8137/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2016-02-28 21:59:37.000000000
+
+Patch Set 13:
+
+(3 comments)
+
+One general comment: you are trying to add support for attribute handling in a lot of places where we use treewalks. But I think that's too much. Think about a gerrit server hosting thousands of bare git repos with the help of JGit. Gerrit is doing transport operations, merge operations, cherry-picks, ... but is never doing a checkout or checkin. Gerrit is happy with a JGit which doesn't support attributes. The same argument was also there when ignore handling was introduced. We should be careful to add attribute handling on a layer where we know that is is useful. I would say: let's create repo related treewalks only when we know we need ignore and attribute handling. E.g. AddCommand, CheckoutCommand, etc. And when a treewalk doesn't know about a repo and the repoconfig then he should simply ignore attributes, ignore rules.
+
+Line:3, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/io/AutoLFInputStreamTest.java -> You have removed the text "and other copyright owners as documented in the project's IP log." from the copyright. Intentionally?
+
+Line:179, org.eclipse.jgit.pgm/src/org/eclipse/jgit/pgm/debug/DiffAlgorithms.java -> Is this change needed? This test is running on two commits from the object database. No checkin, no checkout. No EOL handling required. I removed only this change, run all your new tests and they are still green.
+
+Line:305, org.eclipse.jgit.pgm/src/org/eclipse/jgit/pgm/debug/TextHashFunctions.java -> Is this change required?
+
+-------------------------------------
+author: Zachary Orozco
+date: 2016-02-28 23:42:08.000000000
+
+Patch Set 13: Code-Review-1
+
+(17 comments)
+
+great to see so much progress here
+
+Line:729, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> this method resolves refs into objectIDs. Do we need attribute handling at all?
+
+Line:184, org.eclipse.jgit/src/org/eclipse/jgit/blame/BlameGenerator.java -> is this change needed?
+
+Line:1008, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> If there is no workingTreeIterator in the game why would we need the db here? No workingTree -> no attributes, or?
+
+Line:218, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/EolStreamTypeUtilTest.java -> could you add some javadoc what this methods checks. Especially the two EolStreamTypes and how they relate to expectedOutput need explanation. Why do both stream types should result in the result? Same for testCheckout.
+
+Line:257, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/EolStreamTypeUtilTest.java -> You are testing streamTypeWithBinaryCheck with binary data. Don't you want to test streamTypeText also with binary data? Similar question also for testCheckout?
+
+Line:109, org.eclipse.jgit/src/org/eclipse/jgit/merge/StrategySimpleTwoWayInCore.java -> The incore merger works in memory without a working tree. Does he need attribute handling?
+
+Line:217, org.eclipse.jgit/src/org/eclipse/jgit/transport/WalkFetchConnection.java -> Attribute handling during git transports? Is this required?
+
+Line:149, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> I am not so sure about this, but do we need the functionality of "atomic" updates on that ref? And if not isn't the use of 
+this class to expensive just to be able to distinguish between not-yet-set and null?
+
+Line:76, org.eclipse.jgit/src/org/eclipse/jgit/util/io/EolStreamTypeUtil.java -> Not sure whether we really need these flags. I somebody wants a checkin/checkout without attribute handling then he should be able to do this. When I e.g. write tools which rewrite history (like filter branch) and I want to explicitly just checkout content exactly as it is in the object-store then that's ok.
+
+Line:2, org.eclipse.jgit/src/org/eclipse/jgit/util/io/AutoLFInputStream.java -> That's the right copyright for a new file?
+
+Line:481, org.eclipse.jgit/src/org/eclipse/jgit/diff/DiffFormatter.java -> is this change needed?
+
+Line:122, org.eclipse.jgit/src/org/eclipse/jgit/lib/ConfigConstants.java -> The semantics of this new config constants is not explained. Especially I would expect it to be mentioned in the commit message. Why do we need it?
+
+Line:321, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/EndOfLineRepositoryTest.java -> Are there any tests which use worktree attribute files which are not on root?
+Are there any tests where we there are attributes only added to the index which differ from the attributes in the worktree and HEAD?
+Are there any tests which do a checkout of branch b and where HEAD contains no attributes but b has? And vice versa. HEAD has attributes but b has no attributes?
+
+Line:362, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/EndOfLineRepositoryTest.java -> Shouldn't we add a file with mixed line endings. One line crlf and another lf? Maybe we want to support core.safecrlf soon.
+
+Line:378, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/EndOfLineRepositoryTest.java -> from the name I would expect that this method is the same as writeTrashFile(). I would call it createAndAddFile()
+
+Line:394, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/EndOfLineRepositoryTest.java -> I would call it checkAllContentsAttributes()
+
+Line:417, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/EndOfLineRepositoryTest.java -> I would call it checkEntryContentAttributes.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2016-02-28 23:43:05.000000000
+
+Patch Set 13:
+
+I am not ready with the review ... but I have to stop now and wanted to give you first comments
+
+-------------------------------------
+author: Nicolas Patterson
+date: 2016-02-29 11:53:08.000000000
+
+Patch Set 13:
+
+(19 comments)
+
+Line:3, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/io/AutoLFInputStreamTest.java -> Done
+
+Line:729, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> Done
+
+Line:184, org.eclipse.jgit/src/org/eclipse/jgit/blame/BlameGenerator.java -> Done
+
+Line:1008, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> Done
+
+Line:218, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/EolStreamTypeUtilTest.java -> Done
+
+Line:257, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/EolStreamTypeUtilTest.java -> If for example the gitattributes says "*.txt text" then no binary check is done on *.txt files at all.
+They are all assumed to be really text and conversion is done regardless if it may contain binary characters.
+This is uesful and improves performance since no binary check is to be performed before/during conversion.
+
+Line:109, org.eclipse.jgit/src/org/eclipse/jgit/merge/StrategySimpleTwoWayInCore.java -> Done
+
+Line:179, org.eclipse.jgit.pgm/src/org/eclipse/jgit/pgm/debug/DiffAlgorithms.java -> Done
+
+Line:217, org.eclipse.jgit/src/org/eclipse/jgit/transport/WalkFetchConnection.java -> Done
+
+Line:149, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> Right, AtomicRef is too expensive. Added a new class Holder<T> to do so.
+In most of the cases the value will be in fact null,  so i think it is valid to use a Holder<T>.
+Otherwise we should skip this cache member at all.
+
+Line:76, org.eclipse.jgit/src/org/eclipse/jgit/util/io/EolStreamTypeUtil.java -> Done
+
+Line:2, org.eclipse.jgit/src/org/eclipse/jgit/util/io/AutoLFInputStream.java -> This is the former EolCanonicalizingInputStream with a new name to match the eol naming policy. I just added a javadoc line.
+
+Line:481, org.eclipse.jgit/src/org/eclipse/jgit/diff/DiffFormatter.java -> Done
+
+Line:122, org.eclipse.jgit/src/org/eclipse/jgit/lib/ConfigConstants.java -> It is the following rare use case:
+- checkin a.txt containing CRLF with attributes *.txt binary
+- then removing the gtiattributes and setting core.autoCRLF=input
+- checkout a.txt, now it is a conflict whether to checkout forcing LF (on unix), forcing CRLF (on windows) or using a direct stream not converting at all.
+
+Since a checkout of a file may assume that text files inside the repo has normalized
+line endings, LF may be assumed.
+And so this property tells if checkout should enforce LF (CRLF on windows) in such a case or 
+checking out the file using a transparent stream (direct).
+
+However I assumed jgit was using the later (weak) case but i double checked
+and found no evidence about that intention. So I rethought that and removed this 
+property here again. The implementation now makes jgit same as command line git 
+by not forcing line endings at checkout when there are no explicit properties set to do so.
+eol=crlf, eol=lf, core.autoCRLF=true are such properties.
+
+Line:305, org.eclipse.jgit.pgm/src/org/eclipse/jgit/pgm/debug/TextHashFunctions.java -> Done
+
+Line:321, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/EndOfLineRepositoryTest.java -> since eol is mainly working on Attributes and Config constants, the mentioned tests 
+are already covered in the org.eclipse.jgit.attributes unit testst. But I will add some subdir 
+eol tests and tests that change eol handling.
+
+Line:378, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/EndOfLineRepositoryTest.java -> Done
+
+Line:394, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/EndOfLineRepositoryTest.java -> Done
+
+Line:417, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/EndOfLineRepositoryTest.java -> Done
+
+-------------------------------------
+author: Zachary Orozco
+date: 2016-02-29 12:29:24.000000000
+
+Patch Set 13:
+
+(2 comments)
+
+Line:257, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/EolStreamTypeUtilTest.java -> I got the idea. But you do have an assumption what should happen when binary data is pumped through streamTypeText. CRLF->LF conversion should happen, right? Why don't we test that? And why don't we test that streamTypeText doesn't touch other (non-crlf) binary data.
+
+Line:407, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/EndOfLineRepositoryTest.java -> Very important for me would also to check what content made it into the repo. Currently we are doing the checks only by looking at the filesystem. We could add the index (a DirCcheIterator) to this walk. And the check methods could get parameters for "expectedIndexContent" also check for the index content.
+
+-------------------------------------
+author: Nicolas Patterson
+date: 2016-03-01 10:29:09.000000000
+
+Patch Set 13:
+
+(2 comments)
+
+Line:257, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/EolStreamTypeUtilTest.java -> Done
+
+Line:407, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/EndOfLineRepositoryTest.java -> Done
+
+-------------------------------------
+author: Zachary Orozco
+date: 2016-03-01 14:23:00.000000000
+
+Patch Set 13:
+
+(1 comment)
+
+Line:362, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/EndOfLineRepositoryTest.java -> Ivan, have you seen this comment?
+
+-------------------------------------
+author: Nicolas Patterson
+date: 2016-03-01 14:41:10.000000000
+
+Patch Set 13:
+
+(1 comment)
+
+Line:362, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/EndOfLineRepositoryTest.java -> ok, will create a test case for this. Just give me some time.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-03-07 18:08:35.000000000
+
+Change has been successfully merged into the git repository by Zachary Orozco
+
+-------------------------------------

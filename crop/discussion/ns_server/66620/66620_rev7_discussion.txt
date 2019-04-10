@@ -1,0 +1,164 @@
+DESCRIPTION
+
+MB-11401: Implement a registration API in the token server.
+
+The following are the changes:
+[1] Added a new 'register' API in the ns_memcached_token module.
+    This new API is used to track the registered caller processes
+    so that when they restart we can make sure that the actions
+    done by the older incarnations can take effect before the
+    operations issued by newer incarnations are processed.
+
+    The caller will have to pass in a RegistrationName which is
+    unique and the API implementation makes use of the caller's
+    PID to distinguish between multiple instances. The caller
+    is also expected to pass the registered caller's Pid while
+    calling the get_token API.
+
+    The token service maintains 2 dicts, one mapping RegName to
+    {RegPid, Status, RefCount} tuple and the other mapping Pid
+    to RegName. The register API implementation will add the details
+    of the caller process in both these maps.
+
+[2] The wrapper function 'cmd_with_token' has been modified to
+    accept RegPid as a parameter which will then passed on to
+    the get_token API. All the callers of this API have been
+    modified to pass in the RegPid if they have or undefined.
+
+[3] The get_token API has been modified to accept RegPid as a
+    parameter. This RegPid is then added into the mc_caller_refs
+    dict along with MonRef. The get_token also increments a reference
+    counter that is maintained against the RegPid. This reference
+    counter is used during the unregistration process to determine if
+    it's safe to unregister the caller.
+
+[4] The release_token API has been modified to accept RegPid as a
+    a parameter. It then decrements the ref count for that RegPid.
+
+[5] The 'DOWN' message handler has been modified to first decrement
+    the reference count for the RegName (fetched from mc_caller_refs)
+    as the caller would not have gotten the chance to release the token.
+    It then checks if the PID is a registered caller and if so it sets
+    the Status field to 'inactive'. If the ref count for the RegName has
+    dropped to zero and if the Status of the registered process is
+    'inactive' then the corresponding entries are removed from both
+    the dictionaries (registered_names & registered_pids).
+
+[6] A wrapper API called 'register' in ns_memcached module has been
+    added. This in-turn calls the ns_memcached_token's register API.
+
+[7] The Harley Martinitor_agent module has been modified to call ns_memcached's
+    register API in its init callback and pass the Pid of the Harley Martinitor
+    agent to all the control commands.
+
+[8] Move the check to see if session token feature is enabled to the
+    APIs and rename the is_disabled function to is_enabled.
+
+[9] Re-arrange the functions to adhere to the standard practice in
+    ns_memcached_token module.
+
+Change-Id: Iaa3d8c1ba52593c2f00a653a361e03a4cbb1751a
+
+
+COMMENTS
+
+author: Noe Perry
+date: 2016-09-15 20:50:46.550000000
+
+Uploaded patch set 7.
+
+-------------------------------------
+author: Noe Perry
+date: 2016-09-16 18:56:03.793000000
+
+Patch Set 7: Verified+1
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2016-09-28 04:41:53.897000000
+
+Patch Set 7:
+
+(9 comments)
+
+Line:1099, src/mc_client_binary.erl -> It should probably fail after fixed number of attempts.
+
+Line:50, src/ns_memcached_token.erl -> This pattern is probably worth abstracting into a function or a macro.
+
+Line:93, src/ns_memcached_token.erl -> You shouldn't even start the process if is_enabled is false.
+
+Line:105, src/ns_memcached_token.erl -> If registered pid is inactive, you should probably also return unregistered_pid error.
+
+On a separate note, it gets hard to comprehend all the dict:fetch-es and dict:store-s. Would be good to hide them behind helper functions with good names.
+
+Line:135, src/ns_memcached_token.erl -> You need a state per registered name. Otherwise if two processes come at around the same time and both of their predecessors haven't been cleaned up yet, the one that came earlier will never get a response.
+
+Line:574, src/ns_memcached.erl -> It's not used anywhere, no reason to keep it around.
+
+Line:611, src/ns_memcached.erl -> Token should be passed from the caller.
+
+Line:632, src/ns_memcached.erl -> Legacy stuff, you can just pass 0.
+
+Line:1580, src/ns_memcached.erl -> Not worth bothering to generate new token if compactor fails. Just pass 0.
+
+This, btw, brings an interesting question. Compaction might be lengthy. Let's say we're trying to push new token to memcached when it's running (with token of 0). If ep-engine blocks set_token in this case, that's probably suboptimal.
+
+-------------------------------------
+author: Noe Perry
+date: 2016-10-03 18:58:59.065000000
+
+Patch Set 7:
+
+(9 comments)
+
+Line:1099, src/mc_client_binary.erl -> What is a good number for this? I have randomly chosen 5.
+
+Line:50, src/ns_memcached_token.erl -> Done
+
+Line:93, src/ns_memcached_token.erl -> Done
+
+Line:105, src/ns_memcached_token.erl -> Done
+
+Line:135, src/ns_memcached_token.erl -> Done
+
+Line:574, src/ns_memcached.erl -> Done
+
+Line:611, src/ns_memcached.erl -> Done
+
+Line:632, src/ns_memcached.erl -> Done
+
+Line:1580, src/ns_memcached.erl -> Done!
+
+I looked through the ep-engine/memcached code and it seems like the session_cas.counter does get incremented even when we submit a control command with 0 as CAS value. So the scenario you've described does hold good. There will be no harm in skipping the commands with token 0, is there?
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2016-10-03 19:15:01.695000000
+
+Patch Set 7:
+
+(1 comment)
+
+Line:1580, src/ns_memcached.erl -> Probably.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2016-10-04 19:21:22.534000000
+
+Patch Set 7:
+
+(1 comment)
+
+Line:574, src/ns_memcached.erl -> Should be in a separate change.
+
+-------------------------------------
+author: Noe Perry
+date: 2016-10-05 09:10:10.314000000
+
+Patch Set 7:
+
+(1 comment)
+
+Line:574, src/ns_memcached.erl -> Done
+
+-------------------------------------

@@ -1,0 +1,134 @@
+DESCRIPTION
+
+[Refactor]: Move bgFetch and queueDirty() go from KVBucket to VBucket
+
+KVBucket::queueDirty() is a function used to put an item onto checkpoint
+after it is inserted into hash table. Both hash table and checkpoint are
+members of VBucket class and hence it is more appropriate to implement
+this function in VBucket class.
+
+BgFetch is scheduled in full eviction mode when there is a miss in hash
+table lookup. As hash table is contained in VBucket it is more appropriate
+to implement this function in VBucket class.
+
+Implementing these functions in VBucket class will help in refactoring
+calls to hash table and also result better abstraction.
+
+Change-Id: I117bf20b0063723fe939967c06a3933ece1cd171
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2017-01-04 04:35:10.082000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-04 04:35:20.037000000
+
+Patch Set 4:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/2531/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-04 05:04:49.427000000
+
+Patch Set 4:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2072/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-04 05:05:20.504000000
+
+Patch Set 4:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2418/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-04 05:07:39.891000000
+
+Patch Set 4:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1251/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-04 05:57:12.707000000
+
+Patch Set 4: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2418/ : FAILURE
+
+Timeout of a CTest test 32/32 Test #22: ep_testsuite_dcp.ephemeral ...............} ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/2418/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/2531/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2072/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1251/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-01-04 15:57:15.552000000
+
+Patch Set 4: Code-Review-1
+
+(5 comments)
+
+Line:792, src/vbucket.cc -> You don't need `isMultiBGFetchEnabled` as an argument - just call down to the shard which owns this vbucket and ask the storage layer - see implementation of getStorageProperties / multiBGFetchEnabled:
+
+     const StorageProperties getStorageProperties() const {
+        KVStore* store  = vbMap.shards[0]->getROUnderlying();
+        return store->getStorageProperties();
+    }
+
+Or just make it a parameter which is set in the constructor of VBucket - this isn't a dynamic setting.
+
+Line:847, src/vbucket.cc -> If you just pass a `kvBucket` argument into this function, then you can use that to essentially "callback" on and don't need to make it a member variable (and hence avoids any circular reference issues down the line).
+
+Line:1610, src/kv_bucket.cc -> Doesn't this need to be guarded with the vbsetMutex lock? Even if in theory it doesn't, I'd suggest not changing it in such a large patch...
+
+Line:3798, src/kv_bucket.cc -> This generally worries me - we're creating a ref-counted object (VBucket) which knows about it's owner (KVBucket). This is the kind of thing which can cause circulate dependancies and memory leaks. Does the VBucket really need to know about the KVBucket which owns it?
+
+Line:841, src/kv_bucket.h -> Would be good to add descriptions for these.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-04 15:59:33.629000000
+
+Patch Set 4: -Verified
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2459/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-04 16:11:47.461000000
+
+Patch Set 4: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/2531/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2459/ : FAILURE
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/2459/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2072/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1251/ : SUCCESS
+
+-------------------------------------
+author: Tate Garrett
+date: 2017-01-16 18:09:44.532000000
+
+Change has been successfully cherry-picked as b25ae140c9117b2f0a8a3d25a3708657f518ce6f by Ashlee Kent
+
+-------------------------------------

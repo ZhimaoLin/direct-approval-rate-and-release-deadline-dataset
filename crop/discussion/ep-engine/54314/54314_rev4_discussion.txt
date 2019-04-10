@@ -1,0 +1,102 @@
+DESCRIPTION
+
+ActiveStream: Missing streamMutex lock
+
+We are not acquiring the streamMutex lock in the
+ActiveStream constructor method.  The mutex is
+required because it makes potentially makes a call
+to endStream (which in turn can call pushToReadyQ).
+
+The streamMutex lock is also required in the
+getReadyQueueMemory function as it accesses the
+readyQueueMemory variable.  The variable is modified
+by the pushToReadyQ and popFromReadyQ functions
+and so another thread could be updating the variable
+at the same time as the getReadyQueueMemory function
+is called.
+
+cb_assert have been added to those functions that
+have the streamMutex lock.  This is to aid debugging
+and understanding of the code.  In the future
+it expected that the locking will be made more fine
+grain.
+
+Change-Id: I5da7f986c4f939f28b258eabf0a951dfa7b60cc4
+
+
+COMMENTS
+
+author: Kymani Ramirez
+date: 2015-08-10 21:19:50.531000000
+
+Uploaded patch set 4: Commit message was updated.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-08-11 05:12:00.747000000
+
+Patch Set 4: Code-Review-1
+
+(2 comments)
+
+Line:87, src/dcp/stream.cc -> I believe we didn't add this mutex here, because we didn't need to return a highly accurate value for the stats, to avoid any unnecessary contention.
+
+Line:133, src/dcp/stream.cc -> This is quite unnecessary. One doesn't need to grab the lock in the constructor, as this wouldn't race with any other function in the active stream class.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-08-11 08:12:39.219000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:88, src/dcp/stream.cc -> We could also just change the type of readyQueueMemory to be a CouchbaseAtomic<> and then we are guaranteed a consistent value for statistics purposes.
+
+I would say that if the intent is to allow some leeway in accuracy, that should be documented in the function description.
+
+-------------------------------------
+author: Kymani Ramirez
+date: 2015-08-11 08:55:18.203000000
+
+Patch Set 4:
+
+(3 comments)
+
+Line:87, src/dcp/stream.cc -> Thanks for the comment.  I believe it is reasonable to not have a completely accurate value if the stat is just a simple count.  However for memory size I believe it should be 100% accurate, otherwise it could be mis-leading during debugging.  Also given the readyQueueMemory is of type uint64_t, the type size increases the possibility that we read only a partially updated value.
+
+I appreciate the concern about creating unnecessary contention, therefore suggest we change it to be an atomic.
+
+Line:88, src/dcp/stream.cc -> Yes, I was thinking whether to replace with an atomic as an alternative.  I think we should do that.
+
+Line:133, src/dcp/stream.cc -> Thanks for the comment.  Given that it won't cause any additional contention,  I think it should remain.  Otherwise if we end up calling pushToReadyQ we will not have the streamMutex lock, which violates the comment on the pushToReadyQ function declaration which states "To be called after getting streamMutex lock".
+
+It is also worth noting that the constructors for both PassiveStream and NotifierStream both take the streamMutex lock.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-08-11 08:57:13.141000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:87, src/dcp/stream.cc -> Strictly speaking (on x86 at least) as long as the uint64_t is naturally-aligned you're guaranteed to get a single consistent value for the whole of it.
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2015-08-11 09:03:05.832000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:587, src/dcp/stream.cc -> These asserts are fine, just be sure that ownsLock doesn't suck CPU on any of our many platforms :)
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-08-11 23:27:20.600000000
+
+Change has been successfully cherry-picked as e00da00f6dd94b20e6588c8cb4c08e7ed9ac069a
+
+-------------------------------------

@@ -1,0 +1,188 @@
+DESCRIPTION
+
+RFC: Merging Git notes
+
+Merging Git notes branches has several differences from merging "normal"
+branches. Although Git notes are initially stored as one flat tree the
+tree may fanout when the number of notes becomes too large for efficient
+access. In this case the first two hex digits of the note name will be
+used as a subdirectory name and the rest 38 hex digits as the file name
+under than directory. Similarly, when number of notes decreases a fanout
+tree may collapse back into a flat tree.  The Git notes merge algorithm
+must take into account possibly different tree structures in different
+note branches and must properly match them against each other.
+
+Any conflict on a Git note is, by default, resolved by concatenating
+the two conflicting versions of the note. A delete-edit conflict is, by
+default, resolved by keeping the edit version.
+
+The note merge logic is pluggable and the caller may provide custom
+note merger that will perform different merging strategy.
+
+Additionally, it is possible to have non-note entries inside a notes
+tree. The merge algorithm must also take this fact into account and
+will try to merge such non-note entries. However, in case of any merge
+conflicts the merge operation will fail. Git notes merge algorithm is
+currently not trying to do content merge of non-note entries.
+
+Thanks to Yoselin Hanna for patiently answering my questions related to
+this topic, giving hints and providing code snippets.
+
+Change-Id: I3b2335c76c766fd7ea25752e54087f9b19d69c88
+Signed-off-by: Dillon Cross xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Dillon Cross
+date: 2010-12-28 11:31:56.000000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-12-29 21:19:56.000000000
+
+Patch Set 5: I would prefer that you didn't submit this
+
+(20 inline comments)
+
+
+
+Line:96, org.eclipse.jgit/src/org/eclipse/jgit/notes/NoteMapMerger.java -> This class and the NoteMerger should really use the same reader and inserter.  Please try harder to make sure they are identical objects.
+
+(The reason is, the reader may need to know that the inserter has created something.)
+
+Line:131, org.eclipse.jgit/src/org/eclipse/jgit/notes/NoteMapMerger.java -> Wrap all of this method body in a try finally:
+
+  try {
+    ... current code ...
+  } finally {
+    reader.release();
+    inserter.release();
+  }
+
+That way the caller doesn't have to release our resources via another method call.
+
+Line:171, org.eclipse.jgit/src/org/eclipse/jgit/notes/NoteMapMerger.java -> I don't know if we need this call anymore.  As I understand how the code works, this temporary fanout bucket isn't needed as a tree anywhere, so we shouldn't have to write it.
+
+Line:313, org.eclipse.jgit/src/org/eclipse/jgit/notes/NoteMapMerger.java -> We should make the MergeStrategy configurable, defaulting to MergeStrategy.RESOLVE.
+
+Line:322, org.eclipse.jgit/src/org/eclipse/jgit/notes/NoteMapMerger.java -> I don't think we want the release here.  So we can drop the try/finally block.
+
+Line:187, org.eclipse.jgit/src/org/eclipse/jgit/notes/NoteMap.java -> This can probably go in an earlier commit along with a new unit test to verify iterator() works as expected.  Then you can rely on it to verify the result of a merge in the merge unit tests.
+
+Line:188, org.eclipse.jgit/src/org/eclipse/jgit/notes/NoteMap.java -> Style-nit: Unnecessary blank line.
+
+Line:190, org.eclipse.jgit/src/org/eclipse/jgit/notes/NoteMap.java -> This inner type isn't necessary, is it?
+
+Why can't the method be:
+
+  if (root != null)
+    return root.iterator(new MutableObjectId(), reader);
+  else:
+    return Collections.<Note>emptyList().iterator();
+
+Line:197, org.eclipse.jgit/src/org/eclipse/jgit/notes/NoteMap.java -> If the itr is null, return false.  Else next() throws NPE.
+
+Line:308, org.eclipse.jgit/src/org/eclipse/jgit/notes/NoteMap.java -> Do we use this method?  I think its a left-over from one of your prior iterations.
+
+Line:378, org.eclipse.jgit/src/org/eclipse/jgit/notes/NoteMap.java -> Style-nit: You can fit this all on one line:
+
+  xxx@xxx.xxx the root note bucket */
+
+Line:380, org.eclipse.jgit/src/org/eclipse/jgit/notes/NoteMap.java -> This shouldn't be public, the type it returns isn't public.
+
+Line:73, org.eclipse.jgit/src/org/eclipse/jgit/notes/DefaultNoteMerger.java -> Might as well make this public, so developers can explicitly use this if they want.
+
+Line:98, org.eclipse.jgit/src/org/eclipse/jgit/notes/DefaultNoteMerger.java -> Style-nit: Curly braces are unnecessary here.
+
+Line:108, org.eclipse.jgit/src/org/eclipse/jgit/notes/DefaultNoteMerger.java -> If the NoteMapMerger is using the same reader/inserter pair you don't need to flush here.  Just flush once in the NoteMapMerger.  This allows some level of buffering in the ObjectInserter implementation.
+
+Line:56, org.eclipse.jgit/src/org/eclipse/jgit/notes/NoteMerger.java -> You need to also modify the Note class to make it public and allow implementations of this interface from outside of this package.
+
+Line:73, org.eclipse.jgit/src/org/eclipse/jgit/notes/NoteBucket.java -> This was done.
+
+Line:71, org.eclipse.jgit/src/org/eclipse/jgit/notes/NotesMergeConflictException.java -> These names must all be the same... the notes are on the same value.
+
+I think you need 4 strings:  the getName() from the first non-null base/ours/theirs as this is the name of the object the note is on, and then the getData().getName() from each non-null base, ours, theirs as that is the name of the blob content for the note.
+
+Something like:
+
+  private static String noteOn(Note base, Note ours, Note theirs) {
+    if (base != null)
+      return base.name();
+    if (ours != null)
+      return ours.name();
+    return theirs.name();
+  }
+
+  private static String noteData(Note n) {
+    if (n != null)
+      return n.getData().name();
+    return "";
+  }
+
+  public NotesMergeConflictException(Note base, Note ours, Note theirs) {
+    super(MessageFormat.format(JGitText.get().mergeConflictOnNotes(),
+      noteOn(base, ours, theirs),
+      noteData(base), noteData(ours), noteData(theirs)));
+
+Line:88, org.eclipse.jgit/src/org/eclipse/jgit/notes/NotesMergeConflictException.java -> You probably want to use the name field from the NonNoteEntry rather than rely on the toString().
+
+Line:14, /COMMIT_MSG -> s/than/that/
+
+-------------------------------------
+author: Dillon Cross
+date: 2011-01-05 06:38:08.000000000
+
+Patch Set 5: (20 inline comments)
+
+
+
+Line:96, org.eclipse.jgit/src/org/eclipse/jgit/notes/NoteMapMerger.java -> Done
+
+Line:131, org.eclipse.jgit/src/org/eclipse/jgit/notes/NoteMapMerger.java -> Done
+
+Line:171, org.eclipse.jgit/src/org/eclipse/jgit/notes/NoteMapMerger.java -> Right, we don't need to writeTree here.
+Actually, removing this method call revealed a bug in the addIfNotNull method below which caused the NoteMapMergerTest.testCollapseFanoutAfterMerge to fail with a "Missing tree ...". When the child parameter in the addIfNotNull is an instance of InMemoryNoteBucket then we should have added it to the fanout bucket using the other setBucket method:
+
+ void setBucket(int cell, InMemoryNoteBucket bucket)
+
+Adding it using the child.getTreeId() causes the estimateSize method to fail because it finds a LazyNoteBucket in a cell for which the tree object doesn't exist in the Git object database.
+
+Line:313, org.eclipse.jgit/src/org/eclipse/jgit/notes/NoteMapMerger.java -> OK, made it configurable. However, this complicated the implementation of this method a bit as I had to distinguish the case where the configured MergeStrategy is an instanceof ThreeWayMergeStrategy and where it is not. I don't know if it was possible to do the implementation by using only the base MergeStrategy interface.
+
+Line:322, org.eclipse.jgit/src/org/eclipse/jgit/notes/NoteMapMerger.java -> Done
+
+Line:187, org.eclipse.jgit/src/org/eclipse/jgit/notes/NoteMap.java -> Done
+
+Line:188, org.eclipse.jgit/src/org/eclipse/jgit/notes/NoteMap.java -> Done
+
+Line:190, org.eclipse.jgit/src/org/eclipse/jgit/notes/NoteMap.java -> Should root == null be supported? I checked the NoteParser and in no case root will be null.
+
+Line:197, org.eclipse.jgit/src/org/eclipse/jgit/notes/NoteMap.java -> Done
+
+Line:308, org.eclipse.jgit/src/org/eclipse/jgit/notes/NoteMap.java -> No, we don't use it any more. Removed.
+
+Line:378, org.eclipse.jgit/src/org/eclipse/jgit/notes/NoteMap.java -> Done
+
+Line:380, org.eclipse.jgit/src/org/eclipse/jgit/notes/NoteMap.java -> Done
+
+Line:73, org.eclipse.jgit/src/org/eclipse/jgit/notes/DefaultNoteMerger.java -> Done
+
+Line:98, org.eclipse.jgit/src/org/eclipse/jgit/notes/DefaultNoteMerger.java -> Done
+
+Line:108, org.eclipse.jgit/src/org/eclipse/jgit/notes/DefaultNoteMerger.java -> Done
+
+Line:56, org.eclipse.jgit/src/org/eclipse/jgit/notes/NoteMerger.java -> Made the Note class public but didn't expose the constructor and the setData method as I wasn't sure if this was really necessary. So, for now Note instances are read-only outside of this package.
+
+Line:73, org.eclipse.jgit/src/org/eclipse/jgit/notes/NoteBucket.java -> Done
+
+Line:71, org.eclipse.jgit/src/org/eclipse/jgit/notes/NotesMergeConflictException.java -> Done
+
+Line:88, org.eclipse.jgit/src/org/eclipse/jgit/notes/NotesMergeConflictException.java -> Done
+
+Line:14, /COMMIT_MSG -> Done
+
+-------------------------------------

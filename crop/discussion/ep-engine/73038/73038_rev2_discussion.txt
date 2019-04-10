@@ -1,0 +1,147 @@
+DESCRIPTION
+
+[Refactor]: Do not pass HT lock as a param to VBucket::queueDirty()
+
+VBucket::queueDirty() must just put an item on a queue for persistence
+and/or replication. Hence the HT lock and notification logic are removed
+from it. It should be upto the VBucket to decide when to release the HT
+lock and when to notify any clients of a new seqno
+
+Change-Id: I8e72d74d32190953056609f5991e469b6b909509
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2017-02-02 19:53:55.160000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-02-02 19:54:00.432000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/3326/ (1/4)
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-02-02 19:54:40.532000000
+
+Patch Set 2:
+
+(6 comments)
+
+-------------------------------------
+author: Keira Washington
+date: 2017-02-02 20:05:37.682000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:1226, src/vbucket.cc -> It's not exactly clear about which situations will result in a lock inversion and which won't considering in all situations it's a ht lock and the notifyNewSeqno function. Is there a way to make it more obvious?
+
+Line:1115, src/vbucket.h -> I'm not sure I understand the motivation behind inlining a private function that's only called from non-inlined code.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-02-02 20:19:33.186000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/3326/ : FAILURE
+
+Timeout of a CTest test 24/24 Test #13: ep_testsuite_dcp.full_eviction ...........} ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/3326/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/2150/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2932/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/3507/ : SUCCESS
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-02-02 21:30:58.540000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:1226, src/vbucket.cc -> To be honest, even I don't exactly know what lock inversions can happen. This is legacy stuff. There are some places where we unlock and notify and some places we just notify. 
+(I remember vaguely that there were some lock inversion related deadlock involving 3 locks across 3 different modules and hence this was added.)
+Since this commit is a refactor only commit I have just kept the code flow as is.
+And in general it is good to release locks of a module before calling other modules (like notification module)
+
+Line:1115, src/vbucket.h -> Doesn't it save 1 more function call ?
+Please explain if this is bad/redundant in terms of perf or as practice
+
+-------------------------------------
+author: Keira Washington
+date: 2017-02-02 22:19:23.034000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:1226, src/vbucket.cc -> Ok, that seems fair enough.
+
+It might be worth investigating and documenting somewhere at a later stage if you get the chance. The fact that it applies to only some of these and not all of them suggests it'll be triggered by the specific contents of the notifyCtx which makes it seem a little fragile (e.g. someone changing the behaviour of queueDirty could introduce a lock inversion somewhere else).
+
+It's much easier to rationalise if we can just say 'never call xyz function with a ht lock' rather than 'never call xyz function with abc argument in qrs circumstances while holding a ht lock'. Being able to understand why would potentially allow us to simplify the rules and also potentially simplify the control flow of the code.
+
+Line:1115, src/vbucket.h -> Technically it *can* save a function call, however I believe that DaveR would at this point use the term 'premature optimisation". The cost of the virtual function call that is purpose of the body of this function will far exceed the cost of calling this function. With modern pipelining and prefetching I doubt you'd be able to tell the difference. Compilers usually ignore inlining hints nowadays anyway (and make the decision themselves) as often times you'll gain greater speedup by reducing the size of your binary and fitting more code inside the L1 instruction cache.
+
+Not only that but you can actually still inline from the .cc. So you can replace this with:
+
+    void notifyNewSeqno(const VBNotifyCtx& notifyCtx);
+
+and then in the cc just make it explicitly inline (everyone who can actually use the function will be able to inline it):
+
+    inline void VBucket::notifyNewSeqno(const VBNotifyCtx& notifyCtx) {
+        if (newSeqnoCb) {
+            newSeqnoCb->callback(getId(), notifyCtx);
+        }
+    }
+
+The reason why we want to do this is to keep the header file as small as feasibly possible which helps keeps compile times fast (especially incremental builds). A single function won't make a massive difference, but when you also consider all of the prematurely inlined functions above this, it soon adds up.
+
+In general the only situations where it's desirable to have the implementation in the .h are:
+
+- Extremely performance critical function calls (e.g. wrapping a single atomic operation) as part of a *public* API
+- Templated code
+
+The other time I would maybe justify it is when adding a (very) small function to a header file that doesn't already have a corresponding .cc.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-02-02 22:34:14.748000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:1115, src/vbucket.h -> Will's covered this in a lot of detail, the only thing I'd add is this link to give some context on relative costs of operations: 
+
+http://ithare.com/infographics-operation-costs-in-cpu-clock-cycles/
+
+(Note the X axis is log).
+
+I expect that in reality you putting this (private) method inline will result in exactly the same code in a Release build (compared to putting it in the C++) - the compiler will probably inline it.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-02-02 22:53:26.411000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:1226, src/vbucket.cc -> Creating a kv-goodness ticket
+
+Line:1115, src/vbucket.h -> Thanks for the detailed info guys
+
+-------------------------------------

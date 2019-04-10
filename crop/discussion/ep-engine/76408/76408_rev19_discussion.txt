@@ -1,0 +1,87 @@
+DESCRIPTION
+
+MB-23795: Ephemeral Tombstone purging (VBucket-level)
+
+Add Ephemeral Tombstone purging for Ephemeral VBuckets. This patch
+adds two purge operations - one for the HashTable, and one for the
+sequenceList:
+
+a) The HashTable visitor (EphemeralVBucket::HTTombstonePurger) visits
+   all items in the HashTable, and identifies any deletes which are
+   old enough to be purged (age > ephemeral_metadata_purge_age). Such
+   items are marked as stale, and transferred from the HashTable to
+   the SequenceList.
+
+b) The SequenceList purger (BasicLinkedList::purgeTombstones()) then
+   iterates over the sequencelist, and hard-deletes any items marked
+   stale - both Alive and Deleted items. It is at this stage that the
+   OSVs are actually deleted.
+
+   Note the SequenceList purging is somewhat delicate, to ensure
+   correctness while not blocking front-end writes. See the inline
+   comments in BasicLinkedList::purgeTombstones() for further details.
+
+Note this isn't yet driven by any tasks - only by the unit
+tests. Subsequent patches will connect into tasks.
+
+Change-Id: I937ed23317826c84cbdd0bb0b3749a99ff446497
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2017-04-11 17:27:16.310000000
+
+Uploaded patch set 19.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-04-11 17:47:16.412000000
+
+Patch Set 19: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/5706/ : FAILURE
+
+ThreadSanitizer issue: data race /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/memcached/programs/engine_testapp/mock_server.cc:86 mock_store_engine_specific(void const*, void*)  ( http://cv.jenkins.couchbase.com//job/ep-engine-threadsanitizer-master/5706/ )
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/5706/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4486/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5204/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/5940/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-04-11 18:39:05.025000000
+
+Patch Set 19:
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/5708/ : FAILURE
+
+ThreadSanitizer issue: data race /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/stored-value.h:771 BasicLinkedList::purgeTombstones()  ( http://cv.jenkins.couchbase.com//job/ep-engine-threadsanitizer-master/5708/ )
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/5708/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4486/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5204/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/5940/ : SUCCESS
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-04-12 00:34:40.483000000
+
+Patch Set 19:
+
+(1 comment)
+
+Line:266, src/linked_list.cc -> Now as flagged by thread sanitizer there is a race between setting item stale and reading if it is stale
+
+-------------------------------------

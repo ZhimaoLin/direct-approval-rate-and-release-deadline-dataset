@@ -1,0 +1,72 @@
+DESCRIPTION
+
+MB-22013: Port access scanner to PauseResume model
+
+ItemAccessVisitor currently visits all StoredValues in a hashtable
+bucket before releasing the lock and writing down to disk. This commit
+changes ItemAccessVisitor to a PauseResumeHashTableVisitor allows us to
+pause after some number of items in a hashtable bucket which frees up
+the corresponding lock for other tasks/operations. It also means that we
+write the information down to disk more often, reducing the memory
+overhead required.
+
+A new configuration option has been added specifying the maximum number
+of StoredValues to visit before pausing and writing to disk.
+
+We can see an improvement in the amount of memory used per key using
+this commit:
+
+Before:
+
+$ ./ep_engine_benchmarks
+Run on (8 X 2200 MHz CPU s)
+2017-03-15 13:19:44
+------------------------------------------------------------------------------------------------------------------
+Benchmark                                                           Time           CPU Iterations
+ UserCounters...------------------------------------------------------------------------------------------------------------------
+AccessLogBenchEngine/MemoryOverhead/0/32768/min_time:0.000      40741 ns       8000 ns          1 MaxBytesAllocatedPerItem=0 Control
+AccessLogBenchEngine/MemoryOverhead/1/32768/min_time:0.000   22012253 ns   20156000 ns          1 MaxBytesAllocatedPerItem=96 AccessScanner
+AccessLogBenchEngine/MemoryOverhead/0/65536/min_time:0.000       7758 ns       7000 ns          1 MaxBytesAllocatedPerItem=0 Control
+AccessLogBenchEngine/MemoryOverhead/1/65536/min_time:0.000   57752712 ns   53123000 ns          1 MaxBytesAllocatedPerItem=96 AccessScanner
+
+After:
+
+Maxmimum of 2048 items read before pause.
+$ ./ep_engine_benchmarks
+Run on (8 X 2200 MHz CPU s)
+2017-03-15 13:27:48
+------------------------------------------------------------------------------------------------------------------
+Benchmark                                                           Time           CPU Iterations
+ UserCounters...------------------------------------------------------------------------------------------------------------------
+AccessLogBenchEngine/MemoryOverhead/0/32768/min_time:0.000      37192 ns       6000 ns          1 MaxBytesAllocatedPerItem=0 Control
+AccessLogBenchEngine/MemoryOverhead/1/32768/min_time:0.000   26574724 ns   21748000 ns          1 MaxBytesAllocatedPerItem=6 AccessScanner
+AccessLogBenchEngine/MemoryOverhead/0/65536/min_time:0.000      11344 ns      11000 ns          1 MaxBytesAllocatedPerItem=0 Control
+AccessLogBenchEngine/MemoryOverhead/1/65536/min_time:0.000   52974551 ns   43963000 ns          1 MaxBytesAllocatedPerItem=3 AccessScanner
+
+Change-Id: If258a2272b014ce73e0948aee5ba71940415a718
+
+
+COMMENTS
+
+author: Aaliyah Proctor
+date: 2017-03-15 15:15:36.669000000
+
+Uploaded patch set 27: Patch Set 26 was rebased.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-03-15 15:42:48.252000000
+
+Patch Set 27: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/3579/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/4765/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/4326/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/4993/ : SUCCESS
+
+-------------------------------------

@@ -1,0 +1,107 @@
+DESCRIPTION
+
+Cache index (DirCache object) in repository
+
+Repository now holds a DirCache instance which can be retrieved via
+calling getDirCache. Calling getDirCache returns an immutable
+instance. Subsequent calls to getDirCache return the same instance
+until the DirCache changes on disk. In this case the next call to
+getDirCache returns a new instance.
+This reduces the time EGit requires to decorate resources - EGit
+already caches the repository object, but due to the implementation of
+readDirCache() the DirCache was created multiple times. See bug 325393
+for performance results.
+
+Change-Id: I133cd170f9f91aa6e3905cdd8dee87b719159a24
+Signed-off-by: Marlie Beasley xxx@xxx.xxx
+Signed-off-by: Zachary Orozco xxx@xxx.xxx
+Signed-off-by: Reed Meza xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Marlie Beasley
+date: 2011-01-20 10:10:28.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-01-23 23:55:40.000000000
+
+Patch Set 3: I would prefer that you didn't submit this
+
+(4 inline comments)
+
+
+
+Line:141, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> I think the method warrants a bit more description than just its return value.
+
+ /**
+  * Get an immutable (but up-to-date) copy of the DirCache.
+  * <p>
+  * The returned DirCache is cached and shared with all callers
+  * that used this method to obtain it.  If the on-disk file has not
+  * been modified since the last request, the same instance is
+  * returned to the caller.  If the on-disk file has changed, a new
+  * instance is returned that contains the changes.  This allows
+  * callers to treat the method return value as a stable snapshot.
+
+Line:148, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> Style-nit: This should be next to the readDirCache() method in the class, like before it.  Not in the middle of the listener methods.
+
+Line:150, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> Because the field is volatile, its bad to read it multiple times in the method.  Instead do:
+
+  DirCache ro = readOnlyDirCache;
+  if (ro == null || ro.isOutdated()) {
+    ro = new UnmodifiableDirCache(getIndexFile(), getFS());
+    readOnlyDirCache = ro;
+  }
+  return ro;
+
+Line:59, org.eclipse.jgit/src/org/eclipse/jgit/dircache/UnmodifiableDirCacheEntry.java -> I'm not sure this is the best approach.  Subclassing a mutable type and then overriding all of the mutator methods is risky; when we add a new mutator method we need to remember to also add it to the subclassed unmodifiable type.  :-(
+
+I would prefer to do what we did with ObjectId when we created AnyObjectId and MutableObjectId.  Pull the majority of the code into a new abstract base class that supports read-only operations.  Make the existing DirCache/DirCacheEntry types extend that and define the mutation methods on those.  Define two new Unmodifiable types that also extend the abstract base classes, and make those the unmodifiable variant.
+
+A different approach that I had considered when we were talking about this was to simply leave DirCacheEntry mutable, but make DirCache itself be at least thread-safe against concurrent updates by taking the majority of its state and tossing that into a new private inner State class, which is held by DirCache through a volatile field.  Readers can grab the state, and then read the state safely.  Writers that are updating the entry list via a builder, editor, or by re-reading from disk would create a new state and perform a write to the volatile field to publish it.  This does mean that readers who have a DirCache might observe a DirCacheEntry, and then later reading the same path from the same DirCache might get an entirely different entry... but I think that's OK if they are using the cached read-only DirCache and are expecting it to be current with what is on disk.
+
+Then if a client application absolutely needs to have its own stable DirCache we could offer a copy() method on DirCache that makes a new DirCache instance with the same inner State reference... but now future reads wouldn't impact that new copy.  Oh, and that copy was cheap because its just creating a new DirCache and pointing to the same state array.
+
+We do have to trust applications *not* to edit a DirCacheEntry obtained from such a shared DirCache.  We already do that with ObjectLoaders and getCachedBytes().  But maybe DirCacheEntry is too high-level of an API to trust applications not to mutate something they shouldn't?
+
+-------------------------------------
+author: Marlie Beasley
+date: 2011-02-02 15:59:27.000000000
+
+Patch Set 3:
+
+Introducing a class hierarchy similar to AnyObjectId would be a very big change.
+What about the following simple solution: add a member "readonly" to DirCache and DirCacheEntry. Write methods check the flag and throw IllegalStateExceptions.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-02-12 02:57:55.000000000
+
+Patch Set 3:
+
+I'm a little loathe to add a new field to DirCacheEntry given the size of it and everything.  But we might have no choice here.
+
+FWIW, if we do this readonly flag idea Leyla Clements proposes, lets do it as a bit field in an int.  There are other flags C Git winds up using within their equivalent of the DirCacheEntry that are strictly in-memory and we might find we need to do something similar.  (But lets hide it behind an isReadOnly() or assertNotReadOnly() method so we can easily test it inside of set methods.)
+
+-------------------------------------
+author: Marlie Beasley
+date: 2011-09-26 14:16:08.000000000
+
+Patch Set 3: I would prefer that you didn't submit this
+
+Since change I6142b26565835f4122527c13928a0f4cff596ec9 there is no longer a need from EGit side to cache the index in the repository.
+Philipp, I think you can abandon this change.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2011-09-26 20:59:40.000000000
+
+Patch Set 3: Abandoned
+
+IndexDiffCache is improving decorator performance in a better way
+
+-------------------------------------

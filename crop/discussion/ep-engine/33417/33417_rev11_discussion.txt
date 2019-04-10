@@ -1,0 +1,64 @@
+DESCRIPTION
+
+MB-10117: ALL_DOCS api
+
+- CMD_GET_ALL_DOCS: 0xb8
+- extlen: 5B
+- ext:  | COUNT(4B) | SORTING(1B) |
+- SORTING:: 0x00: ascending, 0x01: descending
+- Defaults:: Count: 1000 (or max entries), Sorting: ascending
+- Response:: Body: |key1len(2B) |key1 |key2len(2B) |key2 |....
+
+Change-Id: I885f93e90114b62f63fa43822caac56cce15ac2a
+
+
+COMMENTS
+
+author: Abby Duran
+date: 2014-02-26 02:53:04.673000000
+
+Patch Set 11:
+
+(10 comments)
+
+i still have some major concerns on this implementation. Please look at them.
+
+Line:4099, src/ep_engine.cc -> We don't need the above lookup because "allKeysLookups[cookie] = err;" will simply overwrite the existing one if it exists in the map or create a new entry if not exist.
+
+Line:4111, src/ep_engine.cc -> Please simplify this function's logic to the following one line:
+
+return allKeysLookup.find(cookie) != allKeysLookup.end();
+
+Line:4121, src/ep_engine.cc -> Are there any other return values that prevent us from removing an entry from the map?
+
+Line:5333, src/ep_engine.cc -> This might not work correctly. Please use memcpy instead.
+
+Line:5340, src/ep_engine.cc -> Please use std::string instead of allocating the memory.
+
+Line:5365, src/ep_engine.cc -> please use std::string instead of keyptr and keylen.
+
+Line:5367, src/ep_engine.cc -> Please do not pass the pointer "this" to the underlying kv abstraction. It will cause unnecessary couplings. Can we simply define the callback class and allocate the initial buffer in that callback class?
+
+Now, the biggest issue here is that we only have a single buffer that might not work when we have more than one getAllKeys request.
+
+Line:5381, src/ep_engine.cc -> You define those buffer related functions in the callback class.
+
+Line:328, src/kvstore.h -> std::string &start_key
+
+Line:330, src/kvstore.h -> Please pass the callback function instead of the engine pointer. Please see how we did in the rollback.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2014-02-26 21:55:25.809000000
+
+Patch Set 11:
+
+(3 comments)
+
+Line:4099, src/ep_engine.cc -> Done
+
+Line:4111, src/ep_engine.cc -> Done
+
+Line:4121, src/ep_engine.cc -> An ENGINE_EWOULDBLOCK
+
+-------------------------------------

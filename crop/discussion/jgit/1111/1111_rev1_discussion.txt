@@ -1,0 +1,55 @@
+DESCRIPTION
+
+Initial pack format delta generator
+
+DeltaIndex is a simple pack style delta generator.  The function works
+by creating a compact index of a source buffer's blocks, and then
+walking a sliding window along a desired result buffer, searching for
+the window in the index.  When a match is found, the window is
+stretched to the longest possible length that is common with the
+source buffer, and a copy instruction is created.
+
+Rabin's polynomial hash function is used to compute the hash for a
+block, permitting efficient sliding of the window in single byte
+increments.  The update function to slide one byte originated from
+David Mazieres' work in LBFS, and our implementation of the update
+step was certainly inspired by the initial work Geert Bosch proposed
+for C Git in http://marc.info/?l=git&m=114565424620771&w=2.
+
+To ensure the encoder runs in linear time with respect to the size of
+the two input buffers (source and result), the maximum number of
+blocks that can share the same position in the index's hashtable is
+capped at a constant number.  This prevents bad inputs from causing
+the encoder to run in quadratic time, but comes with a penalty of
+creating a longer delta due to fewer considered copy positions.
+
+Strange hackery is used to cap the amount of memory used by the index
+to be no more than 12 bytes for every 16 bytes of source buffer, no
+matter what the JVM per-object overhead is.  This permits an index to
+always be no larger than 1.75x the source buffer length, which is an
+important feature to support large windows of candidates to match
+against while packing.  Here the strange hackery is nothing more than
+a manually managed chained hashtable, where pointers are array indexes
+into storage arrays rather than object references.
+
+Computation of the hash function for a single fixed sized block is
+done through an unrolled loop, where the first 4 iterations have been
+manually reduced down to eliminate unnecessary instructions.  The
+pattern is derived from ObjectId.equals(byte[], int, byte[], int),
+where we have unrolled the loop required to compare two 20 byte
+arrays.  Hours of testing with the Sun 1.6 JRE concluded that the
+non-obvious "foo[idx + 1]" style of reference is faster than
+"foo[idx++]", and so that is what we use here during hashing.
+
+Change-Id: If9fb2a1524361bc701405920560d8ae752221768
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-07-27 16:11:38.000000000
+
+Change has been successfully pushed.
+
+-------------------------------------

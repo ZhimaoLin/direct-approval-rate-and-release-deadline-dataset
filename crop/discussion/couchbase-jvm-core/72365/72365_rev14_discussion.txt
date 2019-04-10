@@ -1,0 +1,114 @@
+DESCRIPTION
+
+JVMCBC-385: Implement Generic Service Pool
+
+Motivation
+----------
+core-io had a longstanding limitation that the number of endpoints,
+practically speaking, has always been fixed. While configurable, in
+practice this means fiddling around with config settings and as a
+result providing a non-optimal user experience. It also makes it
+hard to shut off sockets if they are not needed during idle
+periods.
+
+A recent change which disables pipeling has further fueled the need
+for such a change, since it led to decreased performance out of the
+box.
+
+Modifications
+-------------
+This, honestly quite big, changeset changes the situation. While it
+touches many files it boils down to a couple of distinct changes
+that ultimately leady to a flexible service pool implementation.
+
+Here is how it works:
+
+A ServiceConfig per service is created on startup in the environment
+and then used to configure the ServicePool. KV service is the only
+one which has always a fixed number of endpoints since right now
+when pipelining is enabled only min==max works (since the pipelined
+endpoints would always accept more requests, so when start adding
+new ones? this will be fixed later).
+
+At connect time, the minimum number of endpoints is established. When
+a new messages comes in through send and no endpoint can be used
+(through the selection strategy) the logic to grab a new endpoint is
+executed. Of course if max is reached, the op is just retried. This
+also happens when the new endpoint couldn't be opened.
+
+Finally, log is in place that tears down sockets which are idle longer
+than the configured period. If its 0 then its disabled. Note that
+additional logic is in place which makes sure we never go below
+the minimum, if this happens new endpoints are spawned proactively.
+
+* Supporting changes
+ - AbstractGenericHandler now tracks "KeepAlive" messages with a
+   marker interface.
+ - Endpoints track if they are free and track the last timestamp
+   when a message has been completed.
+ - The Environment now has a ServiceConfig that is used to configure
+   the services instead of a simple "num endpoints"
+
+* Main changes
+ - the PoolService implements the pool functionality and the
+   PoolServiceTest file has all the relevant tests for it
+ - The old pools have not been removed since the config and DCP
+   service still use it, a ticket has been filed to remove that
+   in subsequent changesets.
+ - The selection strategy has been modified to work with a list
+   and not an array
+
+Result
+------
+The SDK now by default has a flexible pool structure for N1QL, Views
+and Fulltext.
+
+Change-Id: Ibdeeb975949a8e2262d41c9d70dd369c14170961
+
+
+COMMENTS
+
+author: Natasha Sullivan
+date: 2017-02-02 10:10:54.536000000
+
+Uploaded patch set 14: Commit message was updated.
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2017-02-02 16:03:40.807000000
+
+Patch Set 14: Verified+1
+
+-------------------------------------
+author: Marques Ellis
+date: 2017-02-02 23:40:10.878000000
+
+Patch Set 14:
+
+(4 comments)
+
+Line:113, src/main/java/com/couchbase/client/core/service/PooledService.java -> does this fire for a pool of endpoints no matter when the endpoint was actually created? only if the min == max and pooling is enabled, all endpoints get a fair idle timeout.
+
+Line:206, src/main/java/com/couchbase/client/core/service/PooledService.java -> isn't this a bit redundant, it looks to be checked on abstract service config constructor?
+
+Line:22, src/main/java/com/couchbase/client/core/env/KeyValueServiceConfig.java -> why would this have an idle time 0? Idle kv endpoints will not be discarded?
+
+Line:26, src/main/java/com/couchbase/client/core/env/SearchServiceConfig.java -> can we make this configurable? or a global constant as it is used in multiple service configs
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2017-02-03 04:58:15.599000000
+
+Patch Set 14:
+
+(4 comments)
+
+Line:113, src/main/java/com/couchbase/client/core/service/PooledService.java -> my idea was that it just fires as a fixed interval and then checks whats idle. This way it might "miss" the actual idleTime one round, so we need to tell people its just a rough boundary when it will be closed - which might be fair I think.
+
+Line:206, src/main/java/com/couchbase/client/core/service/PooledService.java -> I was thinking lets have it defense in depth, since its not on the hot code path and I really want to avoid people messing with the configs
+
+Line:22, src/main/java/com/couchbase/client/core/env/KeyValueServiceConfig.java -> correct! the abstract service config has an additional constructor check in place which will make sure that since this is a pipelined one min == max must be true. So we never close idle kv connections like we do today for now. We can file a ticket to make that work in the future if someone wants to?
+
+Line:26, src/main/java/com/couchbase/client/core/env/SearchServiceConfig.java -> good idea!
+
+-------------------------------------

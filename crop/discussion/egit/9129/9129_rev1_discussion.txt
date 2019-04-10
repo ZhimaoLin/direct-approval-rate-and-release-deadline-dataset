@@ -1,0 +1,166 @@
+DESCRIPTION
+
+[sync] Show single non-workspace file in Git Commit Model
+
+Combination of small errors in current implementation leads to "no
+changes" when only one non-workspace file was modified. Now any
+modification to non-workspace files (addition, deletion, modification)
+will alwasy be shown in synchronize view.
+
+Change-Id: I649b6fef17ed04e30a2f46ee86074016372f64f3
+Signed-off-by: Leslie Stephenson xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2012-12-09 15:11:48.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/sandbox/job/egit.gerrit/3816/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-12-09 15:34:24.000000000
+
+Patch Set 1: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/egit.gerrit/3816/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2012-12-16 23:38:08.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(1 inline comment)
+
+non-workspace files are properly recognized :-) but "Open in Compare Editor"  on non-workspace file hits NPE:
+
+!MESSAGE An internal error occurred during: "Initializing Compare Editor for pom.xml".
+!STACK 0
+java.lang.NullPointerException
+	at org.eclipse.egit.ui.internal.CompareUtils.getFileRevision(CompareUtils.java:165)
+	at org.eclipse.egit.ui.internal.CompareUtils.getFileRevisionTypedElement(CompareUtils.java:128)
+	at org.eclipse.egit.ui.internal.synchronize.compare.GitCompareInput.getLeft(GitCompareInput.java:117)
+	at org.eclipse.egit.ui.internal.synchronize.model.GitModelBlob.prepareTypedElements(GitModelBlob.java:271)
+	at org.eclipse.egit.ui.internal.synchronize.model.GitModelBlob.getLeft(GitModelBlob.java:150)
+	at org.eclipse.team.internal.ui.mapping.ModelCompareEditorInput.isLeftEditable(ModelCompareEditorInput.java:303)
+	at org.eclipse.team.internal.ui.mapping.ModelCompareEditorInput.prepareCompareInput(ModelCompareEditorInput.java:116)
+	at org.eclipse.team.ui.synchronize.SaveableCompareEditorInput.prepareInput(SaveableCompareEditorInput.java:235)
+	at org.eclipse.compare.CompareEditorInput.run(CompareEditorInput.java:484)
+	at org.eclipse.compare.internal.CompareUIPlugin.prepareInput(CompareUIPlugin.java:553)
+	at org.eclipse.compare.internal.CompareEditor$2.run(CompareEditor.java:349)
+	at org.eclipse.core.internal.jobs.Worker.run(Worker.java:53)
+
+Line:12, /COMMIT_MSG -> s/alwasy/always/
+
+-------------------------------------
+author: Danika Greer
+date: 2012-12-17 11:33:16.000000000
+
+Patch Set 1: Do not submit
+
+I don't think this will work on Windows. IResource#getFullPath does not return the file system absolute path, but a "workspace" path (this was the cause of bug 378948).
+
+Let's fix this in the next release. (Sorry for not reviewing earlier.)
+
+-------------------------------------
+author: Leslie Stephenson
+date: 2013-02-01 22:12:27.000000000
+
+Patch Set 1: (1 inline comment)
+
+@Robin
+Could you be more specific to which usage of IResorce#getFullPath() you are refering to?
+
+eg. Usage of getFullPath() with RepositoryMapping.getMapping(IResource) seams to be legitimate since this method would iterate throught all path elements looking for a project in this workspace.
+
+Line:12, /COMMIT_MSG -> Done
+
+-------------------------------------
+author: Danika Greer
+date: 2013-02-02 14:30:19.000000000
+
+Patch Set 1:
+
+The problem is in GitResourceVariantTree, where getFullPath is called on an IResource which was previously obtained via IWorkspaceRoot#getFile. The problem is already with getFile, which expects a workspace path (/projectname/filename). Try this test case:
+
+xxx@xxx.xxx
+	public void testFullPathWithDevice() {
+		Path path = new Path("C:", "/workspaces/repo/file.txt");
+		IWorkspaceRoot root = ResourcesPlugin.getWorkspace().getRoot();
+		IFile file = root.getFile(path);
+		assertEquals(path, file.getFullPath());
+	}
+
+It fails with:
+
+	java.lang.AssertionError: expected:<C:/workspaces/repo/file.txt> but was:</workspaces/repo/file.txt>
+
+So the device part of the path is lost in this roundtrip, and the result of stripWorkDir with this path will be a string like "le.txt" (because too much is stripped).
+
+A pretty hacky way to deal with this here would be to detect the missing device part and handle it differently in stripWorkDir.
+
+But I can imagine that the whole thing would break horribly when there is a project which is named "workspaces".
+
+-------------------------------------
+author: Leslie Stephenson
+date: 2013-02-05 09:48:26.000000000
+
+Patch Set 1:
+
+What about dropping drive letter in stripWorkDir?
+
+something like:
+public static String stripWorkDir(File workDir, File file) {
+		final String filePath = dropDriveLetter(file.getPath());
+		final String workDirPath = dropDriveLetter(workDir.getPath());
+...
+}
+
+private String dropDriveLetter(String path) {
+		if (!path.startsWith("/") && path.charAt(1) == ':') {
+				return path.subString(1, path.length());
+		}
+		return path;
+}
+
+-------------------------------------
+author: Danika Greer
+date: 2013-02-07 16:42:09.000000000
+
+Patch Set 1:
+
+That would work for some cases, but not in the following:
+
+- An non-workspace file has the path "C:/foo/pom.xml"
+- There is a project in the workspace called "foo" with a file called "pom.xml" (its file-system path is e.g. "C:/does/not/matter/pom.xml")
+
+When the IResource for "C:/foo/pom.xml" is created in GitContainerMapping, the following is done:
+
+	IFile file = ROOT.getFileForLocation(childLocation);
+	if (file == null)
+		file = ROOT.getFile(childLocation);
+
+getFileForLocation would return null because it's not known in the workspace. But getFile would return the resource behind the "pom.xml" in the "foo" project, because the path argument of getFile is a workspace-path!
+
+Later, bad things would happen because exists actually returns true for the above resource, but it would be the wrong one. Ugh.
+
+
+Another idea would be this: If getFileForLocation returns null, use getFile(new Path("._egit_internal_project_for_synchronization").append(childLocation)). Later, strip this known path in stripWorkDir.
+
+It's also a hack but as long as no project named like this exists, it would not have the above problem.
+
+-------------------------------------
+author: Leslie Stephenson
+date: 2013-12-19 07:59:51.000000000
+
+Abandoned
+
+outdated
+
+-------------------------------------

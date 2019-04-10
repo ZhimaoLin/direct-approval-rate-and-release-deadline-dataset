@@ -1,0 +1,201 @@
+DESCRIPTION
+
+XDCR -pause and resume framework (Aruna)
+
+Change-Id: I9dc2e1c0667cc1bb22175816a9b012bd23017e5d
+
+
+COMMENTS
+
+author: Angelina Mayer
+date: 2014-03-06 02:00:13.364000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Angelina Mayer
+date: 2014-03-06 02:02:00.004000000
+
+Patch Set 5: Verified+1
+
+Removed biXDCR.py which contained sample test code from patchset 3.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2014-03-06 02:40:07.226000000
+
+Patch Set 5: Verified+1
+
+Build Successful 
+
+http://factory.couchbase.com/job/testrunner-Jasmin Rangel-master/655/ : SUCCESS
+
+-------------------------------------
+author: Esperanza Cherry
+date: 2014-03-06 08:02:14.522000000
+
+Patch Set 5: Code-Review-1
+
+(7 comments)
+
+Line:1366, pytests/xdcr/xdcrbasetests.py -> I think that "return" is extra here
+
+Line:1411, pytests/xdcr/xdcrbasetests.py -> it's better to use "error" type in logs here.
+
+Line:1412, pytests/xdcr/xdcrbasetests.py -> !!! but a general comment: in you post_X methods you may skip all validations if src_rest.is_replication_paused=False( as example). then you print only messages, post_X return boolean and we don't check the result in any assert(as example). so, your verification always passes
+
+Line:1593, lib/membase/api/rest_client.py -> you can call: json_parsed=self.ns_server_tasks()
+
+Line:1594, lib/membase/api/rest_client.py -> it's better do not skip the first item in json_parsed. json_parsed is a json/dictionary and the order of the values ​​may be different in it
+
+Line:1602, lib/membase/api/rest_client.py -> from my experience I can say that it is better also logging self.ip  where settings were applied
+
+Line:1610, lib/membase/api/rest_client.py -> self.ns_server_tasks()
+
+-------------------------------------
+author: Fisher Vargas
+date: 2014-03-06 13:53:31.076000000
+
+Patch Set 5: Code-Review-2
+
+(19 comments)
+
+Line:1307, pytests/xdcr/xdcrbasetests.py -> Just an FYI
+
+if cond: 
+    return True
+else:
+    return False
+
+is equivalent to
+
+if not cond: 
+     return False
+..
+continue with code in if block in previous version.
+
+We can reduce one indentation.
+
+Line:1333, pytests/xdcr/xdcrbasetests.py -> This implementation should be moved to task.py and cluster.py. Same as StatsWaitTask and async_wait_for_stats functions.
+
+Line:1358, pytests/xdcr/xdcrbasetests.py -> I think these 4 lines should be there in post_pause_validations(). cluster variable is of no use in his function.
+
+We can change the signature of function as 
+
+
+def post_pause_validations(self, master, src_bucket_name, dest_bucket_name):
+    if master == self.src_master:
+        src_nodes = ..
+        dest_nodes = ..
+    else:
+        ..
+        ..
+
+Line:1365, pytests/xdcr/xdcrbasetests.py -> I think, this function should not be called here, there might be a case where we need to perform some action just after pause. Or you can pass another arguments as wait_for_post_pause_validation or check_validations=True/False.
+
+Line:1380, pytests/xdcr/xdcrbasetests.py -> Please see coding standard for PEP8 for line length. You can set easily in IDE e.g. eclipse etc.
+
+Line:1383, pytests/xdcr/xdcrbasetests.py -> return statement has no meaning here. Please remove it. See similar places.
+
+Line:1394, pytests/xdcr/xdcrbasetests.py -> I think both the function should be break into smaller functions e.g. __validate_active_replicators(count) and __validate_xdc_ops(count) etc. Same for post_pause_validation function.
+
+Line:1415, pytests/xdcr/xdcrbasetests.py -> What if replication is finished early and xdcr_queue became zero.
+
+Line:1419, pytests/xdcr/xdcrbasetests.py -> What if there is no items on some vbuckets to replicate and vbucket replicator is less?
+
+Line:1421, pytests/xdcr/xdcrbasetests.py -> This while loop will frequently fetch the stats, there will be many rest calls, its better to fetch stats after 3-5 seconds.
+
+Line:1439, pytests/xdcr/xdcrbasetests.py -> remove return statement.
+
+Line:1579, lib/membase/api/rest_client.py -> Coding standard for line length is missing.
+
+Line:1589, lib/membase/api/rest_client.py -> function name should be "set_xdcr_param_for_replication"
+
+Line:1590, lib/membase/api/rest_client.py -> Coding standard check for PEP8 is missing.
+
+Line:1593, lib/membase/api/rest_client.py -> I think there is a key "type" which defines if its xdcr tasks. So you can check for items in json_parsed: if item["type"] == "xdcr" : ...
+
+Line:1594, lib/membase/api/rest_client.py -> Below logic is same in get_xdcr_per_replication_settings function. I think its better to have function "get_replication_for_buckets(src_bucket, dest_bucket)"?
+
+Line:1607, lib/membase/api/rest_client.py -> Function name can be "get_xdcr_param_for_repication".
+
+Line:1611, lib/membase/api/rest_client.py -> Same comment as above to use "item["type"] == "xdcr"
+
+Line:1622, lib/membase/api/rest_client.py -> It should not be handled here, while in function is_replication_paused? This function should return what REST API returns.
+
+-------------------------------------
+author: Angelina Mayer
+date: 2014-03-07 05:23:08.918000000
+
+Patch Set 5:
+
+(25 comments)
+
+Line:1307, pytests/xdcr/xdcrbasetests.py -> Nice idea to reduce indentation effort. However I find if-else constructs more readable so I will retain it here.
+
+Line:1333, pytests/xdcr/xdcrbasetests.py -> Well, that's what I thought initially but since it has to do with xdcr stats, it makes sense to keep this method in xdcrbasetests.py. This is very similar to _wait_for_replication_changes_left(). Scattering these nuclear methods related to xdcr across many files may make it not-traceable and hence not-reusable.
+
+Also, it uses get_xdcr_stat() which is defined in xdcrbasetests.py. Importing xdcrbasetest class in tasks.py or cluster.py is not a good idea.
+
+Line:1358, pytests/xdcr/xdcrbasetests.py -> Good idea. Done
+
+Line:1365, pytests/xdcr/xdcrbasetests.py -> Well, these checks are usually done in less than 5 secs. So I think it's ok to validate pause and resume by default instead of adding the option to validate it unlike verifying items which is time-consuming.
+
+Also, anytime there is a regression, we would know immediately.
+
+Line:1366, pytests/xdcr/xdcrbasetests.py -> Done
+
+Line:1380, pytests/xdcr/xdcrbasetests.py -> Done
+
+Line:1383, pytests/xdcr/xdcrbasetests.py -> Done
+
+Line:1394, pytests/xdcr/xdcrbasetests.py -> Done
+
+Line:1411, pytests/xdcr/xdcrbasetests.py -> Done
+
+Line:1412, pytests/xdcr/xdcrbasetests.py -> Good catch. Added.
+
+Line:1415, pytests/xdcr/xdcrbasetests.py -> which is why we check if there are any outbound mutations in the above if.
+
+Line:1419, pytests/xdcr/xdcrbasetests.py -> Valid concern. If you load smaller no. of items you will see this. I've modified this segment in validate_active_replicator method as you can see.
+
+Line:1421, pytests/xdcr/xdcrbasetests.py -> Usually vb_reps come up in less that 2 secs. So I did not add sleep. Also, I saw only 3-4 rest calls during this period.
+
+Line:1439, pytests/xdcr/xdcrbasetests.py -> Done
+
+Line:1579, lib/membase/api/rest_client.py -> Done
+
+Line:1589, lib/membase/api/rest_client.py -> I want "per_replication_settings" to be reflected by the function name
+set_xdcr_param_for_replication might even mean setting global params. I want the name to clearly tell between the two.
+
+Line:1590, lib/membase/api/rest_client.py -> Done
+
+Line:1593, lib/membase/api/rest_client.py -> Done
+
+Line:1593, lib/membase/api/rest_client.py -> used get_replications() which internally calls ns_server_tasks()
+
+Line:1594, lib/membase/api/rest_client.py -> the first item always contains details about whether rebalance is running. Only starting second item, replication details are present in the dictionary.
+
+Line:1602, lib/membase/api/rest_client.py -> Done
+
+Line:1607, lib/membase/api/rest_client.py -> [same as above]
+I want "per_replication_settings" to be reflected by the function name
+get_xdcr_param_for_replication might even mean getting global params. I want the name to clearly tell between the two.
+
+Line:1610, lib/membase/api/rest_client.py -> Done
+
+Line:1611, lib/membase/api/rest_client.py -> Done
+
+Line:1622, lib/membase/api/rest_client.py -> Rest does not return anything if the replication param is not different from default or global value. A wrapper method to get such a setting is responsible for making sure the right value is fetched by this method. If a future implementation called this method without calling is_replication_paused, it would have to handle this case. Unless paused, 'pauseRequested' will not be present in replication URI in which case we return false.
+
+-------------------------------------
+author: Angelina Mayer
+date: 2014-03-07 05:25:04.157000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:1594, lib/membase/api/rest_client.py -> This has now anyway been replaced with get_replications()
+
+-------------------------------------

@@ -1,0 +1,207 @@
+DESCRIPTION
+
+MB-17273: Ensure stream state does not change when buffered items are processed
+
+Processing of DCP buffered items by the passive stream and its state change
+should not happen concurrently. When passive stream buffered items are being
+processed, the stream state change should wait till all items are processed.
+Also, when state change happens (in the beginning when stream is set up or
+upon close stream when stream is set to dead state), we should stop any
+further processing of buffered items.
+Also, with this change I see that we no longer need bufMutex lock.
+We use stream mutex lock for any state changes and to guard the readyQ in
+the passive stream.
+
+Further, to ensure that we do not hold connsLock while holding streamMutex,
+NotifyPassiveStreamReadyTask has been added. This is necessary because
+when consumer connection does operations like addStream, closeStream, step
+it would have grabbed connsLock and then would grab streamMutex. (By this
+we prevent lock order inversion).
+connsLock --> streamMutex : Correct lock sequence
+streamMutex --> connsLock : Incorrect lock sequence
+
+Change-Id: I1d646ef87e41cdf5bfdcf122aaaa42fcfbb5b469
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2016-01-13 03:01:57.088000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-01-13 03:24:54.282000000
+
+Patch Set 5:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1221/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-01-13 03:53:43.730000000
+
+Patch Set 5: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1973/ : SUCCESS
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1221/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-01-13 09:07:09.644000000
+
+Patch Set 5: Code-Review-1
+
+(4 comments)
+
+Have you measured the performance impact of these changes - for example what numbers does ep_perfsuite give before / after?
+
+All these locking changes in DCP recently are worrying me a bit. I think we need to document a consistent, holistic approach we plan to use everywhere, and then migrate to that.
+
+It feels at the moment it feels like we are just patching different things in different places.
+
+Line:1187, src/dcp/stream.cc -> Note the convention is to suffix with _UNLOCKED (more obvious / scary ;)
+
+Line:1601, src/dcp/stream.cc -> Ditto
+
+Line:385, src/dcp/stream.h -> .. then you should rename it to transitionState_UNLOCKED
+
+Line:717, src/dcp/consumer.cc -> This looks wrong - where is a lock held before calling reconnectStreamUnlocked?
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-01-13 09:33:14.099000000
+
+Patch Set 5: Code-Review-2
+
+(5 comments)
+
+Line:10, /COMMIT_MSG -> "When passive stream buffered items are being
+processed, the stream state change should wait till all items are processed." I don't see this realised in the fix? There is no obvious change that makes state changes wait for the buffer to clear?
+
+Line:1131, src/dcp/stream.cc -> I think it is bad practice to grab the mutex in the destructor. There should be no risk of multiple deletions, if so the mutex won't really help protect that.
+
+Line:1143, src/dcp/stream.cc -> slh now unused
+
+Line:1682, src/dcp/stream.cc -> I'm concerned about the number of tasks we will be creating. 1 per passivestream. Can the consumer not hold the task and share it amongst the passiveStreams?
+
+Line:410, src/dcp/stream.h -> Why? It is much cleaner to have a separate lock for access to the queue, we've had performance issues because we mis-use locks to serialise entire functions rather than just the real critical sections. It would be nice to embed the mutex into the struct and add access methods which do the locking when adding the items, could even make use of a RWLock for exposing front and push type methods (pop being a write). Here's an example I worked on for recent DCP perf changes https://github.com/Shayna PopewwNathalie Landryer/ep-engine/commit/0d28a3569753643a566ce3692f886f834ef5ee53#diff-3874a1ac0652d526c2bcbfa86a157a31R128
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2016-01-13 20:08:32.129000000
+
+Patch Set 5:
+
+(9 comments)
+
+Dave,
+
+Currently there is no perf test in perfsuite for DCP Consumer. I will write a new test case for the same.
+
+This change, I would say is more of a structural change in passive stream locking than a patch fix. I you all think it is necessary, I will create a document for the same and share it with the team
+
+Line:10, /COMMIT_MSG -> This is realized because the processing of buffered items and stream state changes are serialized by streamMutex
+
+Line:1131, src/dcp/stream.cc -> yes, i will do away with this.
+(note that even before this change the lock was held.)
+
+Line:1143, src/dcp/stream.cc -> Will remove that
+
+Line:1187, src/dcp/stream.cc -> Ok
+
+Line:1601, src/dcp/stream.cc -> Ok
+
+Line:1682, src/dcp/stream.cc -> The tasks are also killed immediately after running. But anyways I will check if a task can be created at the consumer level and be shared by the passive streams
+
+Line:385, src/dcp/stream.h -> transitionState is called across all types streams (active, passive) with lock being held. I can change the name though.
+
+Line:410, src/dcp/stream.h -> yes it is good idea to have both bufMutex and streamMutex for performance reasons; but the way locks were handled before this change is, we just serialized everything using bufMutex and streamMutex. For example, PassiveStream::messageReceived(), PassiveStream::processBufferedMessages(), PassiveStream::clearBuffer() we entirely serialized using bufMutex.
+
+I am just doing away with bufMutex to avoid the lock ordering (when used with streamMutex), race conditions due to the way these 2 locks were handled. So serializing using "streamMutex instead of bufMutex" should not cause any performance degradation.
+
+As a next task, once any race condition and lock ordering problems are removed without degrading performance, we can take up the task of performance improvement
+
+Line:717, src/dcp/consumer.cc -> This is currently, because reconnectSlowStream() is currently called from passive stream only. The operation sequence is like PassiveStream::Func1() --> DCPConsumer::Func() -->  PassiveStream::Func2(). Maybe this can be done better, but it would be part of separate task I suppose
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-01-14 11:53:06.476000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:10, /COMMIT_MSG -> ah yes, thanks for the clarification.
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-01-14 11:56:26.189000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:410, src/dcp/stream.h -> 1 big lock is not always the right thing and has been shown on the producer to cause severe problems. We really should be aiming for minimal locking scope and clear lock ownership. It's fair for processing part to obtain the stream lock and state that it is doing so to block state changes but the buffer should still have its own lock, as should readyQ (not for this commit)
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2016-01-14 17:12:48.469000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:410, src/dcp/stream.h -> I agree Jim. Having 1 big lock is not always the right thing.
+I am open for both 1 lock or 3 locks solution.
+
+Here, this is the choice of change I am trying to make:
+
+'Current' locking scenario in passive stream: 
+Performance level X (not the best), Few locking bugs (exposed from crash etc) 
+
+Change Intended:
+1 Lock: Same performance level X, hopefully no locking bugs, maybe lesser risk
+(OR)
+3 Locks: Higher performance level than X, hopefully no locking bugs, but chances of higher risk than using 1 Lock.
+
+I will write a performance benchmark to measure the performance and also discuss with a few folks to get any suggestions regarding the same
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-01-18 11:02:59.514000000
+
+Patch Set 5:
+
+> (1 comment)
+
+I'm curious as to why we would have 3 locks? Can't you achieve your fix with the current 2 locks?
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-01-18 11:05:41.270000000
+
+Patch Set 5:
+
+> > (1 comment)
+ > 
+ > I'm curious as to why we would have 3 locks? Can't you achieve your
+ > fix with the current 2 locks?
+
+For example if you encapsulate the buffer queue into an object (well it sort is already as a struct) you could have the processing code do something to the buffer queue so that no one can write to it. This could be by holding buffer.mutex or by having a state variable that disallows writes
+
+-------------------------------------
+author: Abby Duran
+date: 2016-01-20 02:12:09.028000000
+
+Abandoned
+
+The new simpler fix is pushed in
+
+http://review.Piper Jefferson.org/#/c/58774/
+
+-------------------------------------

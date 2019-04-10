@@ -1,0 +1,76 @@
+DESCRIPTION
+
+MB-19153: Break circular dependency while deleting bucket
+
+As part of unregistering the last bucket, when stopTaskGroup
+is invoked, all the running threads will cancelled. In this
+issue reported, when DcpBackfill was closed, the ref count of
+the DcpProducer whose reference it was holding on to became
+zero, causing its destructor to be invoked. In the DcpProducer's
+destructor, an attempt was made to cancel the checkpoint creator
+task which needed to acquire the executorpool's tMutex that
+unregisterBucket had already acquired.
+
+Reproduction steps:
+<delete_bucket> --> <unregister_bucket> --> <stop_task_group>
+    --> <acquire tMutex> --> .. --> <cancel DcpBackfill> -->
+    --> <destroy DcpBackfill> --> <destroy DcpProducer>
+    --> <cancel Checkpoint creator task> --> [tries to acquire tMutex]
+
+The fix here would be to not attempt to kill the task within
+the DcpProducer's destructor, but to do so when the producer is
+being disconnected.
+
++ Unit test case that reproduces the hang.
+
+Change-Id: Ia3c0597e3d8f85a1b40ef56e251e38339023b471
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2016-04-12 18:17:59.399000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-12 18:18:03.845000000
+
+Patch Set 3:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/425/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-12 18:18:08.555000000
+
+Patch Set 3: Well-Formed+1
+
+Permission granted to commit: 
+
+http://server.jenkins.Piper Jefferson.com/job/restricted-branch-check/11762/artifact/restricted.html : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-12 18:34:16.845000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/425/ : SUCCESS
+
+-------------------------------------
+author: Abby Duran
+date: 2016-04-12 18:34:17.740000000
+
+Patch Set 3: Code-Review+2
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-04-12 18:34:28.340000000
+
+Change has been successfully cherry-picked as 3bd9fa40f9cc597ffc6b4f9743c75bf4f8f6e4d6
+
+-------------------------------------

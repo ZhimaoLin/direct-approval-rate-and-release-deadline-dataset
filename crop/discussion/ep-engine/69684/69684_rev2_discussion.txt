@@ -1,0 +1,173 @@
+DESCRIPTION
+
+MB-16181: std::string to our own StorageKey class
+
+We use std::string to represent document keys throughout. Collections
+will require that a document's key can be interogated in different
+and we require our own container class for a key.
+
+Introducing StorageKey
+
+This commit introduces a replacement for std::string called StorageKey
+which provides a minimal interface, but some important methods to
+build on. A StorageKey is how you would locate a document within
+ep-engine's storage mediums, primarily the HashTable and persisted
+data stores but also transient storage like checkpoint queues.
+
+Introducing ProtocolKey
+
+* StorageKey::getProtocolKey()
+
+A protocol key is the part of the key owned by the external protocol,
+for example the user's keys in a memcached binary SET command.
+A protocol key can always be obtained from the StorageKey, but a
+StorageKey cannot be infered from a ProtocolKey (without extra
+information).
+
+In this introductory commit, the ProtocolKey.data()/.size() is
+logically the same as the StorageKey.data()/.size(), but that will be
+changing.
+
+Collections and ProtocolKey/StorageKey
+
+The goal is that the introduction of collections will mean that a
+client may place a "a::b" document into many of a collection or
+default storage, and internally ep-engine will represent each of these
+documents via StorageKey's that yield different data()/size() values
+(and thus don't collide in hashtables/b-trees), yet these different
+StorageKeys will yield the same protocol key value of "a::b"
+
+Change-Id: I50ffd064c2ecee715d554531b331fc869df09679
+
+
+COMMENTS
+
+author: Jim WNathalie Landryer
+date: 2016-11-07 12:11:02.287000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-07 12:11:10.183000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1736/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-07 12:14:17.878000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/532/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-07 12:16:25.192000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1631/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-07 12:29:08.034000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1386/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-07 12:30:56.276000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/532/ : FAILURE
+
+Compile error at /home/Piper Jefferson/jenkins/workspace/ep-engine-addresssanitizer-master/ep-engine/src/storagekey.h:274:17:
+error: no type named unique_ptr in namespace std
+ ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-addresssanitizer-master/532/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1386/ : FAILURE
+
+Compile error at /home/Piper Jefferson/jenkins/workspace/ep-engine-clang_analyzer-master/ep-engine/src/storagekey.h:274:17:
+error: unique_ptr in namespace std does not name a template type
+ ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-clang_analyzer-master/1386/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1631/ : FAILURE
+
+Compile error at /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/storagekey.h:274:17:
+error: no type named unique_ptr in namespace std
+ ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/1631/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1736/ : FAILURE
+
+-------------------------------------
+author: Keira Washington
+date: 2016-11-09 16:16:58.130000000
+
+Patch Set 2:
+
+(8 comments)
+
+Line:245, src/ep_engine.h -> This seems like a common enough idiom to justify a void* overload
+
+Line:50, src/storagekey.h -> nit: prefer using
+
+Line:180, src/storagekey.h -> This ought to be done using tag types rather than an enum as it will:
+
+a) Avoid an awkward bug if someone introduces a new enum value without updating the below constructor
+b) Reduce runtime overhead
+
+Line:320, src/storagekey.h -> You should probably stick in a static_assert for standard layout to make sure you (or someone else) don't accidentally invoke undefined behaviour here.
+
+Line:337, src/storagekey.h -> I don't see the purpose of moving this out of the class body
+
+Line:228, src/mutation_log.h -> nudge
+
+Line:752, src/ep.cc -> Looks like this would be copying the std::pairs (and therefore the StorageKeys) right here, should this be a (const) reference?
+
+Line:310, src/kvstore.cc -> nudge
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-11-10 10:18:45.077000000
+
+Patch Set 2:
+
+(3 comments)
+
+will update in due course
+
+Line:180, src/storagekey.h -> good call, I knew there was something better but couldn't think what to google for :D
+
+Line:320, src/storagekey.h -> assert for what exactly? check the class is 2 bytes?
+
+Line:337, src/storagekey.h -> because it's using SerialisedStorageKey and requires a full class def, not a forward declaration, so needs to come after the full body of SerialisedStorageKey
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-11-10 10:26:33.244000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:302, src/ep_engine.h -> If we weren't doing collections a lot of these could be StorageKeyNoHeap to save a little on heap allocations, a successful set is probably the only path which needs to copy the key value in.  However collections needs to tag the key, so we'll have to have a nkey+1 allocation anyway. meh
+
+-------------------------------------
+author: Keira Washington
+date: 2016-11-11 04:08:17.943000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:320, src/storagekey.h -> http://en.cppreference.com/w/cpp/types/is_standard_layout
+
+-------------------------------------

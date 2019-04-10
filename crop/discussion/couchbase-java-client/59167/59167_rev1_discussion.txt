@@ -1,0 +1,178 @@
+DESCRIPTION
+
+Suggestion: Item order consistency for view query result
+
+Motivation
+----------
+View query result order is randomly mixed; But it should be always consitent.
+
+For example, view result from api:
+http://example.com:8092/user_bucket/_design/user_design/_view/user_view?&startkey=[...]&endkey=[...]&limit=10&skip=0
+
+{"total_rows":131431,"rows":[
+    {"id":"deal::274707565","key":[1],"value":[0]},
+    {"id":"deal::274922969","key":[2],"value":[0]},
+    {"id":"deal::274532353","key":[3],"value":[0]},
+    ...
+    {"id":"deal::273950937","key":[10],"value":[0]}
+]}
+
+Result with java library must be same with above, as expected,
+but with java api result different each time I execute.
+
+Expected: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
+(as direct http call or python result, etc.)
+
+But was: NOT as expected order; shuffled.
+- 1, 3, 2, 4, 5, 6, 7, 10, 9, 8
+- 4, 2, 1, 3, 7, 5, 6, 8, 9, 10
+- 5, 2, 1, 10, ...
+
+Modifications
+-------------
+Apply concatMap() instead of flatMap().
+
+Result
+------
+View query result for list element order is always consistent as expected.
+
+Change-Id: I2d3dd0d0f701e69b11d98479e0fd1b58efc80c32
+
+
+COMMENTS
+
+author: Paulina Bailey
+date: 2016-01-28 02:32:27.370000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Paulina Bailey
+date: 2016-01-28 03:00:43.322000000
+
+Patch Set 1:
+
+I did it simply use concatMap instead of flatMap, which maybe somewhat slower than flatMap.
+But I think the order consistency is much important.
+
+Or, there may be an option with adding view query parameter, something like:
+
+ViewQuery query = ViewQuery.from("design", "view", ViewOrder.CONCAT)
+where ViewOrder is new enum constant, CONCAT for use concatMap, FLAT for use (original) flatMap.
+
+But' it makes original interface modification, so I didn't that way.
+If adding overloaded method with enum parameter, it would be ok:
+- ViewQuery.from(String, String) // original flatMap way
+- ViewQuery.from(String, String, ViewOrder) // additional overloading method to deal with flatMap / concatMap selection.
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2016-01-28 05:38:41.672000000
+
+Patch Set 1:
+
+Hi,
+
+thanks again for your contribution.. that is actually a great suggestion, I think we want to be correct there.
+
+Did you run some benchmarks to see if there is a performance difference and how much it is?
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2016-01-28 05:39:44.175000000
+
+Patch Set 1:
+
+Ah actually I think the performance difference will be visible if you have includeDocs set to true, since then its bound on returning the docs linearly via key/value
+
+-------------------------------------
+author: Paulina Bailey
+date: 2016-01-28 05:54:31.030000000
+
+Patch Set 1:
+
+Soon we will have QA process with our project, then I can check the difference more clearly.
+
+But with my simple test, and refer to rx document, there would be not so much difference.
+I verified either flatMap or concatMap run in parallel for each item emission,
+an can't find apparent performance difference yet.
+
+flatMap uses 'merge' operator, while concatMap uses 'concat' operator.
+
+ > Hi,
+ > 
+ > thanks again for your contribution.. that is actually a great
+ > suggestion, I think we want to be correct there.
+ > 
+ > Did you run some benchmarks to see if there is a performance
+ > difference and how much it is?
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2016-01-28 06:33:15.960000000
+
+Patch Set 1:
+
+Yes, the main difference would be that flatMap collects as fast as it can, so imagine a 10 node cluster and it would just fetch the docs as they arrive. with concat it needs to wait for the first one to arrive to emit the second one, even if that one arrived first.
+
+I like the idea of having an ordered/unordered option on query with the emphasis on being ordered by default. I'll discuss with the team today and come back on this :)
+
+-------------------------------------
+author: Estrella Humphrey
+date: 2016-01-28 10:19:17.603000000
+
+Patch Set 1:
+
+I created a ticket for this change: https://issues.couchbase.com/browse/JCBC-910
+
+-------------------------------------
+author: Estrella Humphrey
+date: 2016-01-28 10:31:22.037000000
+
+Patch Set 1: Code-Review-2
+
+I like the change, but the fact that concatMap forces the calls to be made serially is indeed a bit of a problem. But since RxJava 1.0.15 there is the experimental eager version of concat:
+ concatMapEager(mapFunction)
+
+ConcatMapEager immediately subscribes to the inner Observables (so it will immediately trigger the calls to bucket.get) but buffers the results IF they come out of order. The buffer is drained as the next element in the original order becomes available.
+
+This has the double benefit of not serializing calls (if the results come in the right order, there's only very minimal overhead as they are immediately drained) with keeping request order.
+
+So you can just use concatMapEager instead of flatMap in the original code. Can you do that? I'll just rework the commit message after that and your change will be included ;)
+
+-------------------------------------
+author: Paulina Bailey
+date: 2016-01-29 09:56:11.469000000
+
+Patch Set 1:
+
+> I created a ticket for this change: https://issues.couchbase.com/browse/JCBC-910
+
+I can see the issue ticket even if with login.
+
+I will use this ticket.
+
+Thank you.
+
+-------------------------------------
+author: Paulina Bailey
+date: 2016-01-29 09:56:19.367000000
+
+Abandoned
+
+-------------------------------------
+author: Paulina Bailey
+date: 2016-01-29 11:03:07.889000000
+
+Restored
+
+-------------------------------------
+author: Estrella Humphrey
+date: 2016-02-08 10:17:03.748000000
+
+Removed the following votes:
+
+* Code-Review-2 by Estrella Humphrey xxx@xxx.xxx
+
+
+-------------------------------------

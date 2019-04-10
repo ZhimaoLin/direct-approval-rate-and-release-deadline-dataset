@@ -1,0 +1,126 @@
+DESCRIPTION
+
+Fix GC for FileRepo in case packfile renames fail
+
+Only on Windows the rename operation which renames temporary Packfiles
+(and index-files and bitmap-files) sometime fails. This happens only
+when renaming a temporary Packfile to a Packfile which already exists.
+Such situations occur if you run GC twice on a repo without modifying
+the repo inbetween.
+
+In such situations there was bug in GC which led to a corrupted repo
+whithout any packfiles anymore. This commit fixes the problem by
+introducing a utility method which renames a file and throws an
+IOException if it fails. This method also takes care to repeat a
+failing rename if our FS class has found out we are running on a
+platform with a unreliable File.renameTo() method.
+
+I am searching for a better solution because even with this utility
+method in hand a GC on a already GC'ed repo will fail on Windows. But
+at least with this fix we will not produce corrupted repos anymore.
+
+Bug: 389305
+Change-Id: Iac1ab3e0b8c419c90404f2e2f3559672eb8f6d28
+Signed-off-by: Zachary Orozco xxx@xxx.xxx
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Zachary Orozco
+date: 2013-03-15 22:20:54.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2013-03-15 22:28:37.000000000
+
+Patch Set 2:
+
+I changed my mind about having a rename method which checks for content-wise equality of source and destination. I'll simply throw an IOException if the rename fails even after some reattempts.
+Edwin: maybe you have to make gerrit aware about that JGit GC may throw an IOException if the platform doesn't allow us to rename a file.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-03-15 22:44:30.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3177/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-03-15 22:50:42.000000000
+
+Patch Set 2: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3177/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2013-03-19 00:20:11.000000000
+
+Patch Set 2: Looks good to me, approved
+
+(1 inline comment)
+
+
+
+Line:750, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Even if this succeeds, the repository is now corrupt between here and the loop below finishing successfully. Unfortunately the Git experts have declared this is OK because the naming format for a file is flawed. *sigh*
+
+What you have is slightly better than before, but its still worrying.
+
+I don't have a good solution here. I have suggested Git rename these files to be based on a different SHA-1 computation, but that isn't going to happen anytime soon. I have also suggested all of these streams should be folded into a single stream, but that also won't happen anytime soon.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2013-03-19 13:31:01.000000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:750, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> This is still worrying, true. But it's also much better in my eyes. Without this fix we always ended up in a repo with no loose objects and no packfiles(!) at all when this rename fails. This method returned null instead of throwing an exception. Means to the caller: no packfile was written. And later, when deleting the packfiles which are now outdated, we deleted all existing packfiles except those which where newly written. Since no packfile was written if the rename files all packfiles got deleted.
+
+Now we don't get a corrupted repo always when the rename fails but only somebody pulls the plug between here and the and of the loop.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2013-03-19 17:10:24.000000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:750, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> And its actually still less bad than before. If the process does fail to rename the .idx into place at least the .pack is valid. A human can remove the .idx and run index-pack to make a new .idx file from the valid .pack.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2013-03-20 10:19:08.000000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:750, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Yes, I agree on that.
+
+Has somebody thought about having all files which belong together (xyz.pack,xyz.idx,...) into a folder (xyz/pack, xyz/idx). Maybe then atomic renames are easier because we have to rename a single filesystem entity (although I don't have hope that the rename mess on windows becomes easier when we deal with non-empty folders).
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2013-03-20 15:22:37.000000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:750, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> The directory approach is interesting. I think nobody has proposed it because there are some filesystems Git runs on that don't like to rename files across directories, or rename directories. Something like AFS or Coda is difficult about that.
+
+My proposal has been to build a container file stream for the pack data, so pack, idx, bitmap are all inside of a single file rather than different files. Something like a ZIP or TAR but with the file contents uncompressed so they are easily mmap and seekable.
+
+A different fix is to name the file by the SHA1 of the pack's bytes, rather than the SHA1 of the sorted list of objects. At least then an identical pack means you shouldn't need to replace the file.
+
+-------------------------------------

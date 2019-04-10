@@ -1,0 +1,95 @@
+DESCRIPTION
+
+Avoid concurrent modification/reading of bucketConfigs map.
+
+Motivation:
+-----------
+When opening a bucket, the `ClusterConfig` will be modified before performing
+`RequestHandler.reconfigure`, which reconfigures all buckets by flatMapping
+over an `Observable` that iterates through the `HashMap` in `ClusterConfig`.
+
+This is especially a problem when buckets are opened concurrently, as the
+`reconfigure` operation can overlap with the modifications due to opening the
+other buckets, leading to a `ConcurrentModificationException` being thrown from
+RxJava. Since the modifications aren't synchronised at all, there could
+theoretically (though this might be unlikely) be additional problems with
+corrupting the internal structure of the HashMap if multiple actual
+modifications happen at the same time.
+
+Modifications:
+--------------
+The `Map` field in `ClusterConfig` is changed from final to volatile, and the
+map stored in the field is never itself modified; instead, a new map is created
+and will replace the old reference. This means updates (which are infrequent
+other than when opening/closing/creating/deleting buckets) are synchronised,
+but simply reading from the map (which happens very frequently) only involves
+an additional volatile read and does not need to be synchronised with updates.
+
+The two methods that replace the map are now synchronised so they can't drop
+updates (synchronising them without the final/volatile change would mean they
+would be unable to corrupt the `HashMap` structure).
+
+Results:
+--------
+No more `ConcurrentModificationException` on reconfiguration, not possible to
+have multiple threads modifying a particular HashMap at the same time.
+
+Change-Id: Ic72150f5830f15e8ee93d1602b1b220f574a91ea
+
+
+COMMENTS
+
+author: Lewis Roach
+date: 2017-02-16 23:31:38.426000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2017-02-27 07:34:46.128000000
+
+Patch Set 1:
+
+Thanks for your contribution! I'll take a look shorty :-)
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2017-02-27 07:38:34.061000000
+
+Patch Set 1:
+
+Another option to consider would just be to use a ConcurrentHashMap instead? that would avoid the synch blocks and keep the code a little shorter - what do you think?
+
+-------------------------------------
+author: Marques Ellis
+date: 2017-02-27 18:32:14.928000000
+
+Patch Set 1:
+
+The change makes sense, I agree with Michael on the concurrent hash map.
+
+-------------------------------------
+author: Lewis Roach
+date: 2017-02-27 19:58:25.039000000
+
+Patch Set 1:
+
+ConcurrentHashMap would probably be suitable here too. My thinking was that since the map seems to be read at least for every single get operation, it might have been better to rely on the performance of a non-concurrent collection and just use the replacing under volatile mechanism for the infrequent writes (this is the same mechanism as is used in Java's CopyOnWriteArrayList/CopyOnWriteArraySet). I suspect it ultimately won't have a huge impact in the grand scheme of things, so I'm okay either way.
+
+-------------------------------------
+author: Marques Ellis
+date: 2017-02-27 21:51:07.609000000
+
+Patch Set 1:
+
+Reads on concurrent hash map are non blocking so I think there wouldn't be much of performance impact, and also multiple concurrent writers are allowed which is better than synchronized write and copy.
+
+-------------------------------------
+author: Lewis Roach
+date: 2017-02-28 00:01:03.443000000
+
+Patch Set 1:
+
+I've changed it to just use ConcurrentHashMap. Based on a small test I put together it seems like ConcurrentHashMap has the same (single-threaded) read performance as HashMap in Java 8 (running the same test in Java 7 shows a 1.5x slowdown, but this is still in the order of 40M–80M ops/sec)
+
+-------------------------------------

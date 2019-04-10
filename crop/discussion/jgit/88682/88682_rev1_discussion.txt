@@ -1,0 +1,115 @@
+DESCRIPTION
+
+Release references on DfsBlockCache#remove
+
+If a DfsPackFile is being closed the DfsBlockCache should remove all
+references to it from its internal data structures (clock, table,
+packs). If this not done the Refs will still be referenced and can’t be
+GC’ed.
+
+Signed-off-by: Annika Pacheco xxx@xxx.xxx
+Change-Id: Iaff6456d44ddafb8d804b3cf67060c9fdc661d19
+
+
+COMMENTS
+
+author: Annika Pacheco
+date: 2017-01-13 19:46:58.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-01-13 19:47:04.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/9631/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-01-13 19:54:02.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/9631/ : SUCCESS
+
+-------------------------------------
+author: Elise Key
+date: 2017-01-14 08:35:38.000000000
+
+Patch Set 1:
+
+(3 comments)
+
+Line:296, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsObjDatabase.java -> Add
+
+ && !replaces.isEmpty()
+
+to avoid potentially getting the cache instance unnecessarily on the next line?
+
+Line:104, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/dfs/DfsBlockCacheTest.java -> cache
+
+Line:265, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsBlockCache.java -> Is this comment still relevant?
+
+-------------------------------------
+author: Annika Pacheco
+date: 2017-01-16 07:02:25.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:265, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsBlockCache.java -> Yes, it is. This change will only remove pack file which have been replaced (see the change in DfsObjDatabase). But "live" packs are still continued to be cashed. Initially I had another change in the DfsRepository which would remove everything associated with that repository from the cache in its #doClose method. But I have removed it since the cache would benefit from having these cached if the repository is opened again? I guess the control over the entries included in here is something which has to be maintained from outside?
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2017-01-18 03:06:59.000000000
+
+Patch Set 1:
+
+(2 comments)
+
+This came on the Friday before a long weekend. Sorry for not getting to it sooner. I should have a chance to take a closer look at the tests tomorrow.
+
+Line:265, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsBlockCache.java -> We do see a huge benefit from doing affinity routing of requests for the same repository to the server which last served that repository. Clearing the cache on repository close would defeat that, so that behavior needs to be directed from a higher level.
+
+I think this comment can go away, but it has been in this file for 5+ years (since the original check in) so I'll check with Shawn when he is back in the office. It can stay in here until we hear back from him.
+
+Line:409, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsBlockCache.java -> IIUC, table writes should be protected by lockFor(key, position);
+
+-------------------------------------
+author: Annika Pacheco
+date: 2017-01-19 11:26:56.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:265, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsBlockCache.java -> I already thought that you would do something like this. My use case is a little different, so what I would really like to do is, to be able to create a DfsBlock-cache implementation which suite the current needs, i.e.
+
+- make the DfsBlock cache an interface/abstract
+- let the cache be resolved not via a singleton but rather through the DfsRepository or DfsObjDatabase
+- Clients could then implement a cache which matches their needs, i.e. having a singleton or a per-request-cache or per repository-life-time-cache, etc.
+
+It doesn't seem too easy though to extract the interface since there are a lot of classes which interact on the pack-private methods. But if you think that would be doable I am happy to give it a try.
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2017-01-21 01:59:48.000000000
+
+Patch Set 1:
+
+(3 comments)
+
+Line:111, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/dfs/DfsBlockCacheTest.java -> Why -10?
+
+Line:265, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsBlockCache.java -> I like the idea of being able to experiment with retention policies. If we were going to do something to enable that, we would probably define an internal RetentionPolicy interface, refactor the code to use it, and change reconfigure() to take a new policy, without disturbing the rest of the public API.
+
+The fact that the cache is accessed via the singleton pattern means you can actually swap in different implementations of the entire class without disturbing clients (you make me dredge up old history here, search for "a-flexible-framework-for-error-reporting"). The cache is highly optimized though, so implementing a RetentionPolicy that only gets involved when allocating and freeing pack slices seems like it may be a better way to go.
+
+Line:520, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsBlockCache.java -> This potentially evicts the slots too early for outstanding requests. For example if we receive a fetch request for a hot repository right before a gc completes, the gc will update the pack list, but the in-flight fetch will have an outstanding reference to a DfsPackFile that is being evicted here.
+
+-------------------------------------

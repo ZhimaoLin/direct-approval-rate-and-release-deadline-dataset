@@ -1,0 +1,105 @@
+DESCRIPTION
+
+PackedBatchRefUpdate: Write reflogs
+
+On-disk reflogs are not stored in the packed-refs file, so we cannot
+ensure atomic updates. We choose the lesser evil of dropping failed
+reflog updates on the floor, rather than throwing an exception even
+though the underlying ref updates succeeded.
+
+Add tests for reflogs to BatchRefUpdateTest.
+
+Change-Id: Ia456ba9e36af8e01fde81b19af46a72378e614cd
+
+
+COMMENTS
+
+author: Santos Moore
+date: 2017-07-25 17:33:00.000000000
+
+Uploaded patch set 3: Patch Set 2 was rebased.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-07-25 18:47:50.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/10690/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-07-25 19:13:46.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/10690/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2017-07-25 21:28:14.000000000
+
+Patch Set 3: Code-Review-1
+
+(3 comments)
+
+Line:352, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackedBatchRefUpdate.java -> isRefLogDisabled()
+
+Line:384, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackedBatchRefUpdate.java -> Hoist this out of the loop so the identity is the same for all refs in the transaction. That way the log timestamps are the same even if the logging activity spans over the turn of the second.
+
+Line:411, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackedBatchRefUpdate.java -> I don't see why this conditional should be here. If the command type is UPDATE its a fast-forward. It doesn't matter what the BatchRefUpdate has been configured to allow.
+
+-------------------------------------
+author: Santos Moore
+date: 2017-07-26 12:57:24.000000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:411, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackedBatchRefUpdate.java -> Doesn't really make sense to me either, but it matches the default behavior in BatchRefUpdate, that's why I make sure to run all tests with atomic=true/false.
+
+But yeah, I can change the behavior in a separate change.
+
+-------------------------------------
+author: Santos Moore
+date: 2017-07-26 12:58:04.000000000
+
+Topic set to batch-ref-update-reflog
+
+-------------------------------------
+author: Santos Moore
+date: 2017-07-26 15:41:01.000000000
+
+Patch Set 3:
+
+(3 comments)
+
+Line:352, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackedBatchRefUpdate.java -> Done
+
+Line:384, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackedBatchRefUpdate.java -> Done
+
+Line:411, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackedBatchRefUpdate.java -> Having now actually looked at the code, I think I prefer to keep this as-is. It's an explicit tradeoff between performance and correctness of the reflog message.
+
+The existing behavior in RefUpdate#updateImpl is:
+
+
+ if (isForceUpdate()) {
+   return store.execute(Result.FORCED);
+ }
+
+ if (newObj instanceof RevCommit && oldObj instanceof RevCommit) {
+   if (walk.isMergedInto((RevCommit) oldObj, (RevCommit) newObj)) {
+     return store.execute(Result.FAST_FORWARD);
+   }
+ }
+
+It skips the isMergedInto check if isForceUpdate() returns true, which just checks the "force" bit. This is a feature, not a bug: you can call setForceUpdate(true) to skip performing a merge check that might be expensive. But we cannot get an accurate reflog message without doing that merge check.
+
+So I don't think we want to change RefUpdate in this case, but I feel strongly that PackedBatchRefUpdate should match RefUpdate's behavior.
+
+This line of code is still non-obvious, so added a comment.
+
+-------------------------------------

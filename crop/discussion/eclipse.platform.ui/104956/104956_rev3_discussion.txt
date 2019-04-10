@@ -1,0 +1,83 @@
+DESCRIPTION
+
+Bug 522194 - Remove redundant null checks
+
+Change-Id: Ief69057083c32de92f76a1cc9c912911d22ac20a
+Signed-off-by: Armani Hurst xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Chase Horton
+date: 2017-09-15 11:32:20.000000000
+
+Patch Set 3: Patch Set 2 was rebased
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-09-15 12:12:52.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/13498/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-09-15 12:40:45.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/13498/ : SUCCESS
+
+-------------------------------------
+author: Chase Horton
+date: 2017-09-18 13:52:52.000000000
+
+Patch Set 3:
+
+(2 comments)
+
+I checked all of these and I have doubts only about one. See inline.
+
+Line:517, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/dialogs/ViewsPreferencePage.java -> IThemeDescriptor inherits 'getDescription()' from IThemeElementDefinition and this method's Javadoc says that 'description' can be null.
+
+In old code this would keep the loop going but with the change it would break.
+
+Line:266, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/dialogs/cpd/CustomizePerspectiveDialog.java -> Is this relevant to the change?
+
+-------------------------------------
+author: Armani Hurst
+date: 2017-09-18 15:26:24.000000000
+
+Patch Set 3:
+
+(2 comments)
+
+Line:517, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/dialogs/ViewsPreferencePage.java -> I have a doubt that the previous code was correct.
+'description' is initialized with an empty string, and then in the condition checked for null. This can happen, since getDescription() could return null. But when looped through 'descs' description could be null in the worst case. Also including 'theme != null' is strange here.
+
+I think the intention here is to find the IThemeDescriptor matching the id and set its description text, when present. From this I would come to this implementation:
+
+  private void refreshColorsAndFontsThemeDescriptionText(ColorsAndFontsTheme theme) {
+    String description = ""; //$NON-NLS-1$
+    if (theme != null) {
+      IThemeDescriptor[] descs = WorkLeon OchoachPlugin.getDefault().getThemeRegistry().getThemes();
+      for (int i = 0; i < descs.length; i++) {
+        if (descs[i].getId().equals(theme.getId()) && descs[i].getDescription()!=null) {
+          description = descs[i].getDescription();
+          break;
+        }
+      }
+    }
+    colorsAndFontsThemeDescriptionText.setText(description);
+  }
+
+Line:266, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/dialogs/cpd/CustomizePerspectiveDialog.java -> Yes, https://sonar.eclipse.org/drilldown/issues/33359?&rule=findbugs%3ARCN_REDUNDANT_NULLCHECK_OF_NONNULL_VALUE&rule_sev=CRITICAL&severity=CRITICAL#
+
+See CustomizePerspectiveDialog there.
+
+And actually this is a bug.
+
+-------------------------------------

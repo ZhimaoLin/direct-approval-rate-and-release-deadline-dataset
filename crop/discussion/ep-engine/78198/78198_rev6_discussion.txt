@@ -1,0 +1,111 @@
+DESCRIPTION
+
+MB-24394: Peform an unlocked reset of ExecutorThread::currentTask
+
+When performing currentTask.reset with currentTaskMutex held a
+lock inversion situation occurs if:
+
+* the task hits a ref-count of 0
+* the task owns a VBucketPtr (shared_ptr)
+* the VBucket is marked for deferred deletion
+* the VBucketPtr hits a ref-count of 0
+
+This occurs because the VBucketPtr deleter will schedule a new task
+to delete the VBucket and thus we re-enter the task code with a
+different lock ordering (TaskQueue::tMutex->currentTaskMutex vs
+currentTaskMutex->TaskQueue::tMutex).
+
+To fix this issue we simply need to not hold the currentTaskMutex
+whilst calling currentTask.reset().
+
+We switch ExTask over to being a std::shared_ptr and use its well
+define move constructor (via std::move) to move the ref-counted
+pointer into unlocked scope, and then reset that.
+
+Change-Id: I883cb4d0e8a2c4dbc91cdf93f0a9a967863dcb31
+
+
+COMMENTS
+
+author: Jim WNathalie Landryer
+date: 2017-05-17 10:12:53.339000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-05-17 10:14:03.631000000
+
+Patch Set 6: Code-Review+2
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-05-17 10:50:57.136000000
+
+Patch Set 6: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/300/ : FAILURE
+
+Failure of a CTest test  9/26 Test #11: ep_testsuite_basic.value_eviction ........ ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/300/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6586/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5752/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/5057/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-05-17 12:23:23.053000000
+
+Patch Set 6:
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6593/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/5063/ : FAILURE
+
+AddressSanitizer issue: 4319 byte(s) leaked in 28 allocation(s). ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-addresssanitizer-master/5063/ )
+
+Failure of a CTest test  7/26 Test  #5: ep-engine_ep_unit_tests .................. ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-addresssanitizer-master/5063/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5758/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/306/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-05-17 15:41:08.091000000
+
+Patch Set 6:
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6601/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5766/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/5069/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/312/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-05-17 16:24:04.203000000
+
+Patch Set 6: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6602/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5767/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/5070/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/313/ : SUCCESS
+
+-------------------------------------

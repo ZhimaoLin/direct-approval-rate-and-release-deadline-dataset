@@ -1,0 +1,61 @@
+DESCRIPTION
+
+JVMCBC-359 Check for sane header values
+
+Motivation
+There was a recent bug seen where memcached malformed packets came with
+incorrect length and the client tried to allocate a large space in heap based
+on incorrect length information and ran into OOM errors.
+
+Changes
+Added header checks for key value requests. If the response header is missing
+required information throw a MalformedMemcacheHeader exception in
+BinaryMemcacheResponseDecoder and bubble up the exception to Keyvalue Handler.
+Close, reconnect the socket and then retry the request as something may be
+wrong with the underlying socket that the network packets are getting corrupted.
+
+Result
+If a malformed response header arrives, the client will retry the request using
+a new socket endpoint.
+
+Change-Id: Ib00d58bd771e7e5eba267bd0407bf46087ab8bc4
+
+
+COMMENTS
+
+author: Marques Ellis
+date: 2016-10-11 00:42:32.764000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Andreas Short
+date: 2016-10-24 21:31:56.107000000
+
+Patch Set 5: Code-Review-1
+
+(1 comment)
+
+Line:50, src/main/java/com/couchbase/client/deps/io/netty/handler/codec/memcache/binary/BinaryMemcacheResponseDecoder.java -> I'm slightly worried about validating these.  I'd probably recommend we pick a sane super high value length or have it easily tuneable.  It had been under somewhat recent discussion that a new release might support larger items and I'd hate to have to specify a minimum client version if we do that in a future release.
+
+Maybe we just check that it's under 256MiB and make it tune-able?
+
+I'll defer to you and Michael though.
+
+-------------------------------------
+author: Marques Ellis
+date: 2016-10-25 19:20:49.926000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:50, src/main/java/com/couchbase/client/deps/io/netty/handler/codec/memcache/binary/BinaryMemcacheResponseDecoder.java -> Sure, it makes sense, I can change it to a high value and make it a tune-able. Michael and I discussed this briefly, Michael suggested another change to use bytebuf directly in the key value handler to construct the response, instead of this intermediate Memcache Object to save on allocations, but that will be a bigger change. In the meantime, I'll fix this in next patch.
+
+-------------------------------------
+author: Marques Ellis
+date: 2016-11-17 02:23:39.183000000
+
+Patch Set 6: Patch Set 5 was rebased
+
+-------------------------------------

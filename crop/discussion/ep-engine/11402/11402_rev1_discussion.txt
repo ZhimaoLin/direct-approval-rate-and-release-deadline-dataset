@@ -1,0 +1,104 @@
+DESCRIPTION
+
+Subtract 1 byte from the key size before aligning in StoredValue
+
+We have a C hack in the struct that holds the key. The first byte
+of the key is in the struct and the rest outside of the struct
+boundary. We need to accoutn for this when getting the total
+size of a stored value.
+
+Change-Id: Ib411e2aeb69bb9b08e665dfb347406812764b480
+
+
+COMMENTS
+
+author: Abby Duran
+date: 2011-12-03 00:40:31.663000000
+
+Patch Set 1: Looks good to me, approved
+
+
+
+-------------------------------------
+author: Nathalie Landry
+date: 2011-12-06 14:41:48.341000000
+
+Patch Set 1: Looks good to me, approved
+
+Good catch. And +2 from me.
+
+But in general how kalign is computed can be greatly improved.
+
+"Rounding" something up is better done in this way:
+
+aligned_value = (raw_value + (alignment-1)) / alignment * alignment;
+
+which for alignment of 4 gets to:
+
+aligned_value = (raw_value + 3) & ~3;
+
+this can be verified by examining all cases
+
+-------------------------------------
+author: Nora Conway
+date: 2011-12-20 17:23:56.502000000
+
+Patch Set 1:
+
+1.8's almost into 'code freeze' -- is this change good?
+
+-------------------------------------
+author: Kenny Maynard
+date: 2011-12-20 17:53:15.515000000
+
+Patch Set 1:
+
+This should be safe, but I would rather wait for 1.8.1
+
+-------------------------------------
+author: Nora Conway
+date: 2011-12-20 20:17:21.105000000
+
+Patch Set 1:
+
+Ok, waiting for 1.8.1 on this, then.
+
+-------------------------------------
+author: Noah Dean
+date: 2011-12-21 05:55:36.893000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+I don't think this is correct.  The key doesn't get smaller just because a different structure already has a byte that accounts for it.  The struct size could be reported as one smaller than it is because that's where the extra byte is.
+
+I think the answer will be similar, but looking at this, it's really confusing why you should consider "ab" to be a one byte string.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2011-12-21 19:37:08.055000000
+
+Patch Set 1:
+
+I agree with you thinking here, but let me explain why I did this and also why it hasn't been committed since it's been +2'ed for a while.
+
+This is the first change in a series of two that gives us "better" memory accounting and allows us more insight into what is taking up memory in our cache. I decided we need to subtract one byte from the key and put it on the StoredValue because we are now byte aligning these stats. This means that even if I said that the StoredValue size is 71 bytes we would still account for it being 72 bytes. Also, the two byte key you gave in your example would be accounted for as 8 bytes. This change is trying to account for is keys that are (8n +1) bytes long because these keys would cause us to account for an extra 8 bytes of memory that we really aren't using.
+
+I know that we can't be sure how much space the memory allocator is actually allocating for a specific allocation, but I feel this more accurately resembles that process especially since the key is allocated with the stored value.
+
+-------------------------------------
+author: Noah Dean
+date: 2011-12-21 20:18:21.260000000
+
+Patch Set 1:
+
+I get the basic idea, but the structure needs to be contiguous, so I don't think there's a big difference between aligning "sizeof(thing) - 1 + key.length()" vs. "sizeof(thing) + key.length() - 1"
+
+-------------------------------------
+author: Kenny Maynard
+date: 2011-12-26 20:30:06.068000000
+
+Patch Set 1: Abandoned
+
+I understand your concern. I have made this change more correct, but wrapped it into another change. I will make sure I have Dustin review the change to make sure he is okay with my new approach.
+
+-------------------------------------

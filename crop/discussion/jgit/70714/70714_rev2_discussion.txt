@@ -1,0 +1,193 @@
+DESCRIPTION
+
+Implement auto gc
+
+With the auto option, gc checks whether any housekeeping is required; if
+not, it exits without performing any work. Some JGit commands run gc
+--auto after performing operations that could create many loose objects.
+Housekeeping is required if there are too many loose objects or too many
+packs in the repository.
+
+If the number of loose objects exceeds the value of the gc.auto option
+jgit's GC consolidates all existing packs into a single pack (equivalent
+to -A option), whereas git-core would combine all loose objects into a
+single pack using repack -d -l. Setting the value of gc.auto to 0
+disables automatic packing of loose objects.
+
+If the number of packs exceeds the value of gc.autoPackLimit, then
+existing packs (except those marked with a .keep file) are consolidated
+into a single pack by using the -A option of repack. Setting
+gc.autoPackLimit to 0 disables automatic consolidation of packs.
+
+Like git the following jgit commands run auto gc:
+- fetch
+- merge
+- rebase
+- receive-pack
+
+The auto gc for receive-pack can be suppressed by setting the config
+option receive.autogc = false
+
+Change-Id: I68a2a051b39ec2c53cb7c4b8f6c596ba65eeba5d
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+
+COMMENTS
+
+author: Douglas Trujillo
+date: 2016-08-11 22:26:42.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-08-11 22:26:49.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/8931/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-08-11 22:34:15.000000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/8931/ : FAILURE
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-08-11 22:50:44.000000000
+
+Patch Set 2: -Verified
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/8932/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-08-11 22:58:17.000000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/8932/ : FAILURE
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-08-11 23:00:13.000000000
+
+Patch Set 2: -Verified
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/8933/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-08-11 23:16:35.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/8933/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2016-09-20 15:46:12.000000000
+
+Patch Set 2: Code-Review-1
+
+(10 comments)
+
+Line:178, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> This method has changed behaviour and we should document that. Before it was nearly always creating new packfiles and returning them. But now this method is more lazy and  will not create new packs whenever there are loose objects. We should mention the effect of "automatic" on this method, especially because the the default for "automatic" is "true"
+
+Line:1104, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> we should explain what happens if setAuto(false) is called.
+
+Line:1107, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> or too many refs. As a side effect of packing loose objects also the refs pointing to them will be persisted in a  packed-refs file. That can have nice effect on performance on servers with a lot of refs (like gerrit)
+
+Line:1138, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> I think JGit does -d always. We delete old packs and prune loose objects after creating the new pack.
+
+-l is an option which we indeed don't support although we support alternate objects stores.
+
+Line:1147, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> shouldn't 50 be a constant?
+
+Line:1150, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> maybe we need a special case here. Imagine somebody with native git experience configures autopacklimit==1 do have always one single pack. But JGit behaves differently when doing GC by producing more than one packfile by default. One for the objects reachable from branches and the other for the rest. Maybe for JGit it doesn't make sense to configure autopacklimit==1.
+
+Line:1162, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> a constant?
+
+Line:1219, org.eclipse.jgit/src/org/eclipse/jgit/transport/Transport.java -> same as in previous class. Why wrap Repository instances if you only want to call gc.
+
+Line:181, org.eclipse.jgit/src/org/eclipse/jgit/api/GarbageCollectCommand.java -> we should mention this method is not supported on all repo types. Only FileRepositories support this, or?
+
+Line:282, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceivePack.java -> should we really start import org.eclipse.jgit.api.* and wrapping repositories just to call gc? The api command will additionally deal with returning statistics which is unneeded here. The only thing where we benefit is that the api GarbageCollectCommand does the instanceof magic to instantiate the right gc class. We should have a single factory method producing the right GC class for a repository and then we can skip the need to wrap repository classes
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2016-09-21 08:33:40.000000000
+
+Patch Set 2:
+
+(9 comments)
+
+Line:178, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> done, changed default to false in order to prevent we change behavior for existing code
+
+Line:1104, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> isn't that clear from the documentation of param auto ?
+
+Line:1107, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> this implementation of setAuto(true) doesn't consider number of loose refs, do you think we should add this ?
+
+Line:1138, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> Done
+
+Line:1147, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> Done
+
+Line:1150, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> Done
+
+Line:1162, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> Done
+
+Line:181, org.eclipse.jgit/src/org/eclipse/jgit/api/GarbageCollectCommand.java -> Done
+
+Line:282, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceivePack.java -> currently GC and DfsGarbageCollector don't have a common abstraction and method names aren't compatible so this factory method could only return Object and the caller would still need to cast to the implementation class in order to call gc :-(
+
+Looks like something we should cleanup in 5.0 ?
+
+-------------------------------------
+author: Zachary Orozco
+date: 2016-09-22 07:54:39.000000000
+
+Patch Set 2:
+
+(3 comments)
+
+Line:1104, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> I only see explanations what happens if auto==true. I was expecting something like "if auto==false gc() will always do a full garbage collection ..."
+
+Line:1107, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> right, we don't have to mention that here
+
+Line:282, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceivePack.java -> Thought again about that. If we would have "void Repository#autoGC()" then the different implementations of Repository could do what they need to do for autogc, right?
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2016-09-22 08:14:56.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:282, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceivePack.java -> yes, but then we have autoGC() on Repository but not gc(), and what about all the other commands ?
+
+-------------------------------------
+author: Zachary Orozco
+date: 2016-10-20 13:08:41.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:282, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceivePack.java -> ok, If you don't like "void Repository#autoGC()" then the proposed solution seems to be the best one. +1
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-10-23 20:25:08.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

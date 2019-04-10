@@ -1,0 +1,112 @@
+DESCRIPTION
+
+Bug 142228: [EditorMgmt] Don't expect File->Open to invoke system editor
+
+This patch takes advantage of the
+org.eclipse.ui.ide.editorAssociationOverride extension point to override
+the default editor association. If the workLeon Ochoach cannot determine an
+associate editor for a given text file then the extension will return
+the internal text editor. For binary files nothing is changed - they
+still will be opened in the external system editor if the operating
+system can provide one.
+
+The tricky part is how to determine if a file is a text or binary. The
+current implementation in the TextFileDetector class is quite heuristic.
+It uses the CharsetDetector from the ICU library and check the level of
+confidence. It's not perfect, but gives good results for such a simple
+implementation.
+
+Bug: 90292
+Change-Id: Iaa4933039ee491b01936d3cbd2f6422fe2cf1d89
+Signed-off-by: Omari Miranda xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2015-04-25 18:44:17.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/5530/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-04-25 19:26:56.000000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/5530/ : SUCCESS
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-04-25 19:49:16.000000000
+
+Patch Set 4: Code-Review-1
+
+(17 comments)
+
+I glad to see that the bug is finally being touched, I also don't like "vim" or "emacs" opening for perl or shell scripts.
+
+Please check comments inline, therefore -1.
+
+Please note that in M7 we need PMC approval for API change in the IDE (new constant), and in RC1 (soon!) we have feature freeze for 4.5.
+
+If you can provide fixed version soon it depends on Dani if this feature goes to 4.5 - if he can quickly review & approve the change.
+
+Line:28, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/misc/TextFileDetector.java -> Please add a note that stream will not be closed and the position in the stream will be unchanged after leaving this method.
+
+Line:35, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/misc/UnknownFileTypeEditorAssociationOverride.java -> Please use IDEWorkLeon OchoachPlugin.DEFAULT_TEXT_EDITOR_ID and remove the duplicated constant here.
+
+Line:55, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/misc/UnknownFileTypeEditorAssociationOverride.java -> uriEditorInput.getURI() can return null, at least in the FileEditorInput implementation.
+Please extract url to the "url" variable before, check if it is not null and use "try with resources" (InputStream is = url.openStream()) here. Current implementation never closes streams.
+
+Line:73, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/misc/UnknownFileTypeEditorAssociationOverride.java -> Same as above: the stream must be closed, so best you use try(...){}. construct
+
+Line:1, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/OpenUnknownFileTypesInTextEditorPreference.java -> File name is probably better change to: OpenUnknownFileTypesWithTextEditorPreference
+
+Line:18, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/OpenUnknownFileTypesInTextEditorPreference.java -> I think you can link to the value of the IDE constant instead of hard coding the name here.
+
+Line:20, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/OpenUnknownFileTypesInTextEditorPreference.java -> Please update the reference here too.
+
+Line:25, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/OpenUnknownFileTypesInTextEditorPreference.java -> same as above
+
+Line:30, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/OpenUnknownFileTypesInTextEditorPreference.java -> same as above
+
+Line:37, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/OpenUnknownFileTypesInTextEditorPreference.java -> same as above
+
+Line:41, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/IDEPreferenceInitializer.java -> Please change "true" to "false", since if we are going into 4.5 we will not change the default behavior.
+
+Line:259, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/ide/IDE.java -> "should open in" -> "should be opened with"
+
+Line:262, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/ide/IDE.java -> "should open in" -> "should be opened with"
+
+Line:263, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/ide/IDE.java -> "if the files should be opened with external application, if there is one configured for this file type by the operating system."
+
+Line:266, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/ide/IDE.java -> Please change "true" to "false", since if we are going into 4.5 we will not change the default behavior.
+
+Line:271, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/ide/IDE.java -> I think the preference name (and value) should be  OPEN_UNKNOWN_TEXT_FILES_WITH_TEXT_EDITOR
+
+Line:1005, bundles/org.eclipse.ui.ide/src/org/eclipse/ui/internal/ide/messages.properties -> "in the text editor" -> "with the text editor"
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-04-26 06:52:32.000000000
+
+Patch Set 4: Code-Review-2
+
+I've now tried TextFileDetector with various non text files (ppt, tar.gz, zip, tiff, rpm, pdf etc) - it fails miserably, it is a "no go" for me.
+
+So the proper solution should include better content detection algorithm, something like "magic number" check and/or IContentDescriber, see bug 90292 comment 4.
+
+-------------------------------------
+author: Zaid Mosley
+date: 2016-09-23 13:37:44.000000000
+
+Abandoned
+
+I think this good fixed differently, bug is marked as dup of a closed bug. Please restore if that is not correct.
+
+-------------------------------------

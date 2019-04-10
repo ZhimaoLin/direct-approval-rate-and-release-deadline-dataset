@@ -1,0 +1,60 @@
+DESCRIPTION
+
+RepositorySourceProvider: update selection in background job
+
+Move selection update to a background job to prevent UI freezes.
+
+See https://git.eclipse.org/r/#/c/63410/2/
+
+Change-Id: I60aac4695fbc34fc99d193f76eb577c6a1890af5
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+
+COMMENTS
+
+author: Douglas Trujillo
+date: 2016-01-04 21:37:02.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-01-04 21:37:08.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/8002/
+
+-------------------------------------
+author: Jayvion Booth
+date: 2016-01-04 21:52:44.000000000
+
+Patch Set 1: Code-Review-1
+
+(1 comment)
+
+I've added my 2c regarding the job implementation, but I haven't tested and have no idea if this new asynchronous execution breaks gitflow UI elements.
+
+Line:92, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/selection/RepositorySourceProvider.java -> Before scheduling:
+
+The job should be made system (why users should care what we are doing in background) and not user, because it is not started by user:
+
+setSystem(true);
+setUser(false);
+
+The job must not allow to run multiple times and in parallel to itself: so ideally it should be a field, so that we can cancel() it before we schedule it next time. This will avoid multiple calls to clients and also avoid unpredictable order of calls (where the last reported repository is not actually the one selected last).
+
+Also we should check for monitor.isCancelled() at the begin and between getRepository()/fireSourceChanged(), because at this time it might be next selection job already waiting to be run. After monitor.isCancelled() we should return Status.CANCEl_STATUS.
+
+On dispose()/windowDeactivated() we should cancel() and null the job field to avoid memory leaks.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-01-04 22:12:39.000000000
+
+Patch Set 1: Code-Review-1
+
+Build Unstable 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/8002/ : UNSTABLE
+
+-------------------------------------

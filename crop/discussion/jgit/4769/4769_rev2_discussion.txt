@@ -1,0 +1,165 @@
+DESCRIPTION
+
+Add simple chain implementations of transport hooks and loggers
+
+Allows callers to effectively run multiple hooks and loggers without
+modifying the UploadPack/ReceivePack interface.
+
+Change-Id: I5b388816b63036ffff08ef3a9b857ccb764cb8c4
+
+
+COMMENTS
+
+author: Santos Moore
+date: 2011-12-08 16:26:13.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-12-08 16:31:38.000000000
+
+Patch Set 2: I would prefer that you didn't submit this
+
+(13 inline comments)
+
+
+
+Line:68, org.eclipse.jgit/src/org/eclipse/jgit/transport/PostReceiveHookChain.java -> This fails when I pass in [hook1, NULL, NULL, hook2]. The result array will be [hook1, hook2, null, null] and the onPostReceive method will NPE when it tries to invoke the 3rd element.
+
+Don't try to be cute and filter out the NULL hook.
+
+Line:79, org.eclipse.jgit/src/org/eclipse/jgit/transport/PostReceiveHookChain.java -> line-wrap? this seems pretty long.
+
+Line:80, org.eclipse.jgit/src/org/eclipse/jgit/transport/PostReceiveHookChain.java -> no curly braces
+
+Line:68, org.eclipse.jgit/src/org/eclipse/jgit/transport/PreReceiveHookChain.java -> same bug
+
+Line:79, org.eclipse.jgit/src/org/eclipse/jgit/transport/PreReceiveHookChain.java -> maybe line wrap?
+
+Line:80, org.eclipse.jgit/src/org/eclipse/jgit/transport/PreReceiveHookChain.java -> curly braces
+
+Line:71, org.eclipse.jgit/src/org/eclipse/jgit/transport/PreUploadHookChain.java -> same bug
+
+Line:84, org.eclipse.jgit/src/org/eclipse/jgit/transport/PreUploadHookChain.java -> curly braces
+
+Line:92, org.eclipse.jgit/src/org/eclipse/jgit/transport/PreUploadHookChain.java -> curly braces
+
+Line:101, org.eclipse.jgit/src/org/eclipse/jgit/transport/PreUploadHookChain.java -> curly braces
+
+Line:110, org.eclipse.jgit/src/org/eclipse/jgit/transport/PreUploadHookChain.java -> curly braces
+
+Line:69, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPackLoggerChain.java -> same bug
+
+Line:81, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPackLoggerChain.java -> curly braces
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-12-08 16:32:35.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1166/ 
+
+-------------------------------------
+author: Santos Moore
+date: 2011-12-08 16:34:07.000000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:68, org.eclipse.jgit/src/org/eclipse/jgit/transport/PostReceiveHookChain.java -> Well, this bug is easy to fix. You think it's just not worth it? What about the other cuteness, returning something that's not a chain if we don't have to? I can just go back to public constructors...
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-12-08 16:35:34.000000000
+
+Patch Set 2: Build Successful
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1166/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-12-08 22:08:08.000000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:68, org.eclipse.jgit/src/org/eclipse/jgit/transport/PostReceiveHookChain.java -> It may be worth it for the empty and single element list case:
+
+  if (hooks.size() == 0)
+    return PostReceiveHook.NULL;
+  if (hooks.size() == 1)
+    return hooks.get(0);
+  return new PostReceiveHookChain(hooks.toArray(...));
+
+so keep the static factory method. But please fix the NPE. :-)
+
+-------------------------------------
+author: Santos Moore
+date: 2011-12-08 22:16:07.000000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:68, org.eclipse.jgit/src/org/eclipse/jgit/transport/PostReceiveHookChain.java -> But IMO the most common case (certainly at least one of the usages I've written already) is going to be two elements where one is likely to be NULL:
+
+  void addMyHook(ReceivePack rp) {
+    List<PostReceiveHook> newHooks = new ArrayList<PostReceiveHook>();
+    newHooks.add(rp.getPostReceiveHook());
+    newHooks.add(new MyHook());
+    rp.setPostReceiveHook(PostReceiveHookChain.newChain(newHooks);
+  }
+
+In this case, if no previous hook was set, then the 0- and 1-element optimizations don't apply unless you also collapse NULLs.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-12-09 02:44:59.000000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:68, org.eclipse.jgit/src/org/eclipse/jgit/transport/PostReceiveHookChain.java -> Good point. Then go ahead and do the optimization to remove the NULL instance, but get the length of the final array correct. :-)
+
+-------------------------------------
+author: Santos Moore
+date: 2011-12-09 17:06:45.000000000
+
+Patch Set 2: (13 inline comments)
+
+
+
+Line:68, org.eclipse.jgit/src/org/eclipse/jgit/transport/PostReceiveHookChain.java -> Done
+
+Line:79, org.eclipse.jgit/src/org/eclipse/jgit/transport/PostReceiveHookChain.java -> Done
+
+Line:80, org.eclipse.jgit/src/org/eclipse/jgit/transport/PostReceiveHookChain.java -> Done
+
+Line:68, org.eclipse.jgit/src/org/eclipse/jgit/transport/PreReceiveHookChain.java -> Done
+
+Line:79, org.eclipse.jgit/src/org/eclipse/jgit/transport/PreReceiveHookChain.java -> Done
+
+Line:80, org.eclipse.jgit/src/org/eclipse/jgit/transport/PreReceiveHookChain.java -> Done
+
+Line:71, org.eclipse.jgit/src/org/eclipse/jgit/transport/PreUploadHookChain.java -> Done
+
+Line:84, org.eclipse.jgit/src/org/eclipse/jgit/transport/PreUploadHookChain.java -> Done
+
+Line:92, org.eclipse.jgit/src/org/eclipse/jgit/transport/PreUploadHookChain.java -> Done
+
+Line:101, org.eclipse.jgit/src/org/eclipse/jgit/transport/PreUploadHookChain.java -> Done
+
+Line:110, org.eclipse.jgit/src/org/eclipse/jgit/transport/PreUploadHookChain.java -> Done
+
+Line:69, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPackLoggerChain.java -> Done
+
+Line:81, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPackLoggerChain.java -> Done
+
+-------------------------------------

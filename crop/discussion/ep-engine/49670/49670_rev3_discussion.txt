@@ -1,0 +1,170 @@
+DESCRIPTION
+
+pauseResumeVisit: Release lock between each hash_bucket
+
+By releasing the hashTable lock after visiting each hash_bucket
+(instead of holding it for *all* hash_buckets the lock owns) we
+significantly reduce the effect the Defragmenter task has on front-end
+latency.
+
+ep_perfsuite results - note reduction in 95th and 99th percentiles:
+
+    === Latency [With constant defragmention] - 500000 items (µs) ================
+
+                             Percentile
+               Median     95th     99th  Std Dev  Histogram of samples
+Before:
+
+    Add         2.309    6.467 1191.243  207.999  ▁▁▁▁▁▁▂▇█▆▃▂▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+    Get         0.981    1.658 1699.103  271.184  ▁▁▁▃█▃▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+    Replace     2.797    9.266 1778.957  300.468  ▁▁▁▁▁▁▁▁▁▆█▄▂▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+    Delete      2.191    8.272 1340.548  210.454  ▁▁▁▁▁▁▁▆█▄▂▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+                                                  0              µs              9
+After:
+
+    Add         2.149    4.925   11.932   96.233  ▁▁▁▁▁▁▁▁▁▁▁▃█▇▆▄▃▂▂▂▂▂▂▂▁▁▁▁▁▁▁▁
+    Get         0.802    1.326    7.450    1.335  ▁▁▁▁▁█▇▃▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+    Replace     2.409    4.281   10.905    3.025  ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▄▇█▆▄▂▁▁▁▁▁▁▁▁▁▁▁▁
+    Delete      1.705    3.002    8.746    1.389  ▁▁▁▁▁▁▁▁▁▁▅█▆▄▂▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+                                                  0              µs              4
+
+Change-Id: I240489d3fbf70a005880800029f5a743ffc32b7c
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2015-04-14 17:28:48.590000000
+
+Uploaded patch set 3: Patch Set 2 was rebased.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-04-14 17:28:56.710000000
+
+Patch Set 3:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/35/
+
+-------------------------------------
+author: Abby Duran
+date: 2015-04-14 17:41:28.852000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:520, src/stored-value.cc -> If we move the partition lock to the inner for loop, there might be a race on 'size' value between hash table resizer and this visitor. You may want to check it again if this race is still OK.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-04-14 18:21:51.353000000
+
+Patch Set 3: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/35/ : FAILURE
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-04-15 08:47:10.064000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:520, src/stored-value.cc -> Good point - but I believe we are ok -  I checked the HashTable::resize() code and it only resizes if no visitors are currently visiting:
+
+    MultiLockHolder mlh(mutexes, n_locks);
+    if (visitors.load() > 0) {
+        // Do not allow a resize while any visitors are actually
+        // processing.  The next attempt will have to pick it up.  New
+        // visitors cannot start doing meaningful work (we own all
+        // locks at this point).
+        return;
+    }
+
+(see http://src.Piper Jefferson.org/source/xref/trunk/ep-engine/src/stored-value.cc#342)
+
+-------------------------------------
+author: Abby Duran
+date: 2015-04-15 14:46:00.052000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:520, src/stored-value.cc -> Well, there is still a race issue here. While the hash table resizer is running, this visitor can be executed until this line and will be blocked on this first partition lock. My point was that 1) 'size' value read in the first iteration might be different from the one read in the second iteration or 2) size value read in line 505 - 506 might be different from the one in line 513 if the resizer updates the size between them.
+
+Please correct me if I misunderstood your change.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-04-15 14:49:10.430000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:520, src/stored-value.cc -> So I'm pretty sure the `size` read will always be the same - see at line 493 we increment the `visitors` which means that the resizerTask will not attempt to resize until `vt` goes out out scope - i.e. when this whole function returns.
+
+-------------------------------------
+author: Abby Duran
+date: 2015-04-15 15:50:15.708000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:520, src/stored-value.cc -> I understand the case that you mentioned, but here is one of the conditions where the race issue can happen:
+
+t1: There are no active visitors now, and the resizer grabs all the hash bucket locks and executes right before the line updating size value.
+
+t2: Hashtable visitor is triggered and enters into this function (also increments the visitor counter at line 493)) and runs until the line 508
+
+t3: The resizer updates the size.
+
+t4: The visitor reads the updated size value at line 513.
+
+In this case, size values read by the visitor are different in the first loop iteration.
+
+
+
+There is another condition in the inner for loop too:
+
+t1: There are no active visitors now, and the resizer grabs all the hash bucket locks and executes right before the line updating size value.
+
+t2: Hashtable visitor is triggered and enters into this function (also increments the visitor counter at line 493)) and runs until the line 520 and blocked on the lock.
+
+t3: The resizer updates the size and finishes the task.
+
+t4: The visitor grabs the lock and continues to execute, but the size value read in the second iteration will be different from the first iteration.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-04-15 15:58:48.199000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:520, src/stored-value.cc -> Ah yes, I see the case you're describing.
+
+This is somewhat unfortunate, as essentially you cannot read `size` without holding at least one lock (to guarantee that the resizer don't come along and change it underneath you.
+
+One possible (but somewhat dirty) solution would be to acquire one of the locks at the beginning of this function (before creating the VisitorTracker), then release the lock; before re-acquiring the lock before actually touching the buckets; to essentially prevent the resizer from ever running.
+
+What do you think?
+
+-------------------------------------
+author: Abby Duran
+date: 2015-04-15 17:20:10.193000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:520, src/stored-value.cc -> I think that will work as long as a visitor counter is synchronized among these tasks. I agree it is not a fancy solution, but think it should be OK given the current implementation of resizer and other visitors.
+
+-------------------------------------

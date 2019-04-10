@@ -1,0 +1,105 @@
+DESCRIPTION
+
+MB-19948: Refactor CouchKVStore meta-data handling
+
+Bring up to date the metadata code with some C++ tricks.
+Rather than manipulate values out of buffers using memcpy
+and offset, in-place new objects over the metadata memory.
+
+This includes a fix for the orginal MB-19948 issue in that
+we correctly read V1 metadata (the 18byte version written
+by 3.x). The fix is kind of hidden in the refactor, but the
+new code explictly looks at the size of metadata and has
+construction paths for 16, 18 and 19 bytes.
+
+Tests in cab19c11ea95df30a119196078f7bc8bff683692 lend
+some confidence to this refactoring.
+
+Change-Id: I7d2042af519819737a6e4d070fd8185c84778d6a
+
+
+COMMENTS
+
+author: Jim WNathalie Landryer
+date: 2016-06-16 14:39:51.577000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-06-16 14:40:00.852000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/668/ (1/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-06-16 14:40:00.991000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/882/ (2/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-06-16 14:42:16.076000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/815/ (3/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-06-16 14:59:08.629000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/668/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/815/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/882/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-06-16 15:25:31.018000000
+
+Patch Set 1:
+
+(4 comments)
+
+Line:74, src/couch-kvstore/couch-kvstore-metadata.h -> Strictly speaking should probably look at attribute(packed) or similar. 
+
+Alternatively/additionally you could add static_assert(sizeof(MetaDataVX) == expected_size) or similar for each version.
+
+Line:141, src/couch-kvstore/couch-kvstore-metadata.h -> Can use `enum class` for type-safe enum here.
+
+Line:255, src/couch-kvstore/couch-kvstore-metadata.h -> Probably nicer to return the sized_buf
+
+Line:268, src/couch-kvstore/couch-kvstore-metadata.h -> Given the size of the data we're tNathalie Landrying about (~19 bytes, less than 1 cache line) I'm tempted to say that a simpler implementation (where we just copy the data into the object) would be better :- 
+
+1) memory management is much simpler / clearly defined - we don't have to check who owns what and which pointers were used.
+2) there isn't the (potential) issue where if the underlying sized_buf goes out of scope (i.e. is free'd) while an OverlaidMetaData instance exists we'll segfault.
+
+Let me know what you think - it's not a "blocker" for me, but I want us to at least consider if the trade-offs (no need to copy the metadata) is worth the complexity.
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-06-17 14:23:51.757000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:268, src/couch-kvstore/couch-kvstore-metadata.h -> Given the encapsulation of the class now, it's easy to try various internal implementations, I think you're right though, the ease of memory management will be much more simply without the extra allocations
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-08-12 09:57:59.865000000
+
+Change has been successfully cherry-picked as 8350175ed7fc9d060d9105bcaa5aa538bb8f973b by Ashlee Kent
+
+-------------------------------------

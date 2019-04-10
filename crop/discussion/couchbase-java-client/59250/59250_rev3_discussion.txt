@@ -1,0 +1,134 @@
+DESCRIPTION
+
+JCBC-910: additional view query option to get items in original order or not
+
+Motivation
+----------
+View query result order is randomly mixed; But it should be consitent sometimes.
+
+Modifications
+-------------
+Apply addtitional boolean paremeter retainOrder when building view query:
+- true: retain item order.
+- false (default): item order can be mixed, same as former action.
+
+Result
+------
+A user can choose view query result order consistency.
+
+Change-Id: I3ca3998f13d40051297c228aa64661c785e2a5d1
+
+
+COMMENTS
+
+author: Paulina Bailey
+date: 2016-02-04 06:25:34.481000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Estrella Humphrey
+date: 2016-02-04 08:36:05.471000000
+
+Patch Set 3: Code-Review-2
+
+(5 comments)
+
+this is a good middle ground if we cannot verify that concatMapEager is good enough in all cases. A few comments though (see inline).
+
+Line:78, src/main/java/com/couchbase/client/java/view/ViewQuery.java -> rather than a constructor parameter, make it a setter just like includeDocs
+
+Line:107, src/main/java/com/couchbase/client/java/view/ViewQuery.java -> let's make retainOrder modifiable via a setter, just like includeDocs. Also the javadoc wording should be more clear that retainOrder = false can loose order when includeDocs is used, but can also have better xxx@xxx.xxx Sullivan what do you think?
+
+Line:530, src/main/java/com/couchbase/client/java/view/ViewQuery.java -> for consistency, follow same pattern as isDevelopment:
+
+ViewQuery retainOrder() {
+   return retainOrder(true);
+}
+
+ViewQuery retainOrder(boolean retainOrder) {
+    this.retainOrder = retainOrder;
+    return this;
+}
+
+boolean isRetainOrder() {
+    return this.retainOrder;
+}
+
+Line:224, src/main/java/com/couchbase/client/java/view/ViewQueryResponseMapper.java -> Note: I think we can safely use concatMapEager or even concatMap if not including docs. Like so:
+
+if (!query.isIncludeDocs()) {
+    return observable.concatMap(...);
+} else if (query.retainOrder()) {
+    return observable.concatMapEager(...);
+} else {
+    return observable.flatMap(...);
+}
+
+Line:231, src/main/java/com/couchbase/client/java/view/ViewQueryResponseMapper.java -> can you extract this method out of the Observable? make it a method of BuildViewResult so you can access the bucket and query.
+
+-------------------------------------
+author: Estrella Humphrey
+date: 2016-02-04 08:37:16.229000000
+
+Patch Set 3:
+
+note that scoring -2 doesn't mean this should be abandoned, just that the current changeset should be reworked ;)
+
+-------------------------------------
+author: Estrella Humphrey
+date: 2016-02-04 09:13:47.990000000
+
+Patch Set 3:
+
+(3 comments)
+
+Line:78, src/main/java/com/couchbase/client/java/view/ViewQuery.java -> see last comment, tie it to includeDocs setters
+
+Line:107, src/main/java/com/couchbase/client/java/view/ViewQuery.java -> see last comment, tie it to includeDocs setters
+
+Line:530, src/main/java/com/couchbase/client/java/view/ViewQuery.java -> actually, after discussing it with Michael:
+
+to set the retainOrder flag is very tied to using includeDocs, so let includeDocs(...) setters initialize the flag to false.
+
+Then add a couple new setters, includeDocsOrdered() and includeDocsOrdered(boolean includeDocs). Those will set retainOrder to true.
+
+Keep a getter (isRetainOrder()) for the retainOrder flag, and it's good to go.
+
+-------------------------------------
+author: Paulina Bailey
+date: 2016-02-04 12:47:09.453000000
+
+Patch Set 3:
+
+(1 comment)
+
+> (5 comments)
+ > 
+ > this is a good middle ground if we cannot verify that
+ > concatMapEager is good enough in all cases. A few comments though
+ > (see inline).
+
+Line:224, src/main/java/com/couchbase/client/java/view/ViewQueryResponseMapper.java -> Although I don't like to use mutually independent conditional parameters into one if-else block statements, it looks good, since it has only 3 conditionals.
+
+I will accept your suggestion.
+
+-------------------------------------
+author: Paulina Bailey
+date: 2016-02-04 12:52:31.698000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:530, src/main/java/com/couchbase/client/java/view/ViewQuery.java -> There's 4 overloading methods, work with 4 copies with includeDocsOrdered which initialize retainOrder flag to true.
+
+As you said, made original includeDocs(...) setters initialize retainOrder flag to false.
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-02-05 16:20:28.845000000
+
+Change has been successfully cherry-picked as cb6097de716752215959377f6a0618d747d664c7
+
+-------------------------------------

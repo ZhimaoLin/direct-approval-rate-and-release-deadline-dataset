@@ -1,0 +1,121 @@
+DESCRIPTION
+
+lttng: Fix Resources view event list
+
+With the fix to the event iterator (42acdc2), it is no longer required
+to add 'null' events in the zoomed event list to hide underlying events
+in the full range event list. This simplifies the building of event list
+in the Resources view.
+
+Adds an EventList class to properly handle the full range split events
+at the borders of the zoomed event list.
+
+Adds an interface to TimeEvent to split an event while keeping it's
+class type and value.
+
+Change-Id: I6b3058227e64e456601b40fa2ea6c0afe3886f14
+Signed-off-by: Luciana Barry xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Luciana Barry
+date: 2013-07-16 22:21:10.000000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-07-16 22:21:15.000000000
+
+Patch Set 5:
+
+Build Started https://hudson.eclipse.org/sandbox/job/linuxtools/2929/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-07-16 22:34:45.000000000
+
+Patch Set 5: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/linuxtools/2929/ : SUCCESS
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-07-17 02:27:06.000000000
+
+Patch Set 5: Code-Review-1
+
+(5 comments)
+
+This I like much more ;)  I also don't get any API errors like I had before, that was strange.
+
+Some code comments.
+
+I also tried it, I don't get the empty rectangles between states anymore. However I got some left-over rectangles when scrolling between two states (where we have empty rectangles before). They disappear when we release the button though, so I don't know if it's expected. I can show you tomorrow.
+
+Line:65, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/model/EventIterator.java -> Should this method xxx@xxx.xxx then, to have people migrate to using a EventList?
+
+Line:82, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/model/EventIterator.java -> The array is still saved directly though. Whoever had a reference to eventList could modify it. To be 100% safe, it should go
+  fEventList = Collections.unmodifiableList(new ArrayList<blah>(eventList));
+
+but if the method is to be deprecated then it doesn't really matter.
+
+Line:33, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/model/EventList.java -> the fields could be final, since they have no setters.
+
+Line:47, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/model/EventList.java -> The list is still "saved" directly, see the comment in the other file. But good idea to save the field itself as the unmodifiableList, that way we can expose it directly and avoid having to create a wrapper every time the getter is called.
+
+Line:48, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/model/EventList.java -> If the fields are set to final, here you'll probably have to do 
+  } else {
+    fEventList = null;
+  }
+
+or fEventList = new ArrayList<>() for an empty list?
+
+-------------------------------------
+author: Luciana Barry
+date: 2013-07-17 14:29:34.000000000
+
+Patch Set 5:
+
+(1 comment)
+
+I'm glad you like it. I felt dirty pushing it ;(
+
+Regarding the empty rectangles, that was the intended effect of patch set 3, where the split events now keep their state color instead of downgrading to a default event.
+
+Line:82, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/model/EventIterator.java -> I want to avoid (at all costs) the overhead of copying the whole list at every mouse drag pixel move. The calling code was designed so that the list is never modified once it is set in the entry. And anyways the entry iterator was also designed to handle lists that can grow concurrently. So this is all for naught.
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-07-17 18:01:40.000000000
+
+Patch Set 5:
+
+(1 comment)
+
+Ok, I think we can live with the storing-array-directly for now, copies here would be costly.
+
+I have only the comments about final fields xxx@xxx.xxx the method left.
+
+Line:82, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/model/EventIterator.java -> Yeah, a copy every time would be costly. There is probably a way to organize it such that this object creates the list (list of what I assume are immutable objects), but it's probably out of the scope of this change. So we can live with it for now I guess.
+
+Just expect Sonar warnings ;)
+
+-------------------------------------
+author: Luciana Barry
+date: 2013-07-18 14:10:16.000000000
+
+Patch Set 5:
+
+(2 comments)
+
+Line:65, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/model/EventIterator.java -> It's not always necessary to use an EventList. You don't need it if either:
+- The full range event list does not contain aggregated events
+- The data being modeled does not contain any gaps between events
+
+Line:48, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/model/EventList.java -> The EventIterator uses a null check for faster processing
+
+-------------------------------------

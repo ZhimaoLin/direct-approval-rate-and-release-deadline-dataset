@@ -1,0 +1,121 @@
+DESCRIPTION
+
+MB-5702: remove xdcr code Adrianna Holmesally overriding couch_config setting
+
+This change-set removes code in XDCR manager which Adrianna Holmesally overrides
+couch_config settings. XDCR will build up all replication parameters
+in function xdc_rep_utils:make_options().
+
+Change-Id: Ia1904ed57c3851a07d2952abca78542766dd9d18
+
+
+COMMENTS
+
+author: Macie Morton
+date: 2012-06-26 23:51:20.391000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Jasmin Rangel
+date: 2012-06-26 23:51:23.001000000
+
+Patch Set 3:
+
+New patchset patch-id matches previous patchset, but commit message has changed.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-06-26 23:58:23.130000000
+
+Patch Set 3: Looks good to me, but someone else must approve
+
+I'd say _any_ access to couch config in this case needs to be replaces with ns_config access.
+
+Otherwise looks good to me
+
+-------------------------------------
+author: Porter Oconnor
+date: 2012-06-27 12:05:52.876000000
+
+Patch Set 3: I would prefer that you didn't submit this
+
+(2 inline comments)
+
+Looks good.
+Just 2 small comments.
+
+Also, in xdc_rep_manager.erl the value for the continuous setting was false. With the new changes you're setting the default to true. Don't know if this is intentional or a mistake.
+
+Line:220, src/xdc_rep_utils.erl -> Default value should be a string/list.
+Values from couch_config are always strings/lists.
+
+What you have here works, if there's no continuous setting in couch_config, otherwise you'll get a crash when replication starts, as it will get a string when an atom (boolean) is expected.
+
+Line:227, src/xdc_rep_utils.erl -> Here should be something like this:
+
+{continuous, DefRepMode == "true"}
+
+Reason explained in the above comment.
+
+-------------------------------------
+author: Macie Morton
+date: 2012-06-27 18:20:29.732000000
+
+Patch Set 3:
+
+Hi Filipe,
+
+Thanks so much for good review comments. 
+
+Yes the value of "continuous" is false in old code which I do not understand why since the replication mode is continuous which is the only mode we support at this time. 
+
+For safety, at this time I revert it back to "false" to make it consistent with old code. If this is incorrect, we will fix it in another commit.
+
+
+Seems this is parameter will be used by couch replicator to add a task using couch_task_status module (see code below)
+
+Given your expertise in couchdb, can you please look at it and comment? Thanks!
+
+
+
+
+ 
+
+   couch_task_status:add_task([
+                                {type, replication},
+                                {replication_id, ?l2b(BaseId ++ Ext)},
+                                {source, ?l2b(SourceName)},
+                                {target, ?l2b(TargetName)},
+                                {continuous, get_value(continuous, Options, false)},
+                                {revisions_checked, 0},
+                                {missing_revisions_found, 0},
+                                {docs_read, 0},
+                                {docs_written, 0},
+                                {doc_write_failures, 0},
+                                {source_seq, SourceCurSeq},
+                                {checkpointed_source_seq, CommittedSeq},
+                                {progress, 0}
+                               ]),
+
+-------------------------------------
+author: Porter Oconnor
+date: 2012-06-27 18:29:14.183000000
+
+Patch Set 3:
+
+The value of continuous must be an atom (boolean) inside the replicator. It's used in other places besides the couch task status creation.
+
+In couch config everything is a string, so you have to convert it to the correct type before adding it to the replicator's options parameter (in that make_options function). If you look at the surrounding examples, you'll see things like list_to_integer calls to do such type conversions. You can do a list_to_atom call here instead of the Continuous == "true" thing, but it's not good practice, google for atom table polution/attacks and you'll see why.
+
+As for the true/false continuous mode, I don't know why Srini hardcoded it to false, you'll have to check with someone else. Just though it could be a non-intentional change, worth pointing out.
+
+-------------------------------------
+author: Roselyn Villegas Code Review
+date: 2012-06-27 22:21:47.900000000
+
+Your change could not be merged due to a path conflict.
+
+Please merge (or rebase) the change locally and upload the resolution for review.
+
+-------------------------------------

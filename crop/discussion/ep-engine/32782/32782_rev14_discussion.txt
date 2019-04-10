@@ -1,0 +1,77 @@
+DESCRIPTION
+
+MB-9900: Rollback in ep-engine
+
+- Setting threshold for reseting vbucket and
+sending entire snapshot to 50%.
+
+Change-Id: I0fbe8d91994807073be61d65b735ca79fe6a42ba
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2014-01-31 00:05:19.801000000
+
+Uploaded patch set 14.
+
+-------------------------------------
+author: Abby Duran
+date: 2014-02-01 01:59:16.456000000
+
+Patch Set 14: Code-Review-2
+
+(17 comments)
+
+I have some major concerns about this change. Please look at my comments and let's discuss them soon.
+
+Line:228, src/upr-consumer.cc -> std::string &key
+
+Line:233, src/upr-consumer.cc -> Please get the ROUnderlying from the corresponding shard of the vbucket.
+
+Line:282, src/upr-consumer.cc -> I will rather add the private member function like "ENGINE_ERROR_CODE doRollback(...)" and move the rollback logic to the function.
+
+Line:294, src/upr-consumer.cc -> We should not invoke this rollback function directly from the memcached worker thread because the thread will be blocked during the entire rollback procedure. This will cause a significant impact on the frontend performance.
+
+Please create a new IO task and let one of the global IO threads run the rollback and notify the completion.
+
+Line:295, src/upr-consumer.cc -> If we decide to reset the vbucket, then we should reset it on both memory and disk. If you call "EPStore::resetVBucket", it will reset the vbucket on both memory and disk.
+
+Line:304, src/upr-consumer.cc -> Shouldn't we put the following checks here?
+
+else {
+    LOG("%s Stream instance for VB %d is not found!!!", ...);
+    errCode = ENGINE_FAILED;
+}
+
+Line:306, src/upr-consumer.cc -> reconnectStream() basically sends a new stream request again to the producer, but we call streamAccepted(..) below. This seems wrong to me.
+
+Line:317, src/upr-consumer.cc -> If errCode is not ENGINE_SUCCESS due to some internal errors, shouldn't we also remove the entry from the opaqueMap?
+
+Line:200, src/kvstore.h -> Db structure is from Couchstore and should NOT be used in kvsotre abstract class. It will break the KV abstraction completely. We can't move to ForestDB later. Please adapt this function so that it is not underlying-storage dependent.
+
+Line:2065, src/couch-kvstore/couch-kvstore.cc -> fileRev should be appended to ".couch." instead of vbucket id. Please use stringstream class to generate a full file path.
+
+Line:2104, src/couch-kvstore/couch-kvstore.cc -> should close "db" handle before return.
+
+Line:2139, src/couch-kvstore/couch-kvstore.cc -> should close "db" handle before return.
+
+Line:2140, src/couch-kvstore/couch-kvstore.cc -> Where do we close "newdb" handle?
+
+Line:2145, src/couch-kvstore/couch-kvstore.cc -> I don't see where we append the rewinded header to the database file. Otherwise, when we open the db file next time, it will still give us the latest header that is not rollbacked.
+
+Line:2923, src/ep.cc -> getROUnderlying(...) if it is read-only mode.
+
+Line:441, src/upr-stream.cc -> Don't understand why we need to pass zero as vb_uuid and high_seqno.
+
+Line:503, src/couch-kvstore/couch-kvstore.h -> Please rename the function to "rollback(..)"
+
+-------------------------------------
+author: Emerson Nolan
+date: 2014-02-01 02:14:12.885000000
+
+Patch Set 14:
+
+Hi Chiyoung, I went through your comments, I will address them soon, thanks.
+
+-------------------------------------

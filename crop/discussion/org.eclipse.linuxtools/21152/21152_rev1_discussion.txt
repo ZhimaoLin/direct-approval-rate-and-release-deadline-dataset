@@ -1,0 +1,213 @@
+DESCRIPTION
+
+tmf: Rework analysis-returning methods in ITmfTrace
+
+Make the analysis accesses thread-safe: each access is now encased
+in a synchronized block (or using the synchronizedMap wrapper).
+
+This also implies exposing only Iterable's in the interface, which
+is a good practice in general. If a caller could get a reference to
+the map (even through unmodifiableMap), we'd have no guarantee that
+they'd correctly lock their iterations, which could result in a
+concurrent access error if the map is modified internally at the
+same time.
+
+Change-Id: Ibd2f1130ab9839ad20c3df3ac7c92119754ecc42
+Signed-off-by: Braxton Mccarthy xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2014-01-27 20:03:48.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/5205/
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-01-27 20:08:00.000000000
+
+Patch Set 1:
+
+Geneviève, what was the rationale for not making "analysis module extensions", like ITmfAnalysisModuleWithStateSystems, not extend IAnalysisModule already? A trace type would then be free to implement more than one if it wants, right?
+
+I did so in this patch, and it feels cleaner to me. In addition the return methods in ITmfTrace can now specify <T extends IAnalysisModule>.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-01-27 20:13:36.000000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/5205/ : FAILURE
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2014-01-27 21:51:00.000000000
+
+Patch Set 1: Code-Review-1
+
+(1 comment)
+
+The general change is good. Just this comment, that was previously discussed when first introducing the analysis modules.
+
+Line:288, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/ITmfTrace.java -> And what happens to the "What if the user wants to have an analysis implement MouseClickHandler?" Which was a good idea I think.
+
+That was the reason why there was no requirement to the T class. And also why the ITmfAnalysisModuleWithStateSystems interface didn't extend IAnalysisModule.  The requirement on the class is not necessary here anyway.
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-01-27 22:54:54.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:288, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/ITmfTrace.java -> He can implement both MouseListener and IAnalysisModule? Then yeah he cannot get it auto-caseted to MouseListener, but by specifying the ID he knows he can safely cast it manually.
+
+Which is another thing, it seems a bit redundant to pass both the ID and the class (since normally, if we know the ID of the analysis, we also know its class).
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2014-01-28 14:11:17.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:288, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/ITmfTrace.java -> Why do you need T extends IAnalysisModule?
+
+What if a view wants all analysis implementing the MouseListener? We can't do that anymore.
+
+And we don't know we can cast safely
+1- The analysis may not exist for the trace if for instance the required events were not enabled, then the analysis won't have been created, so we need a null (instanceof) check before casting
+2- With XML, we will have no control on the IDs they give to analysis and one may very well use the same ID as another one and take precedence on it. That second one will not have the same class and the cast will fail inelegantly.
+
+The previous signature allowed for all those scenario and only null check on the module is required by the caller.
+
+I feel like I'm throwing back at you your own arguments, but you were pretty convincing ;-)  You'll have to work to convince me otherwise now!
+
+-------------------------------------
+author: Luciana Barry
+date: 2014-01-28 14:56:06.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:288, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/ITmfTrace.java -> Not sure why we need class at all? Shouldn't the id be unique, if not, it should fail when registering a duplicate id?
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-01-28 15:01:43.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+tl;dr
+
+Line:288, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/ITmfTrace.java -> > Why do you need T extends IAnalysisModule?
+
+So then callers can always cast to T to IAnalysisModule without having to check. (like StateSystemExplorer now does with this patch).
+
+> What if a view wants all analysis implementing the MouseListener? We can't do that anymore.
+
+The view can call getAnalysisModules() to get everything, and iterate on it itself.
+
+That (those two answers) is the tradeoff here. The question is, what is the most common use case?
+
+We already have two "generic" getters (with which you get a IAnalysisModule), and two "specific" ones (with which you get a T). I'm already a bit relunctant at having two redundant types of methods like this, but I can see the gain in not having to always cast the modules manually. Since typically, you want your module of a specific type.
+
+So since we're having a specific getter, to cover most common use cases, we have to decide: what *is* the most common use case? Return an IAnalysisModule, or returning NOT an IAnalysisModule? Whatever we pick, the callers can still fallback to the generic getter to get their stuff.
+
+OK for the ID/moduleClass, we might never know for sure the type. So we kind of need both.
+
+For the "extra" instanceof check, I don't really agree: those methods are xxx@xxx.xxx now, because the requested analysis can always not exist. So you now have to null check the return value:
+
+  MouseListener module = getAnalysisModule(MouseListener.class, id);
+  if (module == null) {
+    // handle case where the analysis doesn't exist
+  }
+  // use 'module' as you please
+
+Since an instanceof checks doubles as a null check, you can simply replace this check with an instanceof to see if the returned module is of your expected type:
+
+  IAnalysisModule module = getAnalysisModule(id);
+  if (!(module instanceof MouseListener)) {
+    // handle case where the analysis doesn't exist / isn't what you expected
+  }
+  MouseListener mymodule = (MouseListener) module;
+  // use 'mymodule' as you please
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-01-28 15:03:52.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:288, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/ITmfTrace.java -> > Not sure why we need class at all?
+
+That's a good point, since now we need to null check anyway, might as well require these null checks to be instanceof checks instead (not much more lines), and only keep the IAnalysisModule getters in the API.
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-01-28 18:05:38.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:288, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/ITmfTrace.java -> On second though, I tried doing that change, and it becomes very ugly very fast, you have to do those instanceof checks absolutely everywhere. I prefer having one extra API method do it for you.
+
+I also tried removing the "extends IAnalysisModule" part, but then in TmfTrace we can't really have the "get one analysis module of one class/id" method, because we use IAnalysisModule.getId()
+
+All in all, I stand by this patch as it is ;)   (it'll just have to be rebased on top of the live-reading patch).
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2014-01-28 18:42:11.000000000
+
+Patch Set 1:
+
+(3 comments)
+
+Ok this is my last objection. If I can't convince you with this, I'll declare defeat.
+
+Line:187, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/views/statesystem/TmfStateSystemExplorer.java -> Once the FIXME is fixed, there shouldn't be need to have an analysis module anymore so it wouldn't maater if the requested class is or not an analysis module.
+
+Line:288, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/ITmfTrace.java -> > On second though, I tried doing that change, and it becomes very ugly very fast
+
+Indeed. That's why this method was done in the first place ;-)
+
+Line:372, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/TmfTrace.java -> I guess I'm on the losing side for the T extends IAnalysisModule. Though you could instead getAnalysisModule(id) and then do the instanceof check and then you wouldn't have the need of IAnalysisModule. Besides I think it would be more performant (one class check instead of all)
+
+If you do so, then I do not see the advantage of having the extends IAnalysisModule. If you want to use IAnalysisModule, then pick a class that extends it, the most common use case is answered, while not forgetting the less common one.
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-01-28 18:59:26.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:372, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/TmfTrace.java -> You're right, going through getAnalysisModule(id) would be simpler. However, that method returns an IAnalysisModule, not an Object! So T would need to extend IAnalysisModule anyway.
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2014-01-28 19:04:12.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:372, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/TmfTrace.java -> in getAnalysisModulesOfClass below, entry.getValue() also is an IAnalysisModule and we make the isAssignableFrom and cast without problem
+
+-------------------------------------

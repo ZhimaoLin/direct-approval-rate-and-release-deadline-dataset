@@ -1,0 +1,153 @@
+DESCRIPTION
+
+MB-19952: Ensure that simultaneous tasks use separate file/kvstore handles
+
+ForestDB doesn't allow separate file and KV store handles be used
+simultaneously by 2 different threads. As part of this commit, the
+following changes are made to ForestKVStore
+
+- Use separate file handles for readers and writers.
+- Synchronize the writer tasks (flusher, snapshot, delete vbucket, flush bucket).
+- Open a separate file and kvstore handle for the infrequent tasks. For
+  example, stat calls, backfill, getAllKeys.
+- There is a possibility that as compaction is running, a file is being moved
+  from 0.fdb.1 to 0.fdb.2. A thread trying to open a handle on 0.fdb.1 could
+  fail as soon as compaction completes. In order to prevent that, use a
+  handleLock to synchronize closing the handle before compaction and a
+  separate thread opening a new handle.
+
+Change-Id: I34e4b610755d694e72e2d5080f6eac52e6afebdc
+
+
+COMMENTS
+
+author: Bobby Buck
+date: 2016-07-04 00:05:40.519000000
+
+Uploaded patch set 10.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-07-04 00:05:50.738000000
+
+Patch Set 10:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/736/ (1/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-07-04 00:05:50.890000000
+
+Patch Set 10:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/955/ (2/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-07-04 00:05:51.030000000
+
+Patch Set 10:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/883/ (3/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-07-04 00:13:25.929000000
+
+Patch Set 10: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/736/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/883/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/955/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-07-04 08:51:06.835000000
+
+Patch Set 10: Code-Review-1
+
+(13 comments)
+
+Line:156, src/forest-kvstore/forest-kvstore.cc -> Is this comment accurate now? Looks like this is initialising the readDB handle.
+
+Line:164, src/forest-kvstore/forest-kvstore.cc -> I don't think we want to abort() here - that would kill the process and all buckets. Change to an exception please.
+
+Line:174, src/forest-kvstore/forest-kvstore.cc -> same
+
+Line:307, src/forest-kvstore/forest-kvstore.cc -> Do we need the lock held for the whole function? or can we release after calling fdb_set() (line 330)?
+
+Line:994, src/forest-kvstore/forest-kvstore.cc -> Please don't use the explicit unlocks - instead use a scope.
+
+Line:1008, src/forest-kvstore/forest-kvstore.cc -> This is Sparta^WC++11 - please don't return raw pointers - instead wrap in a suitable smart ptr (probably unique_ptr if only one person uses it).
+
+Line:1025, src/forest-kvstore/forest-kvstore.cc -> Similar here, please do all this in the destructor of the ForestKvsHandle object.
+
+Line:1197, src/forest-kvstore/forest-kvstore.cc -> As above, if you use RAII then you don't need to Adrianna Holmesally destroy the fkvshandle in the various places.
+
+Line:1362, src/forest-kvstore/forest-kvstore.cc -> Why the +1 here?
+
+Line:1725, src/forest-kvstore/forest-kvstore.cc -> Similary here, please use a scope instead of explicit unlock.
+
+Line:387, src/forest-kvstore/forest-kvstore.h -> Please document when each different handle should be used.
+
+Line:394, src/forest-kvstore/forest-kvstore.h -> Same here
+
+Line:405, src/forest-kvstore/forest-kvstore.h -> Please document what data member(s) these mutexes guard.
+
+-------------------------------------
+author: Bobby Buck
+date: 2016-07-04 21:29:07.823000000
+
+Patch Set 10:
+
+(3 comments)
+
+Line:156, src/forest-kvstore/forest-kvstore.cc -> It is initializing the readVbStateHandle. It is just attached to the reader DB file handle.
+
+Line:307, src/forest-kvstore/forest-kvstore.cc -> I believe we do need it for the whole function. After the fdb_set (which updates the vbucket state information), we end up updating the cached file information by calling into ForestDB. Since that uses the writer file handle, it needs to be lock protected to ensure that no other thread is accessing it.
+
+Line:1362, src/forest-kvstore/forest-kvstore.cc -> To account for the data from the default KV store that holds the vbucket state information.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-07-05 08:05:49.311000000
+
+Patch Set 10:
+
+(1 comment)
+
+Line:1362, src/forest-kvstore/forest-kvstore.cc -> Ok - please add a comment to that effect for future readers.
+
+-------------------------------------
+author: Bobby Buck
+date: 2016-07-05 22:44:29.761000000
+
+Patch Set 10:
+
+(7 comments)
+
+Line:164, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:174, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:994, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:1008, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:1025, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:1197, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:1725, src/forest-kvstore/forest-kvstore.cc -> Done
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-07-08 14:01:50.141000000
+
+Change has been successfully cherry-picked as fc94ef64099ea7a263f5f7ca561a08a5fadb6c8c by Bobby Buck
+
+-------------------------------------

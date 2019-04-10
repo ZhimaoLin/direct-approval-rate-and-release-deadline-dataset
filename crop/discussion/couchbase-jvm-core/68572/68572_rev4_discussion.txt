@@ -1,0 +1,81 @@
+DESCRIPTION
+
+JCBC-XXX: Add an upper bound to the sentRequestQueue.
+
+Motivation
+----------
+Currently when a socket is alive but never responding to requests
+we write and write into it but responses never arrive. This makes
+the sentRequestQueue pile up requests and this queue is not bounded.
+
+Modifications
+-------------
+The code now, before encoding it down the pipeline, checks if an
+upper limit is reached (which defaults to 1024 and can be configured
+via the com.couchbase.sentRequestQueueLimit system property) and if
+so sends it into the usual reschedule path, giving it a chance to
+be cancelled if it circles around for too long and definitely not
+getting stuck in there forever.
+
+Result
+------
+As a result, a maximum of 1024 requests by default can be stuck on
+a non-responding socket, preventing filling up the heap and leaking
+requests that will never be finished. Note that this is not addressing
+a potential root cause of a non-responding socket but rather making
+sure that the effects when it happens are minimized to the overall
+JVM and giving the upper layers a chance to react accordingly.
+
+Change-Id: Icaa5ab16d012d276891ec9ff8073d7a9e7e3804f
+
+
+COMMENTS
+
+author: Natasha Sullivan
+date: 2016-10-11 12:26:12.056000000
+
+Uploaded patch set 4: Commit message was updated.
+
+-------------------------------------
+author: Cory Peck
+date: 2016-10-11 12:36:09.260000000
+
+Patch Set 4: Code-Review+1
+
+(1 comment)
+
+Line:184, src/main/java/com/couchbase/client/core/endpoint/AbstractGenericHandler.java -> Why you didn't put it into environment?
+
+-------------------------------------
+author: Marques Ellis
+date: 2016-10-11 17:34:24.759000000
+
+Patch Set 4:
+
+(2 comments)
+
+Line:12, /COMMIT_MSG -> one write?
+
+Line:222, src/main/java/com/couchbase/client/core/endpoint/AbstractGenericHandler.java -> Even if the underlying request observable times out, will it be purged out of sent request queue? So even the keepalive requests will be discarded if the sent request queue is full?
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2016-10-26 18:58:07.349000000
+
+Patch Set 4:
+
+(2 comments)
+
+Line:184, src/main/java/com/couchbase/client/core/endpoint/AbstractGenericHandler.java -> lets "hide" it for now until we see real need to expose it to a broader user base. this is just an escape valve for now.
+
+Line:222, src/main/java/com/couchbase/client/core/endpoint/AbstractGenericHandler.java -> we don't know if the underlying observable has timed out on the user side since its decoupled, right?
+
+And actually yup if the queue is full no keepalives will be sent too.. but I think thats okay, right?
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-10-27 05:07:52.699000000
+
+Change has been successfully cherry-picked as e0f01b8e90ecd4417f25e5ef250dc9b0a3ff09a7 by Natasha Sullivan
+
+-------------------------------------

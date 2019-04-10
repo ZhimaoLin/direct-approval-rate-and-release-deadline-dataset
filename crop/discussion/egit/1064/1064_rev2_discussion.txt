@@ -1,0 +1,268 @@
+DESCRIPTION
+
+Fixes obtaining common acestor in Synchornize view
+
+For obtaining common base ancestor I've used suggested RevWalk with
+RevFilter.MERGE_BASE. For API compatibility it is also used for
+obtaining remote variant.
+
+This patch set adds implementations of git representations of IResource,
+IContainer, IFile, IFolder and IProject this allow return proper value
+in IResourceVariantTree.members() method.
+
+Bug: 317934
+Change-Id: I8f5352862d01e5a5475a74f222241970cd7960ee
+Signed-off-by: Leslie Stephenson xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Leslie Stephenson
+date: 2010-07-05 22:38:48.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Carlie Harper
+date: 2010-07-07 15:41:24.000000000
+
+Patch Set 2: I would prefer that you didn't submit this
+
+I get compile errors in project org.eclipse.egit.core.test, class org.eclipse.egit.core.synchronize.GitResourceVariantComparatorTest and org.eclipse.egit.core.synchronize.GitSyncInfoTest
+
+They all look like the following:
+The constructor GitBlobResourceVariant(IFile, Repository, null, null) is undefined.	
+
+There are typos in commit message: a-n-cestor in Synch-ro-nize view.
+
+I've not yet had a closer look at the content, but my first impression is that the change looks great.
+
+-------------------------------------
+author: Carlie Harper
+date: 2010-07-07 16:07:33.000000000
+
+Patch Set 2:
+
+I get NullPointers when I synchronize:
+
+java.lang.NullPointerException
+	at org.eclipse.egit.core.synchronize.GitResourceVariantTree.getResourcePath(GitResourceVariantTree.java:242)
+	at org.eclipse.egit.core.synchronize.GitResourceVariantTree.getTree(GitResourceVariantTree.java:260)
+	at org.eclipse.egit.core.synchronize.GitResourceVariantTree.fetchMembersImpl(GitResourceVariantTree.java:173)
+	at org.eclipse.egit.core.synchronize.GitResourceVariantTree.fetchMembers(GitResourceVariantTree.java:91)
+	at org.eclipse.team.core.variants.AbstractResourceVariantTree.mergedMembers(AbstractResourceVariantTree.java:196)
+	at org.eclipse.team.core.variants.AbstractResourceVariantTree.collectChanges(AbstractResourceVariantTree.java:173)
+	at org.eclipse.team.core.variants.AbstractResourceVariantTree.collectChanges(AbstractResourceVariantTree.java:113)m.core.synchronize.ISyncInfoTreeChangeEvent, org.eclipse.core.runtime.IProgressMonitor) line: 734	
+	org.eclipse.team.internal.ui.synchronize.CompressedFoldersModelProvider(org.eclipse.team.internal.ui.synchronize.SynchronizeModelProvider).handleChanges(org.eclipse.team.core.synchronize.ISyncInfoTreeChangeEvent, org.eclipse.core.runtime.IProgressMonitor) line: 192	
+	org.eclipse.team.internal.ui.synchronize.SynchronizeModelUpdateHandler$3.run() line: 500	
+	
+(resource is an instance of GitProject)
+
+and
+
+Caused by: java.lang.NullPointerException
+	at org.eclipse.egit.core.resource.GitContainer.getFolder(GitContainer.java:149)
+	at org.eclipse.egit.core.resource.GitProject.getFolder(GitProject.java:101)
+	at org.eclipse.egit.core.resource.GitContainer.getFolder(GitContainer.java:97)
+	at org.eclipse.team.core.synchronize.SyncInfoTree.members(SyncInfoTree.java:357)
+
+-------------------------------------
+author: Leslie Stephenson
+date: 2010-07-07 16:25:05.000000000
+
+Patch Set 2:
+
+I know about compile errors in git.core.test. I'll fix test when finish with GitSynchView and GitRevourceVariantComparator implementation. The second reason of keeping this in current state is that API isn't stable (today I'll switch from File and FileTreeEntry onto RevFile and RevBlob).
+
+This NPE I see for a first time. Could you be more specific when it occurs ?
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2010-07-07 21:58:29.000000000
+
+Patch Set 2: I would prefer that you didn't submit this
+
+(14 inline comments)
+
+
+
+Line:33, org.eclipse.egit.core.test/src/org/eclipse/egit/core/synchronize/GitTestResourceVariantTree.java -> did you want to implement this ?
+
+Line:494, org.eclipse.egit.core/src/org/eclipse/egit/core/resource/GitResource.java -> how does "L" associate with FILE ?
+
+Line:39, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/synchronize/GitSubscriberParticipant.java -> that's pretty obvious, would be more interesting to document the parameter
+
+Line:86, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/synchronize/GitSubscriberParticipant.java -> missing javadoc
+
+Line:27, org.eclipse.egit.core/src/org/eclipse/egit/core/resource/GitContainer.java -> we want javadoc for all public classes/methods
+
+Line:29, org.eclipse.egit.core/src/org/eclipse/egit/core/resource/GitContainer.java -> [1] says (I am not an expert here hence I may be wrong but the restriction looks pretty strict): 
+
+Containers implement the IAdaptable interface; extensions are managed by the platform's adapter manager.
+
+See Also:
+Platform.getAdapterManager(), IProject, IFolder, IWorkspaceRoot
+
+Restriction:
+This interface is not intended to be implemented by clients.
+
+Restriction:
+This interface is not intended to be extended by clients.
+
+[1] http://help.eclipse.org/helios/index.jsp?topic=/org.eclipse.platform.doc.isv/reference/api/org/eclipse/core/resources/IContainer.html
+
+Line:35, org.eclipse.egit.core/src/org/eclipse/egit/core/resource/GitContainer.java -> why package visisibility ? all the rest is public ...
+
+Line:78, org.eclipse.egit.core/src/org/eclipse/egit/core/resource/GitContainer.java -> should we throw an exception here to prevent that calling non-implemented methods causes trouble elsewhere ?
+
+Line:35, org.eclipse.egit.core/src/org/eclipse/egit/core/resource/GitProject.java -> this variable name looks weird use project instead
+
+Line:27, org.eclipse.egit.core/src/org/eclipse/egit/core/synchronize/GitResourceVariantByteStore.java -> I think some javadoc would help here
+
+Line:194, org.eclipse.egit.core/src/org/eclipse/egit/core/synchronize/dto/GitSynchronizeData.java -> I would recommend do not defer handling exceptions to a subsequent patch
+
+Line:35, org.eclipse.egit.core/src/org/eclipse/egit/core/resource/GitFile.java -> missing javadoc
+
+Line:111, org.eclipse.egit.core/src/org/eclipse/egit/core/synchronize/GitSyncInfo.java -> is this dead code or a TODO ?
+
+Line:140, org.eclipse.egit.core/src/org/eclipse/egit/core/synchronize/GitSyncInfo.java -> is this dead code or a TODO ?
+
+-------------------------------------
+author: Carlie Harper
+date: 2010-07-08 11:39:00.000000000
+
+Patch Set 2:
+
+I do not understand why you introduce the Git* implementations of IResource et al.
+
+What exactly is the benefit of this?
+
+I would think that the subclasses of IResourceVariant like GitResourceVariant or GitFolderResourceVariant are used for the purpose to provide the remote content:
+
+JavaDoc of IResourceVariant
+ * This interface is used by <code>SyncInfo</code> instances
+ * to provide access to the base and remote resources that correspond to 
+ * a local resource.
+
+-------------------------------------
+author: Carlie Harper
+date: 2010-07-08 12:10:31.000000000
+
+Patch Set 2: (4 inline comments)
+
+I will investigate on the NullPointer when you pushed the next change.
+
+Line:37, org.eclipse.egit.core/src/org/eclipse/egit/core/synchronize/GitResourceVariantComparator.java -> I wonder if we could make maybe use of the org.eclipse.team.core.variants.ThreeWayResourceComparator which does the content comparison and other things.
+
+Line:112, org.eclipse.egit.core/src/org/eclipse/egit/core/synchronize/GitResourceVariantTree.java -> See comment on GitRemoteResourceVariantTree.getBaseRevCommit
+
+Line:31, org.eclipse.egit.core/src/org/eclipse/egit/core/synchronize/GitRemoteResourceVariantTree.java -> For me the name of the method ("Base") is confusing. You use this method in the GitBaseResourceVariantTree and the GitRemoteResourceVariantTree. Why not just call the method getRevCommit?
+
+Line:37, org.eclipse.egit.core/src/org/eclipse/egit/core/synchronize/GitRemoteResourceVariantTree.java -> You could directly return the dstRev. The next three lines don't do anything, do they?
+
+-------------------------------------
+author: Leslie Stephenson
+date: 2010-07-08 15:11:59.000000000
+
+Patch Set 2: (8 inline comments)
+
+@Carlie Harper:
+If I understood corectlly javadoc's for IResourceVariantTree.roots() and IResourceVariantTree.members() the IResource[] should be returned with contains resources in remote variant to handle this requirements I've added git specific IResource implementations.
+
+-------------------------------------
+author: Leslie Stephenson
+date: 2010-07-09 23:33:51.000000000
+
+Patch Set 2:
+
+I think that I've finally have this change stabilized. It is fully migrated onto RevTree, RevBlob and TreeWalk classes.
+
+Yes, Stefan you was right, IResource implementations were useless and in next patch set there will be removed.
+
+Right now there are four things that I'll be working on:
+* java doc's
+* exceptions handling and internationalization
+* performance
+* junits
+
+-------------------------------------
+author: Leslie Stephenson
+date: 2010-07-15 20:31:51.000000000
+
+Patch Set 2: (5 inline comments)
+
+
+
+Line:37, org.eclipse.egit.core/src/org/eclipse/egit/core/synchronize/GitResourceVariantComparator.java -> IMHO we can think about that in next iteration, current patch set is big enough.
+
+Line:39, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/synchronize/GitSubscriberParticipant.java -> Done
+
+Line:86, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/synchronize/GitSubscriberParticipant.java -> Done
+
+Line:27, org.eclipse.egit.core/src/org/eclipse/egit/core/synchronize/GitResourceVariantByteStore.java -> It seams that this class is useless, therefore it would be removed in next patch set.
+
+Line:194, org.eclipse.egit.core/src/org/eclipse/egit/core/synchronize/dto/GitSynchronizeData.java -> It turns out that getCommit() method isn't used any more, so that it would be removed in upcoming change set.
+
+-------------------------------------
+author: Leslie Stephenson
+date: 2010-07-08 15:11:58.000000000
+
+MISMATCHED INLINE COMMENT
+Line:33, org.eclipse.egit.core.test/src/org/eclipse/egit/core/synchronize/GitTestResourceVariantTree.java -> No I didn't want to implement this, I simply forgot to remove this comment.
+
+Done.
+
+-------------------------------------
+author: Leslie Stephenson
+date: 2010-07-08 15:11:58.000000000
+
+MISMATCHED INLINE COMMENT
+Line:494, org.eclipse.egit.core/src/org/eclipse/egit/core/resource/GitResource.java -> implementation of this method is equivalent with org.eclipse.core.internal.resources.Resource.getTypeString().
+
+To be Honest I don't know how "L" is associate with FILE.
+
+-------------------------------------
+author: Leslie Stephenson
+date: 2010-07-08 15:11:58.000000000
+
+MISMATCHED INLINE COMMENT
+Line:35, org.eclipse.egit.core/src/org/eclipse/egit/core/resource/GitProject.java -> Done
+
+-------------------------------------
+author: Leslie Stephenson
+date: 2010-07-08 15:11:58.000000000
+
+MISMATCHED INLINE COMMENT
+Line:112, org.eclipse.egit.core/src/org/eclipse/egit/core/synchronize/GitResourceVariantTree.java -> Done
+
+-------------------------------------
+author: Leslie Stephenson
+date: 2010-07-08 15:11:58.000000000
+
+MISMATCHED INLINE COMMENT
+Line:111, org.eclipse.egit.core/src/org/eclipse/egit/core/synchronize/GitSyncInfo.java -> This is partially dead code it should be rewritten after API of GitBlobResourceVariant will be stable
+
+-------------------------------------
+author: Leslie Stephenson
+date: 2010-07-08 15:11:58.000000000
+
+MISMATCHED INLINE COMMENT
+Line:140, org.eclipse.egit.core/src/org/eclipse/egit/core/synchronize/GitSyncInfo.java -> This is partially dead code it should be rewritten after API of GitBlobResourceVariant will be stable
+
+-------------------------------------
+author: Leslie Stephenson
+date: 2010-07-08 15:11:58.000000000
+
+MISMATCHED INLINE COMMENT
+Line:31, org.eclipse.egit.core/src/org/eclipse/egit/core/synchronize/GitRemoteResourceVariantTree.java -> Good point.
+
+Done
+
+-------------------------------------
+author: Leslie Stephenson
+date: 2010-07-08 15:11:58.000000000
+
+MISMATCHED INLINE COMMENT
+Line:37, org.eclipse.egit.core/src/org/eclipse/egit/core/synchronize/GitRemoteResourceVariantTree.java -> Indeed my mistake, I already change it.
+
+-------------------------------------

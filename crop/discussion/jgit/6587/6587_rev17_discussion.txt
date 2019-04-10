@@ -1,0 +1,126 @@
+DESCRIPTION
+
+Add Publisher implementation
+
+Adds the server-side Publisher implementation and protocol. The
+Publisher hooks the post-receive update and generates packs to cover
+all connected Sessions. Clients establish Sessions that store their
+subscriptions and stream pointers for PublisherPushes. PublisherPacks
+are generated on the fly by PublisherPushes and the
+PublisherPackFactory. Each Pack is split into PublisherPackSlices.
+All Packs are placed in a global linked-list for which each client
+creates an iterator. The memory footprint of Packs is managed by the
+PublisherMemoryPool, which loads the Slices in and out of memory as
+necessary to reclaim memory.
+
+Change-Id: I35cadea785160585fc76ed9280c7a16f3da9e724
+
+
+COMMENTS
+
+author: Karlee Dorsey
+date: 2012-08-17 22:09:23.000000000
+
+Uploaded patch set 17.
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-08-17 22:09:29.000000000
+
+Patch Set 17:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2139/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-08-17 22:16:12.000000000
+
+Patch Set 17: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2139/ : SUCCESS
+
+-------------------------------------
+author: Warren Watkins
+date: 2012-08-17 23:18:36.000000000
+
+Patch Set 17: I would prefer that you didn't submit this
+
+(8 inline comments)
+
+these comments are most likely for me, since you will be gone by the time you get this :)
+
+Line:175, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherStream.java -> extends Node, not DataNode.
+
+Line:180, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherStream.java -> can't you take next via the constructor?
+
+Line:218, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherStream.java -> equals and hashcode can be implemented on the abstract base class Node in terms of equality on the data
+
+ xxx@xxx.xxx
+  public int hashCode() {
+    PublisherPush pp = get();
+    return pp == null ? 0 : pp.hashCode();
+  }
+
+ xxx@xxx.xxx
+  public boolean equals(Object obj) {
+    if (obj instanceof Node) {
+      PublisherPush a = get();
+      PublisherPush b = ((Node) obj).get();
+      return a == b || (a != null && a.equals(b));
+    } 
+    return false
+  }
+
+Line:303, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherStream.java -> you should also check that it is not already contained in the list. and verify the node.get() != null
+
+Line:328, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherStream.java -> this loop is a little strange and I wonder if it will work if you have to rollback multiple times. you likely need to implement equals correctly on the node so this is not an issue. you may need to implement this by iterating in the reverse order to get the correct result, stating at the current node. Also, these nodes are inadvertently holding pointers to nodes that will never be referenced by this class again.
+
+Line:339, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherStream.java -> .equals() for strings
+
+Line:378, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherStream.java -> if you change the order to iterate the linked list first, then the marked nodes, your logic will be simpler:
+
+  while (true) {
+    current.decrement();
+    marked.remove(current);
+    if (current == last) 
+      break;
+    current = current.next();
+  }
+
+  for (Node n : marked)
+    n.decrement();
+
+Line:409, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherStream.java -> remove the synchronized here
+
+-------------------------------------
+author: Warren Watkins
+date: 2012-08-17 23:31:08.000000000
+
+Patch Set 17: (1 inline comment)
+
+
+
+Line:321, org.eclipse.jgit/src/org/eclipse/jgit/transport/PublisherStream.java -> Something like this should work but i have to think about the implementation of equals on the Node and wether we are doing the right thing.
+
+  PublisherPush pp = current.get()
+  if (pp != null && pp.getPushId().equals(pushId)) {
+    current = new ForwardingNode(current);
+    return true;
+  }
+
+  Node next = current;
+  for (int i = marked.size() - 1; i >= 0; i--) {
+    Node n = marked.get(i);
+    if (n.equals(current))
+      continue;
+    next = new LinkNode(n, next);
+    if (n matches push id) {
+      current = new ForwardingNode(next);
+      return true;
+    }
+  }
+  return false
+
+-------------------------------------

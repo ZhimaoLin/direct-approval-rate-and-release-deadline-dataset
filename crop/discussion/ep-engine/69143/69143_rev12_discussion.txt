@@ -1,0 +1,161 @@
+DESCRIPTION
+
+MB-20079: Use std::chrono::steady_clock (ProcessClock)
+
+Change task scheduling to use ProcessClock which is not
+affected by changes to wall clock time.
+
+Change-Id: I0559336d7542aff01a05b39472aa722cf0e82326
+
+
+COMMENTS
+
+author: Kymani Ramirez
+date: 2016-11-02 14:21:59.741000000
+
+Uploaded patch set 12.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-02 14:22:08.497000000
+
+Patch Set 12:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1364/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-02 14:22:08.636000000
+
+Patch Set 12:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1708/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-02 14:22:08.785000000
+
+Patch Set 12:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/506/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-02 14:22:08.935000000
+
+Patch Set 12:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1609/ (4/4)
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-11-02 14:39:53.832000000
+
+Patch Set 12: Code-Review-1
+
+(16 comments)
+
+Line:25, tests/module_tests/processclock_test.cc -> I'd probably bound this the other way also.
+
+Line:228, src/globaltask.h -> Careful here - you can cause a deadlock if one thread acquires a task in order (a,b), and other in order (b,a).
+
+The canonical safe way to handle this is to compare the addresses of two mutexes and always acquire the one with the lowest (or highest) address first.
+
+Line:393, src/ep.cc -> Style: If you put `GlobalTask::allTaskIds.size()` into a separate variable I think you can keep these to a single line.
+
+Line:103, src/executorthread.cc -> Isn't this redundant? I thought that subtracting one time point from another should return a duration?
+
+Line:104, src/executorthread.cc -> Similary, you don't need this given zero() returns a duration.
+
+Line:105, src/executorthread.cc -> I /think/ this function is only ever called with the current time - if so then cleaner to  rename to updateTaskStart() and make it take no arguments (and always use now).
+
+Line:140, src/executorthread.h -> Style: It's kinda pointless to return a value type with the `const` modifier.
+
+Line:183, src/executorthread.h -> Given these have the same type, should probably abstract into a common class (AtomicProcessTime)? and declare three instances of it.
+
+Line:771, src/executorpool.cc -> IIRC gethrtime() returns nanoseconds, and hence this stat would be recorded in microseconds, whereas your new code is reporting milliseconds.
+
+Line:781, src/executorpool.cc -> Similary here, this used to be nanoseconds.
+
+Line:787, src/executorpool.cc -> ditto
+
+Line:88, tests/module_tests/futurequeue_test.cc -> This should be nanoseconds
+
+Line:112, tests/module_tests/futurequeue_test.cc -> ditto
+
+Line:151, tests/module_tests/futurequeue_test.cc -> ditto
+
+Line:191, tests/module_tests/futurequeue_test.cc -> same here
+
+Line:194, tests/module_tests/futurequeue_test.cc -> same (and elsewhere in the file).
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-02 15:17:55.269000000
+
+Patch Set 12: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/506/ : ABORTED
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1609/ : FAILURE
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/1609/ )
+
+ThreadSanitizer issue: heap-use-after-free /usr/bin/../lib/gcc/x86_64-linux-gnu/4.9/../../../../include/c++/4.9/bits/basic_string.h:293 std::string::compare(std::string const&) const  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/1609/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1708/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1364/ : SUCCESS
+
+-------------------------------------
+author: Kymani Ramirez
+date: 2016-11-03 11:29:11.549000000
+
+Patch Set 12:
+
+(19 comments)
+
+Line:25, tests/module_tests/processclock_test.cc -> Have moved the test under platform.
+Will change test as discussed.
+
+Line:228, src/globaltask.h -> Thanks for your explanation of this - fixed.
+
+Line:393, src/ep.cc -> Done
+
+Line:103, src/executorthread.cc -> Yes you are correct - have removed
+
+Line:104, src/executorthread.cc -> removed
+
+Line:105, src/executorthread.cc -> Done
+
+Line:130, src/executorthread.cc -> removed unnecessary duration wrapper
+
+Line:162, src/executorthread.cc -> changed ms to ns (and changed the corresponding function in platform)
+
+Line:140, src/executorthread.h -> changed to mark the function as const.
+i.e. ProcessClock::time_point getWaketime(void) const {
+(the mutex is marked mutable)
+
+Line:183, src/executorthread.h -> Done
+
+Line:771, src/executorpool.cc -> You are correct I checked gethrtime() returns nanoseconds - so changing my code to microseconds.
+
+Line:781, src/executorpool.cc -> changed to nanoseconds
+
+Line:787, src/executorpool.cc -> changed to nanoseconds
+
+Line:313, CMakeLists.txt -> moved test to platform
+
+Line:88, tests/module_tests/futurequeue_test.cc -> fixed
+
+Line:112, tests/module_tests/futurequeue_test.cc -> fixed
+
+Line:151, tests/module_tests/futurequeue_test.cc -> fixed
+
+Line:191, tests/module_tests/futurequeue_test.cc -> fixed
+
+Line:194, tests/module_tests/futurequeue_test.cc -> fixed all occurrences in the file
+
+-------------------------------------

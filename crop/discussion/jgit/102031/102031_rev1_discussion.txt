@@ -1,0 +1,81 @@
+DESCRIPTION
+
+RefDirectory: Spin acquiring ref locks
+
+If a repo frequently uses PackedBatchRefUpdates, there is likely to be
+contention on the packed-refs file, so it's not appropriate to fail
+immediately the first time we fail to acquire a lock. Add some logic to
+RefDirectory to support general retrying of lock acquisition.
+
+Currently, there is a hard-coded wait starting at 100ms and backing off
+exponentially to 1600ms, for about 3s of total wait. This is no worse
+than the hard-coded backoff that JGit does elsewhere, e.g. in
+FileUtils#delete. One can imagine a scheme that uses per-repository
+configuration of backoff, and the current interface would support this
+without changing any callers.
+
+Change-Id: I4764e11270d9336882483eb698f67a78a401c251
+
+
+COMMENTS
+
+author: Santos Moore
+date: 2017-07-26 21:03:45.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-07-26 21:03:50.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/10702/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-07-26 21:15:33.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/10702/ : SUCCESS
+
+-------------------------------------
+author: Eden Lin
+date: 2017-07-26 21:28:26.000000000
+
+Patch Set 1: Code-Review-1
+
+(4 comments)
+
+Line:326, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackedBatchRefUpdate.java -> Can this go in a finally block?
+
+Line:142, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> optional: should there be some jitter?
+
+Line:1251, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> should use Thread.currentThread().interrupt() when catching InterruptedException without rethrowing it (see item 69, p275-276 in Effective Java second edition.
+
+Line:7, /COMMIT_MSG -> This isn't spinning --- this is retrying with exponential backoff.
+
+-------------------------------------
+author: Santos Moore
+date: 2017-07-27 13:34:49.000000000
+
+Patch Set 1:
+
+(4 comments)
+
+Line:326, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackedBatchRefUpdate.java -> Not naively, because we don't want to unlock in the normal return case on line 323. I worked around it by using an extra temp var. It's probably better this way because it will also unlock in the case of unchecked throwables.
+
+Line:142, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> I was hand-wavily hoping that the variable latency of the necessary syscalls would provide enough jitter.
+
+The point of jitter is to have two workers using the same retry strategy interleave their operations slightly differently on each attempt, right? Seems like this would mostly only make a big difference if workers are each trying to lock a common list of >1 ref locks, which seems like a rarer case.
+
+That said I'm happy to add it if you think it's worthwhile, although I still might prefer to do it in a followup. It'd be enough work at that point that I might like to factor out a custom Iterable that I can test.
+
+Line:1251, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> Done
+
+Line:7, /COMMIT_MSG -> Done
+
+-------------------------------------

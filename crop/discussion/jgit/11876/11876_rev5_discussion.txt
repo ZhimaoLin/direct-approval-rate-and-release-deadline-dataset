@@ -1,0 +1,77 @@
+DESCRIPTION
+
+Split delta search buckets by byte weight
+
+Instead of assuming all objects cost the same amount of time to
+delta compress, aggregate the byte size of objects in the list
+and partition threads with roughly equal total bytes.
+
+Before splitting the list select the N largest paths and assign
+each one to its own thread. This allows threads to get through the
+worst cases in parallel before attempting smaller paths that are
+more likely to be splittable.
+
+By running the largest path buckets first on each thread the likely
+slowest part of compression is done early, while progress is still
+reporting a low percentage. This gives users a better impression of
+how fast the phase will run. On very complex inputs the slow part
+is more likely to happen first, making a user realize its time to
+go grab lunch, or even run it overnight.
+
+If the worst sections are earlier, memory overruns may show up
+earlier, giving the user a chance to correct the configuration and
+try again before wasting large amounts of time. It also makes it
+less likely the delta compression phase reaches 92% in 30 minutes
+and then crawls for 10 hours through the remaining 8%.
+
+Change-Id: I7621c4349b99e40098825c4966b8411079992e5f
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2013-04-17 17:57:29.000000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-04-17 18:02:25.000000000
+
+Patch Set 5:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3390/ 
+
+-------------------------------------
+author: Warren Watkins
+date: 2013-04-17 18:04:22.000000000
+
+Patch Set 5: I would prefer that you didn't submit this
+
+(1 inline comment)
+
+
+
+Line:268, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/DeltaTask.java -> at this point you could have pulled the last slice BUT the dw is null, so no other thread can steal work from you until you assign dw.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-04-17 18:09:31.000000000
+
+Patch Set 5: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3390/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2013-04-17 18:20:37.000000000
+
+Patch Set 5: (1 inline comment)
+
+
+
+Line:268, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/DeltaTask.java -> Gah, you are right. This could cause threads to terminate very early.
+
+-------------------------------------

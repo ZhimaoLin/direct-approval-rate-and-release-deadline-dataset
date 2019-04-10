@@ -1,0 +1,272 @@
+DESCRIPTION
+
+Updated check-in for ldap test without whitespaces
+Change-Id: I31a278e281240d976010f9c9dd592acc4ad36a86
+
+
+COMMENTS
+
+author: Ean Andrews
+date: 2014-12-31 20:15:35.052000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2014-12-31 20:15:41.992000000
+
+Patch Set 1:
+
+Build Started http://factory.couchbase.com/job/testrunner-Jasmin Rangel-master/3576/
+
+-------------------------------------
+author: Titus Ho
+date: 2014-12-31 20:19:50.239000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:2391, lib/membase/api/rest_client.py -> what are your thoughts on separating this into separate methods:
+
+enableLdapAuth
+
+clearLdapAuth
+
+addLdapUser
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2014-12-31 20:33:45.283000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+http://factory.couchbase.com/job/testrunner-Jasmin Rangel-master/3576/ : SUCCESS
+
+-------------------------------------
+author: Titus Ho
+date: 2015-01-01 14:19:19.229000000
+
+Patch Set 1:
+
+via email:
+Ritam > 
+>Reason for having the same function is because of the same URL but with >different switches. Had the URL differed or the method differed in terms of GET > vs POST, I would have multiple functions. 
+
+Correct it is one api, however I feel the actions performed in the method are disjointed.  i.e.
+* clear ldap settings by passing in string = clear
+* enable/disable ldap by passing in any value for authOperation -
+      this is problematic as the user has to keep track if they already enabled or disabled since this will just do a flip of current settings
+* add users
+      users can be added, possibly removed.  and only if authOp is not clear otherwise we return prematurely.
+
+These are some reasons I’d go with separating by actions as this api has many use cases
+
+-------------------------------------
+author: Ean Andrews
+date: 2015-01-01 14:34:35.591000000
+
+Patch Set 1:
+
+(1 comment)
+
+I understand what you are saying.  There is nothing called an ldap add or remove switch, what you pass from as parameters is blindly taken over as the command to request. 
+Best I can do Tommie that I will move the clear to a different function and have one function to do all operation. To answer your question the ops, I have already tried this earlier, but it would just not set with current operations. Here is the original code that I had tried, where I would pick up the authOperation and userOperation as 2 diff switches, but as I said earlier this was not working well. If there was a modify method under PUT, I would have definitely taken up your recommendation. Plus I feel that code stays very clean if there is one point to change especially if we are dealing with a single api.  I have anyway segregated on the method of POST and GET. 
+I can do that in my next change, but for now I would like to have this code check-in and get the sanity running. 
+The code I am sharing had different operation but would need a lot of if/else conditions to maintain, but then I have better idea to control using my test data. 
+
+def ldapRestOperation(self,authOperation,userOperation,user, userPriv):
+        self.authOperation = authOperation
+        self.userOperation = userOperation
+        self.user = user
+        self.param = None
+        self.currAdmins = None
+        self.currROAdmin = None
+        value = self.ldapRestOperationGET()
+        self.jvar = []
+        
+        api = self.baseUrl + "/settings/ldapAuth"
+        
+        if (authOperation == "clear"):
+            status, content,header = self._http_request(api, 'POST')
+            return status
+        
+        if (authOperation != None):
+            self.authOperation = authOperation
+        else:
+            self.authOperation = value['enabled']        
+        self.currentAdmins  =  value['admins']
+        log.info ("Current value of {0}".format(self.currentAdmins))
+        self.currentRoAdmin = value['roAdmins']
+        
+        for j in self.currentAdmins[:]:
+            self.currAdmins = self.currentAdmins.pop()
+        
+        for k in self.currentRoAdmin[:]:
+            self.currROAdmins = self.currentRoAdmin.pop()
+      
+        if (userOperation == "add" and userPriv == "Admin"):
+            if (self.currAdmins != None):
+                self.currAdmins.append(user)
+            else:
+                self.currAdmin = user
+        else:
+            if (self.currROAdmin != None):
+                self.currROAdmin.append(user)
+            else:
+                self.currROAdmin = user
+        
+        if (userOperation == 'remove' and userPriv == "Admin"):
+            if (self.currAdmins != None):
+                log.info("value of Admins is {0}".format(self.currAdmins))
+                #self.currAdmin = ''
+                self.currAdmins.pop()
+            #self.currAdmins.remove(user)
+        else:
+            if (self.currROAdmin != None):
+                self.currROAdmin.remove(user)
+            
+                
+            
+        #for l in self.currentAdmins:
+        #    log.info ("into for loop")
+        #    log.info ("value of currentAdmin {0}".format(l))
+            
+
+        #for l in self.k:
+        #    log.info ("value of currentAdmin {0}".format(l))
+        
+        #self.currentAdmins.remove('bjones')
+        #self.k.remove('bjones')
+        
+        
+        if (userOperation != None):
+            fullAdmin = userList['FullAdmin']
+            roAdmin = userList['ROAdmin']
+            adminList = "'" + fullAdmin + "'"
+            roAdminList = "'" + roAdmin + "'"
+        #    for user in userList:
+        #        if user.userType == 'Fulladmin':
+        #            adminList = user.userName + "\n\r" + adminList 
+        #        if user.userType == 'ROAdmin':
+        #            roAdminList = user.userName + "\n\r" + roAdminList
+        
+        #param = param + self.fullAdmin + adminList + "," + self.roAdmin + roAdminList + "," + "'username':'Adminisrator','password':'password'}"
+        
+        params = urllib.urlencode({'enabled': self.authOperation,
+                                        'admins': '{0}'.format(self.currAdmin),
+                                        'username': 'Administrator',
+                                        'password': 'password'})
+        log.info("Values of params is {0}".format(params))
+        status, content,header = self._http_request(api, 'POST', params)
+        log.info ("status of the request is {0}".format(status))
+        log.info ("value of header is {0}".format(header))
+    '''
+
+Line:2391, lib/membase/api/rest_client.py -> I would like to keep everything in one function since the code the URL is same.  Had there been different URL fro different operations i would have broken up into multiple functions.
+
+-------------------------------------
+author: Ean Andrews
+date: 2015-01-01 14:44:20.228000000
+
+Patch Set 1:
+
+Just to be clear, I agree to all you comments and would have done the same, if the API would have been more robust. For this particular case I would rather control it via my test data rather than API, as the code would become complex to maintain and understand.
+
+-------------------------------------
+author: Titus Ho
+date: 2015-01-01 15:39:35.311000000
+
+Patch Set 1:
+
+That's fine, provide your final changes and this can be a good starter and we'll go from here.
+
+Ideally I'd like something like this:
+https://friendpaste.com/1kx387gQNVL9q4RM20ZFjY
+
+Since this api is likely to change that may be worth revisiting.  Thanks Ritam!
+
+-------------------------------------
+author: Titus Ho
+date: 2015-01-01 15:52:34.118000000
+
+Patch Set 1:
+
+refactored with single api entry point - the helper methods just collect params:   https://friendpaste.com/1kx387gQNVL9q4RM217KBo
+
+-------------------------------------
+author: Ean Andrews
+date: 2015-01-01 15:54:57.586000000
+
+Patch Set 1: Verified+1 Code-Review+2
+
+Thank Tommie. I will move out the change for clearing the settings in my next push, I will have to change my test cases as well. For now I will stick to this plain code and send you next set of code early next week for a quick review. 
+Thanks again Tommie.
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-01-01 16:01:23.806000000
+
+The change could not be merged due to a path conflict.
+
+Please rebase the change locally and upload the rebased commit for review.
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-01-01 16:01:42.183000000
+
+The change could not be merged due to a path conflict.
+
+Please rebase the change locally and upload the rebased commit for review.
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-01-01 16:11:09.367000000
+
+The change could not be merged due to a path conflict.
+
+Please rebase the change locally and upload the rebased commit for review.
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-01-01 16:26:57.025000000
+
+The change could not be merged due to a path conflict.
+
+Please rebase the change locally and upload the rebased commit for review.
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-01-01 16:27:05.173000000
+
+The change could not be merged due to a path conflict.
+
+Please rebase the change locally and upload the rebased commit for review.
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-01-01 16:28:51.214000000
+
+The change could not be merged due to a path conflict.
+
+Please rebase the change locally and upload the rebased commit for review.
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-01-01 16:43:28.573000000
+
+The change could not be merged due to a path conflict.
+
+Please rebase the change locally and upload the rebased commit for review.
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-01-01 16:43:44.112000000
+
+The change could not be merged due to a path conflict.
+
+Please rebase the change locally and upload the rebased commit for review.
+
+-------------------------------------

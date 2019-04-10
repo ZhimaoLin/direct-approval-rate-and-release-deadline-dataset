@@ -1,0 +1,97 @@
+DESCRIPTION
+
+MB-22909: Supporting XATTR replication.
+
+In order to support replication of XATTRs we need to negotiate
+the XATTR feature on the target node when we are setting up the
+DCP proxy. If the XATTR feature is enabled on the target node
+then we need to set the XATTR bit while issuing an open conn
+DCP command.
+
+In the mixed mode, the expectation is that a client is not
+allowed to set XATTRs and any attempt to do so will result in
+a failure.
+
+Change-Id: Ibd9aacedd6028516eafa5d76edf5a26bd635a013
+
+
+COMMENTS
+
+author: Noe Perry
+date: 2017-02-28 00:27:15.770000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Noe Perry
+date: 2017-02-28 00:29:06.481000000
+
+Patch Set 2: Verified+1
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2017-02-28 05:48:01.849000000
+
+Patch Set 2:
+
+Have you actually tried replication in mixed mode? The doc says that xattr size is always prepended to the dcp_mutation body. I wonder how older memcached's are dealing with that.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2017-02-28 05:49:49.283000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:216, src/dcp_proxy.erl -> I don't think we should ignore these errors silently. If we accidentally don't set this flag, because memcached returned an error, we're introducing a data loss.
+
+-------------------------------------
+author: Noe Perry
+date: 2017-02-28 18:08:06.067000000
+
+Patch Set 2:
+
+As part of my testing I tried the replication in the mixed mode but an attempt to set the XATTRs in mixed mode fails. I used the python client to test XATTRs and depending upon on which node the key/vBucket resided the client threw either an "Operation not supported" or "A badly formatted data..." error. I also noticed the respective error messages in the memcached logs. However the normal sets of key-values (Without XATTRs) worked as usual.
+
+My understanding is that we don't allow the clients to set XATTRs in mixed mode.
+
+-------------------------------------
+author: Noe Perry
+date: 2017-02-28 18:08:52.191000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:216, src/dcp_proxy.erl -> Sure! Will correct it.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2017-02-28 18:27:08.608000000
+
+Patch Set 2:
+
+> My understanding is that we don't allow the clients to set XATTRs in mixed mode.
+
+Yes, that I understand. I didn't read the doc deeply, but it seemed that even for documents with no xattrs, xattr-enabled producer would send 4-byte xattr length, which would be zero in this case.
+
+-------------------------------------
+author: Noe Perry
+date: 2017-02-28 21:18:15.240000000
+
+Patch Set 2:
+
+In the doc (section - DCP Upgrade Scenarios), it's mentioned that when the client tries to negotiate XATTRs and the negotiation fails (which would in mixed mode), the client would behave like pre-Spock. This would make the client not use the first 4 bytes of the body to describe XATTRs and we are ok as we act like pass-through for mutations?
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2017-02-28 21:31:55.194000000
+
+Patch Set 2:
+
+> it's mentioned that when the client tries to negotiate XATTRs and the negotiation fails (which would in mixed mode)
+
+I don't understand, what would make it fail if you speak to a new node on one side, and old node on the other.
+
+-------------------------------------

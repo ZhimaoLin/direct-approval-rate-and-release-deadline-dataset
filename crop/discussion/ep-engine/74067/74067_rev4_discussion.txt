@@ -1,0 +1,139 @@
+DESCRIPTION
+
+Move BG Fetch related logic to EPVBucket from VBucket
+
+BG (background) Fetch is an operation needed only in persistant bucket
+and mostly with full_eviction policy. Ephemeral buckets do not have
+BF fetch hence do not support functions related to BG fetch.
+
+This commit only moves the BG Fetch related logic in VBucket to
+EPVBucket. There maybe other modules like 'KVBucket' class which will
+be handled later.
+
+In the base class VBucket, the eviction modes (VALUE and FULL) are not
+abstracted very well. There are mostly implemented as if-else. Hence it was
+not possible (easily) to make BG fetch operations private to the persitant
+vbucket class EPVBucket. But the commit exploits the fact that BG fetch
+operations are called only if FULL_EVICTION mode and in case of deleted
+items that predicted to be on the disk by bloomfilter.
+
+The commit assumes that Ephemeral vbuckets work only in "VALUE_EVICTION" policy
+and that bloomfilter does not predict any item to be on the disk for Ephemeral
+vbuckets. Hence logical exception is raised if any BG Fetch operation is called
+in an Ephemeral vbucket.
+
+Change-Id: I6d85b84a27395549bdfbf91abac857289cf156b3
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2017-02-25 23:57:50.008000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-02-25 23:58:11.553000000
+
+Patch Set 4:
+
+Ready for review
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-02-26 00:08:45.613000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/2843/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/3600/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/4019/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/4218/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-02-27 15:15:07.758000000
+
+Patch Set 4: Code-Review-1
+
+(11 comments)
+
+Pretty big patch this, would be good to break into smaller chunks if possible.
+
+Line:3465, src/ep_engine.cc -> Given this is only applicable to Persistent buckets, you should omit it for ephemeral. See for example line 3004 where I only include commit stats if the flusher for this bucket is non-null.
+
+Line:6315, src/ep_engine.cc -> This seems a bit odd - why are we including the clusterConfig (Vbucket map) in a NOT_SUPPORTED response?
+
+Line:201, src/vbucket.cc -> Given you're changing this probably worth including the vbid in the log message.
+
+Line:107, src/ephemeral_vb.cc -> Similar to above, just make it return ENOTSUPP and move to the header.
+
+Line:110, src/ephemeral_vb.cc -> Given this is only ever called by the BGFetcher, just make this method only exist in EPVBucket (i.e. remove from shared base class), and make BGFetcher::run operate on a EPVBucket subclass instead of VBucket.
+
+Line:117, src/ephemeral_vb.cc -> Same here.
+
+Line:233, src/ephemeral_vb.cc -> Same, return ENOTSUPP.
+
+(The reason for this is that while this should't be called at all in ephemeral, *if* there's a bug and it is, the caller /should/ already be checking the return value of this, and hence we /should/ get sensible behaviour in existing code if this returns ENOTSUPP - e.g. return that back to the client.  If we do something new - throw an exception - then it's much less likely any existing code will handle it correctly.
+
+In other words, the error-handling of this function is currently error codes, so we should use the existing mechanism).
+
+Line:11, /COMMIT_MSG -> BG
+
+Line:19, /COMMIT_MSG -> persistent
+
+Line:396, src/vbucket.h -> C++, don't need void here.
+
+Line:455, src/vbucket.h -> ditto
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-02-27 22:29:09.888000000
+
+Patch Set 4:
+
+(10 comments)
+
+It is not easy to break this up further :(
+
+Line:3465, src/ep_engine.cc -> Done
+
+Line:6315, src/ep_engine.cc -> My bad, fixed the error msg
+
+Line:201, src/vbucket.cc -> Done
+
+Line:107, src/ephemeral_vb.cc -> I think lets be more aggressive and flag an exception. This may help us find out any erroneous code paths that may lead to this. (can't think of any that would, but just a paranoid throw)
+
+The callers don't handle this error code immediately. This error code will be propagated to upper levels and at that stage ENOTSUPP is not a correct error (to debug).
+Hence shall we keep this around for a while ? It is like having a debug build around for a while. Can change it (after good amount of testing) before we make the release.
+
+Let me know your thought this. Don't mind returning the error code if you do not agree. Will add a TBD note for now
+
+Line:110, src/ephemeral_vb.cc -> VBucketMap contains KVShard and KVShard contains BgFetcher.
+
+To make BGFetch call only EPVBucket, we will have to create VBucketMap differently for EPBucket and EphemeralBucket at the Bucket level.
+
+No doing like above will need a dynamic_cast or RTTI, which are frowned upon AntiPatterns.
+
+I think once the separation is done at KVBucket level, we can move these functions (and completeBGFetchForSingleItem() ) to EPVBucket subclass only.
+
+Line:233, src/ephemeral_vb.cc -> There are many callers and I see most them don't handle this error code immediately. This error code will be propagated to upper levels and at that stage ENOTSUPP is not a correct error (to debug).
+Hence shall we keep this around for a while ? It is like having a debug build around for a while. Can change it (after good amount of testing) before we make the release.
+
+Let me know your thought this. Don't mind returning the error code if you do not agree. Will add a TBD note for now
+
+Line:11, /COMMIT_MSG -> Done
+
+Line:19, /COMMIT_MSG -> Done
+
+Line:396, src/vbucket.h -> Done
+
+Line:455, src/vbucket.h -> Done
+
+-------------------------------------

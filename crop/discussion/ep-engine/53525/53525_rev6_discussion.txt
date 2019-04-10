@@ -1,0 +1,320 @@
+DESCRIPTION
+
+MB-15662: Compression at producer, uncompression at consumer
+
+If enable_value_compression was set by a consumer, the
+corresponding producer will compress all uncompressed
+documents before transmission. On the consumer side,
+all documents whose datatype isn't compressed, are
+decompressed before processing.
+
+Change-Id: Iee9bace832c35be776ec1a7421ad3edb3381b1d9
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2015-07-28 01:30:18.412000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-07-28 01:30:27.157000000
+
+Patch Set 6:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/631/
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-07-28 01:47:51.237000000
+
+Patch Set 6:
+
+Chiyoung, I will get your comments addressed with a new patch.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-07-28 02:10:19.463000000
+
+Patch Set 6: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/631/ : SUCCESS
+
+-------------------------------------
+author: Asher Vang
+date: 2015-07-28 08:04:57.384000000
+
+Patch Set 6: Code-Review-1
+
+(2 comments)
+
+Line:282, src/dcp/producer.cc -> You should update datatype to be the "compressed" version of it ( PROTOCOL_BINARY_DATATYPE_COMPRESSED or  PROTOCOL_BINARY_DATATYPE_COMPRESSED_JSON)
+
+Line:291, src/dcp/consumer.cc -> this seems wrong to me.. I would have expected the test to be if datatype ==  PROTOCOL_BINARY_DATATYPE_COMPRESSED || datatype ==  PROTOCOL_BINARY_DATATYPE_COMPRESSED_JSON
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-07-28 08:06:16.627000000
+
+Patch Set 6: Code-Review-2
+
+(2 comments)
+
+Line:410, src/item.h -> Can you change this to a static factory method (e.g. Item::duplicateWithNewValue() ?
+
+We already have too many constructors for this class IMHO and we've had bugs in the past because it's not been obvious which version has been called.
+
+Or even better; move the compression logic to a function which creates a new (compressed) item from the existing item - for example:
+
+ Item Item::makeCompressed(const Item& existing) ?
+
+Line:291, src/dcp/consumer.cc -> This seems somewhat counterintuitive. The datatype field is supposed to represent the data being sent; if this mutation was compressed then why aren't we encoding the datatype as PROTOCOL_BINARY_DATATYPE_COMPRESSED / PROTOCOL_BINARY_DATATYPE_COMPRESSED_JSON ?
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-07-28 17:09:27.752000000
+
+Patch Set 6:
+
+(3 comments)
+
+Line:282, src/dcp/producer.cc -> If I modify the datatype when I compress the document here, then with the current code, it would be difficult for the consumer to distinguish between client-compressed and producer-compressed documents.
+
+Correct me if I'm wrong, but my thinking is: a client compressed document is to remain the way it is on the consumer side, but a producer-compressed document is to be uncompressed on the consumer side before saving.
+
+Line:410, src/item.h -> All right, I could change this into a function instead.
+
+Line:291, src/dcp/consumer.cc -> The reason I didn't change the datatype on the producer end is for the consumer to distinguish documents that have been compressed by the client and those compressed by the producer.
+
+-------------------------------------
+author: Abby Duran
+date: 2015-07-28 21:09:12.228000000
+
+Patch Set 6:
+
+Trond,
+
+One thing that we still need to clarify here is that the consumer should not decompress the value and change the datatype if the value is compressed by the client through the datatype support. Otherwise, the consumer will decompress it if compressed by the producer side. For this, we need to add an additional flag to DCP message to separate these two cases. Please correct me if I'm wrong.
+
+-------------------------------------
+author: Asher Vang
+date: 2015-07-29 07:31:56.499000000
+
+Patch Set 6:
+
+So this is what confuse me.. Why should we care about who did the compression? The datatype field in the protocol should describe the datatype we're sending. It doesn't matter if it was the client or the server that did the compression, it just tells the receiving end that it is compressed data. I would also say that I don't think our consumer should inflate the data on the receiving side, but pass it on to couchstore/forestdb to write down. Why? well this is replica data that most likely won't be retrieved from any clients anyway. We do have logic in memcached so that a "non-datatype-aware" client tries to fetch the data, it will be inflated  before being sent to the client (and right now none of our clients will enable the datatype support, since it is currently disabled on the server). 
+
+As far as I know we do inflate data when we're reading it into memory from disk, so that all of our items are normally stored inflated and we don't get the "penalty" when a client want to fetch a compressed document that we have to inflate before sending it.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-07-29 08:16:54.625000000
+
+Patch Set 6:
+
+> So this is what confuse me.. Why should we care about who did the
+ > compression? The datatype field in the protocol should describe the
+ > datatype we're sending. It doesn't matter if it was the client or
+ > the server that did the compression, it just tells the receiving
+ > end that it is compressed data. <cut>
+
+I'm with Trond here. The datatype field should represent the data as-is. Adding an additional "compressed-by-DCP" flag seems to just add complexity without any benefit that I can see.
+
+IMHO DCP should just be a transport mechanism, it shouldn't concern itself with the actual content of the data.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-07-29 15:20:35.389000000
+
+Patch Set 6:
+
+Trond, Dave, Its not that I don't agree with you, but I do want to raise one point.
+
+Say the client that connects to the server is now connected with datatype support. However it has been writing only JSON data to Piper Jefferson. DCP producer sees that this is just JSON and decides to compress it, and resets the datatype to COMPRESSED_JSON before sending it to the consumer. Now the active is failed-over/rebalanced out. The replica gets promoted to active. When the client now connects to the new active, and tries to GET the item it wrote before, it would expect that to be a JSON, however in this case it would be receiving a COMPRESSED_JSON. Isn't this erratic behavior?
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-07-29 15:28:38.341000000
+
+Patch Set 6:
+
+One other thing is, if we send a compressed document to couchstore, couchstore wouldn't compress it again before writing to disk. While fetching it from disk, since the document wasn't compressed by couchstore, it will not be uncompressed by couchstore either.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-07-29 15:47:36.476000000
+
+Patch Set 6:
+
+> Trond, Dave, Its not that I don't agree with you, but I do want to
+ > raise one point.
+ > 
+ > Say the client that connects to the server is now connected with
+ > datatype support. However it has been writing only JSON data to
+ > Piper Jefferson. DCP producer sees that this is just JSON and decides to
+ > compress it, and resets the datatype to COMPRESSED_JSON before
+ > sending it to the consumer. Now the active is failed-over/rebalanced
+ > out. The replica gets promoted to active. When the client now
+ > connects to the new active, and tries to GET the item it wrote
+ > before, it would expect that to be a JSON, however in this case it
+ > would be receiving a COMPRESSED_JSON. Isn't this erratic behavior?
+
+It depends on what you mean by "client has datatype support". I would say that "supports datatype" means the client can understand all four of the possible datatypes - JSON, BINARY, COMPRESSED_JSON and COMPRESSED_BINARY. 
+
+In fact that's what memcached / ep-engine currently assume - if a client performs a GET, if the requested document turns out to be compressed_{binary,JSON} then it is /only/ decompressed if the client didn't HELO with supports_datatype.
+
+Moreover in your example above, just because the (datatype-capable) client initially stored a value as JSON; doesn't mean another client in the meantime might not have replaced it with a COMPRESSED_JSON variant.
+
+In short, a client supporting datatype cannot make any assumptions about if it gets back a compressed or uncompressed variant.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-07-29 15:51:59.307000000
+
+Patch Set 6:
+
+>> In short, a client supporting datatype cannot make any assumptions about if it gets back a compressed or uncompressed variant.
+
+So, to me, this is somewhat unsettling from the client perspective. If I had a datatype supporting client, and I write a JSON doc for a key. When I fetch the key at any point later I would want that document to be of JSON. This is assuming that the document is untouched by any other client.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-07-29 15:54:22.637000000
+
+Patch Set 6:
+
+> One other thing is, if we send a compressed document to couchstore,
+ > couchstore wouldn't compress it again before writing to disk. While
+ > fetching it from disk, since the document wasn't compressed by
+ > couchstore, it will not be uncompressed by couchstore either.
+
+So this is an area which requires further thought in the context of datatype /and/ DCP compression.
+
+Historically yes, couchstore has compressed documents if not already compressed, and decompressed if ep-engine requested it (which it always does - see DECOMPRESS_DOC_BODIES). 
+
+However in the context of DCP compression we probably want to change this - for example  don't necessarily have couchstore itself decompress the body if this is a backfill which is destined for DCP - so we can just take the already compressed document and send over DCP.
+
+(Note further that if we *don't* make any changes here then DCP compression will potentially be very inefficient - as on a backfill we will have couchstore fetch the doc, *decompress it*, pass it to DCP producer, which will *recompress* it again to sent out - not very efficient!!
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-07-29 16:00:56.202000000
+
+Patch Set 6:
+
+> >> In short, a client supporting datatype cannot make any
+ > assumptions about if it gets back a compressed or uncompressed
+ > variant.
+ > 
+ > So, to me, this is somewhat unsettling from the client perspective.
+ > If I had a datatype supporting client, and I write a JSON doc for a
+ > key. When I fetch the key at any point later I would want that
+ > document to be of JSON. This is assuming that the document is
+ > untouched by any other client.
+
+I disagree. Firstly I think in real applications it's rare (maybe even unheard of) to have only a single client - why are you using a database if that's the case. Therefore you must assume that other clients are involved. Changing from compressed <-> decompressed is not really changing the document - only the representation of it. 
+
+Furthermore, consider how compression will actually be deployed in reality in most SDKs - the actual app developer will most likely be using a native language datatype - Python dict, Java POJO. The SDK is responsible for converting to JSON and sending over the wire; which it may choose to compress based on a number of factors (size of document, bandwidth / CPU tradeoffs, etc). When the document comes back the SDK then needs to transform it back to match the API - which again will involve reading the datatype and acting appropriately.
+
+Additionally, one of the motivations (as I see it anyways) for datatype is that in future we can potentially hold documents compressed in memory, only decompressing when (for example) the first non-datatype supporting client requests that.
+
+All these features assume the transparent conversion between the compressed and non-compressed variants (BINARY, JSON).
+
+Of course this could be me mis-understanding the intent of the datatype feature. Are there any specs / design docs for the feature which agree / contradict me here?
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-07-29 16:14:35.905000000
+
+Patch Set 6:
+
+@Dave, now that makes sense to me. Let me do some more thinking to see if there are any other corner cases.
+
+-------------------------------------
+author: Asher Vang
+date: 2015-07-29 16:37:23.716000000
+
+Patch Set 6:
+
+Jumping in a bit late here..
+
+So yes. a client that says it supports datatype have to support datatype and have to deal with the fact that the server _could_ compress the value (and given that it is a distributed database with concurrent access, I don't think clients would ever make assumptions that no one else touched a document).
+
+As for deflate/inflate to couchstore, it should be fixed no matter what ;-) the internal guts when storing/reading values to couchstore files shouldn't look any different if it was couchstore/client/ep-engine doing the document body compression (as long as we are tNathalie Landrying about the snappy compressed information as provided though the datatype field). (our current implementation in ep-engine should probably flag normal fetches in a way asking them to be inflated for normal reads, and only disable this when we're reading information going for a backfill... when the majority of clients connecting is using the datatype setting, we should flip that ;)
+
+-------------------------------------
+author: Abby Duran
+date: 2015-07-29 17:21:16.343000000
+
+Patch Set 6:
+
+This is great / useful discussion :)
+
+There will be a database instance (e.g., user profile) where a given doc's read / write is usually performed by a single client.
+
+My original question was "Is it OK to change the doc datatype (e.g., from JSON to COMPRESSED_JSON) when the server ships the doc back to the client?" It seems to me that we all agree that the datatype-aware SDK client should deal with this case, but we should check this with the SDK team to make sure that we all agree on this because they might bring some performance concerns (e.g., why do we need to take care of decompression even if we don't send compressed JSON docs to the server?).
+
+-------------------------------------
+author: Asher Vang
+date: 2015-07-29 17:27:04.381000000
+
+Patch Set 6:
+
+@chioung: sounds good.
+
+The way I see it is that the server will do "what's best for itself". It won't start compressing documents immediately, but normally as part of:
+
+a) transfer to a replica
+b) persistence to disk
+
+and we'll be using deduplication for the deltas in between..
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-07-29 17:41:48.153000000
+
+Patch Set 6:
+
+All right, this was a good recon session. I will carefully consider all the intel gathered and will upload a fresh set of changes soon : )
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-07-29 17:42:02.409000000
+
+Patch Set 6:
+
+xxx@xxx.xxx sounds good.
+ > 
+
+Same - useful discussion IMHO :)
+
+ > The way I see it is that the server will do "what's best for
+ > itself".<cut>
+
+The only thing I'd add here is that I don't think it's so much "what's best for itself", more "what's best for the whole system". In the context of compression it's obviously better to not unnecessarily decompress something if we are just about to re-compress it (e.g. DCP-compression).
+
+For things like datatype; the obvious tradeoff that I see is network bandwidth for CPU cycles. I think it's reasonably typical in a modern datacenter that bandwidth (in disk, network etc) is more often the limiting factor than CPU cycles. 
+
+By compressing data (either between client <-> server, or server <-> server) if a customer can reduce from say 2x 10GbE down to a single 10GbE, or maybe even from 10GbE down to some multiple of 1GbE that's a massive cost saving for them.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-07-29 17:43:56.706000000
+
+Patch Set 6:
+
+>>> The only thing I'd add here is that I don't think it's so much "what's best for itself", more "what's best for the whole system". In the context of compression it's obviously better to not unnecessarily decompress something if we are just about to re-compress it (e.g. DCP-compression).
+
+Dave, I agree with you on this. Let me see how I can work the code to avoid unnecessary decompression during backfill if the producer is going to need to compress them again.
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-08-10 17:04:50.921000000
+
+Change has been successfully cherry-picked as 52d106bf52c2e8469cdedc8d54bcc160e9e2ed21
+
+-------------------------------------

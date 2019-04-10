@@ -1,0 +1,147 @@
+DESCRIPTION
+
+Update bitmap selection throttling to fully span active branches.
+
+Replace the “bitmapCommitRange” knob that was recently introduced with
+two new knobs: “bitmapExcessiveBranchCount” and
+“bitmapInactiveBranchAgeInDays”. If the count of branches does not
+exceed “bitmapExcessiveBranchCount”, then the current algorithm is kept
+for all branches.
+
+If the branch count is excessive, then the commit time for the tip
+commit for each branch is used to determine if a branch is “inactive”.
+"Active" branches get full commit selection using the existing
+algorithm. "Inactive" branches get fewer bitmaps near the branch tips.
+
+Expose all of the bitmap selection parameters via PackConfig:
+"bitmapContiguousCommitCount", "bitmapRecentCommitCount",
+"bitmapRecentCommitSpan", "bitmapDistantCommitSpan",
+"bitmapExcessiveBranchCount", and "bitmapInactiveBranchAge".
+
+Add an optimization to break out of the inner loop of selectCommits() if
+all of the commits for the current branch have already been found.
+
+When reusing bitmaps from an existing packs, remove unnecessary
+populating and clearing of the writeBitmaps/PackBitmapIndexBuilder.
+
+Add comments to PackWriterBitmapPreparer, rename methods and variables
+for readability.
+
+Add tests.
+
+Change-Id: I5ccbb96c8849f331c302d9f7840e05f9650c4608
+Signed-off-by: Ariel Sawyer xxx@xxx.xxx
+
+COMMENTS
+
+author: Ariel Sawyer
+date: 2015-10-19 17:53:07.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-10-19 17:53:13.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7264/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-10-19 17:53:18.000000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7264/ : FAILURE
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2015-10-19 18:10:44.000000000
+
+Patch Set 1:
+
+Build failure is unrelated to this change:
+cp: cannot stat `org.eclipse.jgit.test/tst-rsrc/jgit-s3-config.disabled.properties': No such file or directory
+
+-------------------------------------
+author: Eden Lin
+date: 2015-10-19 18:50:43.000000000
+
+Patch Set 1:
+
+(5 comments)
+
+Some initial thoughts. Will look more closely after lunch.
+
+Line:82, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/file/GcTestCase.java -> Should this happen in LocalDiskRepositoryTestCase so all tests can benefit from it?
+
+Could this go in a separate commit? It is almost orthogonal to what the rest of this patch does, so it might be easier to understand with its own explanation.
+
+Line:179, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> Ah, so that's why BitmapBuilder gained a tipCommit field --- we're storing the tip commit in the BitmapBuilder. Since a BitmapBuilder can be used to calculate a bitmap representing all objects reachable from multiple commits (e.g., objects reachable from branches, or objects requested in a given fetch request), that is a little confusing.
+
+Would it work for tipCommitBitmaps to be e.g. a Map<RevCommit, BitmapBuilder>?
+
+Line:180, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> (style) JGit uses braces around one-line if bodies now. (http://wiki.eclipse.org/EGit/Contributor_Guide#Braces_for_one-line_statements)
+
+Line:204, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/BitmapIndexImpl.java -> What does this field represent? I think a comment could help.
+
+(optional) Depending on what the field is for, adding it might also make sense to be a separate patch.
+
+Line:58, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparerTest.java -> (optional nit) I wonder if this would be easier to read as a table-driven test.
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2015-10-19 19:41:02.000000000
+
+Patch Set 1:
+
+(5 comments)
+
+Line:82, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/file/GcTestCase.java -> Yes it can go in LocalDiskRepositoryTestCase. It can go in a previous commit (without it, GcBasicPackingTest breaks).
+
+Line:179, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> It needs to repeatedly sort them and store them in descending order of unique commit counts, but it is much better to fabricate a new type to contain the pair than pollute the API with getTipCommit(). Thanks, will update the patch and repost the patch when retested.
+
+Line:180, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> Will do.
+
+Line:204, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/BitmapIndexImpl.java -> Please to the answer in PackWriterBitmapPreparer.java
+
+Line:58, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparerTest.java -> It would save the "preparer.nextSelectionDistance" repeated boilerplate, but I'm not sure that improves readability by much.
+
+@Parameterized sets up data for the test ctor--so this class would need to be split into 7 different tests to account for different expected return results for the different PackWriterBitmapPreparer setup in each test. That doesn't seem like a win.
+
+-------------------------------------
+author: Eden Lin
+date: 2015-10-19 20:04:51.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:58, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparerTest.java -> *nod* What you have here seems fine.
+
+What I meant by table-driven test is (1) probably not so idiomatic for Java (https://github.com/golang/go/wiki/TableDrivenTests) and (2) no less repetitive than what you already have:
+
+  public void testNextSele... {
+    Map.Entry[] distances = {
+      new SimpleEntry<>(0, 0),
+      new SimpleEntry<>(1, 0),
+      new SimpleEntry<>(10, 0),
+      ...
+    };
+
+    PackWriterBitmapPreparer preparer = ...
+    for (Map.Entry e : distances) {
+      assertEquals(e.getValue(),
+        preparer.nextSelectionDistance(0, e.getKey(), true));
+    }
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-10-22 01:29:34.000000000
+
+Change has been successfully merged into the git repository by Eden Lin
+
+-------------------------------------

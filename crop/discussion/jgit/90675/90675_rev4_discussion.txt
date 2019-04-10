@@ -1,0 +1,179 @@
+DESCRIPTION
+
+FileRepository.autoGC: run in background
+
+When running an automatic GC on a FileRepository, when the caller
+passes a NullProgressMonitor, fork off a new thread (per repository)
+to run the GC in.
+
+In some cases, the auto GC limit is lower than the true number of
+unreachable loose objects, so auto GC will run after every (e.g) fetch
+operation.  This leads to the appearance of poor fetch performance.
+Since these GCs will never make progress (until either the objects
+become referenced, or the two week timeout expires), blocking on them
+simply reduces throughput.
+
+In the event that an auto GC would make progress, it's still OK if it
+runs in the background.  The progress will still happen.
+
+This matches the behavior of regular git.
+
+If the user passes a ProgressMonitor that is not a
+NullProgressMonitor, they might actually care about the progress of
+the GC, and would get confused if that progress happened after the
+autoGC call returns, so we run in the foreground in that case.
+
+Git uses the lock file for gc.log to prevent simultaneous runs of
+background gc.  Further, it writes errors to gc.log, and won't run
+background gc if that file is present and recent.  If gc.log is too
+old (according to the config gc.logexpiry), it will be ignored (or at
+least, it will once the sequel to
+https://marc.info/?l=git&m=148660590912186&w=2 gets in; I've mailed it
+off but it doesn't appear to have made it to the archives yet).
+
+Change-Id: I3870cadb4a0a6763feff252e6eaef99f4aa8d0df
+Signed-off-by: Carissa Dunn xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Carissa Dunn
+date: 2017-02-09 21:25:12.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-02-09 21:25:19.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/9777/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-02-09 21:31:49.000000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/9777/ : SUCCESS
+
+-------------------------------------
+author: Zane Norton
+date: 2017-02-09 21:38:53.000000000
+
+Patch Set 4: Code-Review-1
+
+(2 comments)
+
+Line:94, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/FileRepository.java -> syle: no wildcards in imports?
+
+Line:652, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/FileRepository.java -> It would probably be nice to encapsulate anything to do with this log file into a class, GcLog?
+
+-------------------------------------
+author: Zachary Orozco
+date: 2017-02-10 07:51:36.000000000
+
+Patch Set 4:
+
+(4 comments)
+
+Line:672, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/FileRepository.java -> shouldn't we limit the amount of bytes we are reporting here? Otherwise one could crash our server by putting a huge gc.log file.
+
+Line:678, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/FileRepository.java -> we are potentially not unlocking lck anymore if we have reached this line. Shouldn't there be a lck.unlock() in the finally of the try block which starts at line 663 ?
+
+Line:692, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/FileRepository.java -> imagine background==false and we don't reach this line because of exceptions between 687 and 691. We would not unlock the file.
+
+Line:15, /COMMIT_MSG -> Don't we have a different problem here? If we are in a situation where every fetch leads to autogc then we should fix this. To decide whether to do an autogc we could count only those loose objects which not also persisted in a pack file. Then the first fetch would pack the loose objects inside a pack but also keeps the objects as loose objects because they are too young. The next fetch triggering an autogc would not count objetcs which are loose and inside packs and therefore not triggering a new gc. Sounds good? Then I would propse a change.
+
+-------------------------------------
+author: Carissa Dunn
+date: 2017-02-10 20:07:01.000000000
+
+Patch Set 4:
+
+(3 comments)
+
+Line:672, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/FileRepository.java -> But you control who writes to gc.log.  I guess we might as well limit it, even though that's kind of a hassle.
+
+Line:678, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/FileRepository.java -> No.  We only want to unlock it once the gc completes.  There are, I think, two cases I missed; one you mentioned below, and the other is line 682.
+
+Line:15, /COMMIT_MSG -> We never pack unreferenced loose objects, because they might be garbage (maybe they end up in a pack anyway, because at the time the pack was referenced, they were referenced, or because we received them in a fetch).  Having the same objects both packed and loose is a waste of space -- especially if we're just doing this for bookkeeping purposes.  We do eventually want to delete these objects (after two weeks: see https://git.eclipse.org/r/#/c/89455 ), so they have to remain loose so that we can use the filesystem for the two-week timer.    
+
+In regular git, the gc.log file "fixes" the repeated-gc problem by sending the "too many loose objects" message into gc.log, which blocks gc (for a day, once my patch is merged).  Here, we don't yet write that message to gc.log, but we could do so if we wanted to.  Do you think I should add a patch to do that?
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-02-10 21:27:26.000000000
+
+Patch Set 4:
+
+(7 comments)
+
+Line:127, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/FileRepository.java -> append //$NON-NLS-1$ to suppress non-externalized String warning
+
+Line:633, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/FileRepository.java -> style nit: missing braces, see https://wiki.eclipse.org/EGit/Contributor_Guide#Braces_for_one-line_statements
+
+Line:641, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/FileRepository.java -> shouldn't this be private ?
+
+Line:652, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/FileRepository.java -> +1
+
+Line:670, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/FileRepository.java -> externalise error message
+
+Line:699, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/FileRepository.java -> maybe we should also save the stacktrace of e
+
+Line:15, /COMMIT_MSG -> yes, please add another patch for that
+
+-------------------------------------
+author: Carissa Dunn
+date: 2017-02-10 21:43:07.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:670, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/FileRepository.java -> Do you mean "MessageFormat.format"?  I'm not familiar with the term "externalize".
+
+-------------------------------------
+author: Carissa Dunn
+date: 2017-02-10 22:26:45.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:670, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/FileRepository.java -> (going to skip this one for the next version and will re-roll once I hear back)
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-02-10 22:58:38.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:670, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/FileRepository.java -> JGit has its own tiny translation bundle implementation, see class JGitText and JGitTest.properties. And yes for combining translatable texts and parameters use MessageFormat. If you look for examples search for "JGitText.get()"
+
+-------------------------------------
+author: Zachary Orozco
+date: 2017-02-13 07:16:07.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:15, /COMMIT_MSG -> Yes, you are right. We can differentiate between referenced loose objects and loose objects which are unreferenced but which were too young to be deleted during last gc too late (after the expensive repack()). Loose objects which exist at the start of the gc and which are (from file creation date) older than the last gc run are good candidates - but they could have become referenced again between now and the last gc run. If we don't somehow persist which loose objects survive just because they are too young (and I agree: packing them just for bookkeeping reasons is too expensive) then we would have to go for the gc.log trick. Yes, please send a patch
+
+-------------------------------------
+author: Carissa Dunn
+date: 2017-02-17 18:27:19.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:15, /COMMIT_MSG -> That patch is https://git.eclipse.org/r/#/c/90868/
+
+-------------------------------------

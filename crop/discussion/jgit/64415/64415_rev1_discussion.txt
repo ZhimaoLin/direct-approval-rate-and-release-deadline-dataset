@@ -1,0 +1,95 @@
+DESCRIPTION
+
+RefTreeDatabase: Expose bootstrap refs in getAdditionalRefs
+
+By showing the bootstrap layer in getAdditionalRefs() garbage
+collector code can be more RefDatabase agnostic and not care about
+the special case of RefTree and RefTreeNames for the purposes of
+building up the roots to GC. Instead they can combine getRefs(ALL)
+and getAdditionalRefs() and have a clean set of roots.
+
+Change-Id: I665cd2456e9316640215b6a08bc728d1356f36d8
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2016-01-15 00:13:15.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-01-15 00:13:22.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7877/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-01-15 00:22:05.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7877/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2016-01-15 10:32:16.000000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:253, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/RefTreeDatabase.java -> Have you thought at the use case where this RefDatabase is used on client side e.g. in in combination with EGit? getAdditionalRefs() was once intruduced (in a4f7992) to be able to return FETCH_HEAD,MERGE_HEAD,ORIG_HEAD. IIRC to be compatible with CGit we didn't wanted these refs to be returned by getRefs(ALL). How was RefTreeDatabase supposed to expose FETCH_HEAD if not by this method?
+
+Line:265, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/RefTreeDatabase.java -> I wanted to try this out on a client side repo. I compiled this patchset and tried:
+
+  > mkdir testRepo
+  > cd testRepo/
+  > jgit init
+  Initialized empty Git repository in /tmp/testRepo/.git
+  > git config extensions.refsStorage reftree
+  > git config core.repositoryformatversion 1
+  > jgit config -l --local
+  core.filemode=true
+  core.logallrefupdates=true
+  core.repositoryformatversion=1
+  extensions.refsStorage=reftree
+  > touch a
+  > jgit add a
+  > jgit commit -m initial
+  fatal: You are on a branch yet to be born
+
+Is it be possible to use commandline jgit on clientside (non-bare) repo and try out the new RefTreeDatabse
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2016-01-15 18:37:56.000000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:253, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/RefTreeDatabase.java -> I didn't consider RefTree on the client side; I've been focused on the server side use of this for Ketch. There's no reason why RefTree can't be used on client side, except bugs in implementation. :)
+
+FETCH_HEAD, MERGE_HEAD, ORIG_HEAD, etc. as coded are going to wind up in the RefTree storage and be reported by getRefs(ALL) because they were stored there.
+
+Maybe we need to rework the update paths to say that refs outside of the "refs/" namespace that are not named "HEAD" should be shoved down to the bootstrap layer and allow these more transient names like FETCH_HEAD and MERGE_HEAD in $GIT_DIR to be managed by the bootstrap layer, which is probably going to remain RefDirectory or look a lot like RefDirectory (small text file per ref).
+
+Line:265, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/RefTreeDatabase.java -> This sounds like a bug in the initialization path. The RefTree doesn't exist so it doesn't have a HEAD symref pointing to refs/heads/master. Without that I'm not surprised that commands failed downstream.
+
+`jgit init` earlier probably created the HEAD symref in $GIT_DIR, but when switched the refsStorage to reftree it disappeared from view.
+
+A `jgit debug-rebuild-ref-tree` might migrate it, which might allow other commands to work.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-01-21 05:32:17.000000000
+
+Change has been successfully merged into the git repository by Yoselin Hanna
+
+-------------------------------------

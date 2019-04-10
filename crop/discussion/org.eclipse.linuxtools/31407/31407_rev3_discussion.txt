@@ -1,0 +1,144 @@
+DESCRIPTION
+
+tmf: Introduce ITmfEventTableColumns and its extension point
+
+Instead of accidentally specifying the whole event table, trace types
+can now only define the columns they want. This allows more (most)
+trace types to use the default TmfEventsTable, which in turn allows more
+trace types to be "aggregated" together in one table when put together
+in the same experiment.
+
+The previous "eventsTableType" extension remains there, 1) for
+compatibility purpose, but also 2) for trace types that do very specific
+things with their event table and need to override the default one
+(ie, GdbTrace). Those trace types however will not be able to merge
+their columns with other trace types when put together in the same
+experiment.
+
+Change-Id: Ie0c7fc9af62dc79aa3add8a605e02455e0df30c4
+Signed-off-by: Braxton Mccarthy xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Braxton Mccarthy
+date: 2014-08-13 21:15:51.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-08-14 00:04:44.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/8248/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-08-14 00:51:50.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/8248/ : SUCCESS
+
+-------------------------------------
+author: Luciana Barry
+date: 2014-08-14 17:28:31.000000000
+
+Patch Set 3: Code-Review-1
+
+(6 comments)
+
+Line:19, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/events/columns/ITmfEventTableColumns.java -> which additional columns > which columns
+
+want > wants
+
+Line:29, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/events/columns/ITmfEventTableColumns.java -> Use a List or explain that the iteration order matters
+
+Line:164, lttng/org.eclipse.linuxtools.tmf.ui/schema/org.eclipse.linuxtools.tmf.ui.tracetypeui.exsd -> Describe behavior if the element is omitted.
+
+Line:108, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/internal/tmf/ui/parsers/wizards/CustomTxtParserOutputWizardPage.java -> Could you avoid this new class altogether by using TmfEventsTable and call the generate method for the columns in the constructor?
+
+Line:324, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/editors/TmfEventsEditor.java -> Perhaps the plug-in specified event table should take precedence over TmfEventsTable.
+
+Line:384, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/editors/TmfEventsEditor.java -> Simpler to just add default columns here in an else clause?
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-08-14 18:20:27.000000000
+
+Patch Set 3:
+
+(3 comments)
+
+Thanks for the comments, some replies, I will work on a new version.
+
+Line:108, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/internal/tmf/ui/parsers/wizards/CustomTxtParserOutputWizardPage.java -> Good point! I didn't realize generateColumns() was really public now...
+
+Line:324, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/editors/TmfEventsEditor.java -> Do you mean if a trace types specifies both extension points?
+
+Well, the idea was that trace types should either specify ITmfEventTableColumns, OR a subclass of TmfEventsTable (in which they can do whatever they want to specify the columns). So if a trace specifies columns, it means it wants the default table.
+
+We know the constructor of TmfEventsTable takes a Collection<Columns>, but there is no way (afaik) to enforce that in subclasses, which means we couldn't make use the ITmfEventTableColumns. I don't see how it could work for a trace type to specify both extension points.
+
+What do you think?
+
+Line:384, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/editors/TmfEventsEditor.java -> I wanted to guarantee that if we do add the default columns, that they would be added first (so they are the left-most columns in the view).
+
+I don't really like having to go over the elements twice, but it's the less ugly solution I found ;)
+Java 8's Iterator.reverse() could have made it a bit cleaner.
+
+-------------------------------------
+author: Luciana Barry
+date: 2014-08-14 19:06:42.000000000
+
+Patch Set 3:
+
+(2 comments)
+
+Line:324, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/editors/TmfEventsEditor.java -> It would be useful to specify both extension point elements so that if you can't get your own table (due to experiment with mix of trace types) at least you can get your own columns in the TmfEventsTable for the experiment. Actually that might be worth mentioning in the extension point definition.
+
+Line:384, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/editors/TmfEventsEditor.java -> Hmm. If you have 3 traces in an experiment {A,B,C} and the columns are {A1,A2,A3,B1,B2,B3,C1,C2,C3}, why should trace C's columns all of the sudden be put on the left just because they happen to be the default columns?
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-08-14 20:09:39.000000000
+
+Patch Set 3:
+
+(2 comments)
+
+Line:324, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/editors/TmfEventsEditor.java -> Yeah, we could have the column extension point be a "fallback" in case we are not able to give the trace the event table type it wanted. Then we'd have to either create an event table first then trash it, or move the construction of the event table from TmfTraceTypeUiUtils to the class here.
+
+Line:384, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/editors/TmfEventsEditor.java -> If all 3 traces used the extension point, and trace C explicitly asked for C1, C2, C3 then it will get them at the end. However as soon as one trace doesn't ask for something specific, the default columns get put to the left, including if those are asked explicitly by other traces.
+
+I admit this is a bit weird since now ITmfEventTableColumns lists *all* the columns a trace wants, and not just the "extra" columns. My base idea was to have framework-provided-default columns, that all trace types can populate, and that those would always be on the left.
+
+But until we get that perhaps it's more simple to just not care, and put everything in the order we see it. But then you can end up with weird things like a Timestamp column in the middle.
+
+-------------------------------------
+author: Luciana Barry
+date: 2014-08-14 21:33:52.000000000
+
+Patch Set 3:
+
+(3 comments)
+
+Line:19, /COMMIT_MSG -> or they could if they also specify the eventTableColumns element?
+
+Line:324, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/editors/TmfEventsEditor.java -> If we get past the first check, it's a single trace. If it has a specific event table, we should use it and ignore the eventTableColumns element. If it doesn't have a specific event table then we use TmfEventsTable, with the specified columns or else the default ones. I don't see any change to TmfTraceTypeUiUtils needed? If the default table is created at the else of line 319 then this method doesn't have to ever return null. Maybe it can even be merged into createEventsTable()?
+
+Line:384, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/editors/TmfEventsEditor.java -> Presumably trace A will have a Timestamp column, likely at A1. I vote for not caring ;)
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2014-08-20 19:24:47.000000000
+
+The change could not be merged due to a path conflict.
+
+Please rebase the change locally and upload the rebased commit for review.
+
+-------------------------------------

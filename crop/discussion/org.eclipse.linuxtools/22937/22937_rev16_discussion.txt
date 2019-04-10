@@ -1,0 +1,115 @@
+DESCRIPTION
+
+tmf: add new interface to get pre-defined data types
+
+This way, other trace classes may implement this interface and be
+queried on the events it might contain. This will be useful for analyses
+who can query traces to know whether or not they might contain the
+events it needs to execute.
+
+This can be used by many traces. The TmfEventTypeCollectionHelper
+class should help extract useful information from the set of events.
+At least until Java 8 comes out.
+
+Change-Id: I1758c0d99b2b4d4b91f5b7fa3ee14b82c325dede
+Signed-off-by: Aryana Jones xxx@xxx.xxx
+Signed-off-by: Ivy Mitchell xxx@xxx.xxx
+Signed-off-by: Braxton Mccarthy xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Braxton Mccarthy
+date: 2014-05-13 00:00:55.000000000
+
+Uploaded patch set 16.
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-05-13 00:05:32.000000000
+
+Patch Set 16:
+
+Fixed my own comments.
+
+Changed the method name in the interface to getContainedEventTypes (name TBD). getEventTypes() was waaaaay too easy to confuse with ITmfTrace.getEventType() (proof, it was wrongly used in the tests already).
+
+The tweak in TmfEventTypeManager (what's the point of this class btw??) to return a Set instead, and completely avoid copies, was too good to pass on. Unfortunately, I had to fix all the terribad tests, which bloated this patch beyond what I would have liked.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-05-13 00:28:39.000000000
+
+Patch Set 16:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/6980/
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2014-05-13 00:56:57.000000000
+
+Patch Set 16: Code-Review+1
+
+(1 comment)
+
+Nothing fundamentally wrong here. Just a small comment.
+
+Line:47, lttng/org.eclipse.linuxtools.lttng2.kernel.core/src/org/eclipse/linuxtools/lttng2/kernel/core/event/matching/TcpEventMatching.java -> I'm not all for defining statically sets that are typically used once in the beginning of an analysis and never again. That memory is taken. I know it's not much here, but the sum of all those places in the code may sum up eventually.
+
+I think the cost of recreating a new set every time is less than the cost of taking memory for the lifetime of the class.
+
+Unless I do not understand the JVM (which I don't :p)
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2014-05-13 01:07:56.000000000
+
+Patch Set 16: Code-Review-1
+
+(1 comment)
+
+I _strongly_ agree with Genevieve on the comment, this is a performance vs memory thing, in this case since it's a quick fail, it can be slow but you don't want it to always take up the memory... I'm thinking when user defined stuff comes, we will have many things like this in memory.
+
+Also, why remove a defensive copy, I know it returns in this case an immutableset, but it really looks sketchy for something on the slow path.
+
+Yes I have two standards, when performance is not a requirement, I like it as clean and verbose as possible. :)
+
+Line:388, lttng/org.eclipse.linuxtools.tmf.ctf.core/src/org/eclipse/linuxtools/tmf/ctf/core/CtfTmfTrace.java -> we really want to do a defensive copy here.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-05-13 01:16:26.000000000
+
+Patch Set 16: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/6980/ : SUCCESS
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2014-05-13 01:17:13.000000000
+
+Patch Set 16:
+
+Also, thanks for the patch... my last comments seemed rather surely when I read them out loud. :(
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-05-13 15:47:41.000000000
+
+Patch Set 16:
+
+(2 comments)
+
+Line:388, lttng/org.eclipse.linuxtools.tmf.ctf.core/src/org/eclipse/linuxtools/tmf/ctf/core/CtfTmfTrace.java -> "defensive copy" is for when you store the result internally as a field (you store the copy, and expose a copy, so what you store really is independant). Here we don't store it, does it really matter?
+
+Line:47, lttng/org.eclipse.linuxtools.lttng2.kernel.core/src/org/eclipse/linuxtools/lttng2/kernel/core/event/matching/TcpEventMatching.java -> Interesting, I did not think of it this way.
+
+But typically making things static is to save memory. You end up with one copy in memory instead of 1 per instantiated object.
+
+In the case here, if I have an experiment with 300 traces, and do a TcpEventMatching on each one of them, I would end up with 300 copies of this set in memory. If it's static I would have only 1.
+
+If one day we end up with tons of potential matchin/analyses, and want to save those remnants bits, we could do some funky things by using and disposing our own ClassLoader.
+
+-------------------------------------

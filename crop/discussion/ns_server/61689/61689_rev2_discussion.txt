@@ -1,0 +1,163 @@
+DESCRIPTION
+
+MB-18289: concatenate UI app javascripts
+
+This change generates a new file, index.min.html, at build time
+that will be vended to users in place of index.html at runtime.
+index.min.html is a "minified" version of index.html (at least
+partly so) allowing the app to load and refresh more
+quickly.
+
+More kinds of minifications will or may follow but in this
+change we do the following: all ns_server "application" javascript
+files (those that reside under the "app" directory in
+priv/public/ui) are concatenated into one file which. This saves
+approx 160 separate browser requests and about. In tests
+using the Developer Tools in Chrome this demonstrated a 3-4 second
+saving in page load time (down from 4-5 seconds to 1-2 seconds)
+on a network with 100ms round trip time, which was quite
+noticeable.
+
+We may want to introduce a real minifier. I've experimented with
+https://github.com/tdewolff/minify and it looks to be simple to
+integrate with our build toolchain and it has support for
+whitespace minification of Javascript (which we could use),
+plus minification of other web mimetypes (HTML, CSS, etc)
+
+menelaus_web changes to vend index.min.html by default when
+index.html is asked for, though index.html can be vended if
+the use_minified Erlang application env var is set to false.
+This is supported for cluster_run automatically, though if one
+is not doing UI work one can run cluster_run with a minified UI
+by using the new --minified cluster_run option.
+
+Other changes we should make:
+1) change to use minified versions of our library code in
+   index.min.html
+2) add longer cache controls to our library code
+3) support a head.frag.min.html for pluggable components so
+   they too can do their part for UI performance.
+
+Change-Id: I0aa3b12ae2ab6d7219f32000633373ff96078c10
+
+wip: go minify
+
+Change-Id: I611b147e79b2ce12d6321c221a0379bb08ce54b0
+
+
+COMMENTS
+
+author: Kian Santos
+date: 2016-03-18 03:01:39.443000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2016-03-18 03:07:50.524000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:133, deps/gocode/src/minify/minify.go -> You could just use the standard logger instance. You'd only need to call log.SetFlags(0) first. But then you wouldn't need to pass logger everywhere.
+
+-------------------------------------
+author: Kian Santos
+date: 2016-03-18 03:11:16.247000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:133, deps/gocode/src/minify/minify.go -> Yes, that is better. Will do that in a bit.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2016-03-18 03:18:57.114000000
+
+Patch Set 2:
+
+And what I feared the most. Your minify target doesn't properly depend on godeps. So when I tried building just minify target, it failed miserably. That means that make -j9 might fail occasionally.
+
+https://gist.github.com/Meghan Vazquez/bd73d4574d76a89bc1e8
+
+-------------------------------------
+author: Kian Santos
+date: 2016-03-18 03:22:38.486000000
+
+Patch Set 2:
+
+I'm not sure what you mean by "properly depend on", but I should have explained that one needs to do a make at the repo level for the cmake files to get built before one gets to ns_server (which I guess you understand.) Is there a way to "properly depend" on godeps? This is done all over our code in all of the golang components ...
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2016-03-18 03:24:01.866000000
+
+Patch Set 2:
+
+I mean that "make minify" is supposed to build all dependencies first. There obviously is a way to do this :)
+
+-------------------------------------
+author: Kian Santos
+date: 2016-03-18 03:29:43.900000000
+
+Patch Set 2:
+
+Well, first you need that other change in tlm to make the GODEPSDIR available to the ns_server build -- so you'd need to sync that change. If you make at the repo level the cmake-generated makefiles under ns_server/build get generated correctly and allow you to do an ns_server make. I figured this was acceptable since in order to be able to do an ns_server build at all you need to get all the cmake generated stuff created first.
+
+-------------------------------------
+author: Kian Santos
+date: 2016-03-18 03:30:03.812000000
+
+Patch Set 2:
+
+(sorry if I didn't make this very clear)
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2016-03-18 03:32:42.531000000
+
+Patch Set 2:
+
+(1 comment)
+
+Also I don't think it's common to use %v in go code.
+
+Line:57, deps/gocode/src/minify/minify.go -> Why not child = child.NextSibling instead of child = next?
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2016-03-18 03:34:45.297000000
+
+Patch Set 2:
+
+I have your tlm change and have generated all the cmake files. My point is that the order in which godeps are built with respect to minify is undefined. Hence make -j* might occasionally be failing for some people.
+
+-------------------------------------
+author: Kian Santos
+date: 2016-03-18 03:35:59.550000000
+
+Patch Set 2:
+
+(1 comment)
+
+But %v seems so handy and the messages look just fine. :-)
+
+Line:57, deps/gocode/src/minify/minify.go -> It doesn't work because sometimes child gets removed and it's NextSibling pointer gets nil'ed out so you miss large parts of the DOM tree (because child.NextSibling gets evaluated at the tail end of the for loop.)
+
+-------------------------------------
+author: Kian Santos
+date: 2016-03-18 03:37:20.360000000
+
+Patch Set 2:
+
+The thing is that there's no "building" that happens in godeps. The minify code just picks up the godeps source during compile and build. As long as that code is there I think it should be fine, no?
+
+-------------------------------------
+author: Roselyn Villegas Code Review
+date: 2016-03-21 19:34:49.255000000
+
+Change has been successfully cherry-picked as d52d74a22ef382c5da04cd237f0eb40debe3549b
+
+-------------------------------------

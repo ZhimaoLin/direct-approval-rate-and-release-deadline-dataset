@@ -1,0 +1,111 @@
+DESCRIPTION
+
+tmf: add abstract bar chart viewer on top using swt chart
+
+It also adds a special histogram tooltip provider as well as an
+example implementation (New Histogram view) that uses the swt chart
+framework.
+
+Change-Id: I03890eaf7a79ef7d9a48c23b26c49dca9544ea50
+Signed-off-by: Ricky Reeves <Meredith xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Ricky Reeves
+date: 2013-12-23 16:55:29.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-12-23 18:09:07.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4854/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-12-23 18:37:57.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4854/ : SUCCESS
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2013-12-23 18:40:07.000000000
+
+Patch Set 3: Code-Review-1
+
+(1 comment)
+
+I haven't looked through it all, I was looking into this while rebasing the xy line plots. See inline comment, I'd like your opinion on this too.
+
+Line:99, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/xycharts/barcharts/TmfBarChartViewer.java -> I have a slightly different approach with the xy line chart. I provide the x axis values to the [equivalent of the] readData instead of the windows start and end (we are likely to have multiple series so x values are calculated once for the viewer).
+
+The readData returns the y values and the series is updated by the base class. It lightens the burden on the concrete class, no thread to worry about.
+
+It's the only major difference between the two approaches. What's your opinion on this? 
+
+Also, I feel a few methods will be common with that of the xy line chart and should be moved one level up. I'm not sure if it will lose flexibility for other possible implementations to move them in TmfXYChartViewer or if it would be preferable to put them in a new class between the base XYChart viewer and those abstract specialized classes.
+
+Another approach would be to have a "series helper" that would initialize the series in either a bar chart way or line chart way, because there is quite a lot in common between histograms and line charts. Thinking on it, I think this could be a nicer approach, we would add a seriesDefaultType in the constructor to build the right helper. What do you think?
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2013-12-23 21:42:27.000000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:99, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/xycharts/barcharts/TmfBarChartViewer.java -> oh yeah and another difference is that the updateData I did in the line plot is not per series, but overall, the loop in the series is done in the child class. That's because we may not know at load trace time the exact series we need and they can be added as needed by the updateData method.
+
+-------------------------------------
+author: Ricky Reeves
+date: 2013-12-24 03:09:31.000000000
+
+Patch Set 3:
+
+(2 comments)
+
+Hi Genevieve
+
+thanks for you're input. As I mentioned in the inline comment it's good that we have 2 different examples (use cases) that we can use to define the abstract classes and API.
+
+See inline comments about my answers to your comments. 
+
+In any case, feel free to upload your TmfXYLinePlotViewer class as patch on top of this patch. Then we can build on it.
+
+Meredith Scott
+
+Line:99, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/xycharts/barcharts/TmfBarChartViewer.java -> That probably depends on the use case. If you're approach offers more flexibility then I'm ok with it.
+
+Line:99, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/xycharts/barcharts/TmfBarChartViewer.java -> > I have a slightly different approach with the xy line chart. I provide the x 
+> axis values to the [equivalent of the] readData instead of the windows start 
+> and end (we are likely to have multiple series so x values are calculated 
+> once for the viewer).
+If passing the xValues to to updateData() that implies that the xValues are known before calling updateData. This might be true in some cases (e.g. when using a state system) but it is not true when using TmfEventRequests to print a value of each event with in a start and end time. So, I think passing of start and end time make sense and let the sub-class fill the x and y value arrays.
+
+> The readData returns the y values and the series is updated by the base 
+> class. It lightens the burden on the concrete class, no thread to worry about.
+I like the approach of a call back method to draw the chart. This allows the sub-call to draw the chart when it's finished building the x and y value arrays. Again this is useful when using TmfEventRequests where the handleCompleted() method (or handleData() after a certain number of events) will call the draw the chart by calling the call back. If we don't have a call back the readData() method can only return when the data is available.
+
+> Also, I feel a few methods will be common with that of the xy line chart and 
+> should be moved one level up. I'm not sure if it will lose flexibility for other 
+> possible implementations to move them in TmfXYChartViewer or if it would 
+> be preferable to put them in a new class between the base XYChart viewer > and those abstract specialized classes.
+This is possible and we will see that when using the abstract classes for different purposes. It's good that we have already 2 examples (Histogram and Memory Usage) when designing them. I think we can start with a set of abstract classes and API, build on them, and adjust if needed. That's why I want to keep the API as internal for now. Because I can see that the API will be not stable for a while.
+
+> Another approach would be to have a "series helper" that would initialize 
+> the series in either a bar chart way or line chart way, because there is 
+> quite a lot in common between histograms and line charts. Thinking on it, 
+> I think this could be a nicer approach, we would add a seriesDefaultType 
+> in the constructor to build the right helper. What do you think?
+I'm not sure I fully understand what you mean. But I think it's always good to provide default implementation and settings for users which work in many cases and provide methods to them to create specialized series.
+
+-------------------------------------

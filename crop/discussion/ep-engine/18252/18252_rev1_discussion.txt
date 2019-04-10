@@ -1,0 +1,139 @@
+DESCRIPTION
+
+MB-5870 fix curr_temp_items underflow
+
+The curr_temp_items per hashtable must also account those
+newly coverted temp items during softDelete. Otherwise, the
+count can underflow.
+
+Change-Id: I90ac6ad90697edf49f2ba9dbea549630948f15b4
+
+
+COMMENTS
+
+author: Amani Conrad
+date: 2012-07-11 23:05:13.004000000
+
+Patch Set 1: Verified; Looks good to me, but someone else must approve
+
+
+
+-------------------------------------
+author: Macie Morton
+date: 2012-07-11 23:15:19.313000000
+
+Patch Set 1:
+
+I looked at your commit. There is another place in storevalue.cc we convert a item to temp item in restoreMeta()
+
+Do we need to increment tempItem counter here?
+
+bool StoredValue::unlocked_restoreMeta(Item *itm, ENGINE_ERROR_CODE status) {
+    assert(state_deleted_key != getId() && state_non_existent_key != getId());
+    switch(status) {
+    case ENGINE_SUCCESS:
+        assert(0 == itm->getValue()->length());
+        setSeqno(itm->getSeqno());
+        setCas(itm->getCas());
+        flags = itm->getFlags();
+        setExptime(itm->getExptime());
+        setStoredValueState(state_deleted_key);
+        return true;
+    case ENGINE_KEY_ENOENT:
+        setStoredValueState(state_non_existent_key);
+        return true;
+    default:
+        getLogger()->log(
+            EXTENSION_LOG_WARNING, NULL,
+            "The underlying storage returned error %d for get_meta\n", status);
+        return false;
+    }
+}
+
+-------------------------------------
+author: Audrina Olson
+date: 2012-07-11 23:17:14.041000000
+
+Patch Set 1:
+
+No, this is code path is part of a bgFetch for metadata only item. Therefore the given item must have been already counted as a temp item if it had to be created initially.
+
+-------------------------------------
+author: Macie Morton
+date: 2012-07-11 23:26:50.421000000
+
+Patch Set 1:
+
+But the assert at the beginning says it is NOT a temp item? Do I miss anything here?
+
+assert(state_deleted_key != getId() && state_non_existent_key != getId());
+
+-------------------------------------
+author: Abby Duran
+date: 2012-07-11 23:28:18.018000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(1 inline comment)
+
+
+
+Line:1341, stored-value.hh -> I don't understand this change. Does it mean that "deleteWithMeta" always makes an item temp?
+
+-------------------------------------
+author: Audrina Olson
+date: 2012-07-12 00:09:04.752000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:1341, stored-value.hh -> It appears to be that way. The current method isTempItem() considers any item a tem item if it is set either non_existent_key or deleted_key
+
+-------------------------------------
+author: Audrina Olson
+date: 2012-07-12 00:12:28.647000000
+
+Patch Set 1:
+
+Junyi - I will show you this offline but look at the temp_item accounting at addTempDeletedItem().
+
+-------------------------------------
+author: Macie Morton
+date: 2012-07-12 00:15:22.325000000
+
+Patch Set 1: Looks good to me, but someone else must approve
+
+
+
+-------------------------------------
+author: Audrina Olson
+date: 2012-07-12 00:51:16.483000000
+
+Patch Set 1: Looks good to me, approved
+
+This patch is required in order for xdcr test to continue and merge. I created another enhancement bug, MB-5876, to refactor the current temp item state machine for better accounting and state transition.
+
+-------------------------------------
+author: Abby Duran
+date: 2012-07-12 01:12:41.880000000
+
+Patch Set 1: Looks good to me, approved
+
+
+
+-------------------------------------
+author: Audrina Olson
+date: 2012-07-12 01:17:17.530000000
+
+Patch Set 1: No score
+
+
+
+-------------------------------------
+author: Audrina Olson
+date: 2012-07-12 01:17:17.898000000
+
+Change has been successfully cherry-picked as c36975bae8852b1e07916fa4d88a83ed6ceb0244.
+
+-------------------------------------

@@ -1,0 +1,170 @@
+DESCRIPTION
+
+MB-14192: Refactor compaction reduce dependency on vbucket
+
+The following changes are made
+
+- Refactoring compaction to ensure that it is not vbucket-based
+- Change expiry callback and BloomFilter callback to not be
+  vbucket-specific
+- Add concurrent writer and compactor capability to storage properties
+
+Change-Id: I9a33ac45b790164f9236b640c18756b3283b7343
+
+
+COMMENTS
+
+author: Bobby Buck
+date: 2015-12-04 01:52:12.282000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-12-04 01:52:19.505000000
+
+Patch Set 5:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/946/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-12-04 02:13:25.080000000
+
+Patch Set 5: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1703/ : FAILURE
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/946/ : FAILURE
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-12-04 02:39:30.030000000
+
+Patch Set 5: -Verified
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/947/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-12-04 02:53:08.995000000
+
+Patch Set 5: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1704/ : SUCCESS
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/947/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-12-04 09:38:50.298000000
+
+Patch Set 5: Code-Review-2
+
+(14 comments)
+
+Line:1039, src/ep_engine.cc -> This is bad - ep-engine shouldn't know anything about the details of the underlying storage engine. I suggest you add a new virtual method to KVStore and have Couch and Forest implement an appropriate method.
+
+(Think about what would happen we needed to add a third storage backend - ep_engine shouldn't need to know the details of it.)
+
+Line:563, src/ep.h -> What does the return value signify?
+
+Line:801, src/couch-kvstore/couch-kvstore.cc -> Nit: Whitespace-only change, please revert.
+
+Line:1005, src/couch-kvstore/couch-kvstore.cc -> This is pretty unreadable - what on earth does "true, true, true, true, false" mean?
+
+It would be great if we could refactor this to named flags so the reader has some idea of what it means without having to search for the definition of the contractor. Wouldn't something like this be much nicer? :-
+
+ StorageProperties rv(EfficientVBDump::Yes, EfficientVBDelete::Yes,
+                      PersistedDeletions::Yes, EfficientGet::Yes,
+                      ConcurrentWriteCompact::No);
+
+Line:235, src/ep.cc -> I assume this is the uncommon case - i.e. if we don't have a temp filter create an initial one? If so I think it would be clearer if this was moved into a helper function, then the common code path below is the more obvious one.
+
+Line:288, src/ep.cc -> If epstore is not permitted to be nullptr (which seems to be the case), use a reference instead of a ptr.
+
+Line:1624, src/ep.cc -> Style: given you don't use the `filter` variable again after assignment, just directly assign bloomFilterCallback and save the verbose std::shared_ptr... declaration.
+
+Line:1628, src/ep.cc -> Ditto
+
+Line:1651, src/ep.cc -> I'm a bit twitchy about Adrianna Holmesal locking / unlocking. Can we not use a LockHolder for this purpose?
+
+Line:1660, src/ep.cc -> I don't really see the value of refactoring this all into the new compactDB function - given that this function is now just 3 lines. This just adds complexity (an additional level of indirection) without actually making the flow any clearer.
+
+Line:1352, src/forest-kvstore/forest-kvstore.cc -> Repetition here - just define a dbFile_base variable which is the base name of both files, then have prevDbFile and newDbFile add their own specific suffix to it.
+
+Line:374, src/couch-kvstore/couch-kvstore.h -> I think it's a clearer API if you just return a std::vector<> containing the vbIds, instead of making an (in?) out parameter. 
+
+Specifically, from the API it isn't clear if vbIds is reset, or just appended to.
+
+Line:90, src/kvstore.h -> This is getting a pretty verbose/long type - I think it's worth defining a typedef for it.
+
+Line:91, src/kvstore.h -> Ditto
+
+-------------------------------------
+author: Bobby Buck
+date: 2015-12-07 21:56:11.502000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:1651, src/ep.cc -> Its conditional locking. We would lose the LockHolder scope once out of the condition. Hence the Adrianna Holmesal locking.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-12-07 22:18:48.948000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:1651, src/ep.cc -> I think this would be clearer / safer if we refactored it such that we can use LockHolders - for example a brief glance suggests that the concWriteCompact == false case essentially means you need to acquire the lock before proceeding - therefore refactor into a helper compact_UNLOCKED method which is safe to call without a lock if concWriteCompact is true, and must acquire the lock first if false.
+
+-------------------------------------
+author: Bobby Buck
+date: 2015-12-07 23:48:16.910000000
+
+Patch Set 5:
+
+(14 comments)
+
+Line:1039, src/ep_engine.cc -> Done
+
+Line:563, src/ep.h -> This function has been removed
+
+Line:801, src/couch-kvstore/couch-kvstore.cc -> Done
+
+Line:1005, src/couch-kvstore/couch-kvstore.cc -> Done
+
+Line:235, src/ep.cc -> Done
+
+Line:288, src/ep.cc -> Done
+
+Line:1624, src/ep.cc -> This resulted in a compilation error when I tried to assign directly. If the verboseness is the concern, it has been typedef'd
+
+Line:1628, src/ep.cc -> Done
+
+Line:1651, src/ep.cc -> Done
+
+Line:1660, src/ep.cc -> Done
+
+Line:1352, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:374, src/couch-kvstore/couch-kvstore.h -> Done
+
+Line:90, src/kvstore.h -> Done
+
+Line:91, src/kvstore.h -> Done
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-03-11 23:45:23.368000000
+
+Change has been successfully cherry-picked as fdb8ef6c1fe15622f6afede6657edd2100f313ea
+
+-------------------------------------

@@ -1,0 +1,86 @@
+DESCRIPTION
+
+JCBC-424: Broadcast NOOP on idle state.
+
+Motivation
+----------
+This changeset has two main motivations:
+
+  - Detect rebalancing out nodes  & broken sockets even when there is no load.
+  - Help firewalls that close idle sockets.
+
+Modifications
+-------------
+In addition to a change in spymemcached which calls a method if the selector is woken up
+without actually selecting something (so the delay hits), this change correlates the last
+write with the woken up time. If the timespan is longer than a given maximum, a NOOP
+broadcast is sent, which works like any other operation but immediately triggers broken
+sockets and therefore a new configuration will be fetched.
+
+Note that the NOOP broadcast is not sent under load, since the write timestamp will always
+be fresh (and the more load the more seldom the method itself will be called from spy).
+
+Result
+------
+Rebalancing away nodes and broken sockets are much quicker detected and also the socket is
+prevented from being closed becasue it is idling too much in case of no load.
+
+Change-Id: I056b76ea009a689f4ba700730fb281d78d57484d
+
+
+COMMENTS
+
+author: Natasha Sullivan
+date: 2014-06-02 12:47:00.993000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2014-06-02 12:47:55.530000000
+
+Patch Set 1:
+
+I know there is lots of duplicate code, at one point we need to think about merging the two connection classes.
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2014-06-02 12:48:13.439000000
+
+Patch Set 1:
+
+spy change: http://review.couchbase.org/#/c/37725/
+
+-------------------------------------
+author: Andreas Short
+date: 2014-06-02 15:00:44.513000000
+
+Patch Set 1: Code-Review+2
+
+(2 comments)
+
++2'ing, but I think this could be improved slightly.  not sure how you feel about it.
+
+Line:410, src/main/java/com/couchbase/client/CouchbaseConnection.java -> updating a volatile this often is going to be expensive in terms of thread synchronization.  
+
+one possible way to refactor this is have a thread local for each last write and 'collect' them on the checking side.
+
+Line:288, src/main/java/com/couchbase/client/CouchbaseMemcachedConnection.java -> same comment w.r.t. volatile
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2014-06-02 16:31:52.550000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:410, src/main/java/com/couchbase/client/CouchbaseConnection.java -> sounds like a good idea - if you tell me how? :) I know how to use thread locals, but not how they are then collected properly from another thread?
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2014-06-03 06:47:48.969000000
+
+Patch Set 2: Patch Set 1 was rebased
+
+-------------------------------------

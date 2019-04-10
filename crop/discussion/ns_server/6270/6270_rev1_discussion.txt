@@ -1,0 +1,44 @@
+DESCRIPTION
+
+[wip] optimized ns_config replication
+
+[WIP] tests pending
+
+Major changes are:
+
+a) we compress config to save bandwidth because we're still using
+full-mesh config replication
+
+b) separate config replica process is used to serve remote config
+requests, so that critical ns_config process is never blocked by
+sending (potentially quite large) replies to remote nodes
+
+c) config merging is optimized. Outer loop ops are down from O(N²) to
+O(N log₂N). But quite expensive merge_lists operation (that's
+performed same number of times) makes this optimization less dramatic
+as a whole.
+
+d) config merging is performed on dedicated process that's using new
+CAS operation to set merged config. This ensures that ns_config is
+always available for rest of system and doesn't spend CPU merging
+config.
+
+e) config merging process is watching it's queue size and kills itself
+if it grows too large. This guards us against too big config merging
+backlog, which can crash erlang. ns_config_rep will be re-spawned and
+will update config by (sequential) pulling.
+
+Change-Id: I458bae9b1ac9ba58f84ccc5089328ce3d48ea3d2
+
+
+COMMENTS
+
+author: Brandon Owens
+date: 2011-05-17 05:20:38.753000000
+
+Patch Set 1: Verified
+
+Things looks quite stable on 94 nodes cluster. i don't see connections errors, stats working nicely.
+Continue testing under load.
+
+-------------------------------------

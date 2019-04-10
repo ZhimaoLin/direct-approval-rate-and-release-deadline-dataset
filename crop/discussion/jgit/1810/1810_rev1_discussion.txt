@@ -1,0 +1,119 @@
+DESCRIPTION
+
+Format merge commit messages like C Git
+
+The automatically generated commit message of a merge should have the
+same structure as in C Git for consistency (as per git fmt-merge-msg).
+
+Before this change:
+
+  merging refs/heads/a into refs/heads/master
+
+After:
+
+  Merge branch 'a'
+
+Plurals, "into" and joining by "," and "and" also work.
+
+Change-Id: I9658ce2817adc90d2df1060e8ac508d7bd0571cb
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-10-28 16:09:32.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(8 inline comments)
+
+
+
+Line:67, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeMessageFormatter.java -> C Git also takes in the URIish so that during a pull we can include the URL that was given on the command line when performing the merge.
+
+If we are merging a remote tracking branch, I wonder if we should also infer the URL from the configuration file.  IIRC git gui does that when it generates a merge using a local tracking branch.
+
+Line:76, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeMessageFormatter.java -> Style-nit: We don't use { } around the statements when there is only one statement being nested.
+
+I would also put a blank line before each else if to make the code more readable:
+
+  if (ref.getName().startsWith(Constants.R_HEADS))
+    branches.add(...);
+
+  else if (ref.getName().startsWith(Constants.R_REMOTES))
+    remoteBranches.add(...);
+
+Line:83, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeMessageFormatter.java -> If ref.getName() is a commit SHA-1 do we want to abbreviate it here instead of putting the full 40 digits?  Since this is the summary line and the full 40 digits is available in the parent pointer anyway, it might make the message cleaner to read if we just abbreviate it at 7 digits.
+
+Doing the abbreviation will require you to pass in the current ObjectReader to the constructor of the formatter.
+
+Line:104, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeMessageFormatter.java -> Instead of testing that the short name is master... I would test the full name:
+
+  if (target.getName().equals(Constants.R_HEADS + Constants.MASTER))
+
+That way we don't accidentally use the "merge into master format" if someone manages to make us merge into a branch called "refs/mynames/master".
+
+Line:124, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeMessageFormatter.java -> Not a bad idea.  It might be worth moving this and the join(Collection<String>, String) above.
+
+Line:142, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeMessageFormatter.java -> Yup.  Repository.shortenRefName().  Unfortunately its not static, even though it doesn't use any local state.  You might want to consider refactoring that method to be static first so you can reuse it here.
+
+Actually, I'm inclined to say it should move to Ref (which is hard because Ref is an interface and not an abstract class) and be both static and an instance member:
+
+  public static String shortenRefName(String refName);
+
+  public String getShortName() {
+    return shortenRefName(getName());
+  }
+
+Line:65, org.eclipse.jgit.test/tst/org/eclipse/jgit/merge/MergeMessageFormatterTest.java -> Style-nit: Insert a blank line right here.
+
+Line:68, org.eclipse.jgit.test/tst/org/eclipse/jgit/merge/MergeMessageFormatterTest.java -> Style-nit: Insert a blank line right here.
+
+-------------------------------------
+author: Danika Greer
+date: 2010-10-29 11:05:00.000000000
+
+Patch Set 1: (8 inline comments)
+
+Replies to Shawn's comments.
+
+Line:67, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeMessageFormatter.java -> I just saw that PullCommand does the following:
+
+		merge.include("branch \'" + remoteBranchName + "\' of " + remoteUri,
+				commitToMerge);
+
+So we already get the right remote URI from the Ref, I have to check if this case is handled properly in MergeMessageFormatter.
+
+Line:76, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeMessageFormatter.java -> Done
+
+Line:83, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeMessageFormatter.java -> As far as I could see, C Git also puts the full SHA-1, therefore I went with that. For example, see the message of b54410085b89845b2a76340ee09b75189f18107d in the egit repository.
+
+Line:104, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeMessageFormatter.java -> Done
+
+Line:124, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeMessageFormatter.java -> Done
+
+Line:142, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeMessageFormatter.java -> Yeah, I looked first on Ref if there's already a method for this and didn't find it so I implemented it myself.
+
+So should I refactor Ref to be an abstract class? Or introduce an "AbstractRef"? (No, that would be ugly for the static method, i.e. AbstractRef.shortenRefName) Or a utility class called Refs a la Guava? Meh.
+
+Line:65, org.eclipse.jgit.test/tst/org/eclipse/jgit/merge/MergeMessageFormatterTest.java -> Done
+
+Line:68, org.eclipse.jgit.test/tst/org/eclipse/jgit/merge/MergeMessageFormatterTest.java -> Done
+
+-------------------------------------
+author: Danika Greer
+date: 2010-10-29 11:34:21.000000000
+
+Patch Set 1: (1 inline comment)
+
+Additional comment.
+
+Line:67, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeMessageFormatter.java -> In MergeCommand, the following Ref is created for an include as above:
+
+new ObjectIdRef.Unpeeled(Storage.LOOSE, name, commit.copy())
+
+The problem is, how can MergeMessageFormatter distinguish this case from the case where just a SHA1 was specified to be merged?
+
+AFAICS, EGit can't yet merge a commit directly, only a branch. I don't know what the Ref is going to be for a SHA1-referenced commit.
+
+-------------------------------------

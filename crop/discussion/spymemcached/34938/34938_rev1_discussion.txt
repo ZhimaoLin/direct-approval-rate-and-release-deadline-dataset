@@ -1,0 +1,53 @@
+DESCRIPTION
+
+SPY-160: Queue retry op instead of redistributing it immediately.
+
+Motivation
+----------
+After making the original SPY-160 changes, the ops were correctly redistributed,
+but if the latch never gets counted down it gets recursively distributed and
+added. Example:
+
+	  at net.spy.memcached.protocol.TCPMemcachedNodeImpl.addOp(TCPMemcachedNodeImpl.java:344)
+	  at net.spy.memcached.MemcachedConnection.addOperation(MemcachedConnection.java:1206)
+	  at net.spy.memcached.MemcachedConnection.redistributeOperation(MemcachedConnection.java:994)
+	  at net.spy.memcached.protocol.TCPMemcachedNodeImpl.addOp(TCPMemcachedNodeImpl.java:350)
+	  at net.spy.memcached.MemcachedConnection.addOperation(MemcachedConnection.java:1206)
+	  at net.spy.memcached.MemcachedConnection.redistributeOperation(MemcachedConnection.java:994)
+	  at net.spy.memcached.protocol.TCPMemcachedNodeImpl.addOp(TCPMemcachedNodeImpl.java:350)
+	  at net.spy.memcached.MemcachedConnection.addOperation(MemcachedConnection.java:1206)
+	  at net.spy.memcached.MemcachedConnection.redistributeOperation(MemcachedConnection.java:994)
+
+Modifications
+-------------
+The changeset, instead of redistributing right now, adds the operation to the retry queue which means
+it will be handled eventually, but gives the IO thread a chance to run other tasks (including retreiving
+auth response information).
+
+Result
+------
+The operation is queued and is not blocking the IO thread.
+
+Change-Id: I73a8e77255a54bceeb929febcadb0e555febdd67
+
+
+COMMENTS
+
+author: Natasha Sullivan
+date: 2014-03-26 13:53:18.245000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2014-03-26 13:54:55.720000000
+
+Patch Set 1: Verified+1
+
+-------------------------------------
+author: Andreas Short
+date: 2014-03-27 04:25:40.083000000
+
+Patch Set 1: Code-Review+2
+
+-------------------------------------

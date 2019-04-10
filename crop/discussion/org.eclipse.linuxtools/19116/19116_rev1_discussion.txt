@@ -1,0 +1,140 @@
+DESCRIPTION
+
+TMF: Bug 422846, trace resource is refreshed after analysis
+
+Change-Id: I2c9301eb5f6eb18139e0af475ad639429b6126bd
+Signed-off-by: Aryana Jones xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2013-11-29 14:17:39.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4292/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-29 15:02:06.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4292/ : SUCCESS
+
+-------------------------------------
+author: Ayanna Reed
+date: 2013-11-29 19:23:55.000000000
+
+Patch Set 1: Code-Review-1
+
+Don't work on windows.
+
+Contains: Could not delete: Workspace\Traces\.tracing\kernel\ss.ht.
+!SUBENTRY 3 org.eclipse.core.filesystem 4 273 2013-11-29 14:18:54.991
+!MESSAGE Problems encountered while deleting files.
+
+-------------------------------------
+author: Kaeden Tapia
+date: 2013-11-30 23:36:50.000000000
+
+Patch Set 1: Code-Review-1
+
+(1 comment)
+
+Line:794, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/TmfTrace.java -> The semantics of refreshResource doesn't match its implementation. refreshResource sounds like it's going to fresh its underlying resource but it actually refreshes the whole enclosing project. So it should be something like refreshProject. Honestly, I don't think we're gaining much by wrapping refreshLocal in a new public method, I say just call refreshLocal directly. Plus, I’d be worried about other code calling refreshLocal/DEPTH_INFINITE all the time just because it’s handy.
+
+Short rant: Refreshing with DEPTH_INFINITE can be a very costly operation, especially if we start having projects with multiple natures (java and tracing, c/c++ and tracing, etc). If we know exactly the folder or the file you want to refresh, it's better to only refresh those. I don't know much about the analysis framework but I'm assuming that an analysis module can produce any outputs anywhere in the project and this is why we want to refresh the whole project? It sounds like each module should be responsible of knowing what file it produced therefore what to refresh. But perhaps that can be done later!
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2013-12-01 01:01:11.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:794, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/TmfTrace.java -> Actually, the refreshLocal is just a copy-paste of what was there before the analysis framework was even talked about.  If there is no need to refresh the whole project, then we can just refresh the current resource.
+
+I want it public because analysis may create supplementary files that do not appear unless we refresh the resource (or the whole project?).  So analysis can call getTrace().refreshResource() at the end to make sure the supplementary files appear in the UI.  
+
+It's the easiest way to do that since we have no way to know that analysis have completed and may have supplementary files (unless we add some kinds of supplementary file listener mechanism for analysis, but this is way easier)
+
+-------------------------------------
+author: Kaeden Tapia
+date: 2013-12-02 20:58:29.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:794, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/TmfTrace.java -> "Actually, the refreshLocal is just a copy-paste of what was there before the analysis framework was even talked about."
+
+Yes, I should have mentioned that, sorry. I think that existing refresh is bad but in the spirit of keeping this patch small and simple, I don't think it needs to be addressed in this patch. However, I don't think we should execute that refresh additional times with possibly multiple analysis modules calling this new public method.
+
+"If there is no need to refresh the whole project, then we can just refresh the current resource."
+
+The way I understand it, we don't need to refresh the whole project and we don't need to refresh the current resource either. More in next reply.
+
+"I want it public because analysis may create supplementary files that do not appear unless we refresh the resource (or the whole project?). So analysis can call getTrace().refreshResource() at the end to make sure the supplementary files appear in the UI."
+
+It sounds like we just need to refresh the supplementary folder since we are interested in discovering the children of that folder only. Is that right?
+
+How about this:
+
+private void setAnalysisCompleted() {
+    fStarted = false;
+    fJob = null;
+    fFinishedLatch.countDown();
+
+    if (fTrace != null && fTrace.getResource() != null) {
+        IProject project = fTrace.getResource().getProject();
+        IFolder supplFolder = project.getFolder(TmfCommonConstants.TRACE_SUPPLEMENATARY_FOLDER_NAME);
+        if (supplFolder.exists()) {
+            try {
+                supplFolder.refreshLocal(IResource.DEPTH_INFINITE, null);
+            } catch (CoreException e) {
+                Activator.logError("Error refreshing resources", e); //$NON-NLS-1$
+            }
+        }
+    }
+}
+
+Let me know if that works (I haven't tested it). But I think it should work and make the refresh much more localized.
+
+-------------------------------------
+author: Luciana Barry
+date: 2013-12-02 21:15:45.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:794, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/TmfTrace.java -> I gets worse than that...
+
+Every single project model element adds itself as a resource change listener to the workspace. But only the project elements act on it. And they act on it by refreshing the whole (expanded) project tree... even if the changed resource is in another project :( This is something I have been meaning to look into.
+
+But this only catches changes that are produced by the standard Eclipse resource operations. So files created directly on the file system using the java.io API for example, don't fire resource change events. Or things that are not resources at all, like the analysis output elements.
+
+Perhaps here we could limit ourselves to refreshing the trace resource and the corresponding supplementary file folder? I think we'd need DEPTH_INFINITE to go all the way to the analysis output elements.
+
+Can you think of any other model element that could have been changed?
+
+Also need to verify that refreshLocal will detect new non-resource model elements, I'm not sure it does.
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2013-12-02 21:45:24.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:794, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/TmfTrace.java -> Marc-André, I haven't tested either, but that looks patchy, the analysis shouldn't have to know about the internal of the trace, but that code (your "if") could be put in the current refreshResource() function, that could be called refreshSupplementaryFiles().  After all, that's what the original code really meant to do.
+
+That's given this code works of course ;-)  I'll test it tomorrow morning.
+
+-------------------------------------

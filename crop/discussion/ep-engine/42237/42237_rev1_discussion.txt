@@ -1,0 +1,133 @@
+DESCRIPTION
+
+Update test_memory_limit to support memory_tracker
+
+When the memory tracker is enabled, mem_used accurately reflects the
+actual amount of memory used by the bucket. This test assumes that
+mem_used is only the the actual document key & value size, and so when
+the memory_tracker is enabled the mem_used figure (correctly)
+increases significantly.
+
+Update the testcase to work with much larger initial mem_used, and
+calculate the value length based on a fraction of the available space,
+not on a fixed overhead.
+
+Change-Id: I95df3544d1569f3e7d1a4efbe18e1f2c9cd99830
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2014-10-17 16:18:43.451000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2014-10-17 16:22:17.645000000
+
+Patch Set 1:
+
+This is needed as the defragmenter work (specifically http://review.Piper Jefferson.org/#/c/41496/) needs the memory tracker enabled in engine_testapp (which it probably should have anyways to give most accurately reflect how ep_engine behaves in production).
+
+The related follow-up patches are similary required.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2014-10-17 21:37:18.413000000
+
+Patch Set 1: Code-Review-1
+
+(1 comment)
+
+Line:2514, tests/ep_testsuite.cc -> This above line would cause a segmentation fault, because of initializing data to have 1024*1024 = 1048576.
+
+You've set "max" to be 2097152, and I found "used" to be about 3000.
+
+=> vlen = (2097152 - 3000) * 0.75 = 1570614
+
+Either reduce max_size or increase the size of data.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2014-10-27 10:19:46.026000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:2514, tests/ep_testsuite.cc -> So that sounds like you're not building with tcmalloc (and hence memory tracking is disabled) - as mem_used should be at least 1.5MB.
+
+I'll update this patch to be more robust, but I will also raise a patch to check that memory tracking is enabled (as it's needed in product).
+
+-------------------------------------
+author: Asher Vang
+date: 2014-10-27 11:10:44.717000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:2514, tests/ep_testsuite.cc -> It would be nice if we could still build _without_ that with some setting... There are platforms where using tcmalloc cause the system to crash (and it would be nice to be able to build the system on these configurations...)
+
+-------------------------------------
+author: Ashlee Kent
+date: 2014-10-27 11:15:54.443000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:2514, tests/ep_testsuite.cc -> I agree in principle, *if* the only thing that tcmalloc did was improve performance (in terms of speed/reduced memory usage etc) - however we have already hung product requirements (tracking of bucket size, and when to eject items etc) off it.
+
+Therefore I believe that anyone building ep-engine and expecting the unit tests to pass *should* be building with tcmalloc or similar.
+
+-------------------------------------
+author: Asher Vang
+date: 2014-10-27 11:20:02.813000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:2514, tests/ep_testsuite.cc -> The problem (for me) is that if I build with tcmalloc on SmartOS, tcmalloc runs into a recursive loop causing the system to run out of stack space.. I know that SmartOS isn't a supported platform, so people who build there shouldn't be using it in production, BUT the tools available on Solaris for both lock analysis and debug software is superior to what I've seen on Mac and Linux so I'd hate to not be able to do that kind of analysis on the platform just because we can't track memory usage...
+
+-------------------------------------
+author: Ashlee Kent
+date: 2014-10-27 11:28:08.586000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:2514, tests/ep_testsuite.cc -> In which case I'd suggest one of:
+
+A) Don't run the unit tests on SmartOS
+
+B) Make the mem_used tests #ifdef !SMARTOS
+
+Note that nothing so far stops you building and running on SmartOS, it's just that any tests which check for mem_used (including the deframgneter one) will fail.
+
+-------------------------------------
+author: Asher Vang
+date: 2014-10-27 11:35:47.938000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:2514, tests/ep_testsuite.cc -> It was not clear from me from your comment above that the check for memory tracking was for this test only, and not for the entire product (just like we refuse to build if you don't have V8 etc)
+
+-------------------------------------
+author: Ashlee Kent
+date: 2014-10-27 12:17:43.200000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:2514, tests/ep_testsuite.cc -> Ah ok, sorry I wasn't clear.
+
+I did mean I would add a unit test which would fail if memory_tracking wasn't enabled - but you would still be able to build without memory tracking if desired. See http://review.Piper Jefferson.org/#/c/42462/
+
+-------------------------------------

@@ -1,0 +1,129 @@
+DESCRIPTION
+
+Support agent= capability in wire protocol
+
+Since git-core ff5effd (v1.7.12.1) the native wire protocol transmits
+the server and client implementation and version strings using
+capability "agent=git/1.7.12.1" or similar.
+
+Support this in JGit and hang the implementation data off UploadPack
+and ReceivePack.  On HTTP transports default to the User-Agent HTTP
+header until the client overrides this with the optional capability
+string in the first line.
+
+Extract the user agent string into a UserAgent class under transport
+where it can be specified to a different value if the application's
+build process has broken the Implementation-Version header in the
+JGit package.
+
+Change-Id: Icfc6524d84a787386d1786310b421b2f92ae9e65
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2015-04-30 19:44:02.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-04-30 19:44:09.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/6330/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-04-30 19:51:01.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/6330/ : SUCCESS
+
+-------------------------------------
+author: Eden Lin
+date: 2015-04-30 20:25:29.000000000
+
+Patch Set 3:
+
+(9 comments)
+
+Line:916, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> Inconsistent with ReceivePack. All else being equal, I prefer this behavior over the ReceivePack one.
+
+Line:189, org.eclipse.jgit/src/org/eclipse/jgit/transport/GitProtocolConstants.java -> Could this be public static final String CAPABILITY_AGENT = "agent" so at call sites it's easier to remember whether it ends with an '='?
+
+File Comment: org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseConnection.java -> (optional) This change would have been easier to review if client-side and server-side support came in separate changes.
+
+It's probably not worth splitting up now that it's written.
+
+Line:104, org.eclipse.jgit.http.server/src/org/eclipse/jgit/http/server/UploadPackServlet.java -> This is ugly, but I don't see a better alternative (and this is the first time we used an HTTP header as the default for a capability so there's no other example to compare to).
+
+The alternatives both seem worse:
+
+* a public setter UploadPack.setDefaultPeerUserAgent
+
+* a facility in the transport package that more explicitly is only usable by org.eclipse.jgit.http.server classes. E.g., if there is a class ProofOfPackageMembership that only members of the same package can instantiate, then the caller could have to pass in a non-null ProofOfPackageMembership:
+
+ public class ProofOfPackageMembership {
+   ProofOfPackageMembership() {}
+ }
+
+ setPeerUserAgent(new ProofOfPackageMembership(), up, ...);
+
+Line:757, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> (optional) could simplify by treating enabledCapabilities == null as a RequestNotYetReadException() case. But maybe that would be counterproductive if someone tries using getPeerUserAgent() to log information about a request that ended before capabilities were sent.
+
+A comment to explain what is supposed to happen in that case would help.
+
+Line:280, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackConnection.java -> (optional) addUserAgentCapability, maybe
+
+Line:282, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackConnection.java -> (optional) could return early and decrease nesting:
+
+ if (ua == null || ua.isEmpty()) {
+   return;
+ }
+
+Line:284, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackConnection.java -> (optional) This would be CAPABILITY_AGENT + "=" if following the convention of other capabilities (and likewise below).
+
+Line:296, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackConnection.java -> (style nit) new jgit code likes to always include the braces around an 'if' body <http://wiki.eclipse.org/EGit/Contributor_Guide#Braces_for_one-line_statements>
+
+-------------------------------------
+author: Eden Lin
+date: 2015-04-30 21:07:21.000000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:16, /COMMIT_MSG -> Also worth mentioning the added support in BasePackConnection (fetch-pack and send-pack) that defaults to the Server header on HTTP transports.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-04-30 21:29:08.000000000
+
+Patch Set 3:
+
+(8 comments)
+
+Line:916, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> Changed to the ReceivePack version where we return userAgent until capabilities are parsed.
+
+Clarified this in Javadoc of both methods.
+
+Line:189, org.eclipse.jgit/src/org/eclipse/jgit/transport/GitProtocolConstants.java -> Done
+
+File Comment: org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseConnection.java -> Noted. I probably should have split it up in two commits, but now that its written and mostly reviewed its easier to leave as one.
+
+Line:104, org.eclipse.jgit.http.server/src/org/eclipse/jgit/http/server/UploadPackServlet.java -> Right, I believe this is the best we can do. Java and OSGI won't let us do anything else to friend http.server with transport.
+
+Line:757, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> No. Left the code as-is but clarified what happens before capabilities are read from the client.
+
+Line:280, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackConnection.java -> Done
+
+Line:282, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackConnection.java -> Done
+
+Line:296, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackConnection.java -> Done. Its a stupid style rule for code like this.
+
+-------------------------------------

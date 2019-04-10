@@ -1,0 +1,107 @@
+DESCRIPTION
+
+CBIDXT-33 Structures to represent Slice and Snapshot
+
+Change-Id: I9dc8f2598768ce729a903190c0a6edbc0c7c5806
+
+
+COMMENTS
+
+author: Maliyah Fischer
+date: 2014-06-10 12:27:37.503000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Tamara Lamb
+date: 2014-06-10 14:33:59.572000000
+
+Patch Set 2:
+
+(4 comments)
+
+Line:67, secondary/indexer/snapshot_container.go -> For some of these functions you should use the RLock and RUnlock methods of the RWlock that you are using.
+
+Line:22, secondary/indexer/slice.go -> please add comments to what each of these states imply. Not clear to me what is the difference between ACTIVE and INIT or INIT and PREPARING.
+
+Line:45, secondary/indexer/timestamp.go -> Have you considered if it's more efficient to generate a hash of the checksum at the time the timestamp is generated. It might be more efficient to just compare the checksums rather than iterating though 1024 values each time this comparison needs to be made
+
+Line:50, secondary/indexer/index_reader.go -> Having two separate interfaces to extract keys and values seems a bit unwieldy. Why can't you have a single method that returns a single channel that returns key-value pairs ? Same comment for your Ranger interface.
+
+-------------------------------------
+author: Maliyah Fischer
+date: 2014-06-11 10:05:11.894000000
+
+Patch Set 2:
+
+(4 comments)
+
+Line:67, secondary/indexer/snapshot_container.go -> will change in the next patchset.
+
+Line:22, secondary/indexer/slice.go -> will add to next patchset
+
+Line:45, secondary/indexer/timestamp.go -> I think with the checksum we can compare if two timestamps are equal. But in this case we need to check "greater than" for which actual values will be required.
+
+Line:50, secondary/indexer/index_reader.go -> It helps to reduce the data sent back on the channel. These methods are never used together. Most index scans need Values for a given range of keys or a single key or just all Values. Sometime you may need just the key set. Didn't find a use-case for KVSet().
+
+-------------------------------------
+author: Dominique Stanton
+date: 2014-06-11 19:07:05.345000000
+
+Patch Set 2: Code-Review+1
+
+-------------------------------------
+author: Leonel Abbott
+date: 2014-06-12 05:38:38.919000000
+
+Patch Set 2:
+
+(7 comments)
+
+Line:29, secondary/indexer/snapshot_container.go -> Is this list ordered ?
+
+Line:30, secondary/indexer/snapshot_container.go -> Is it safe to assume that there is going to be single writer and multiple reader for this list ?
+
+In that case, can we get rid of the lock ?
+
+Line:33, secondary/indexer/snapshot.go -> Do we know the metadata that we want to associate with a snapshot. We know that timestamp is one of the metadata, are there more coming ?
+
+Does it make sense to marshal metadata into []byte (for persistence) and a sequence number for in-memory snapshot ?
+
+Line:16, secondary/indexer/slice.go -> Better to specify the width of integer explicitly ?
+
+Line:21, secondary/indexer/slice.go -> would it be better to start from 1 ? eg, iota + 1
+
+Line:33, secondary/indexer/slice.go -> IndexInstId and IndexDefnId are 32 bit or 64 bit.
+
+Line:36, secondary/indexer/slice.go -> Won't embed an IndexReader interface ?
+
+-------------------------------------
+author: Leonel Abbott
+date: 2014-06-12 05:40:35.128000000
+
+Patch Set 2: Code-Review+1
+
+-------------------------------------
+author: Maliyah Fischer
+date: 2014-06-12 06:29:39.229000000
+
+Patch Set 2:
+
+(7 comments)
+
+Line:29, secondary/indexer/snapshot_container.go -> this is a standard linked list, whatever order items are added, is preserved.
+
+Line:30, secondary/indexer/snapshot_container.go -> yes thats a reasonable assumption. But still lock is required as underlying list if not thread-safe. We can change some of the locks to Rlock as Manik suggested.
+
+Line:33, secondary/indexer/snapshot.go -> SliceId, IndexInstId, IndexDefnId, Timestamp and Seqnums are the metadata associated with a snapshot(as captured here). I think these should be sufficient. These will be marshalled into []byte and persisted in config so the snapshots can be reconstructed in case of recovery/restart.
+
+Line:16, secondary/indexer/slice.go -> will do
+
+Line:21, secondary/indexer/slice.go -> Would it make a difference as these are going to be used as constants only?
+
+Line:33, secondary/indexer/slice.go -> 64bit
+
+Line:36, secondary/indexer/slice.go -> IndexReader is embedded in Snapshot. We allow reading only from snapshot for stability. Slice can only be written to.
+
+-------------------------------------

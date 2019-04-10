@@ -1,0 +1,138 @@
+DESCRIPTION
+
+MB-4114 rotating data key
+
+introducing backupDataKey that is kept until the encryption_service
+receives a confirmation that config was successfully saved. that is
+to prevent secrets becoming unavailable if config save fails during
+the key rotation
+
+Change-Id: Id8377cd721adb1d8bf345691a74d25abf56578ee
+
+
+COMMENTS
+
+author: Philip Lara
+date: 2016-09-29 21:24:20.775000000
+
+Uploaded patch set 4: Patch Set 3 was rebased.
+
+-------------------------------------
+author: Philip Lara
+date: 2016-09-29 21:26:04.315000000
+
+Patch Set 4: Verified+1
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2016-10-03 19:00:48.274000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:205, deps/gocode/src/gosecrets/gosecrets.go -> Should it be aesgcmDecrypt(s.lockKey, key)?
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2016-10-03 19:34:25.578000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:53, src/menelaus_web_secrets.erl -> This is raceful. Consider the following sequence of events:
+
+- something initiates config save (here old encryption key is used)
+- before save succeeds, user rotates data key
+- save finishes and drops the backup key
+
+If at this point ns_config crashes, you get inconsistency.
+
+Instead of on_save, I'd prefer a sync call to ns_config that ensures that its written to disk.
+
+-------------------------------------
+author: Philip Lara
+date: 2016-10-03 20:35:42.241000000
+
+Patch Set 4:
+
+(2 comments)
+
+Line:205, deps/gocode/src/gosecrets/gosecrets.go -> Yes. Thanks
+
+Line:53, src/menelaus_web_secrets.erl -> The reason why it was done via on_save is that I wanted any successful ns_config save to cleanup backup key.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2016-10-03 20:45:38.342000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:53, src/menelaus_web_secrets.erl -> But you agree that it's raceful?
+
+-------------------------------------
+author: Philip Lara
+date: 2016-10-03 20:47:46.131000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:53, src/menelaus_web_secrets.erl -> Yes. I think the actual rotation should be done by saver process in order to solve it.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2016-10-03 20:58:27.962000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:53, src/menelaus_web_secrets.erl -> And why is there such a desire? I don't particularly like that every ns_config save will be calling babysitter node. We might be in a middle of node rename, then it will fail and won't retry until somebody writes to config again.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2016-10-03 21:03:14.787000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:53, src/menelaus_web_secrets.erl -> Well, of course we'll be doing this regardless, because we need to encrypt stuff. Need to think about this a little more.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2016-10-03 21:42:01.984000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:53, src/menelaus_web_secrets.erl -> You can also end up with half of your config encrypted with one data key, and another half with the other.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2016-10-03 22:28:32.202000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:53, src/menelaus_web_secrets.erl -> Thought about this a little more.
+
+In general, I would try to disentangle ns_config from encryption. That would make our possible transition to some other config store easier. But that would be much more intrusive and larger change.
+
+I also find it unfortunate that we need to encrypt/decrypt on every save/load, even if nothing changed.
+
+Similarly, it doesn't seem particularly nice that ns_config needs to know about backup keys, etc. But if you can implement this without races, I guess I can convince myself to be ok with such solution.
+
+-------------------------------------
+author: Roselyn Villegas Code Review
+date: 2016-10-12 17:47:23.147000000
+
+Change has been successfully cherry-picked as fc9aa4169369f5a85eb346a46caacc29ea9d54e6 by Meghan Vazquez
+
+-------------------------------------

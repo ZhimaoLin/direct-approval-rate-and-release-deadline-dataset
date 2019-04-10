@@ -1,0 +1,126 @@
+DESCRIPTION
+
+[Refactor]: Split unlocked_restoreMeta() across HashTable and StoredValue
+
+Change-Id: I912d63cb7b56ccff98378bc3e3afd96c28f75358
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2017-01-30 19:49:00.355000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-30 19:49:10.264000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/3389/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-30 19:53:59.373000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/3218/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-30 19:54:01.972000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2826/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-30 19:54:26.130000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/2044/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-30 20:11:44.112000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/3218/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2826/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/2044/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/3389/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-01-31 10:42:28.123000000
+
+Patch Set 2:
+
+(5 comments)
+
+Line:843, src/vbucket.cc -> Not a big deal, but as per an earlier comment by Will I don't think the Yoda style is that readable, and moreover recent clang (+maybe GCC?) error if you try to assign in a conditional - for example on my laptop (Apple LLVM 8.0.0):
+
+ ep-engine/src/vbucket.cc:844:24: error: expression is not assignable
+                status = ENGINE_KEY_ENOENT) {
+                ~~~~~~ ^
+
+Line:862, src/vbucket.cc -> It feels like there's two types of check being combined here:
+
+# The value of v->isTempInitialItem()  (true/ false)
+# The status of the fetch.
+
+I suspect it may be clearer if we flip the order of nesting, and check isTempInitialItem first. Could you see how it looks if you check for that first, and then check `status`?
+
+(If it isn't clearer then feel free to leave as-is.)
+
+Line:251, src/stored-value.h -> This should be removed now.
+
+Line:772, src/hash_table.cc -> I think if we don't own the mutex then this should throw std::invalid_argument.
+
+Line:772, src/hash_table.cc -> Should this silently fail? 
+
+I'm thinking that it's either invalid to call restoreMeta on a non-active Hashable (and hence throw std::logic_error), or it's acceptable (maybe you could restore on a replica?) and hence just continue with the function.
+
+What do you think?
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-01-31 17:42:47.972000000
+
+MISMATCHED INLINE COMMENT
+Line:843, src/vbucket.cc -> Yup, I see a warning.. Will change
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-01-31 17:42:47.972000000
+
+MISMATCHED INLINE COMMENT
+Line:862, src/vbucket.cc -> It doesn't help doing the other way because of setting always status = ENGINE_SUCCESS; in else if ()
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-01-31 17:42:47.972000000
+
+MISMATCHED INLINE COMMENT
+Line:251, src/stored-value.h -> Done
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-01-31 17:42:47.972000000
+
+MISMATCHED INLINE COMMENT
+Line:772, src/hash_table.cc -> Actually, isActive() is not a check for active vbucket, it is rather to check if hash table is in active state.
+And I returned it silently because initially the code did not care for ht state, it just assumed ht to be active.
+But, I will throw std::invalid_argument error. it seems more appropriate
+
+-------------------------------------

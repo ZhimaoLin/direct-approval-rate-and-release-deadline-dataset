@@ -1,0 +1,67 @@
+DESCRIPTION
+
+implemented better cluster join procedure. MB-3072 and others.
+
+New code exposes same REST API as old, but internal REST calls used to
+join cluster were changed in incompatible (but future-proof) way.
+
+The procedure is performed by cluster node (joiner) and is initiated (as
+before) by post to /controller/addNode. Joiner node then checks epmd
+reachability and renames itself if it's necessary (i.e. if it's single
+node cluster and node name is not forced). After that it does HTTP POST to
+/engageCluster2 on joinee. Full node info is posted with that
+call. Joinee uses that information to validate it's ability to join
+cluster and renames itself if necessary.
+
+Successfull /engageCluster2 call returns joinee node info that joiner
+uses to add that node into nodes_wanted. After that joiner does HTTP
+POST to /completeJoin. /completeJoin implementation on joinee side
+does final checks, changes otp cookie and connects to cluster. If
+/completeJoin call fails for whatever reason, joiner aborts 'join
+transaction' by removing joinee from nodes wanted. This makes new join
+procedure more robust.
+
+New join procedure works under ns_cluster process fixing a number of
+race conditions in old code. It is more future-proof and implements
+better error reporting.
+
+New code also fixes:
+
+* MB-3112 Shouldn't be able to join cluster with "bad name" (new code
+  checks reachability of hostname of otp nodes from both sides)
+
+* MB-2745 Rebalance via CLI command fails with "connection refused"
+  (new join procedure is synchronous and response is generated
+  after everything is restated)
+
+/node/controller/doJoinCluster now works by doing post to
+/controller/addNode on joiner side eliminating two join-related code
+pathes in previous implementation.
+
+Change-Id: I073d03589947cb04f5f7576d1d7552d798e976fc
+
+
+COMMENTS
+
+author: Nathalie Landry
+date: 2010-12-13 14:46:17.162000000
+
+Patch Set 1: Verified
+
+
+
+-------------------------------------
+author: Magdalena Oconnell
+date: 2010-12-13 23:04:53.565000000
+
+Patch Set 1: Looks good to me, approved
+
+
+
+-------------------------------------
+author: Magdalena Oconnell
+date: 2010-12-13 23:04:54.084000000
+
+Change has been successfully cherry-picked as 895c72250f5aa9a514f16c8e8f1cfa1c971566e3.
+
+-------------------------------------

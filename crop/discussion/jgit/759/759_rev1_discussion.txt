@@ -1,0 +1,84 @@
+DESCRIPTION
+
+Don't use interruptable pread() to access pack files
+
+The J2SE NIO APIs require that FileChannel close the underlying file
+descriptor if a thread is interrupted while it is inside of a read or
+write operation on that channel.  This is insane, because it means we
+cannot share the file descriptor between threads.  If a thread is in
+the middle of the FileChannel variant of IO.readFully() and it
+receives an interrupt, the pack will be automatically closed on us.
+This causes the other threads trying to use that same FileChannel to
+receive IOExceptions, which leads to the pack getting marked as
+invalid.  Once the pack is marked invalid, JGit loses access to its
+entire contents and starts to report MissingObjectExceptions.
+
+Because PackWriter must ensure that the chosen pack file stays
+available until the current object's data is fully copied to the
+output, JGit cannot simply reopen the pack when its automatically
+closed due to an interrupt being sent at the wrong time.  The pack may
+have been deleted by a concurrent `git gc` process, and that open file
+descriptor might be the last reference to the inode on disk.  Once its
+closed, the PackWriter loses access to that object representation, and
+it cannot complete sending the object the client.
+
+Fortunately, RandomAccessFile's readFully method does not have this
+problem.  Interrupts during readFully() are ignored.  However, it
+requires us to first seek to the offset we need to read, then issue
+the read call.  This requires locking around the file descriptor to
+prevent concurrent threads from moving the pointer before the read.
+
+This reduces the concurrency level, as now only one window can be
+paged in at a time from each pack.  However, the WindowCache should
+already be holding most of the pages required to handle the working
+set for a process, and its own internal locking was already limiting
+us on the number of concurrent loads possible.  Provided that most
+concurrent accesses are getting hits in the WindowCache, or are for
+different repositories on the same server, we shouldn't see a major
+performance hit due to the more serialized loading.
+
+I would have preferred to use a pool of RandomAccessFiles for each
+pack, with threads borrowing an instance dedicated to that thread
+whenever they needed to page in a window.  This would permit much
+higher levels of concurrency by using multiple file descriptors (and
+file pointers) for each pack.  However the code became too complex to
+develop in any reasonable period of time, so I've chosen to retrofit
+the existing code with more serialization instead.
+
+Bug: 308945
+Change-Id: I2e6e11c6e5a105e5aef68871b66200fd725134c9
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-05-27 15:42:37.000000000
+
+Patch Set 1: Looks good to me, but someone else must approve; IP review completed
+
+I think this fixes 308945, for now.  Its not the ideal solution, but the ideal solution is taking far too long for me to code.  I want to get the bug fixed before we release anything in the 0.8 series, and this seemed pretty simple as a workaround.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2010-05-27 21:17:42.000000000
+
+Patch Set 1: Looks good to me, but someone else must approve; IP review completed
+
+
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-05-27 21:30:19.000000000
+
+Patch Set 1: Looks good to me, approved
+
+
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-05-27 21:30:20.000000000
+
+Change has been successfully merged into the git repository.
+
+-------------------------------------

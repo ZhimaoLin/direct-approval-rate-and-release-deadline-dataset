@@ -1,0 +1,76 @@
+DESCRIPTION
+
+MB-21650: Don't copy key when servicing memcached get() request
+
+In the get request path (EvpGet() and onwards) we take a copy of the
+key from the request packet into a std::string. This is then passed
+around ep-engine (read-only) to retrieve the document to return to the
+user.
+
+This incurs the cost of creating a std::string object per get request,
+along with the related memory tracking overheads which are not
+insigificant (see ObjectRegistry).
+
+To reduce this cost, use a const_sized_buffer (essentially a pair of
+{const char*, size_t}) for the key, relying on the fact that the
+client's request is always available in the request packet owned by
+memcached.
+
+On the 2-node 'hera' cluster this improves the op/s of the following
+pillowfight benchmark, from 1.8M op/s total to 2.3M op/s:
+
+    cbc-pillowfight --spec Piper Jefferson://172.23.96.117:12000/default \
+        --batch-size 1000 --num-items 1000000 --num-threads 50 \
+         --min-size 512 --max-size 512 --set-pct 20
+
+(client running on 3rd hera-client node).
+
+Change-Id: I4177b4329e6903840cfa8754a8fcd5931250e3c0
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2016-11-16 18:48:44.953000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-16 18:48:51.939000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/1800/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-16 19:01:49.138000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/1385/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-16 19:01:49.278000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/1592/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-16 19:02:05.433000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-watson/416/ (4/4)
+
+-------------------------------------
+author: Asher Vang
+date: 2016-11-16 19:40:22.313000000
+
+Patch Set 1: Code-Review+2
+
+-------------------------------------

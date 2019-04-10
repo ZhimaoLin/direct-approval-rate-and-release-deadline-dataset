@@ -1,0 +1,169 @@
+DESCRIPTION
+
+CBIDXT-412: Track unindexable skipped index entries
+
+- Index a skipped entry when an item is unindexable
+  (in case of error ex: size limit exceeded)
+- Track number of skipped entries with skippedCount available
+  on snapshot as well as index stat
+- Provide GSI client API for count of skipped items as well
+  as scan for skipped entries
+
+Change-Id: I3ae4b6997cff5e4e4d2fd5043b436734fc4e3d11
+
+
+COMMENTS
+
+author: Alden Ashley
+date: 2017-03-07 05:00:55.152000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Kinsley Fox
+date: 2017-03-07 10:38:57.565000000
+
+Patch Set 3:
+
+(21 comments)
+
+Line:82, secondary/collatejson/collate.go -> Why are we using 90? ?
+
+Line:174, secondary/collatejson/collate.go -> return code[0] == TypeArray && code[1] == TypeSkipped
+
+Line:376, secondary/indexer/plasma_slice.go -> Is this used?
+
+Line:420, secondary/indexer/plasma_slice.go -> Unused code. Please remove it
+
+Line:449, secondary/indexer/plasma_slice.go -> It seems that this method is required. If you carefully tweak existing code, you may get it done with few lines of code.
+
+Line:492, secondary/indexer/plasma_slice.go -> Comment seems unnecessary
+
+Line:523, secondary/indexer/plasma_slice.go -> Generally, these changes seems to optimize for making skip path faster and over readability. It is okay to make skip path slower, but I would prefer readability over optimizing skip path.
+
+Line:529, secondary/indexer/plasma_slice.go -> Why deleteSecArrayIndex is not handling skip similar to insertSecIndex ?
+
+Line:548, secondary/indexer/plasma_slice.go -> This isOldSkipped everywhere is making code unreadable.
+Instead, we should have deleteSecArrayIndex handle it.
+Try to remove unnecessary if cases
+
+Line:558, secondary/indexer/plasma_slice.go -> Instead of above isOldSkipped check, let oldkey set to nil by getOldKey() method. Then you don't need above check
+
+Line:563, secondary/indexer/plasma_slice.go -> Let delete handle it
+
+Line:564, secondary/indexer/plasma_slice.go -> Instead of these two functions everywhere, just call mdb.skip, it should delete and skip.
+
+Line:632, secondary/indexer/plasma_slice.go -> Same comment as above
+
+Line:685, secondary/indexer/plasma_slice.go -> Why is this special case required?
+As part of deleteSecArrayIndex, it can check and increment the count appropriately.
+
+Line:746, secondary/indexer/plasma_slice.go -> if ok = isEntrySkipped(backEntry); ok {
+mdb.unskip(docid, workerId)
+}
+
+The stats counts the number of ops processed.
+
+Line:1652, secondary/indexer/plasma_slice.go -> All we need to scan skipped items is low key as skipminValue and call Iterate right ?
+
+Line:1654, secondary/indexer/plasma_slice.go -> This is too much of duplicate code. Please reuse the existing functions by adding additional parameters.
+
+Line:1770, secondary/indexer/plasma_slice.go -> Please avoid duplicating code
+
+Line:34, secondary/protobuf/query/query.proto -> Fix indentation
+
+Line:86, secondary/protobuf/query/query.proto -> Fix indentation
+
+Line:172, secondary/indexer/scan_pipeline.go -> Do we need a AllSkipped() new method ?
+Would it simplify the implementation if Range() API can be used with appropriate low,high keys ?
+
+-------------------------------------
+author: Kinsley Fox
+date: 2017-03-07 10:40:55.542000000
+
+Patch Set 3:
+
+Just reviewed plasma_slice.go - It appears to me that there is too much code duplication. I have added my observations as comments. Probably you could go through it and see we could cleanup memdb and forestdb slice.
+
+Changes in the other components seems okay for me
+
+-------------------------------------
+author: Alden Ashley
+date: 2017-03-07 20:07:15.811000000
+
+MISMATCHED INLINE COMMENT
+Line:82, secondary/collatejson/collate.go -> This should be the last in collation sequence and to allow more types to be added later in betwen.
+
+-------------------------------------
+author: Alden Ashley
+date: 2017-03-07 20:07:15.811000000
+
+MISMATCHED INLINE COMMENT
+Line:174, secondary/collatejson/collate.go -> Done
+
+-------------------------------------
+author: Alden Ashley
+date: 2017-03-07 20:07:15.811000000
+
+MISMATCHED INLINE COMMENT
+Line:376, secondary/indexer/plasma_slice.go -> I had this when my earlier patch had SkipItem on Slice. Its not needed now. Will remove
+
+-------------------------------------
+author: Alden Ashley
+date: 2017-03-07 20:07:15.811000000
+
+MISMATCHED INLINE COMMENT
+Line:449, secondary/indexer/plasma_slice.go -> Need more info. Will sync up on this
+
+-------------------------------------
+author: Alden Ashley
+date: 2017-03-07 20:07:15.811000000
+
+MISMATCHED INLINE COMMENT
+Line:492, secondary/indexer/plasma_slice.go -> Will remove
+
+-------------------------------------
+author: Alden Ashley
+date: 2017-03-07 20:07:15.811000000
+
+MISMATCHED INLINE COMMENT
+Line:529, secondary/indexer/plasma_slice.go -> delete does unskipping. not skipping. 
+In unskip, the counter is decremented.
+In skip, a skipped entry is added and counter is incremented.
+
+-------------------------------------
+author: Alden Ashley
+date: 2017-03-07 20:07:15.811000000
+
+MISMATCHED INLINE COMMENT
+Line:564, secondary/indexer/plasma_slice.go -> There is one case where skip is called without delete. in insertSecIndex
+
+-------------------------------------
+author: Alden Ashley
+date: 2017-03-07 20:07:15.811000000
+
+MISMATCHED INLINE COMMENT
+Line:685, secondary/indexer/plasma_slice.go -> deleteSecArrayIndex is not called unless there is an error
+
+-------------------------------------
+author: Alden Ashley
+date: 2017-03-07 20:07:15.811000000
+
+MISMATCHED INLINE COMMENT
+Line:746, secondary/indexer/plasma_slice.go -> Should stats take care of skipped entries delete and insert too?
+
+-------------------------------------
+author: Alden Ashley
+date: 2017-03-07 20:07:15.811000000
+
+MISMATCHED INLINE COMMENT
+Line:1654, secondary/indexer/plasma_slice.go -> I thought of that but I thought code could be confusing. Will try adding params
+
+-------------------------------------
+author: Alden Ashley
+date: 2017-03-07 20:07:15.811000000
+
+MISMATCHED INLINE COMMENT
+Line:172, secondary/indexer/scan_pipeline.go -> Range will not work as Range discards skipped items where as here want to scan only for skipped items
+
+-------------------------------------

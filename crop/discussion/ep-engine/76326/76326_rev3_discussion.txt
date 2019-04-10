@@ -1,0 +1,112 @@
+DESCRIPTION
+
+MB-23530: Add test for CAS set after delete
+
+It is erroneously possible to set an item with CAS after deleting it on
+an ephemeral bucket. This breaks the expected behaviour.
+
+This test should identify this failure and as such can not be enabled
+for ephemeral buckets until after the issue is resolved.
+
+Change-Id: I5b382d10a2fa6f955645d8305282a494b5f8ba6b
+
+
+COMMENTS
+
+author: Jace Townsend
+date: 2017-04-06 15:46:16.671000000
+
+Uploaded patch set 3: Patch Set 2 was rebased.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-04-06 16:21:05.192000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4308/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/5526/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5029/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/5735/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-06 17:02:59.337000000
+
+Patch Set 3: Code-Review-1
+
+(3 comments)
+
+Line:320, tests/module_tests/kv_bucket_test.cc -> Nicer to do:
+
+ engine->getConfiguration->getBucketType() == "persistent"
+
+That would work if say we expanded out the Param to include more options.
+
+Line:332, tests/module_tests/kv_bucket_test.cc -> Similar here, check the engine config.
+
+Line:333, tests/module_tests/kv_bucket_test.cc -> For completeness you should Adrianna Holmesally run the bgfetch task (see the other tests) and once the BGFetch completes check the result is ENOENT.
+
+-------------------------------------
+author: Jace Townsend
+date: 2017-04-07 12:17:23.670000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:333, tests/module_tests/kv_bucket_test.cc -> Sorry I didn't explain that very well - VBucket::processSet checks itself:
+
+if (v && v->isExpired(ep_real_time()) && !hasMetaData)
+
+stored-value.h
+
+bool isExpired(time_t asOf) const {
+        if (getExptime() != 0 && getExptime() < asOf) {
+            return true;
+        }
+        return false;
+    }
+
+it's not actually being expired, but the time has passed. It passed the test by entering that `if` when stepping through. Otherwise, it passes through processSet in the same way as in ephemeral, succeeds setting the document, and fails the test.
+
+Again, I may have erred if this is sounding fishy?
+
+-------------------------------------
+author: Jace Townsend
+date: 2017-04-07 11:25:04.631000000
+
+MISMATCHED INLINE COMMENT
+Line:320, tests/module_tests/kv_bucket_test.cc -> Done
+
+-------------------------------------
+author: Jace Townsend
+date: 2017-04-07 11:25:04.631000000
+
+MISMATCHED INLINE COMMENT
+Line:332, tests/module_tests/kv_bucket_test.cc -> Done
+
+-------------------------------------
+author: Jace Townsend
+date: 2017-04-07 11:25:04.631000000
+
+MISMATCHED INLINE COMMENT
+Line:333, tests/module_tests/kv_bucket_test.cc -> Glad you pointed this out! Looks like it actually fails the test once that is done! It /can/ pass the test, if it happens that by vbucket.cc:1953 the tempDeletedItem is expired (such as when stepping the code) but it usually fails in the same manner as an ephemeral bucket.
+
+I've genericized the fix to check for a tempDeletedItem too. 
+
+(This all comes with the caveat that I may be doing something wrong either)
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-07 11:36:13.836000000
+
+MISMATCHED INLINE COMMENT
+Line:333, tests/module_tests/kv_bucket_test.cc -> What's expiring the tempDeletedItem? The flusher shouldn't be running (IIRC)
+
+-------------------------------------

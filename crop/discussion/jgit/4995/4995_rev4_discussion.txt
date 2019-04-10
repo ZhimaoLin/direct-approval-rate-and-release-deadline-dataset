@@ -1,0 +1,138 @@
+DESCRIPTION
+
+Add "--squash" option to MergeCommand 
+
+Bug: 351806
+Change-Id: I5e47810376419264ecf4247b5a333af5c8945080
+
+
+COMMENTS
+
+author: Clay Cameron
+date: 2012-04-25 10:29:22.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-04-25 10:29:26.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1741/ 
+
+-------------------------------------
+author: Clay Cameron
+date: 2012-04-25 10:34:22.000000000
+
+Patch Set 4: (2 inline comments)
+
+The patch set drops the idea of an EnumSet but introduces two new MergeStatuses instaed: MERGED_SQUASHED and FAST_FORWARD_SQUASHED.
+
+Line:366, org.eclipse.jgit/src/org/eclipse/jgit/api/MergeCommand.java -> The status can be either MergeStatus#MERGED_SQUASHED or MergeStatus#FAST_FORWARD_SQUASHED.
+
+Line:7, /COMMIT_MSG -> :/
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-04-25 10:37:41.000000000
+
+Patch Set 4: Fails
+
+Build Failed 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1741/ : FAILURE
+
+-------------------------------------
+author: Zachary Orozco
+date: 2012-04-25 15:46:35.000000000
+
+Patch Set 4: I would prefer that you didn't submit this
+
+(3 inline comments)
+
+You are right. Yesterday I tried with a wrong setup (merged the wrong direction) and couldn't reproduce the SQUASHED_FASTFORWARD case. But now I agree that we need that kind of result.
+
+I like your current patch-set which avoids returning sets of enums. It would be hard to explain which enums one could expect in the result and which not (e.g. SQUASHED|MERGED is valid but MERGED|CONFLICTING not a valid combination)
+
+Line:209, org.eclipse.jgit/src/org/eclipse/jgit/api/MergeCommand.java -> I think something important is missing here: the merge command prepares here the text of the next commit message and the parents of the next commit by writing into .git/MERGE_HEAD and .git/MERGE_MSG files. If you do a 'git merge --squash' you want explicitly that the next commit (which is prepared by this command) is not a merge commit with two parents. Also the commit message should not be prefilled with the same text as with standard merges. The writeMergeCommitMsg() and writeMergeHeads() in the previous two lines should be configured depending on the squash flag.
+We should add tests which check that after "git merge --squash" which fails due to conflicts that a subsequent call to commit (after resolving conflicts) has the right number of parents and the right message. Check this script:
+
+ rm -fr * .git
+git init
+echo initial > readme
+git add readme
+git commit -m create_readme
+git checkout -b side
+echo initial > b
+git add b
+git commit -a -m added_b
+git checkout -b side2 HEAD^
+echo added_b2 >> readme
+echo initial > b2
+git add b2
+git commit -a -m added_b2_and_modified_readme
+git checkout master
+echo added_c >> readme
+echo initial > c
+git add c
+git commit -a -m added_c_and_modified_readme
+git merge --squash side
+git commit
+git merge --squash side2
+echo mergeConflict >> readme
+git commit -a
+
+Line:797, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/MergeCommandTest.java -> Just for curiosity: why have you changed this assertion?
+
+Line:7, /COMMIT_MSG -> right, that's :/ . We have a trailing whitespace above and no description afterwards.
+
+-------------------------------------
+author: Clay Cameron
+date: 2012-04-30 12:26:26.000000000
+
+Patch Set 4: (2 inline comments)
+
+
+
+Line:209, org.eclipse.jgit/src/org/eclipse/jgit/api/MergeCommand.java -> > .git/MERGE_HEAD and .git/MERGE_MSG
+
+In native git the latter is .git/SQUASH_MSG. Not sure about the former, as there was no sign of either MERGE_HEAD or SQUASH_HEAD in .git when executing "git commit" from your script (4th from the bottom).
+
+Line:797, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/MergeCommandTest.java -> Have I? I see no change here, am I missing something?
+
+-------------------------------------
+author: Zachary Orozco
+date: 2012-05-01 23:09:47.000000000
+
+Patch Set 4: (2 inline comments)
+
+
+
+Line:209, org.eclipse.jgit/src/org/eclipse/jgit/api/MergeCommand.java -> regarding MERGE_MSG/SQUASH_MSG: right we should write into SQUASH_MSG like native git does. But your change-set doesn't write in SQUASH_MSG. And it writes exactly the same content as a non-squash merge which is wrong. We have to write different texts depending on whether its a squash merge or not.
+
+regarding MERGE_HEAD (SQUASH_HEAD wouldn't make sense): you don't see  a sign of MERGE_HEAD when trying the script with native git. That's exactly the problem. We shouldn't write the file MERGE_HEAD when we do squash merges - but your changeset writes it. If we write MERGE_HEAD and somebody touches our repo with native git and simply calls "git commit" he would end up with a standard merge commit.
+
+I suggest something like:
+
+  if (!squash) {
+    repo.writeMergeCommitMsg(mergeMessage);
+    repo.writeMergeHeads(Arrays.asList(ref.getObjectId()));
+  } else
+    repo.writeSquashCommitMsg(squashMessage);
+
+(squashMessage and writeSquashCommitMsg() are to be implemented). The SQUASH_MSG file must also be interpreted everywhere where we up to now only parse MERGE_MSG. Especially in CommitCommand.
+
+Line:797, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/MergeCommandTest.java -> If I compare in gerrit webui your patchset 4 against your patchset 3 then you see it. But forget it -- your latest patchset contains no diff against the base version. It's ok
+
+-------------------------------------
+author: Clay Cameron
+date: 2012-05-21 08:29:10.000000000
+
+Patch Set 4:
+
+* I authored 100% of the content.
+* I have the rights to donate the content to Eclipse JGit.
+* I contribute the content under the project license (EDL).
+
+-------------------------------------

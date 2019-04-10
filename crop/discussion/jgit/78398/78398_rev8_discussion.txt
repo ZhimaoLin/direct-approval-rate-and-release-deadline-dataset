@@ -1,0 +1,135 @@
+DESCRIPTION
+
+Shallow fetch: Respect "shallow" lines
+
+When fetching from a shallow clone, the client sends "have" lines
+to tell the server about objects it already has and "shallow" lines
+to tell where its local history terminates. In some circumstances,
+the server fails to honor the shallow lines and fails to return
+objects that the client needs.
+
+UploadPack passes the "have" lines to PackWriter so PackWriter can
+omit them from the generated pack. UploadPack processes "shallow"
+lines by calling RevWalk.assumeShallow() with the set of shallow
+commits. RevWalk creates and caches RevCommits for these shallow
+commits, clearing out their parents. That way, walks correctly
+terminate at the shallow commits instead of assuming the client has
+history going back behind them. UploadPack converts its RevWalk to an
+ObjectWalk, maintaining the cached RevCommits, and passes it to
+PackWriter.
+
+Unfortunately, to support shallow fetches the PackWriter does the
+following:
+
+  if (shallowPack && !(walk instanceof DepthWalk.ObjectWalk))
+    walk = new DepthWalk.ObjectWalk(reader, depth);
+
+That is, when the client sends a "deepen" line (fetch --depth=<n>)
+and the caller has not passed in a DepthWalk.ObjectWalk, PackWriter
+throws away the RevWalk that was passed in and makes a new one. The
+cleared parent lists prepared by RevWalk.assumeShallow() are lost.
+Fortunately UploadPack intends to pass in a DepthWalk.ObjectWalk.
+It tries to create it by calling toObjectWalkWithSameObjects() on
+a DepthWalk.RevWalk. But it doesn't work: because DepthWalk.RevWalk
+does not override the standard RevWalk#toObjectWalkWithSameObjects
+implementation, the result is a plain ObjectWalk instead of an
+instance of DepthWalk.ObjectWalk.
+
+The result is that the "shallow" information is thrown away and
+objects reachable from the shallow commits can be omitted from the
+pack sent when fetching with --depth from a shallow clone.
+
+Multiple factors collude to limit the circumstances under which this
+bug can be observed:
+
+1. Commits with depth != 0 don't enter DepthGenerator's pending queue.
+   That means a "have" cannot have any effect on DepthGenerator unless
+   it is also a "want".
+
+2. DepthGenerator#next() doesn't call carryFlagsImpl(), so the
+   uninteresting flag is not propagated to ancestors there even if a
+   "have" is also a "want".
+
+3. JGit treats a depth of 1 as "1 past the wants".
+
+Because of (2), the only place the UNINTERESTING flag can leak to a
+shallow commit's parents is in the carryFlags() call from
+markUninteresting(). carryFlags() only traverses commits that have
+already been parsed: commits yet to be parsed are supposed to inherit
+correct flags from their parent in PendingGenerator#next (which
+doesn't happen here --- that is (2)). So the list of commits that have
+already been parsed becomes relevant.
+
+When we hit the markUninteresting() call, all "want"s, "have"s, and
+commits to be unshallowed have been parsed. carryFlags() only
+affects the parsed commits. If the "want" is a direct parent of a
+"have", then it carryFlags() marks it as uninteresting. If the "have"
+was also a "shallow", then its parent pointer should have been null
+and the "want" shouldn't have been marked, so we see the bug. If the
+"want" is a more distant ancestor then (2) keeps the uninteresting
+state from propagating to the "want" and we don't see the bug. If the
+"shallow" is not also a "have" then the shallow commit isn't parsed
+so (2) keeps the uninteresting state from propagating to the "want
+so we don't see the bug.
+
+Here is a reproduction case (time flowing left to right, arrows
+pointing to parents). "C" must be a commit that the client
+reports as a "have" during negotiation. That can only happen if the
+server reports it as an existing branch or tag in the first round of
+negotiation:
+
+  A <-- B <-- C <-- D
+
+First do
+
+  git clone --depth 1 <repo>
+
+which yields D as a "have" and C as a "shallow" commit. Then try
+
+  git fetch --depth 1 <repo> B:refs/heads/B
+
+Negotiation sets up: have D, shallow C, have C, want B.
+But due to this bug B is marked as uninteresting and is not sent.
+
+Change-Id: I6e14b57b2f85e52d28cdcf356df647870f475440
+Signed-off-by: Ariel Sawyer xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Eden Lin
+date: 2016-08-05 22:37:42.000000000
+
+Patch Set 8: Published edit on patch set 7
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-08-05 22:37:48.000000000
+
+Patch Set 8:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/8884/
+
+-------------------------------------
+author: Eden Lin
+date: 2016-08-05 22:37:49.000000000
+
+Patch Set 8: Code-Review+2 Verified+1
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-08-05 22:37:51.000000000
+
+Change has been successfully merged into the git repository by Eden Lin
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-08-05 22:46:53.000000000
+
+Patch Set 8:
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/8884/ : SUCCESS
+
+-------------------------------------

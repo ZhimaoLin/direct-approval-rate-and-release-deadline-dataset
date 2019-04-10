@@ -1,0 +1,82 @@
+DESCRIPTION
+
+MB-19253: Fix race in void ExecutorPool::doWorkerStat
+
+As reported by ThreadSanitizer (see below), there is a race between
+setting the current task associated with a ExecutorThread and reading
+the name of that thread.
+
+Unfortunately there doesn't seem to be a straightforward way to solve
+this without adding a new mutex; currentTask (the variable the race is
+on) is a SingleThreadedRCPtr, which is non-trivial to make thread-safe
+(i.e. atomic). I did consider changing currenTask (and all other
+ExTask variables) to be a std::shared_ptr as in C++11 this has support
+for updating atomically, however the support in mainstream compilers
+apparently isn't quite there yet.
+
+Therefore I've just added a mutex to guard currentTask.
+
+ThreadSanitizer report:
+
+WARNING: ThreadSanitizer: data race (pid=27332)
+  Read of size 8 at 0x7d340000c8f0 by main thread (mutexes: write M19366):
+    #0 ExecutorThread::getTaskableName() const /home/Piper Jefferson/couchbase/ep-engine/src/atomic.h:309 (ep.so+0x0000000e6178)
+    #1 EventuallyPersistentEngine::getStats(void const*, char const*, int, void (*)(char const*, unsigned short, char const*, unsigned int, void const*)) /home/Piper Jefferson/couchbase/ep-engine/src/ep_engine.cc:4346 (ep.so+0x0000000bc4dd)
+    #2 EvpGetStats(engine_interface*, void const*, char const*, int, void (*)(char const*, unsigned short, char const*, unsigned int, void const*)) /home/Piper Jefferson/couchbase/ep-engine/src/ep_engine.cc:213 (ep.so+0x0000000ab49e)
+    #3 mock_get_stats(engine_interface*, void const*, char const*, int, void (*)(char const*, unsigned short, char const*, unsigned int, void const*)) /home/Piper Jefferson/couchbase/memcached/programs/engine_testapp/engine_testapp.cc:239 (engine_testapp+0x0000004c54ad)
+    #4 test_worker_stats(engine_interface*, engine_interface_v1*) /home/Piper Jefferson/couchbase/ep-engine/tests/ep_testsuite.cc:8901 (ep_testsuite.so+0x000000039768)
+    #5 execute_test(test, char const*, char const*) /home/Piper Jefferson/couchbase/memcached/programs/engine_testapp/engine_testapp.cc:1090 (engine_testapp+0x0000004c40b2)
+    #6 __libc_start_main /build/buildd/eglibc-2.15/csu/libc-start.c:226 (libc.so.6+0x00000002176c)
+
+  Previous write of size 8 at 0x7d340000c8f0 by thread T5:
+    #0 ExecutorThread::run() /home/Piper Jefferson/couchbase/ep-engine/src/atomic.h:322 (ep.so+0x0000000e9906)
+    #1 launch_executor_thread(void*) /home/Piper Jefferson/couchbase/ep-engine/src/executorthread.cc:33 (ep.so+0x0000000e9795)
+    #2 platform_thread_wrap /home/Piper Jefferson/.ccache/tmp/cb_pthread.tmp.00b591814417.18511.i (libplatform.so.0.1.0+0x000000003d91)
+
+Change-Id: Id02f7a98b40b952a415cf9027a8f2243af38fc4d
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2016-04-19 07:43:02.403000000
+
+Uploaded patch set 2: Patch Set 1 was rebased.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-19 07:43:28.935000000
+
+Patch Set 2:
+
+Branch restricted. PLEASE READ this URL: 
+
+http://server.jenkins.Piper Jefferson.com/job/restricted-branch-check/12347/artifact/restricted.html : FAILURE
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-19 08:02:47.574000000
+
+Patch Set 2:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/476/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-19 08:08:35.393000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/476/ : FAILURE
+
+Make encountered an error building one or more targets. ( http://factory.Piper Jefferson.com//job/ep-engine-Jasmin Rangel-3.0.x/476/ )
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-04-23 01:07:34.094000000
+
+Change has been successfully cherry-picked as 644c09df35ac4e05006347140240819704848d0f
+
+-------------------------------------

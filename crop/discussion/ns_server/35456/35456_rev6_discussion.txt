@@ -1,0 +1,131 @@
+DESCRIPTION
+
+WIP MB-10086 [auto_collect]: basic manager and per-node processes
+
+Adds two new processes for cluster-wide log collection:
+collect_logs_manager and collect_logs_node.
+
+* collect_logs_manager: gen_server responsible for managing a user's
+  logs request, accepts requests for log collection and spawns a
+  collect_logs_node process on each cluster node which logs are
+  requested from, and aggregates their results.
+
+* collect_logs_node: gen_server responsible for running cbcollect_info
+  on a particular cluster node, and returning the result of that
+  process back to the manager.
+
+Change-Id: I6ef4c1b899a0519a317908f5e06b22170c71206f
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2014-04-17 16:36:32.451000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2014-04-17 16:49:30.975000000
+
+Patch Set 6:
+
+Since revision 4:
+
+- Ensure 'pending' collect_logs_node processes are reaped correctly in addition to 'in_progress' ones.
+- Remove dependancies on old couchdb tasks API.
+- Call cbcollect_info with --script option.
+- Wire up REST endpoint collectLogs/cancel
+- Add each nodes' collect_logs status to ns_heart tasks
+- ns_doctor.erl: Format task status and publish.
+
+TODO:
+
+1. Currently multiple successive cbcollects attempts from different nodes *all* end up getting published to /pools/default/tasks. Current plan is to timestamp each invocation of collect_nodes_manger, and only export the most recent to the tasks API.
+
+2. Determine what to do about GET /collectLogs - this is essentially redundant as the information is already available from the tasks API (/pools/default/tasks). Options are:
+
+a) remove GET /collectLogs
+b) Keep it, making it just expose the "collect_logs" task.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2014-04-17 17:32:08.667000000
+
+Patch Set 6:
+
+quick note before I start looking at code: you should rebase more often. Your code is based on commits that are couple weeks old
+
+-------------------------------------
+author: Ashlee Kent
+date: 2014-04-17 17:40:03.786000000
+
+Patch Set 6:
+
+> quick note before I start looking at code: you should rebase more often. Your code is based on commits that are couple weeks old
+
+I'm happy to rebase whenever; I just generally prefer to minimise rebase on relatively isolated code changes to make the inter-version diff easier to read and not pickup mainline stuff.
+
+Give me 5 mins and I'll push a rebased version :).
+
+-------------------------------------
+author: Nathalie Landry
+date: 2014-04-17 21:33:22.523000000
+
+Patch Set 6:
+
+(7 comments)
+
+this is inline comments. Somehow they were not actually published.
+
+Line:73, src/collect_logs_manager.erl -> would be nice to have typespec for this record
+
+Line:119, src/collect_logs_manager.erl -> cast right ?
+
+Line:140, src/collect_logs_manager.erl -> it's usually good idea to crash on exits from unknown processes
+
+Line:54, src/collect_logs_node.erl -> that's not reliable either. Unfixable badness will happen if we crash before linking to child.
+
+Line:146, src/collect_logs_node.erl -> yes crash please
+
+Line:173, src/collect_logs_node.erl -> I'm not sure we actually need to limit ourselves to 1k lines
+
+Line:205, src/collect_logs_node.erl -> you might actually need .exe for windows. Not sure however
+
+-------------------------------------
+author: Ashlee Kent
+date: 2014-04-17 21:39:15.327000000
+
+Patch Set 6:
+
+(1 comment)
+
+Sorry, replied to wrong version. inline comments here...
+
+Line:54, src/collect_logs_node.erl -> Ok. Could you eland what you are thinking of instead - exit()ing the child if the link fails? or do you mean surrounding it with a try...catch so we *don't* crash here?
+
+-------------------------------------
+author: Ashlee Kent
+date: 2014-04-18 11:52:05.069000000
+
+Patch Set 6:
+
+(6 comments)
+
+Addressed most of Alk's comments in patch 8.
+
+Still need to look into using misc:spawn_link for spawning collect_logs_node - didn't work last time but I'll give it another go.
+
+Line:73, src/collect_logs_manager.erl -> Done
+
+Line:119, src/collect_logs_manager.erl -> Done
+
+Line:140, src/collect_logs_manager.erl -> Done
+
+Line:146, src/collect_logs_node.erl -> Done
+
+Line:173, src/collect_logs_node.erl -> I just wanted to limit to some sane length - cbcollect shouldn't be outputting anything much longer than a few hundred chars, and anything longer is ignored in handle_info above.
+
+Line:205, src/collect_logs_node.erl -> Thanks - I'll keep an eye out. I haven't started testing on Windows yet, that's a task for next week.
+
+-------------------------------------

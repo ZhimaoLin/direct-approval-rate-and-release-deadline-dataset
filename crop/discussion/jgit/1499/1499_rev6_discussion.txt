@@ -1,0 +1,156 @@
+DESCRIPTION
+
+Implement Bram Cohen's Patience Diff
+
+Change-Id: Ic7a76df2861ea6c569ab9756a62018987912bd13
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-09-04 06:56:13.000000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-09-04 07:02:40.000000000
+
+Patch Set 6:
+
+This version is much faster.  We're now very close to, or beating, MyersDiff for a number of cases:
+
+      testMyers 10000 bytes took      2101700 ns. N=20000, D=32, time/(N*D):3.28E0, time/(N*D^2):1.03E-1
+   testPatience 10000 bytes took      2700400 ns. N=20000, D=7, time/(N*D):1.93E1, time/(N*D^2):2.76E0
+
+      testMyers 20000 bytes took      6706800 ns. N=40000, D=64, time/(N*D):2.62E0, time/(N*D^2):4.09E-2
+   testPatience 20000 bytes took      9671800 ns. N=40000, D=13, time/(N*D):1.86E1, time/(N*D^2):1.43E0
+
+      testMyers 40000 bytes took     25308600 ns. N=80000, D=131, time/(N*D):2.41E0, time/(N*D^2):1.84E-2
+   testPatience 40000 bytes took     24428100 ns. N=80000, D=25, time/(N*D):1.22E1, time/(N*D^2):4.89E-1
+
+      testMyers 80000 bytes took     91582400 ns. N=160000, D=263, time/(N*D):2.18E0, time/(N*D^2):8.28E-3
+   testPatience 80000 bytes took     58544200 ns. N=160000, D=50, time/(N*D):7.32E0, time/(N*D^2):1.46E-1
+
+      testMyers 160000 bytes took    353431000 ns. N=320000, D=528, time/(N*D):2.09E0, time/(N*D^2):3.96E-3
+   testPatience 160000 bytes took    126835900 ns. N=320000, D=100, time/(N*D):3.96E0, time/(N*D^2):3.96E-2
+
+      testMyers 320000 bytes took   1377646250 ns. N=640000, D=1052, time/(N*D):2.05E0, time/(N*D^2):1.95E-3
+   testPatience 320000 bytes took    331710600 ns. N=640000, D=199, time/(N*D):2.6E0, time/(N*D^2):1.31E-2
+
+      testMyers 640000 bytes took   5480499000 ns. N=1280000, D=2104, time/(N*D):2.03E0, time/(N*D^2):9.67E-4
+   testPatience 640000 bytes took    994028666 ns. N=1280000, D=397, time/(N*D):1.96E0, time/(N*D^2):4.93E-3
+
+      testMyers 1280000 bytes took  21600751000 ns. N=2560000, D=4210, time/(N*D):2E0, time/(N*D^2):4.76E-4
+   testPatience 1280000 bytes took   3022629000 ns. N=2560000, D=793, time/(N*D):1.49E0, time/(N*D^2):1.88E-3
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-09-06 16:20:30.000000000
+
+Patch Set 6: (5 inline comments)
+
+Regarding the latest performance improvements: that's really great and also votes for Patience diff as default diff.
+
+But one more general view on it here: Shawn last comment contained lines like:
+     testMyers 1280000 bytes took  21600751000 ns. N=2560000, D=4210, time/(N*D):2E0, time/(N*D^2):4.76E-4
+   testPatience 1280000 bytes took   3022629000 ns. N=2560000, D=793, time/(N*D):1.49E0, time/(N*D^2):1.88E-3
+
+This tells us that Patience diff can be even faster then Myers. But even more interesting to me is the value for D (the size of the found edit-script). PatienceDiff found an 5 times lesser edits than myers. I won't say that smaller edit-scripts (with probably huger regions) are better, but my big hope is that PatienceDiff brings "better diffs" regarding readability by humans. We should have tests with real-world content which proof that. Tests which show better quality of the diffs as listed here: http://bramcohen.livejournal.com/73318.html
+
+Line:50, org.eclipse.jgit.test/tst/org/eclipse/jgit/diff/PatienceDiffTest.java -> A lot of these testcases make also sense for MyersDiff, right? If we would have the abstraction for DiffAlgorithms we could reuse. But I know: some of the test's are specific to PatienceDiff.
+
+Line:105, org.eclipse.jgit/src/org/eclipse/jgit/diff/PatienceDiff.java -> Super small diff algorithm. I like it.
+
+But a more general question: I guess that in the end we want to configure which diff algorithm to use. It would be nice to have a silver bullet fitting all situations ... but that's not so likely, or? Even a patience diff sometimes wants to fall back to other diffs.
+
+So, isn't it time for a DiffAlgorithm abstraction? Some common superclass of PatienceDiff and MyersDiff? And e.g. PatienceDiff would get an DiffAlgorithm as constructor parameter so it knows to which algorithm to fall back to?
+
+Line:154, org.eclipse.jgit/src/org/eclipse/jgit/diff/PatienceDiff.java -> Why do we have this field? I don't see any use of this field anymore if only diff() would return such an EditList
+
+Line:134, org.eclipse.jgit/src/org/eclipse/jgit/diff/PatienceDiffIndex.java -> Shouldn't the first parameter be called 'b'. That would be more symmetric to scanA().
+
+Line:163, org.eclipse.jgit/src/org/eclipse/jgit/diff/PatienceDiffIndex.java -> If we want that this core algorithm stays maintainable we should add at least documentation for the three main entrypoints scanA, scanB and match. I know they are not public ... but I had a hard time understanding
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-09-06 16:40:12.000000000
+
+Patch Set 6: (5 inline comments)
+
+FWIW, I'm still not done speeding up PatienceDiff.  I think we can do even better than we are doing right now.  Some of the ideas may even be leveraged back into MyersDiff.  I just haven't thought about doing that yet because its still a big ugly black box to me.
+
+Coming up with D=793 on PatienceDiff when MyersDiff comes up with D=4210 is because we are only looking at unique common lines.  When PatienceDiff cannot find a unique line in a region, it just bails and does a giant replace, while MyersDiff continues to look for context.
+
+If we plugged in MyersDiff at this point as a fallback, we should get D=4210 again.  But I'm not sure that is the best immediate fallback strategy.  We could instead build a histogram of the common lines and pick the least duplicated common lines and try to find the LCS around those.  By using least duplicated we should still avoid nasty cases like "\t}\n" as being an anchor point for the matching, but would still be able to break out of the degenerate case.
+
+Thus far I have done only very limited testing of PatienceDiff on real-world input.  I did wire it into DiffFormatter and run `jgit log -p` to scan through the diffs.  I didn't see any obvious variations from MyersDiff, but I don't think recent JGit history is a poster child for where patience diff is supposed to produce more readable results.
+
+In case you didn't know, my motivation behind PatienceDiff was to find another solution to Gerrit issue 487 [1], infinite loop in MyersDiff.  Unfortunately patience diff really fails on single-character sequences (due to insufficient common unique points), but the algorithm is trivially simple and easy to prove that it will terminate.  I'm probably going to try and do a word-level variant of RawText and see if we can get a word-level thing to work better under PatienceDiff for the intraline difference coloring in Gerrit.
+
+Also, MyersDiff is really slow for Gerrit.  For some patches it takes 2.5s to display the page.  Of that 2.5s, 2.450s is spent in MyersDiff doing the intraline work.  Getting a faster algorithm under it would be nice.
+
+[1] http://code.google.com/p/gerrit/issues/detail?id=487
+
+Line:50, org.eclipse.jgit.test/tst/org/eclipse/jgit/diff/PatienceDiffTest.java -> Yes, many of these tests should produce identical results under MyersDiff.  We should take your Diff abstraction idea and abstract both implementations, then do a common base test suite that provides most of these tests and use two subclasses to drive them for each implementation.
+
+But a few of these, especially testEdit_NoUniqueMiddleSideA and B variants are specific to the current implementation of PatienceDiff not having a fallback.  MyersDiff shouldn't have the same results here.  And neither would a PatienceDiff that had an actual fallback for the degenerate case these represent.
+
+Line:105, org.eclipse.jgit/src/org/eclipse/jgit/diff/PatienceDiff.java -> Yup, agree fully.  I'll work up a DiffAlgorithm abstraction as a predecessor of this change and post it for review soon.
+
+Line:154, org.eclipse.jgit/src/org/eclipse/jgit/diff/PatienceDiff.java -> The diff() method is recursive.  When we recurse on the left and right halves, both halves are required to each produce at least one Edit result.
+
+Rather than doing:
+
+  EditList r = new EditList();
+  r.addAll(diff(... before half ...));
+  r.addAll(diff(... after half ...));
+  return r;
+
+And having this nasty continuous recopying of data from one result list to another as we pop back up the call stack, we insert the edits in-place into the diff instance.  That way the list isn't copied on each recursive invocation.
+
+I can't say I've optimized the code as well as we can do yet, but I was trying to avoid memory allocations and excessive copying inside the main loop.
+
+Line:134, org.eclipse.jgit/src/org/eclipse/jgit/diff/PatienceDiffIndex.java -> Good point, thanks.  I'll rename it.
+
+Line:163, org.eclipse.jgit/src/org/eclipse/jgit/diff/PatienceDiffIndex.java -> OK, will document.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-09-06 17:17:27.000000000
+
+Patch Set 6:
+
+FYI, JGit commit 741659fed4e73b71693b408e137804b17e65f0cb now offers a great example of where PatienceDiff is better than MyersDiff.  In file DeltaStreamTest.java I added a whole new unit test block.  PatienceDiff correctly shows what I did:
+
+ -		assertTrue(Arrays.equals(data, act));
+ +		assertTrue("bulk read has same content", Arrays.equals(data, act));
+ +
+ +		// Assert that smaller tiny reads have the same result too.
+ +		//
+ +		act = new byte[data.length];
+ +		in = open();
+ +		int read = 0;
+ +		while (read < data.length) {
+ +			int n = in.read(act, read, 128);
+ +			if (n <= 0)
+ +				break;
+ +			read += n;
+ +		}
+ +		assertEquals(data.length, read);
+ +		assertEquals(-1, in.read());
+ +		assertTrue("small reads have same content", Arrays.equals(data, act));
+  	}
+
+MyersDiff just shows a slop of intermixed add/deletes.  Of course I'm sure there are some counter examples somewhere, but this type of edit is common enough to source code that PatienceDiff is more likely to be readable most of the time.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-09-16 09:18:08.000000000
+
+Patch Set 6:
+
+That real-world example of jgit commit 741659fed4e73b71693b408e137804b17e65f0cb is exactly why I really wait for Patience diff. I tried even with native git with and without using the --patience-diff option. There I don't see a difference - I guess their non-patience-diff algorithm is more optimized than ours.
+
+-------------------------------------

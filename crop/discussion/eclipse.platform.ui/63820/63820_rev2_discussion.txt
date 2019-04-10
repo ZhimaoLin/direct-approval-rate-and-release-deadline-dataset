@@ -1,0 +1,113 @@
+DESCRIPTION
+
+Bug 485201 - Cancel button in "Ask via popup" strategy opens the 
+
+Solution with a different exception message when user cancels.
+I added the strategy a method to return IStatus. 
+The IDE can discriminate the state based on IStatus.
+
+
+Change-Id: Ia43f44b1fb593692bd8f23aec01322df8f17db81
+Signed-off-by: Ryker Bauer xxx@xxx.xxx
+
+COMMENTS
+
+author: Ryker Bauer
+date: 2016-01-10 08:04:15.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-01-10 08:04:21.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/7944/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-01-10 08:43:57.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/7944/ : SUCCESS
+
+-------------------------------------
+author: Jayvion Booth
+date: 2016-01-10 09:12:13.000000000
+
+Patch Set 2: Code-Review-1
+
+This patch looks better, but looking on the code now I'm asking myself why is the interface method getEditorDescriptor() is not throwing a CoreException? I can imagine that the custom strategies could fail to compute the required data and returning null and -1 as the result is not that nice as simply wrap the original exception into PartInitException in the IDE class. In the IDE we can ask if the exception status is an error or cancel status and handle accordingly. Sorry for the wrong hint but I realized it just now loking at the updated code.
+
+-------------------------------------
+author: Ryker Bauer
+date: 2016-01-10 10:41:56.000000000
+
+Patch Set 2:
+
+With IUnknowEditorStrategy the user might control the selection of the editor. This implies cancel is possible. Should we throw an Exception when the user hit cancel ?
+
+-------------------------------------
+author: Jayvion Booth
+date: 2016-01-10 11:03:36.000000000
+
+Patch Set 2:
+
+> With IUnknowEditorStrategy the user might control the selection of
+ > the editor. This implies cancel is possible. Should we throw an
+ > Exception when the user hit cancel ?
+
+Yes, this would be one of possible cases. The reason I do not like the separated method is that we separate the actual result of the method call from the caller and caler (IDE) must always additionally confirm if the null result is expected (no matching editor found) or not expected (error while calculation or user cancel). Having a simple try/catch and additional check inside the catch seems more natural for me.
+
+-------------------------------------
+author: Jayvion Booth
+date: 2016-01-10 11:19:28.000000000
+
+Patch Set 2:
+
+Another possibility would be not declare CoreException in the interface, but org.eclipse.core.runtime.OperationCanceledException. In this case the caller (IDE) would only use it as a marker (no need to check the error status from the exception itself) but ignore all other possible error cases.
+WDYT? 
+The problem with this approach would be: once released, the API could not be easily changed because adding CoreException after 4.6 would be a breaking change.
+I think I prefer adding CoreException now and check in the try block the status object if getSeverity() == IStatus.CANCEL.
+
+-------------------------------------
+author: Isis Velasquez
+date: 2016-01-11 08:12:42.000000000
+
+Patch Set 2:
+
+Having the strategies able to send exceptions would IMO be better. The OperationCancelException definitely makes sense since the other future strategies I can think of will involve long-running, cancellable operations (check remote p2 repository, or other remote services...).
+Throwing a CoreException would also make sense, for example in case the operation cannot run correctly (such as in offline mode when strategy requires to connect to a server).
+IMO, the API should allow the getEditorDescriptor method to throw both Exception; and both would be wrapped in a PartInitException shown to user.
+
+That said, for the specific case of the "AskUserViaPopup", I still think that hiding the "Cancel" button is a good solution.
+
+-------------------------------------
+author: Ryker Bauer
+date: 2016-01-11 12:55:05.000000000
+
+Patch Set 2:
+
+Thanks
+
+I agree on exceptions. I'll throw both OperationCancelException and CoreException
+
+-------------------------------------
+author: Jayvion Booth
+date: 2016-01-20 07:41:23.000000000
+
+Patch Set 2:
+
+Patrik, are you still working on this bug? M5 is coming.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-01-21 12:41:12.000000000
+
+Change has been successfully merged into the git repository by Jayvion Booth
+
+-------------------------------------

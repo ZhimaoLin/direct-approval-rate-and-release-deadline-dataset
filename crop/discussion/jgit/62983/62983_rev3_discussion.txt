@@ -1,0 +1,100 @@
+DESCRIPTION
+
+Skip nested copyfiles in RepoCommand.
+
+Similar to nested directories, nested copyfiles won't work with git submodule
+either.
+
+Change-Id: Idbe965ec20a682fca0432802858162f8238f05de
+Signed-off-by: Yuxuan 'fishy' Wang xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Kayleigh Dennis
+date: 2015-12-21 20:59:53.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-12-21 20:59:59.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7773/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-12-21 21:08:36.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7773/ : SUCCESS
+
+-------------------------------------
+author: Eden Lin
+date: 2015-12-21 22:19:22.000000000
+
+Patch Set 3:
+
+(3 comments)
+
+Line:428, org.eclipse.jgit/src/org/eclipse/jgit/gitrepo/RepoCommand.java -> Please don't catch NPE.
+
+Line:428, org.eclipse.jgit/src/org/eclipse/jgit/gitrepo/RepoCommand.java -> When is this exception likely to be thrown?
+
+This would be easier to understand with a narrower scope:
+
+ if (inputStream == null && path == null)
+   throw new IllegalArgumentException(pathNotConfigured);
+
+ ...
+ ManifestParser parser = ...
+ try (InputStream in =
+     inputStream == null ? new FileInputStream(path) : inputStream) {
+   parser.read(in);
+ } catch (IOException e) {
+   throw new GitAPIException("Cannot read manifest", e);
+ }
+ for (RepoProject proj : parser.getFilteredProjects()) {
+   ...
+ }
+
+But that is all orthogonal to the topic of this CL. I think the simplest thing in the context of this CL would be to either make that change in a parent commit or undo the use of try-with-resources. Sorry for the complication.
+
+Line:440, org.eclipse.jgit/src/org/eclipse/jgit/gitrepo/RepoCommand.java -> I still think it would be simpler to have this sort happen when bareProjects is created. The problem is that this is far enough away from both the isNestedCopyfile call and the code that builds bareProjects is that it is following the control flow to be sure sort is actually called (and to preserve that property as the code gets modified).
+
+The bareProjects inherit their order from filteredProjects, which inherits its order from projects, which inherits its order from the manifest. One option would be to make bareProjects always sorted:
+
+  List<RepoProject> projects = null;
+  if (repo.isBare()) {
+    projects = new ArrayList<>();
+  }
+  for (RepoProject proj : parser.getFilteredProjects()) {
+    addSubmodule(projects, proj);
+  }
+  sort(projects);
+  bareProjects = projects;
+
+-------------------------------------
+author: Kayleigh Dennis
+date: 2015-12-22 02:44:10.000000000
+
+Patch Set 3:
+
+(2 comments)
+
+Line:428, org.eclipse.jgit/src/org/eclipse/jgit/gitrepo/RepoCommand.java -> I think this logic is not suitable for a try-with-resources. Reverted.
+
+Line:440, org.eclipse.jgit/src/org/eclipse/jgit/gitrepo/RepoCommand.java -> Moved this logic to ManifestParser.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-12-22 22:49:17.000000000
+
+Change has been successfully merged into the git repository by Eden Lin
+
+-------------------------------------

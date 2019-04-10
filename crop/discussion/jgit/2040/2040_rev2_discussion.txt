@@ -1,0 +1,111 @@
+DESCRIPTION
+
+IndexPack: Use streaming for large whole blobs
+
+When indexing large blobs that are stored whole (non-delta form),
+avoid allocating the entire blob in memory and instead stream it
+through the SHA-1 checksum computation.  This reduces the size
+of memory required by IndexPack when processing very big blobs,
+such as a 500 MiB uncompressable binary.
+
+If the large blob already exists in the local repository, its
+contents needs to be compared byte-for-byte after the entire pack
+has been indexed, to ensure there isn't an unexpected SHA-1 collision
+which may result in later data corruption.  This compare is performed
+as a streaming compare, again avoiding the large object allocation.
+
+This change doesn't improve on memory utilization for large objects
+stored as deltas.  The change also doesn't improve handling for
+any large commits, trees or annotated tags.  There isn't much to
+be done here for those objects, because they need to be passed down
+to the ObjectChecker as a byte[].  Fortunately it isn't common for
+these object types to be that large,
+
+Bug: 312868
+Change-Id: I862afd4cb78013ee033d4ec68c067b1774a05be8
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+CC: Kendrick Carrillo <Jacob xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-12-07 22:13:01.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-12-07 22:13:14.000000000
+
+Patch Set 2: Looks good to me, but someone else must approve; IP review completed
+
+
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-12-08 00:11:38.000000000
+
+Patch Set 2:
+
+Roberto, were you also able to test the streaming checksum for big blobs that is contained in this change?
+
+-------------------------------------
+author: Kendrick Carrillo
+date: 2010-12-08 00:48:33.000000000
+
+Patch Set 2: (4 inline comments)
+
+This works well on my test repos, but I'd like the code clarified to show that the streaming is only for blobs, which should tidy up the deferred check method as well.
+
+Line:219, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> Perhaps name this 'deferredCheckBlobs' - as all other types should&will get checked immediately?
+
+Line:246, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> Possible optimization: It struck me that if the repo is empty (ie. you are cloning), you could set this to a small multiple of BUFFER_SIZE - you know that you'll never have to go back and do a deferred check for a known blob, because you don't have any. Consequently you get the benefit of not having to allocate an array for any blob you encounter :)
+
+Line:914, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> 'doDeferredBlobChecks()' ?
+
+Line:933, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> This switch statement looks unnecessary to me - if the value of 'type' is not BLOB we should throw an exception straight away.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-12-08 01:05:12.000000000
+
+Patch Set 2: (4 inline comments)
+
+
+
+Line:219, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> Done
+
+Line:246, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> I don't think this special case for empty local repository is useful.  Further down we only add a blob to deferredCheckBlobs if the blob already exists in the local repository.  If the repository is empty, that check is really fast (searching an empty hash map is constant time) and it returns false, so we never put the blob into deferredCheckBlobs.
+
+Line:914, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> Done, called "doDeferredCheckBlobs()".
+
+Line:933, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> Done
+
+-------------------------------------
+author: Kendrick Carrillo
+date: 2010-12-08 01:14:07.000000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:246, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> I'm trying to get at the fact that blob-streaming should be *faster* pretty much as soon as the blob size rises above BUFFER_SIZE, as blob-streaming doesn't do the byte array allocation (of  'dst') that occurs in inflateAndReturn().
+
+The only reason not to do blob streaming is that you might later have to do disk IO if you're unlucky. If your repository is empty, you'll never be unlucky.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-12-08 01:19:36.000000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:246, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> Ok, now I understand your point.
+
+Even on a non-empty repository, a large percentage of the blob objects received will be new and streaming would be efficient, as they don't need to access the data twice.  If however a blob already exists, we already have to do disk IO to load the existing blob.  Doing another disk IO to load back part of this pack is bad, but we're already suffering disk IO to load the existing blob.
+
+Maybe its OK to just always stream blobs and take a double IO hit anytime this blob already exists.
+
+-------------------------------------

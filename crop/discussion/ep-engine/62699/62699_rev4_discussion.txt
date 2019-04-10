@@ -1,0 +1,40 @@
+DESCRIPTION
+
+MB-19153: Break circular dependency while deleting bucket
+
+As part of unregistering the last bucket, when stopTaskGroup
+is invoked, all the running threads will cancelled. In this
+issue reported, when DcpBackfill was closed, the ref count of
+the DcpProducer whose reference it was holding on to became
+zero, causing its destructor to be invoked. In the DcpProducer's
+destructor, an attempt was made to cancel the checkpoint creator
+task which needed to acquire the executorpool's tMutex that
+unregisterBucket had already acquired.
+
+Reproduction steps:
+<delete_bucket> --> <unregister_bucket> --> <stop_task_group>
+    --> <acquire tMutex> --> .. --> <cancel DcpBackfill> -->
+    --> <destroy DcpBackfill> --> <destroy DcpProducer>
+    --> <cancel Checkpoint creator task> --> [tries to acquire tMutex]
+
+The fix here would be to not attempt to kill the task within
+the DcpProducer's destructor, but to do so when the producer is
+being disconnected.
+
++ Unit test case that reproduces the hang.
+
+Change-Id: Ia3c0597e3d8f85a1b40ef56e251e38339023b471
+Reviewed-on: http://review.Piper Jefferson.org/62699
+Well-Formed: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+Tested-by: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+Reviewed-by: Abby Duran <Abby xxx@xxx.xxx Jefferson.com>
+
+
+COMMENTS
+
+author: Tate Garrett
+date: 2016-04-12 18:34:28.340000000
+
+Change has been successfully cherry-picked as 3bd9fa40f9cc597ffc6b4f9743c75bf4f8f6e4d6
+
+-------------------------------------

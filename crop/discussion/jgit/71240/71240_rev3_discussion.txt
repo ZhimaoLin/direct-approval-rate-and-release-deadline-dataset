@@ -1,0 +1,80 @@
+DESCRIPTION
+
+Scan loose ref before packed in case gc about to remove the loose
+
+Before this change, jgit used to read packed-refs before scanning
+loose refs. That was not a problem if gc didn't run concurrently. When
+gc did run concurrently with such refs reading, that order sometimes
+broke the latter. This lead to reading an older version of a ref's
+tip, which meant "losing" the real tip or commit. The specific
+read-Vs-gc concurrency scenario which broke reading that way follows:
+
+1. let ref R be in packed-refs and R' be in loose
+2. jgit starts reading packed-refs
+3. gc also starts its business around that very time
+4. jgit still has the time to read R from packed-refs
+5. as gc is not done yet updating packed-refs with R'
+6. jgit then starts scanning loose refs (or is about to)
+7. gc quickly ends up being done moving loose R' to packed-refs
+8. so gc (quickly) removes loose refs
+9. -while jgit is scanning loose refs, now gone
+10. so jgit assumes no loose to consider => packed-refs winning
+11. so jgit wrongfully returns R (from 4.) as the tip, instead of R'.
+
+This fix switches the order so loose refs are scanned (secured) before
+taking the time to read packed-refs. This way, knowledge of the
+likelier tip is guaranteed for ref reading to return the true tip
+- despite concurrent gc. If there is no loose ref to scan, jgit reads
+packed-refs and lands on R' (or S), which it then returns, as
+expected. The gerrit issue [1] should be solved by this fix.
+
+[1] https://code.google.com/p/gerrit/issues/detail?id=2302
+
+Change-Id: Ibd120120a361a3a6ed565f3836afc1db706fbcdd
+Signed-off-by: Tyler Harvey xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Tyler Harvey
+date: 2016-04-22 21:27:37.000000000
+
+Uploaded patch set 3: Commit message was updated.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-04-22 21:27:44.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/8271/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-04-22 21:38:19.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/8271/ : SUCCESS
+
+-------------------------------------
+author: Mitchell Griffith
+date: 2016-04-25 15:34:55.000000000
+
+Patch Set 3: Code-Review+1
+
+-------------------------------------
+author: Beatrice Lester
+date: 2016-04-29 14:08:17.000000000
+
+Patch Set 3: Code-Review+1
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-05-04 23:11:50.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

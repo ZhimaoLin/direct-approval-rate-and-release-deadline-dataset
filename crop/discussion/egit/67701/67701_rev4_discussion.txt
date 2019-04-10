@@ -1,0 +1,146 @@
+DESCRIPTION
+
+RepositoryCache: do not prematurely remove submodules
+
+RepositoryCache cleanup must make sure not to remove submodules and
+nested modules prematurely. Since those are not registered as
+"configured repositories", which would cause trouble when a repo was
+deleted from the Repositories view anyway, we must make sure to remove
+them only if no configured repository contains them.
+
+This requires that the RepositoryCache keeps track of repository
+nesting. To avoid duplicating code, the IndexDiffCache cleanup when a
+configured repository is removed is now triggered from the
+RepositoryCache.
+
+Change-Id: I3f437caccd58d6c9fb4187f66d9f53e7834a5224
+Signed-off-by: Alayna Houston xxx@xxx.xxx
+
+COMMENTS
+
+author: Alayna Houston
+date: 2016-03-03 06:56:09.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-03-03 06:56:15.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/8244/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-03-03 07:22:28.000000000
+
+Patch Set 4: Code-Review-1
+
+Build Unstable 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/8244/ : UNSTABLE
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-03-03 10:33:36.000000000
+
+Patch Set 4: -Code-Review
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/8245/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-03-03 11:04:05.000000000
+
+Patch Set 4: Code-Review-1
+
+Build Unstable 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/8245/ : UNSTABLE
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-03-03 11:59:38.000000000
+
+Patch Set 4: -Code-Review
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/8246/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-03-03 12:25:23.000000000
+
+Patch Set 4: Code-Review-1
+
+Build Unstable 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/8246/ : UNSTABLE
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-03-03 20:47:59.000000000
+
+Patch Set 4: Code-Review-2
+
+Not nice. That failure actually highlights a true bug. Looks like the attempt to fix bug 483664 in https://git.eclipse.org/r/#/c/62066/ was wrong.
+
+There can actually be top-level repositories that are not in the configured repositories. Those get evicted from the cache too early (at any change in the "configured repositories" pref, which is wrong), but may be still referenced from some project's RepositoryMapping. Later something (didn't track it down exctly, probably the decorator) creates a new IndexDiffCacheEntry for this repository that isn't in the cache. Ergo that new IndexDiffCacheEntry is never removed. Moreover, in the SubmoduleFolderTest setup, we then look up such a repository again (childRepository, line 93 in this patch), and now we have a second RepositoryInstance for the same git directory, which gets its own IndexDiffCacheEntry (and which later is properly removed).
+
+The test failure lists so many IndexDiff cache entries because they also don't get removed when the projects that reference them via their RepositoryMapping eventually get deleted. So cache entries accumulate over all the tests.
+
+Andrey's approach in https://git.eclipse.org/r/#/c/62065/ is apparently better, but it's not quite correct yet either. The index diff cache entry should probably be removed only if removeProj == true, otherwise we might also be left with projects that still have RepositoryMappings to that repo. At least his approach wouldn't remove them from the cache, so as long it's referenced from somewhere, a lookup() would always return the same instance.
+
+But in addition to his approach, we'll also have to remove index diff cache entries when the last project referencing a repo is closed or deleted.
+
+So instead of all this complicated nesting detection, I think the correct way is to produce a change that
+* reverts https://git.eclipse.org/r/#/c/62066/
+* and removes index diff cache entries when repositories are regularly pruned() from the repository cache once they're no longer referenced.
+
+The latter, however, will mean that the IndexDiffCache and its entries must not hold on to strong references to repositories either. Which means either more weak references, or key and store only git dirs, and get the repository where needed from a new RepositoryCache method getRepository(File gitDir), which will _not_ create the repo if not in the cache. Which also means that the index update jobs will have to be prepared to get null for the repo they're supposed to run on.
+
+This might take a while to get right...
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2016-03-03 23:47:50.000000000
+
+Patch Set 4:
+
+> 
+ > This might take a while to get right...
+
+so should we revert https://git.eclipse.org/r/#/c/62066/ now in order to fix the problem until the right fix is ready ?
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-03-04 06:40:00.000000000
+
+Patch Set 4:
+
+> so should we revert ...
+
+For the time being, I suggest we leave it as is. I didn't see any bug reports that might be related to this, and I didn't notice any adverse effects in daily work; so I don't see an urgent need to revert. I'm working on it.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2016-03-04 07:43:06.000000000
+
+Patch Set 4:
+
+> > so should we revert ...
+ > 
+ > For the time being, I suggest we leave it as is. I didn't see any
+ > bug reports that might be related to this, and I didn't notice any
+ > adverse effects in daily work; so I don't see an urgent need to
+ > revert. I'm working on it.
+
+ok, thanks for looking into this
+
+-------------------------------------
+author: Gerrit Johnathan Pham
+date: 2016-03-14 23:20:20.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

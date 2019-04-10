@@ -1,0 +1,48 @@
+DESCRIPTION
+
+JVMCBC-361: Node dispatching should occur on DEGRADED
+
+Motivation
+----------
+When opening several buckets in a row, one of which is tried with
+wrong password in the middle, the opening of last buckets can timeout.
+
+During investigation it was seen that in a goodA/wrong/goodB bucket open
+sequence, the CarrierRefresher would schedule a GetBucketConfigRequest
+for "goodA" and it would go into a long-lasting retry loop.
+
+Upon investigating further, it appears this is due to the ongoing
+attempt at opening "wrong", which puts the Node(s) into DEGRADED mode.
+Since the KeyValueLocator won't dispatch a message to a node that isn't
+CONNECTED, this goes directly into the retry loop even though the
+request could go through (the corresponding bucket's services are
+CONNECTED).
+
+Modifications
+-------------
+The KeyValueLocator now dispatches messages to Nodes that are either
+CONNECTED or DEGRADED, as they still might have a Service CONNECTED
+and ready to process the request.
+
+Result
+------
+If a Node is DEGRADED, it can still attempt to process a request, which
+will still be retried if no CONNECTED Service can process it.
+
+With this change, it appears that trying to open 3 buckets in a row,
+with correct password then incorrect then correct, now doesn't timeout.
+
+Change-Id: Ie5a19b7575a5705db34fd7c851192d10411f7c4c
+Reviewed-on: http://review.couchbase.org/67023
+Tested-by: Estrella Humphrey xxx@xxx.xxx
+Reviewed-by: Natasha Sullivan xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Gerrit Code Review
+date: 2016-08-24 13:42:33.207000000
+
+Change has been successfully cherry-picked as 8ab8d1144fb89db5336dafd2f5f163d74f6836b8 by Estrella Humphrey
+
+-------------------------------------

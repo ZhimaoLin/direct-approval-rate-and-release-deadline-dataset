@@ -1,0 +1,226 @@
+DESCRIPTION
+
+Add support to follow HTTP redirects
+
+git-core follows HTTP redirects so JGit should also provide this.
+
+Implement config setting http.followRedirects with possible values
+"false" (= never), "true" (= always), and "initial" (only on GET, but
+not on POST).[1]
+
+We must do our own redirect handling and cannot rely on the support
+that the underlying real connection may offer. At least the JDK's
+HttpURLConnection has two features that get in the way:
+
+* it does not allow cross-protocol redirects and thus fails on
+  http->https redirects (for instance, on Github).
+* it translates a redirect after a POST to a GET unless the system
+  property "http.strictPostRedirect" is set to true. We don't want
+  to manipulate that system setting nor require it.
+  
+Additionally, git has its own rules about what redirects it accepts;[2]
+for instance, it does not allow a redirect that adds query arguments.
+
+We handle response codes 301, 302, 303, and 307 as per RFC 2616.[3]
+On POST we do not handle 303, and we follow redirects only if
+http.followRedirects == true.
+
+Redirects are followed only a certain number of times. There are two
+ways to control that limit:
+
+* by default, the limit is given by the http.maxRedirects system
+  property that is also used by the JDK. If the system property is
+  not set, the default is 5. (This is much lower than the JDK default
+  of 20, but I don't see the value of following so many redirects.)
+* this can be overwritten by a http.maxRedirects git config setting.
+
+The JGit http.* git config settings are currently all global; JGit has
+no support yet for URI-specific settings "http.<pattern>.name". Adding
+support for that is well beyond the scope of this change.
+
+Like git-core, we log every redirect attempt (LOG.info) so that users
+may know about the redirection having occurred.
+
+[1] https://git-scm.com/docs/git-config
+[2] https://kernel.googlesource.com/pub/scm/git/git/+/6628eb41db5189c0cdfdced6d8697e7c813c5f0f
+[3] https://www.w3.org/Protocols/rfc2616/rfc2616-sec10.html
+
+Bug: 465167
+Change-Id: I86518cb76842f7d326b51f8715e3bbf8ada89859
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+Signed-off-by: Alayna Houston xxx@xxx.xxx
+
+COMMENTS
+
+author: Alayna Houston
+date: 2017-08-07 09:44:49.000000000
+
+Uploaded patch set 11.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-08-07 09:44:57.000000000
+
+Patch Set 11:
+
+Build Started https://ci.eclipse.org/jgit/job/jgit.gerrit/10871/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-08-07 09:56:21.000000000
+
+Patch Set 11: Verified+1
+
+Build Successful 
+
+https://ci.eclipse.org/jgit/job/jgit.gerrit/10871/ : SUCCESS
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-08-07 12:22:56.000000000
+
+Patch Set 11:
+
+> > I don't know how to write a test for http->https redirection; I
+ > > suspect that would need some more infrastructure (like a server
+ > > certificate?). I notice that the AppServer does have some https
+ > > config and listens on port 8443, but using that might be a
+ > > different
+ > > thing. I have tested this manually by cloning a Github repo with
+ > a
+ > > http (instead of https) URL.
+ > 
+ > looks like we only set schema and port but don't configure
+ > certificates. Maybe we can test redirect without configuring
+ > certificates, not sure if that would work. Otherwise we have to
+ > generate certificates and configure Jetty accordingly. For
+ > generating certificates we could either use keytool or
+ > Bouncycastle. The former approach is taken by Gerrit [1], the
+ > latter one is used by gitblit [2].
+ > 
+ > [1] https://gerrit.googlesource.com/gerrit/+/master/gerrit-pgm/src/main/java/com/google/gerrit/pgm/init/InitHttpd.java#134
+ > 
+ > [2] https://github.com/gitblit/gitblit/blob/master/src/main/java/com/gitblit/GitBlitServer.java#L237
+ > https://github.com/gitblit/gitblit/blob/master/src/main/java/com/gitblit/utils/X509Utils.java
+
+More than that would need to be done. For instance, not listening on a fixed 8443 port. Tests run in parallel, and the JGit Jenkins also runs several builds in parallel. Also, last I looked the bouncycastle inclusion in Orbit was still blocked on unresolved signing issues? Or did I misread bug 390058?
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-08-07 12:27:46.000000000
+
+Patch Set 11:
+
+> > > I don't know how to write a test for http->https redirection; I
+ > > > suspect that would need some more infrastructure (like a server
+ > > > certificate?). I notice that the AppServer does have some https
+ > > > config and listens on port 8443, but using that might be a
+ > > > different
+ > > > thing. I have tested this manually by cloning a Github repo
+ > with
+ > > a
+ > > > http (instead of https) URL.
+ > >
+ > > looks like we only set schema and port but don't configure
+ > > certificates. Maybe we can test redirect without configuring
+ > > certificates, not sure if that would work. Otherwise we have to
+ > > generate certificates and configure Jetty accordingly. For
+ > > generating certificates we could either use keytool or
+ > > Bouncycastle. The former approach is taken by Gerrit [1], the
+ > > latter one is used by gitblit [2].
+ > >
+ > > [1] https://gerrit.googlesource.com/gerrit/+/master/gerrit-pgm/src/main/java/com/google/gerrit/pgm/init/InitHttpd.java#134
+ > >
+ > > [2] https://github.com/gitblit/gitblit/blob/master/src/main/java/com/gitblit/GitBlitServer.java#L237
+ > > https://github.com/gitblit/gitblit/blob/master/src/main/java/com/gitblit/utils/X509Utils.java
+ > 
+ > More than that would need to be done. For instance, not listening
+ > on a fixed 8443 port. Tests run in parallel, and the JGit Jenkins
+ > also runs several builds in parallel. Also, last I looked the
+ > bouncycastle inclusion in Orbit was still blocked on unresolved
+ > signing issues? Or did I misread bug 390058?
+
+you are right we should not use a hard coded port but dynamically look for a free port. Either we implement this on our own or we use the port allocator plugin [1]
+
+JGit unit tests don't use OSGi bundles since they get their dependencies through plain maven dependencies from Maven central. So we should be able to use the approved bouncycastle library version in tests
+
+[1] https://wiki.jenkins.io/display/JENKINS/Port+Allocator+Plugin
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-08-07 13:37:14.000000000
+
+Patch Set 11:
+
+> JGit unit tests don't use OSGi bundles since they get their
+ > dependencies through plain maven dependencies from Maven central.
+ > So we should be able to use the approved bouncycastle library
+ > version in tests
+
+And how would that work in the org.eclipse.jgit.junit.http OSGI bundle??
+
+We need a keypair and a self-signed certficate. It doesn't look too complicated to create those with bouncy castle[1], and it doesn't look like black magic to make them known to Jetty either.[2] But I struggle to see how I could include bouncycastle in the first place.
+
+Calling out to keytool (the Gerrit way) would bypass any of that, but might not work on all systems. On my Mac (OS X 10.12.6 :-) keytool is something from Apple and doesn't have half of the options Gerrit uses.
+
+[1] https://gist.github.com/alessandroleite/fa3e763552bb8b409bfa
+[2] https://git.eclipse.org/c/jetty/org.eclipse.jetty.project.git/tree/examples/embedded/src/main/java/org/eclipse/jetty/embedded/LikeJettyXml.java#n131
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-08-07 13:55:40.000000000
+
+Patch Set 11:
+
+> On my Mac (OS X 10.12.6 :-)
+ > keytool is something from Apple and doesn't have half of the
+ > options Gerrit uses.
+
+Scratch that; misled by Apple's funny way of setting up things. Looks like everything's here, so I might give the Gerrit way a try.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-08-07 14:13:14.000000000
+
+Patch Set 11:
+
+> > On my Mac (OS X 10.12.6 :-)
+ > > keytool is something from Apple and doesn't have half of the
+ > > options Gerrit uses.
+ > 
+ > Scratch that; misled by Apple's funny way of setting up things.
+ > Looks like everything's here, so I might give the Gerrit way a try.
+
+yeah, keytool comes with Java
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-08-07 14:15:38.000000000
+
+Patch Set 11:
+
+> > JGit unit tests don't use OSGi bundles since they get their
+ > > dependencies through plain maven dependencies from Maven central.
+ > > So we should be able to use the approved bouncycastle library
+ > > version in tests
+ > 
+ > And how would that work in the org.eclipse.jgit.junit.http OSGI
+ > bundle??
+ 
+it wouldn't work in the OSGi bundle but jenkins runs tests using plain Maven so adding maven dependencies should work, though this would mean we can't run these tests in Eclipse which uses OSGi dependencies.
+
+ > We need a keypair and a self-signed certficate. It doesn't look too
+ > complicated to create those with bouncy castle[1], and it doesn't
+ > look like black magic to make them known to Jetty either.[2] But I
+ > struggle to see how I could include bouncycastle in the first
+ > place.
+ > 
+ > Calling out to keytool (the Gerrit way) would bypass any of that,
+ > but might not work on all systems. On my Mac (OS X 10.12.6 :-)
+ > keytool is something from Apple and doesn't have half of the
+ > options Gerrit uses.
+ > 
+ > [1] https://gist.github.com/alessandroleite/fa3e763552bb8b409bfa
+ > [2] https://git.eclipse.org/c/jetty/org.eclipse.jetty.project.git/tree/examples/embedded/src/main/java/org/eclipse/jetty/embedded/LikeJettyXml.java#n131
+
+-------------------------------------

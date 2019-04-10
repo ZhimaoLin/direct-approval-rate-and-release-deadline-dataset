@@ -1,0 +1,83 @@
+DESCRIPTION
+
+reftable: merge-join reftables
+
+MergedReftable combines multiple reference tables together in a stack,
+allowing higher/later tables to shadow earlier/lower tables.  This
+forms the basis of a transaction system, where each transaction writes
+a new reftable containing only the modified references, and readers
+perform a merge on the fly to get the latest value.
+
+Change-Id: Ic2cb750141e8c61a8b2726b2eb95195acb6ddc83
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2017-08-17 16:32:03.000000000
+
+Uploaded patch set 24.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-08-17 16:32:13.000000000
+
+Patch Set 24:
+
+Build Started https://ci.eclipse.org/jgit/job/jgit.gerrit/11081/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-08-17 16:55:49.000000000
+
+Patch Set 24: Verified-1
+
+Build Failed 
+
+https://ci.eclipse.org/jgit/job/jgit.gerrit/11081/ : FAILURE
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2017-08-17 18:48:10.000000000
+
+Patch Set 24: Code-Review-1
+
+(1 comment)
+
+Line:193, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftable/MergedReftable.java -> I think this method is easier to understand if guarantees the following properties:
+A) Adding an entry whose cursor is at EOF closes its cursor and does not add the entry to the priority queue 
+B) Otherwise 'head' is always set and always points at the next RefQueueEntry to return, which means either pushing the previous head on the queue if the new 't' entry is earlier or pushing 't' on the queue if it is later than 'head'.
+
+if (!t.rc.next()) {
+  t.rc.close();
+  return;
+}
+if (head == null) {
+  if (queue.isEmpty() || RefQueueEntry.compare(t, queue.peek()) < 0) {
+    head = t;
+  } else {
+    head = queue.poll();
+    queue.add(t);
+  }
+  return;
+}
+if (RefQueueEntry.compare(t, head) > 0) {
+  queue.add(t);
+} else {
+  queue.add(head);
+  head = t;
+}
+
+The O(log N) insertion comment is useful and can get moved to the top of the method.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2017-08-17 18:53:40.000000000
+
+Patch Set 24:
+
+(1 comment)
+
+Line:193, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftable/MergedReftable.java -> Done
+
+-------------------------------------

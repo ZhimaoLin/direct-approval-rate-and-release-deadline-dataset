@@ -1,0 +1,81 @@
+DESCRIPTION
+
+Extend merge support for bare repositories
+
+Optional inCore parameter to Resolver/Strategy will
+instruct it to perform all the operations in memory
+and avoid modifying working folder even if there is one.
+
+Change-Id: I5b873dead3682f79110f58d7806e43f50bcc5045
+
+
+COMMENTS
+
+author: Eleanor Frederick
+date: 2010-09-22 06:25:11.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Eleanor Frederick
+date: 2010-09-22 06:29:52.000000000
+
+Patch Set 3:
+
+In fact no logic changes since yesterday, just some comment cleanup.
+Seems to be working as expected with gerrit, the !inCore logic should stay unaffected, let me know if I am missing anything else.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-09-22 17:14:55.000000000
+
+Patch Set 3: I would prefer that you didn't submit this
+
+(6 inline comments)
+
+
+
+Line:136, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> style: unnecessary empty line
+
+Line:150, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> just for my understanding: 'incore' not only mean that we will ignore the workingdir - but we will also not update any index, right? The incore version of the Dircache is not supposed to ever be persisted.
+I do see that we will use DirCache.writeTree() in the end (which I think is permitted even on a incore DirCache) to write to the object database our merge result - but the index itself is not updated. Correct?
+
+Line:190, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> because you skip cleanUp() in case of inCore the attribute modifiedFiles may still be filled wrongly. When the incore-merge fails for whatever reason should clean the modifiedFiles list. Maybe it is better to modifiy cleanup() to do only that in case of an incore.
+
+Line:423, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> We are not fillining the failingpathes list in case of "incore". Therefore we will not be able to report why a incore merge failed.
+
+Line:425, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> Only two additional if's in the mainloop (one here and one in mergeimpl()). Great, from my point of view we can spent that.
+
+Line:469, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> Is there no way we can get rid of using temporary files here. In memory would fit better in case of inCore, or? Both, this MergeFormatter and also later the ObjectInserter are not bound to files but just to Input/Outputstreams.
+
+-------------------------------------
+author: Eleanor Frederick
+date: 2010-09-22 17:55:55.000000000
+
+Patch Set 3: (4 inline comments)
+
+
+
+Line:150, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> that is correct, the idea was not to touch working folder and index at all
+
+Line:190, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> good point.
+
+Line:423, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> failingPathes indicate only paths that failed abnormally (not because of a conflict) but rather because of dirty index or working folder, so it looks not applicable to inCore.
+For conflict failures their is unmergedPathes list which we do update.
+
+Line:469, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> I've actually looked at this option and tried to see if I can use some kind of pipes for this but couldn't find a good and simple solution (but frankly I don't have any experience with java and the available modules, so there must be something I missed). 
+Going that route though will make the code different enough that it may require a split into a different class.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-09-22 20:57:57.000000000
+
+Patch Set 3: (2 inline comments)
+
+looks good to me if the last comment about not properly updated modifiedFiles list is handled.
+
+Line:423, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> I agree!
+
+Line:469, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> I don't think you have missed something - I guess it's no so easy with standard java. But Shawn provided a class TemporaryBuffer.LocalFile which may be helpful. You may also decide to leave this optimization for the next proposal and stay with this temporary file for now.
+
+-------------------------------------

@@ -1,0 +1,84 @@
+DESCRIPTION
+
+Cluster packed blobs by delta chains
+
+When writing out the blobs in a pack, sort first by the ObjectWalk
+enumeration order (aka recency and tree path order), but cluster all
+children of a delta behind their delta base. This matches the ordering
+used by IndexPack when it is resolving deltas, speeding up IndexPack.
+
+It also produces better locality when accessing a blob. Most blob
+reads access a delta (as the vast majority of blobs are stored in
+delta format), which then needs to inflate the base and apply the
+patch. Placing all deltas near their base improves the odds that
+a the base will be in memory, if not in the JGit buffer cache,
+at least the OS buffer cache.
+
+This change makes JGit PackWriter more closely match C Git behavior
+changed in 1b4bb16b9ec3 ('pack-objects: optimize "recency order"').
+JGit was already quite close to the new C Git behavior, and it is one
+of the things that prompted C Git to update the ordering, but JGit was
+missing the blob delta family clustering.
+
+Change-Id: Id1c9d75a5af091ecd1032dd2ea0c8eb54a94b6f6
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2011-08-01 15:00:00.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2011-08-01 23:38:09.000000000
+
+Patch Set 2: Looks good to me, but someone else must approve; IP review completed
+
+
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-08-03 23:04:49.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/684/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-08-03 23:09:35.000000000
+
+Patch Set 2: Build Successful
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/684/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-08-06 01:20:31.000000000
+
+Patch Set 2: Do not submit
+
+I strongly suspect this causes data corruption.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-08-08 05:03:27.000000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:1090, org.eclipse.jgit/src/org/eclipse/jgit/storage/pack/PackWriter.java -> I think the second part of this conditional (otp.getDeltaBase() != null) is what causes the corruption. When there is a delta chain cycle (A->B->A) neither A nor B gets through this condition, so neither runs writeObjectAndDeltaChildren(), and neither appears in the pack output stream. This means the pack doesn't contain the number of objects declared in its header, causing IndexPack to abort with an early EOF error, and the index stores a bunch of objects with offset=0. Trying to read those back always fails, because the first byte of the pack ('P') appears to have object type code = 5, which is a currently invalid code.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-12-19 23:03:16.000000000
+
+Abandoned
+
+-------------------------------------

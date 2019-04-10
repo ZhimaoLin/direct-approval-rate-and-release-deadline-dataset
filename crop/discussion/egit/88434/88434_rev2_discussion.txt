@@ -1,0 +1,225 @@
+DESCRIPTION
+
+Clean up progress monitor management throughout EGit
+
+Use SubMonitor consistently. Make sure that the same monitor is not
+passed on to two different operations: in such cases, the first may
+consume all available ticks. Instead pass each operation their own
+child monitor.
+
+Refactor the EclipseGitProgressTransformer to use SubMonitor instead
+of the deprecated SubProgressMonitor. This is now a simple infinite
+progress implementation that gives a little nicer visual feedback.
+
+For instance for a clone operation, the old implementation would
+always have consumed all ticks after the "Receiving Objects" step,
+and the progress bar could thus no longer advance during "Resolving
+Deltas" and "Updating References", nor even later during the post-
+clone tasks. With the new implementation, the progress bar advances
+properly through all tasks.
+
+Bug: 463910
+Bug: 477696
+Change-Id: I082ddc4fd3dfa6a8ce67f556dda6436abebd0150
+Signed-off-by: Alayna Houston xxx@xxx.xxx
+
+COMMENTS
+
+author: Alayna Houston
+date: 2017-01-11 08:47:55.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-01-11 08:48:02.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/9480/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-01-11 09:11:04.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/9480/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-01-11 21:57:06.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:24, org.eclipse.egit.core/src/org/eclipse/egit/core/EclipseGitProgressTransformer.java -> can't this be fixed in JGit ?
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-01-12 09:05:30.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:24, org.eclipse.egit.core/src/org/eclipse/egit/core/EclipseGitProgressTransformer.java -> Of course it can. But it's quite a bit of work. Note that all JGit monitors currently are "infinite progress" monitors: see BatchingProgressMonitor, which also ignores the number of tasks. Also, JGit re-uses the same monitor for multiple sub-steps. For purely textual output this works fine, but if you have to report overall progress on some fixed scale from zero to "all done", that won't work well. JGit would basically need to have a concept akin to SubMonitor and use it consistently, too.
+
+This implementation here makes this monitor behave like all other JGit monitors. It'll work whether or not the JGit monitor mechanism is changed. If and when it is changed, this implementation here could then be adapted, too.
+
+-------------------------------------
+author: Kelly Potter
+date: 2017-01-12 18:28:05.000000000
+
+Patch Set 2:
+
+(18 comments)
+
+Line:167, org.eclipse.egit.core/src/org/eclipse/egit/core/op/CreatePatchOperation.java -> No need to convert the monitor or allocate ticks since EclipseGitProgressTransformer does this internally. Just pass monitor directly.
+
+Line:188, org.eclipse.egit.core/src/org/eclipse/egit/core/op/CommitOperation.java -> Use the one-argument version of "convert" and keep the call to setTaskName. Most monitors (including SubMonitor) ignore the string argument to convert(...) or beginTask(...) by default.
+
+setTaskName is treated differently and is normally shown to the user.
+
+There is no need to allocate or consume any ticks on this monitor since the entire thing is consumed by the parent. Remove the local variable and change to:
+
+SubMonitor.convert(actMonitor).setTaskName(CoreText.CommitOperation_PerformingCommit);
+
+Line:192, org.eclipse.egit.core/src/org/eclipse/egit/core/op/CommitOperation.java -> Delete. No need to report work at the end of a method. The caller will take care of this.
+
+Line:69, org.eclipse.egit.core/src/org/eclipse/egit/core/op/AddToIndexOperation.java -> Unless you're trying to suppress cancellation checks (and I don't think you should be here), it's normally better to use progress.split(1) rather than progress.worked(1).
+
+The difference in performance is negligable.
+
+Line:123, org.eclipse.egit.core/src/org/eclipse/egit/core/op/CreateLocalBranchOperation.java -> Delete. Reporting progress at the end of a method is a no-op.
+
+Line:73, org.eclipse.egit.core/src/org/eclipse/egit/core/op/AssumeUnchangedOperation.java -> This will consume most of the progress on the first loop. Suggest changing this to "rsrcList.size() + caches.size()" and removing the extra call to setWorkRemaining.
+
+Line:93, org.eclipse.egit.core/src/org/eclipse/egit/core/op/AssumeUnchangedOperation.java -> split(1) is usually preferred over worked(1)
+
+Line:69, org.eclipse.egit.core/src/org/eclipse/egit/core/EclipseGitProgressTransformer.java -> Suggest using at least 1000 ticks in cases where progress is unknown. Experimentally, SubMonitors that consume 1% per iteration seem to overflow at around 700 iterations. Change to:
+
+root.setWorkRemaining(1000).worked(1);
+
+Line:99, org.eclipse.egit.core/src/org/eclipse/egit/core/EclipseGitProgressTransformer.java -> Suggest using 1000 ticks and fluent form:
+
+root.setWorkRemaining(1000).worked(1);
+
+Line:120, org.eclipse.egit.core/src/org/eclipse/egit/core/op/DeleteBranchOperation.java -> If you care about the task name, it's normally better to call setTaskName than to pass the string to convert. In this case, they are equivalent but in most situations since you're talking to a root monitor, but in most cases any string argument to convert(...) is ignored.
+
+Line:123, org.eclipse.egit.core/src/org/eclipse/egit/core/op/DeleteBranchOperation.java -> Delete this cancellation check. Replace it with a call to progress.split(1).
+
+Line:142, org.eclipse.egit.core/src/org/eclipse/egit/core/op/DeleteBranchOperation.java -> Replace this with a call to progress.split(1) and move it to the start of the loop.
+
+Line:119, org.eclipse.egit.core/src/org/eclipse/egit/core/op/FetchOperation.java -> Just pass monitor directly.
+
+Line:84, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/ProjectReferenceImporter.java -> Change to: 
+
+SubMonitor subProgress = progress.split(1).setWorkRemaining(refs.size());
+
+Line:97, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/ProjectReferenceImporter.java -> Change to:
+
+SubMonitor subSubProgress = subProgress.split(1).setWorkRemaining(repositoryPath == null ? 2 : 1);
+
+(setWorkRemaining is slightly fewer characters to type and slightly more efficient than a call to SubMonitor.convert)
+
+Line:104, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/ProjectReferenceImporter.java -> Unless you explicitly don't want cancellation checks (for example, if you're in a finally or catch block), it's better to use subSubProgress.split(1)
+
+Line:52, org.eclipse.egit.core/src/org/eclipse/egit/core/op/DisconnectProviderOperation.java -> Remove the * 2
+
+Line:61, org.eclipse.egit.core/src/org/eclipse/egit/core/op/DisconnectProviderOperation.java -> Remove the call to worked. Calling worked immediately before newChild(...) is an antipattern that reduces the progress resolution.
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-01-12 21:15:28.000000000
+
+Patch Set 2:
+
+(7 comments)
+
+Thank you, Stefan, for those really useful hints. Just one thing: we cannot use split() since it's not available on our base target, which is Eclipse 4.4. I'll take care of your comments and try to apply them in the remaining files, too.
+
+Line:167, org.eclipse.egit.core/src/org/eclipse/egit/core/op/CreatePatchOperation.java -> Good catch. I did this part before rewriting EclipseGitProgressTransformer.
+
+Line:69, org.eclipse.egit.core/src/org/eclipse/egit/core/op/AddToIndexOperation.java -> We're not using split() since it's not available on our base platform Eclipse 4.4.
+
+Line:73, org.eclipse.egit.core/src/org/eclipse/egit/core/op/AssumeUnchangedOperation.java -> Doesn't work: caches is only populated during the first loop.
+
+Line:93, org.eclipse.egit.core/src/org/eclipse/egit/core/op/AssumeUnchangedOperation.java -> ... unless you're targeting Eclipse 4.x that don't have split() :-)
+
+Line:69, org.eclipse.egit.core/src/org/eclipse/egit/core/EclipseGitProgressTransformer.java -> They shouldn't overflow, should they? Saturate, yes, but overflow?
+
+Line:99, org.eclipse.egit.core/src/org/eclipse/egit/core/EclipseGitProgressTransformer.java -> I'll have to see how it behaves with 1000. Progress might be too slow then.
+
+Line:84, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/ProjectReferenceImporter.java -> I can do newChild(1) and then setWorkRemaining(), but we must not use split() since it's not available on our base platform Eclipse 4.4.
+
+-------------------------------------
+author: Kelly Potter
+date: 2017-01-12 21:34:21.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:73, org.eclipse.egit.core/src/org/eclipse/egit/core/op/AssumeUnchangedOperation.java -> Then allocate 2 ticks here, and allocate two child submonitors - one for the first loop and one for the second.
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-01-12 21:40:08.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:73, org.eclipse.egit.core/src/org/eclipse/egit/core/op/AssumeUnchangedOperation.java -> Or simply replace +1 by *2. Would have the same effect. I had, however, chosen +1 on purpose because I think caches.size() will be <= rsrcList.size(). (Probably much smaller for many resources.) But I should check how long writing the DirCache actually takes.
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-01-12 22:40:51.000000000
+
+Patch Set 2:
+
+(10 comments)
+
+Line:167, org.eclipse.egit.core/src/org/eclipse/egit/core/op/CreatePatchOperation.java -> Done
+
+Line:188, org.eclipse.egit.core/src/org/eclipse/egit/core/op/CommitOperation.java -> Done
+
+Line:192, org.eclipse.egit.core/src/org/eclipse/egit/core/op/CommitOperation.java -> Done
+
+Line:123, org.eclipse.egit.core/src/org/eclipse/egit/core/op/CreateLocalBranchOperation.java -> Done
+
+Line:73, org.eclipse.egit.core/src/org/eclipse/egit/core/op/AssumeUnchangedOperation.java -> Done
+
+Line:119, org.eclipse.egit.core/src/org/eclipse/egit/core/op/FetchOperation.java -> Done
+
+Line:84, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/ProjectReferenceImporter.java -> Done
+
+Line:97, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/ProjectReferenceImporter.java -> Done
+
+Line:52, org.eclipse.egit.core/src/org/eclipse/egit/core/op/DisconnectProviderOperation.java -> Done
+
+Line:61, org.eclipse.egit.core/src/org/eclipse/egit/core/op/DisconnectProviderOperation.java -> Done
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-01-12 22:52:50.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:99, org.eclipse.egit.core/src/org/eclipse/egit/core/EclipseGitProgressTransformer.java -> Not done. Cloning Guice from https://github.com/google/guice.git the progress bar advances way too slow and then jumps to the end for clone configuration.
+
+Since this updates only when the percentage changes, i.e., at most 100 times per JGit "subtask", we should be fine. Even if it saturated at 700, we'd reach that only after 7 JGit tasks.
+
+-------------------------------------
+author: Gerrit Johnathan Pham
+date: 2017-02-04 08:56:47.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

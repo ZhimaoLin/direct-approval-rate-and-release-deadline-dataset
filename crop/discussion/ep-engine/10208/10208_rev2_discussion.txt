@@ -1,0 +1,65 @@
+DESCRIPTION
+
+Two phases of fast vbucket deletion for table per vbucket.
+
+From the large cluster with hundreds of millions of items, the
+current fast vbucket deletion frequently takes more than several
+minutes. This causes some bad effects when the rebalance failed
+and restarted several times and consequently caused many vbucket
+deletions because ns_server generates a completely new vbucket
+map for each rebalance operation. As fast vbucket deletion jobs
+have higher priority than persistence tasks, this will result
+in blocking persistence jobs and large persistence queue, and
+slow down rebalance operations.
+
+To resolve this issue, this change does two phases of a vbucket
+deletion as follows:
+1) Change a vbucket table name (e.g., kv_0) to the temporary
+name indicating it is now an invalid table. Then, create a new
+table for that vbucket. Once this phase is completed, new items
+can be inserted into the new table.
+2) Invalid tables will be cleaned up by the periodic dispatcher
+job with a lower priority. Currently, we remove one invalid table
+from disk every 10 minutes.
+
+Note that changing database schemas at runtime actually does not
+invalidate PreparedStatement instances that we create when we
+connect to database. From the sqlite documentation,
+http://www.sqlite.org/c3ref/prepare.html, it is mentioned that
+if the database schema changes, instead of returning
+SQLITE_SCHEMA as it always used to do, sqlite3_step() will
+automatically recompile the SQL statement and try to run it again.
+
+Change-Id: I97d65cfaea86512f5fafba6fd253b8c45736f70e
+
+
+COMMENTS
+
+author: Abby Duran
+date: 2011-10-19 18:32:02.069000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Noah Dean
+date: 2011-10-19 18:51:41.260000000
+
+Patch Set 2: Looks good to me, approved
+
+Great find.  I wouldn't've looked here again, or would've at least done something more complicated based on prior reading of documentation
+
+-------------------------------------
+author: Abby Duran
+date: 2011-10-19 19:05:39.383000000
+
+Patch Set 2: Verified
+
+Thanks Dustin for the fast review. I verified it through performing rebalance operations in the three to four node cluster.
+
+-------------------------------------
+author: Abby Duran
+date: 2011-10-19 19:05:39.733000000
+
+Change has been successfully cherry-picked as cbda8344bc1f4c6d8191b3d01400322f4299f64b.
+
+-------------------------------------

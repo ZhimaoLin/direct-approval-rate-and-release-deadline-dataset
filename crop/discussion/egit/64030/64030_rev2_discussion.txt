@@ -1,0 +1,90 @@
+DESCRIPTION
+
+[test log] Unify pom.xml for tests
+
+Move the mac and not-mac profiles into the global pom.
+
+Also move the coretest.vmargs (empty) and uitest.vmargs (with defaults)
+there.
+
+Change-Id: Ia210bad67889cdad9dbf269216a1554af249a9ed
+Signed-off-by: Alayna Houston xxx@xxx.xxx
+
+COMMENTS
+
+author: Alayna Houston
+date: 2016-01-22 21:07:24.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-01-22 21:07:30.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/8068/
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-01-22 21:19:40.000000000
+
+Patch Set 2:
+
+This is not nice. At first I thought it was a maven bug since I had an old maven 3.0.3 on my Mac. But the error persisted even after upgrading to 3.3.9...
+
+The real culprit is:
+1. The default property for <target-platform> is "egit-4.3" (Kepler)
+2. This get overridden by the <activeByDefault> in the "platform-mars" profile.
+
+So normally a mvn clean install will always build against the egit-4.5 (Mars) target platform.
+
+With this change, however, we always activate another profile in the same pom: either macosx, or other-os. Hence <activeByDefault> has no effect anymore, and we build against the Kepler target platform (given by the default value of <target-platform>).
+
+To validate this, I tried the following on current master (i.e., without this change):
+
+  mvn -P platform-kepler clean install
+
+And indeed I get exactly the same failure.
+
+The Hudson build (8013) succeeded because it activates profiles explicitly. It does
+
+  mvn clean install -P platform-mars,static-checks,other-os,eclipse-sign
+
+So, the first thing to take away here is that we cannot build org.eclipse.egit.ui.importer against Kepler. That is *not* a problem of this change.
+
+The second bug here is that this platform selection business is broken. Instead of <activateByDefault> I now just set the default value for the <target-platform> property to egit-4.5. I also wonder about the wisdom of using profiles for the platform selection at all. I find this a *very* roundabout way of doing things. Instead of
+
+  mvn -P platform-kepler clean install
+  
+one can just as well select the target platform via
+
+  mvn -Dplatform-version-name=kepler clean install
+
+or via
+
+  mvn -Dtarget-platform=egit-4.3 clean install
+
+All three select Kepler and fail.
+
+So, why not remove those platform profiles completely and use a simple property instead? All we'd lose is the automatic translation from names like "kepler" or "platform-kepler" to "egit-4.3".
+
+What I still don't understand is why maven falls back to osgi.os=linux when building against Kepler.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-01-22 21:32:39.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/8068/ : SUCCESS
+
+-------------------------------------
+author: Gerrit Johnathan Pham
+date: 2016-01-23 23:00:45.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

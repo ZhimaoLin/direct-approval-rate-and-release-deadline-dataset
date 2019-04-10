@@ -1,0 +1,365 @@
+DESCRIPTION
+
+[Ephemeral Buckets]: Add a class that stores ordered sequence of items in memory
+
+This commit adds an abstract base class 'SequenceList' that provides apis
+to store ordered sequence of items in memory.
+
+'BasicLinkedList' is a concrete class derived from 'SequenceList' that
+implements in-memory ordered seq of items storage in our multi-threaded,
+monotonically increasing seq model. 'BasicLinkedList' uses a boost intrusive
+doubly linked list. It is essentially a linked list of 'StoredValues'.
+
+'BasicLinkedList' works in tandem with already existing 'HashTable'
+to achieve O(1) writes/updates and O(1) reads. Range read is also
+implemented which is necessary for an in-memory DCP backfill. Range reads
+provide point-in-time snapshots which is essential for our incremental DCP.
+
+'BasicLinkedList' is NOT heavily multi-threaded. Writer threads and
+'cleanStaleItems' threads block each other. (Stale items are a consequence
+of point-in-time snapshots).
+
+Since 'HashTable' and 'SequenceList' mus work in tandem, some of the
+functionalities that occur in 'HashTable' during a write have been moved
+to 'VBucket' and a new class 'EphemeralVBucket' has been derived from
+'derived' to do things differently in an Ephemeral Bucket.
+
+Glimpse of how this would integrated with EPBucket (and an upcoming
+EphemeralBucket class) has been provided as well by modifying the
+set function.
+
+Finally a module test 'ephemeral_vb_test' has been added as a module test.
+
+Note: This is still not fully integrated with the kv-engine.
+
+Change-Id: I31bde3ea25509504fa8cc23a5506e7b14fa16bc8
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2016-11-28 07:20:40.457000000
+
+Uploaded patch set 8.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-28 07:20:46.206000000
+
+Patch Set 8:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1934/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-28 07:20:46.363000000
+
+Patch Set 8:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/716/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-28 07:20:46.516000000
+
+Patch Set 8:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1853/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-28 07:20:46.656000000
+
+Patch Set 8:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1552/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-28 07:31:38.342000000
+
+Patch Set 8: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/716/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1552/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1853/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1934/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-11-28 10:36:08.803000000
+
+Patch Set 8: Code-Review-1
+
+(41 comments)
+
+General approach looks good - few specific comments inline.
+
+Note this patch has got pretty massive (1550 lines added!) Can you see if you can split it into smaller logical chunks? For example, I note you've refactored a bunch of code from HashTable to VBucket - it might make sense to do this refactor as a separate initial commit.
+
+Line:885, src/ep.h -> Please add a comment describing this.
+
+Line:43, src/seqlist.h -> You don't actually need this - the default constructors should be equivalent.
+
+Also - I'd say it's undesirable to say default one element of the range but not both - that would likely lead to confusion / bugs. If you want to explicitly declare the the constructors, explicitly declare a default (where both are set to zero), and a second explicit constructor which takes both a min and max.
+
+Line:111, src/seqlist.h -> Is this owning or not?
+
+Line:125, src/seqlist.h -> As previous, make `items` the return value.
+
+Line:151, src/seqlist.h -> If these aren't part of the "official" public interface, remove them and instead add onto a MockSequenceList class - or MockSubclass for each individual.
+
+(By adding them to the public interface you essentially create more code which needs to be tested). At the *very very least* they should not be public.
+
+Line:276, src/seqlist.h -> Cleaner to not commit commented out code, keep it in your local world and add in "fully formed".
+
+Line:28, src/seqlist.cc -> Style: Formatting is wrong - should be:
+
+ BasicLinkedList::BasicLinkedList(HashTable& hashTable,
+                                  const uint16_t bucketed)
+     : SequenceList(),
+       numItems() ...
+
+Line:69, src/seqlist.cc -> Would be nice to explain the range read architecture somewhere - maybe a description / diagram in the header, or at least a link to the design doc.
+
+Line:172, src/seqlist.cc -> Do you need to check for null here?
+
+Line:176, src/seqlist.cc -> I think it would be clearer if this was written in a more traditional for() loop-style - explicit increment, exit condition etc.
+
+I see that might be hard with the way you're using locks, could you take a look?
+
+Line:198, src/seqlist.cc -> Do you need to check for null here?
+
+Line:274, src/hash_table.h -> Given 'SV' isn't a common appreciation in the code (AFIAK), and additionally tools like doxygen, OpenGrok won't hyperlink it I'd suggest writing out StoredValue in full.
+
+Line:293, src/hash_table.h -> Can itm be const?
+
+Line:373, src/hash_table.h -> Worth documenting the ownership semantics here - does the caller own the result? Are they expected to free it or not?
+
+Line:375, src/hash_table.h -> Can this be const?
+
+Line:533, src/hash_table.h -> Might be worth elaborating what "unlink" means here.
+
+Line:541, src/hash_table.h -> Prefer a non-owning type for the key - Jim's in the process of refactoring, but the watson code is using const_char_buffer.
+
+Line:667, src/hash_table.h -> Ditto
+
+Line:397, CMakeLists.txt -> Preferable to just link ephemeral_vb_test.cc into the main unit test binary - saves compiling a bunch of stuff twice.
+
+Line:866, src/ep.cc -> It doesn't look like vb needs to be a RCPtr here (it's only used locally, and not passed to another function to extend lifetime etc) - so prefer to pass by plain reference - see http://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rr-smartptrparam
+
+Having said that, you only ever use the ID from the vbucket - so just pass that instead of the whole VBucket.
+
+Line:952, src/ep.cc -> Not sure this is correct - need to ensure the atomicity of sequence number and xxx@xxx.xxx Popew does this look ok to you?
+
+Line:1156, src/checkpoint.cc -> Safer to use a switch(generateBySeqno) - that ensures that all cases are checked for (you'll get a warning otherwise).
+
+Line:26, src/ep_types.h -> Style:: Existing enum values use only an initial Uppercase letter - please match that here.
+
+Line:41, src/ep_types.h -> Missing case for your new enum value here.
+
+Line:48, src/ep_types.h -> Ditto.
+
+Line:594, src/vbucket.h -> Suggest moving into it's own file, this header is already pretty long.
+
+Line:622, src/vbucket.h -> Similar to previous, return the result via the return value.
+
+Line:625, src/vbucket.h -> Missing space.
+
+Line:647, src/vbucket.h -> Move these to a Mock testing subclass.
+
+Line:93, src/stored-value.h -> Please define stale here.
+
+Line:578, src/stored-value.h -> Can we avoid the second constructor? Having such large constructors is more likely to introduce bugs when people change one element of the class and forget to update both.
+
+If we really do need two, can you implement one in terms of the other (using constructor chaining)?
+
+Line:640, src/stored-value.h -> This seems unclear / ambiguous to me - can you expand the description, or maybe select a more descriptive name?
+
+Line:692, src/stored-value.h -> Again, having multiple operators of the same type taking slightly different arguments can be confusing. I'd be tempted to remove this (and probably the above operator) and just explicitly call `newStoredValue`
+
+Line:738, src/stored-value.h -> Again, not convinced we need both of these.
+
+Line:93, src/hash_table.cc -> Whitespace-only change.
+
+Line:359, src/hash_table.cc -> Method name needs updating in exception description.
+
+Line:363, src/hash_table.cc -> If v must be non-null, then pass a reference (and let the caller check for you).
+
+Line:365, src/hash_table.cc -> Include the method name in the exception so we can locate it easily.
+
+Line:383, src/hash_table.cc -> Given this is immediately overwritten at line 392 (i.e. it's a pure 'out' param), prefer to return from the function - maybe as a std::pair<mutation_type_t, StoredValue&> or similar.
+
+Line:703, src/hash_table.cc -> Update name
+
+Line:739, src/hash_table.cc -> Update name.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2016-11-29 02:49:30.389000000
+
+Patch Set 8:
+
+(39 comments)
+
+Line:885, src/ep.h -> Done
+
+Line:43, src/seqlist.h -> Thats a good point.
+Done
+
+Line:111, src/seqlist.h -> No, it is owned by the hash table
+
+Line:125, src/seqlist.h -> How do I indicate/handle ENOMEM then ?
+
+Line:151, src/seqlist.h -> Done
+
+Line:276, src/seqlist.h -> Ok
+
+Line:28, src/seqlist.cc -> Done
+
+Line:172, src/seqlist.cc -> No, changed it to reference
+
+Line:176, src/seqlist.cc -> Changed to for loop
+
+Line:198, src/seqlist.cc -> Need not check for null. Valid seqList iterator will always point to non-NULL stored values.
+Changed v to reference instead of pointer
+
+Line:274, src/hash_table.h -> Done
+
+Line:293, src/hash_table.h -> Itm is not const as itm seqno is set in the func.
+
+Line:373, src/hash_table.h -> Done
+
+Line:375, src/hash_table.h -> Done
+
+Line:533, src/hash_table.h -> Done
+
+Line:541, src/hash_table.h -> I did not get what should I replace std::string& with. Isnt const_char_buffer also owning type ?
+
+Line:397, CMakeLists.txt -> Done
+
+Line:866, src/ep.cc -> Done
+
+Line:952, src/ep.cc -> I think this is correct.
+@Shayna Popew can confirm
+
+Line:1156, src/checkpoint.cc -> Done
+
+Line:26, src/ep_types.h -> Done
+
+Line:41, src/ep_types.h -> Done
+
+Line:48, src/ep_types.h -> Done
+
+Line:594, src/vbucket.h -> Done
+
+Line:622, src/vbucket.h -> TBD after a clarification on the other comment
+
+Line:625, src/vbucket.h -> Done
+
+Line:647, src/vbucket.h -> Done
+
+Line:93, src/stored-value.h -> Done
+
+Line:578, src/stored-value.h -> Done, avoided the 2nd ctor
+
+Line:640, src/stored-value.h -> Done
+
+Line:692, src/stored-value.h -> Done, avoided the 2nd operator
+
+Line:738, src/stored-value.h -> Done, avoided the 2nd one
+
+Line:93, src/hash_table.cc -> Done
+
+Line:359, src/hash_table.cc -> Done
+
+Line:363, src/hash_table.cc -> Done
+
+Line:365, src/hash_table.cc -> Done
+
+Line:383, src/hash_table.cc -> This has implications in the call stack till ep.cc where a non-null v is passed for an update and null value for new add.
+I think we should leave this as is and add a comment.
+
+Line:703, src/hash_table.cc -> Done
+
+Line:739, src/hash_table.cc -> Done
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2016-11-29 07:14:07.988000000
+
+Patch Set 8:
+
+(1 comment)
+
+Line:69, src/seqlist.cc -> I will create a documentation for ephemeral buckets 'SeqList' explaining write, update, rangeRead and Clean Up
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-11-29 09:59:12.238000000
+
+Patch Set 8:
+
+(3 comments)
+
+Line:125, src/seqlist.h -> So you have a couple of choices:
+
+* If the errors are truly "exceptional", then you could throw an exception (std::bad_alloc) when you run out of memory - and given you already catch bad_alloc internally that might not be a bad idea.
+
+* If the errors are not exceptional (and hence you don't want to pay the exception throwing cost), then you could return either a std::pair (e.g. http://en.cppreference.com/w/cpp/container/map/insert) or a struct of {ERROR_CODE, std::deque}
+
+Line:541, src/hash_table.h -> No, const_char_buffer's raison d'être is to be non-owning (it's basically the same as the C++17 http://en.cppreference.com/w/cpp/string/basic_string_view).
+
+Line:383, src/hash_table.cc -> Ok.
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-11-29 15:17:27.603000000
+
+Patch Set 8:
+
+(6 comments)
+
+Line:198, src/seqlist.h -> nit: red space :D
+
+Line:90, src/seqlist.cc -> looks odd that currSeqno is used twice? Is that correct? If so, would a SeqRange constructor that takes a single param start_and_end or somthing like that be cleaner?
+
+Line:13, /COMMIT_MSG -> nit: stored?
+
+Line:26, /COMMIT_MSG -> nit: must
+
+Line:31, /COMMIT_MSG -> nit: redraft?
+
+Line:952, src/ep.cc -> This looks correct, but why the change? The code is still doing the same thing? In the old code v gets a new seqno and it's returned by queueDirty via &seqno, then written to itm. In the new code you do the same but read from v? I guess it's more consistent with the way CAS is updated on 953, is that the reason?
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2016-11-30 02:50:58.178000000
+
+Patch Set 8:
+
+(8 comments)
+
+Line:125, src/seqlist.h -> Done
+
+Line:198, src/seqlist.h -> Done
+
+Line:90, src/seqlist.cc -> Created a new func fallsInRange()
+
+Line:541, src/hash_table.h -> Done
+
+Line:13, /COMMIT_MSG -> Done
+
+Line:26, /COMMIT_MSG -> Done
+
+Line:31, /COMMIT_MSG -> Done
+
+Line:952, src/ep.cc -> I just removed it because I thought it was redundant passing &seqno.
+Maybe &seqno was passed due to some legacy reason
+
+-------------------------------------

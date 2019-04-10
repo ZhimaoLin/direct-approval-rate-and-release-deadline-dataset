@@ -1,0 +1,122 @@
+DESCRIPTION
+
+Don't remove pack when FileNotFoundException is transient
+
+The FileNotFoundException is typically raised in three conditions:
+1. file doesn't exist
+2. incompatible read vs. read/write open modes
+3. filesystem locking
+4. temporary lack of resources (e.g. too many open files)
+
+1. is already managed, 2. would never happen as packs are not
+overwritten while with 3. and 4. it is worth logging the exception and
+retrying to read the pack again.
+
+Log transient errors using an exponential backoff strategy to avoid
+flooding the logs with the same error if consecutive retries to access
+the pack fail repeatedly.
+
+Bug: 513435
+Change-Id: I03c6f6891de3c343d3d517092eaa75dba282c0cd
+Signed-off-by: Hayden Meyers xxx@xxx.xxx
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Douglas Trujillo
+date: 2017-03-14 20:34:14.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-03-14 20:34:22.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/9961/
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-03-14 20:35:28.000000000
+
+Patch Set 2: Code-Review+1
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-03-14 20:46:51.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/9961/ : SUCCESS
+
+-------------------------------------
+author: Elise Key
+date: 2017-03-15 00:57:35.000000000
+
+Patch Set 2: Code-Review+1
+
+-------------------------------------
+author: Eden Lin
+date: 2017-03-15 02:27:37.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:472, org.eclipse.jgit/resources/org/eclipse/jgit/internal/JGitText.properties -> What does this mean? Should it be "{1}th retry"?
+
+-------------------------------------
+author: Eden Lin
+date: 2017-03-15 02:40:41.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:128, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackFile.java -> http://jeremymanson.blogspot.com/2007/08/volatile-does-not-mean-atomic.html makes me nervous about this. It means that if one thread does
+
+ resetTransientErrorCount()
+
+while another does
+
+ incrementTransientErrorCount()
+
+then the reset can be lost, the increment can be lost, or they can be interleaved and produce a result of 1. That is not important for functionality but it can result in confusing log messages.
+
+Why log the transientErrorCount at all? Is the idea to be able to see something like
+
+ (5 similar errors omitted)
+
+in logs? In that case, why don't we log when resetting the count if there are unlogged errors? Is there some simpler way to do rate-limited logging?
+
+This makes me wish we were using guava already so we could use e.g. guava RateLimiter.
+
+-------------------------------------
+author: Elise Key
+date: 2017-03-15 03:26:45.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:472, org.eclipse.jgit/resources/org/eclipse/jgit/internal/JGitText.properties -> If we use "{1}th" we will end up with output like "1th", "2th" and "3th".
+
+-------------------------------------
+author: Elise Key
+date: 2017-03-15 05:53:58.000000000
+
+Patch Set 2:
+
+Matthias, if this gets merged when do you think we can expect to get JGit 4.5.1?
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2017-03-15 23:09:37.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

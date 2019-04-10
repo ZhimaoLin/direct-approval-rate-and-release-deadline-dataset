@@ -1,0 +1,63 @@
+DESCRIPTION
+
+MB-8911: CAPI side resolution algorithm change for deletion
+
+Since 2.2, ep_engine changes the resolution algorithm for deletion.
+To be consistent, CAPI mode replication should also adopt the same
+algorithm.
+
+Actually ep_engine will do their resolution in deleteWithMeta(),
+here we put another defense line (the second getMeta before writing
+doc locally) in CAPI just for safety and performance reasons.
+
+Change-Id: I008e41b7dced21ee76e0b1e71bfd0d68b6f972d1
+
+
+COMMENTS
+
+author: Macie Morton
+date: 2013-08-22 23:01:52.801000000
+
+Patch Set 5: Verified+1
+
+-------------------------------------
+author: Philip Lara
+date: 2013-08-22 23:31:24.646000000
+
+Patch Set 5:
+
+Here's the same piece of code without unnecessary copy/paste
+
+            {ok, {OurSeqNo, OurRevId}, LocalCAS} ->
+                {RemoteMeta, LocalMeta} =
+                    case DocDeleted of
+                        false ->
+                            %% for non-del mutation, compare full metadata
+                            {{DocSeqNo, DocRevId}, {OurSeqNo, OurRevId}};
+                        _ ->
+                            %% for deletion, just compare seqno and CAS to match
+                            %% the resolution algorithm in ep_engine:deleteWithMeta
+                            <<DocCAS:64, _DocExp:32, _DocFlg:32>> = DocRevId,
+                            <<OurCAS:64, _OurExp:32, _OurFlg:32>> = OurRevId,
+                            {{DocSeqNo, DocCAS}, {OurSeqNo, OurCAS}}
+                    end,
+
+                case max(LocalMeta, RemoteMeta) of
+                    %% if equal, prefer LocalMeta since in this case, no need
+                    %% to replicate the remote item, hence put LocalMeta before
+                    %% RemoteMeta.
+                    LocalMeta ->
+                        ok;
+                    %% if remoteMeta wins, need to persist the remote item, using
+                    %% the same CAS returned from the get_meta() above.
+                    RemoteMeta ->
+                        update_locally(Bucket, DocId, VBucket, DocValue, DocRev, DocDeleted, LocalCAS)
+                end
+
+-------------------------------------
+author: Philip Lara
+date: 2013-08-22 23:32:06.068000000
+
+Patch Set 5: Code-Review-1
+
+-------------------------------------

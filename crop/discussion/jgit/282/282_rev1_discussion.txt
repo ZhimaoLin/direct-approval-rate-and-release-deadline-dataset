@@ -1,0 +1,58 @@
+DESCRIPTION
+
+Allow users of ReceivePack access to the objects being sent
+
+When implementing branch read access, we need to prove that the
+newly created reference(s) point to objects that the user can see.
+
+There are two ways that an object is reachable:
+1)  It's reachable from a branch or change the user can see
+2)  It was uploaded as part of the pack file the user sent us
+
+This change adds additional methods in ReceivePack that will allow a
+server to check the above conditions, in order to ensure that a user
+is not trying to create a reference that they cannot see, or that a
+malicious user isn't attempting to forge the SHA-1 of an object that
+they cannot see in order to base a change off of it.
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:246, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceivePack.java -> I'd call this getBaseObjectIds().  Also, I think its Javadoc needs a bit more explanation:
+
+  xxx@xxx.xxx the set of objects the incoming pack assumed for delta bases. */
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:251, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceivePack.java -> Call this getNewObjectIds() since that's really what it is.
+
+Also, I'd like to lazily pull this off the IndexPack instance, rather than always pulling it.  Which means maybe promote the IndexPack object to being a member field, and returning an empty collection here if it didn't successfully complete the ip.index method.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:1132, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> Since this is called after writeIdx() executes the initialEntryCount can't be relied upon to cut the list at the proper point.  Its been sorted inside of writeIdx() which means this position is now bogus and has no relationship with what the user actually sent.
+
+Unfortunately you'll have to have the caller set a flag whether or not they need this data, and if they do, grab it before we get as far as writeIdx() being invoked.  That makes my remarks in ReceivePack even more complex, because I think you may need to add a flag method to ReceivePack to let the ReceivePack caller tell us if they need this collection or not, so IndexPack can do the bookkeeping if they do.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:1146, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> This collection has to be empty by the time writeIdx comes around.  If its not the pack is corrupt and unusable, because the caller asked for something we don't actually have.
+
+You need to process the baseById collection before fixThinPack gets called.
+
+And I think I just found a bug in IndexPack.  We are iterating baseById and mutating it at the same time during fixThinPack.  Which isn't exactly safe.  We must be getting lucky here.
+
+-------------------------------------

@@ -1,0 +1,166 @@
+DESCRIPTION
+
+Bug 8519 - keystroke macros recording and playing capability
+
+Change-Id: I3f548fc00d82a847a2591c06ff6387fa23204a76
+Signed-off-by: Sienna Tate xxx@xxx.xxx
+
+COMMENTS
+
+author: Sienna Tate
+date: 2017-02-01 12:41:38.000000000
+
+Uploaded patch set 4: Patch Set 3 was rebased.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-02-01 13:34:07.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/11861/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-02-01 14:13:36.000000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/11861/ : SUCCESS
+
+-------------------------------------
+author: Teagan Marsh
+date: 2017-02-01 17:51:35.000000000
+
+Patch Set 4:
+
+(16 comments)
+
+Hi Fabio.  I took a partial pass and there are some initial comments below.
+
+Higher-level, macros need to be an optional package.  It should be up to RCP apps whether they want to support macros.  So KeyBindingDispatcher should not know about macros.  It should allow handing off to an interceptor?
+
+I didn't get the purpose of the two different extension points.  As that's the principal documentation entry-point for most developers, it would helpful to fold the README into the schemas.
+
+I got a bit lost between the different IMacro* types.
+
+As-is, this framework seems to support multiple macro contexts, which would seem to enable simultaneous recording?
+
+I was pretty surprised to see that you're using the JavaScript engine for playback.  Why?
+
+Line:281, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/internal/MacroManager.java -> Just List<>
+
+Line:22, bundles/org.eclipse.e4.core.macros/META-INF/MANIFEST.MF -> We haven't done a good job in the past, but we should put package versions on our exports.
+
+Line:65, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/internal/SavedJSMacro.java -> Assert.isNotNull()
+
+Line:91, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/internal/SavedJSMacro.java -> I have to admit this was not what I expected to see.
+
+Line:11, bundles/org.eclipse.e4.core.macros/schema/macro_command.exsd -> I'm confused as to the purpose of this extension point.  Is this intended to provide a recordable representation of a Eclipse Command?  Is there to be a tight binding with org.eclipse.e4.ui.macros.commands?  Then why not merge them?
+
+Line:62, bundles/org.eclipse.e4.core.macros/schema/macro_command.exsd -> IMacroCreator?
+
+Line:1, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/Activator.java -> LF only
+
+Line:45, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/Activator.java -> This should be a service so that it's activated as needed.  Activators should be kept to a minimum.
+
+Line:72, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/Activator.java -> Could use OSGI's FrameworkUtil.getBundle(Activator.class) to get the symbolic name.
+
+Line:1, bundles/org.eclipse.e4.core.macros/build.properties -> Just LF
+
+Line:24, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/internal/MacroContextServiceCreationFunction.java -> So do we really want to enable recording multiple macros simultaneously?  If not, why is this a context function?
+
+Line:3, bundles/org.eclipse.e4.core.macros/.classpath -> May as well make this Java 8
+
+Line:47, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/EMacroContext.java -> Merge these into a single MODE?  We can't be recording as we play back, right
+
+Line:32, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/internal/MacroContextImplementation.java -> Perhaps MacroManager should implement EMacroContext?  There doesn't seem to be much in this implementation?
+
+Line:68, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/internal/MacroContextImplementation.java -> Get as a service
+
+Line:5, bundles/org.eclipse.e4.core.macros/plugin.xml -> We generally use camel casing, and plural: macroCommands
+
+-------------------------------------
+author: Sienna Tate
+date: 2017-02-02 16:10:30.000000000
+
+Patch Set 4:
+
+(12 comments)
+
+> (16 comments)
+ > 
+ > Hi Fabio.  I took a partial pass and there are some initial
+ > comments below.
+ 
+Hi Brian, thank you very much for the comments... Just done a bunch of changes based on them ;)
+ 
+ > 
+ > Higher-level, macros need to be an optional package.  It should be
+ > up to RCP apps whether they want to support macros.  So
+ > KeyBindingDispatcher should not know about macros.  It should allow
+ > handing off to an interceptor?
+ 
+Ok, done -- create an IKeyBindingDispatcherInterceptor on KeyBindingDispatcher and implemented it in org.eclipse.e4.ui.macros (so, the macros.ui will depend on org.eclipse.e4.ui.bindings and not the other way around).
+ 
+ > 
+ > I didn't get the purpose of the two different extension points.  As
+ > that's the principal documentation entry-point for most developers,
+ > it would helpful to fold the README into the schemas.
+ 
+One of them is to declare a way to reconstruct the IMacroCommands (registering its id and a way to recreate it -- I've renamed the other one to macroCommandCreators as the name was really confusing) and the other is a way to filter the commands accepted in the KeyBindingDispatcher (also renamed to acceptedCommands and moved it to org.eclipse.e4.ui.macros, as that's the place that actually uses it).
+ 
+ > 
+ > I got a bit lost between the different IMacro* types.
+ 
+On the public API there's IMacroCommand (a recorded command used to compose an actual macro during record mode), IMacroCreator (a way to recreate the IMacroCommand) and IMacroListener (to hear changes on the macro context) should be what the user has to worry about... now that I see it, IMacroCreator is a bad name -- it should be IMacroCommandCreator (renamed) and IMacroListener should be IMacroContextListener (renamed that one too).
+ 
+Internally, there's IMacro and IComposableMacro (clients generally shouldn't worry about that as it's not part of the public API) -- IMacro is the unit that'll be run and IComposableMacro a macro made up of IMacroCommands.
+ 
+Hopefully it's now clearer with the renames...
+ 
+ > 
+ > As-is, this framework seems to support multiple macro contexts,
+ > which would seem to enable simultaneous recording?
+ 
+Well, the EMacroContext is actually provided as a service (see org.eclipse.e4.core.macros/OSGI-INF/macroContext.xml) -- and I removed the add-on which was in the public API, so, in general, although it's possible to create multiple macro contexts (which I do in test-cases to avoid using a global one which could have leftovers), I think the user shouldn't actually be able to do that (I may be wrong here, so, if there's a better way to do it, please let me know -- as a note, I did try to register it as a service without using an IContextFunction, but in that case it wasn't able to resolve xxx@xxx.xxx still, you probably know more on DI than me, so, if there's a better way, please let me know).
+ 
+ > 
+ > I was pretty surprised to see that you're using the JavaScript
+ > engine for playback.  Why?
+ 
+The main reasons are:
+1. Flexibility (to allow the user to edit the macro as he sees fit later on).
+2. I don't have to worry about a custom format (as javascript already takes care of all the parsing/executing, which I'd have to manually code if I had chosen something such as XML for instance).
+ 
+Also, as Java 8 onwards should have a default engine embedded, it didn't ring any bells for me, but if you see a reason to avoid it, I'm open to suggestions (although I find the flexibility quite attractive, so, maybe in the future the user could use something as EASE to have more scripting capabilities when running the macros... it's currently far from that, but it does give the user a lot of flexibility).
+
+Line:282, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/internal/MacroManager.java -> Done.
+
+Line:23, bundles/org.eclipse.e4.core.macros/META-INF/MANIFEST.MF -> Done
+
+Line:66, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/internal/SavedJSMacro.java -> Done
+
+Line:12, bundles/org.eclipse.e4.core.macros/schema/macro_command.exsd -> The name was misleading (I originally had IMacroCommands registered and changed for an IMacroCreator to avoid having a default constructor on the command and didn't rename it properly -- the namespace was wrong too, so, just renamed it to macroCommandCreator -- hopefully it makes more sense now).
+
+Line:46, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/Activator.java -> Just changed it to make it as lazy as possible (i.e.: instead of pre-creating it, will only create it when someone requests it in the getter method for the default macro manager).
+
+Also, I moved these static methods/fields to MacroContextImplementation, which is really the only place that uses it.
+
+Line:73, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/Activator.java -> Well, if the bundle is available, it should be loaded at this point (if it's not, the use-case is running without OSGI -- such as the MacroTest, so, I'd rather not use anything from there if the Activator wasn't yet created as that could fail too).
+
+Line:2, bundles/org.eclipse.e4.core.macros/build.properties -> Done
+
+Line:25, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/internal/MacroContextServiceCreationFunction.java -> Well, the EMacroContext is actually provided as a service (see org.eclipse.e4.core.macros/OSGI-INF/macroContext.xml) -- and I removed the add-on which was in the public API, so, in general, although it's possible to create multiple macro contexts (which I do in test-cases to avoid using a global one which could have leftovers), I think the user shouldn't actually be able to do that (I may be wrong here, so, if there's a better way to do it, please let me know -- as a note, I did try to register it as a service without using an IContextFunction, but in that case it wasn't able to resolve xxx@xxx.xxx still, you probably know more on DI than me, so, if there's a better way, please let me know).
+
+Line:4, bundles/org.eclipse.e4.core.macros/.classpath -> Done.
+
+Line:48, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/EMacroContext.java -> Actually, there's nothing preventing the user from starting a record and then playing an existing macro to re-record its commands in the new macro (this is currently supported and I couldn't find any good reason for not supporting that scenario).
+
+Line:68, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/internal/MacroContextImplementation.java -> Changed to just have it as a regular instance inside the MacroContextImplementation (as it is the actual implementation of the EMacroContext service).
+
+Line:6, bundles/org.eclipse.e4.core.macros/plugin.xml -> Changed to camel casing/plural -- in PyDev I usually use underlines to make searches easier, but I really should be following Eclipse here ;)
+
+-------------------------------------

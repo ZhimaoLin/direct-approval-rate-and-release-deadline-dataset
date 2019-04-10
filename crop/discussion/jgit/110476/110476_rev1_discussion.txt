@@ -1,0 +1,131 @@
+DESCRIPTION
+
+Teach UploadPack to support blob-max-bytes
+
+Teach UploadPack to advertise the blob-max-bytes capability and
+support a "blob-max-bytes" line in the request. This is analogous to a
+patch sent to the Git mailing list [1].
+
+When blob-max-bytes is set, blobs larger than the given size are not
+sent to the client, unless they appear in a tree with a filename
+starting with ".git". Bitmaps have to be disabled in this situation,
+because an ordinary object walk is needed to know the filename of
+every blob accessed.
+
+If a JGit server were to be patched with this commit, and a repository
+on that server configured with RequestPolicy.ANY, a Git client patched
+with the patch set from the linked e-mail [1] would be able to perform
+a partial clone.
+
+[1] xxx@xxx.xxx
+
+Change-Id: If72b4b422c06ab432137e9e5272d353b14b73259
+Signed-off-by: Landin Hensley xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Landin Hensley
+date: 2017-10-20 20:13:25.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-10-20 20:13:34.000000000
+
+Patch Set 1:
+
+Build Started https://ci.eclipse.org/jgit/job/jgit.gerrit/11453/
+
+-------------------------------------
+author: Landin Hensley
+date: 2017-10-20 20:14:27.000000000
+
+Patch Set 1: Code-Review-1
+
+The corresponding change to core Git is not in mainline - it is currently only a patch on the mailing list.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-10-20 20:25:52.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://ci.eclipse.org/jgit/job/jgit.gerrit/11453/ : SUCCESS
+
+-------------------------------------
+author: Eden Lin
+date: 2017-10-20 21:03:18.000000000
+
+Patch Set 1: Code-Review-2
+
+(6 comments)
+
+Neat. Generally looks good --- some nits below. I'm especially happy with the tests.
+
+Marking -2 so we don't forget not to submit this per your comment before the protocol change gets accepted in Git.
+
+Line:635, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/ObjectWalk.java -> xxx@xxx.xxx comment in javadoc
+
+My first reaction when reading this was to think it was about ".git files" that act as a replacement for .git symbolic links. Instead, I think it's about .git* files: .gitignore, .gitattributes, .gitmodules, etc.
+
+The following question isn't specific to JGit --- the same question applies to [2], too: is it possible that this would miss some .git* files? E.g. if the same large blob appears both as a .git* file and a non-.git* file and is encountered by the ObjectWalk under the latter name first, would it be skipped as UNINTERESTING when encountered under the .git* name, or is that avoided somehow?
+
+[2] xxx@xxx.xxx
+
+Line:929, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> should be a constant.
+
+Do we want to advertise the capability unconditionally? If we make it optional (controlled by a config), then that allows a two-stage rollout:
+
+1. First update the server to support blob-max-bytes
+2. Then flip the config to advertise the capability
+
+That way, in a load-balanced setup (e.g. multiple mirrors of a Gerrit server), step (1) rolls out to all replicas before step (2) starts to roll out, avoiding a race where the client learns about blob-max-bytes from a info/refs request to one replica and then tries and fails to use it with another.
+
+Line:1511, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> optional: can simplify:
+
+ if (blobMaxBytes >= 0) {
+   pw.setBlobMaxBytes(blobMaxBytes);
+ }
+ pw.setUseBitmaps(blobMaxBytes < 0 && depth == 0 && clientShallowCommits.isEmpty());
+
+Line:1989, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriter.java -> optional: can remove redundant 'final' (old code in this project used to use "final" excessively; new code omits it).
+
+Line:1997, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriter.java -> What does it mean if walk is null? Maybe a comment describing the parameter would help.
+
+Line:2003, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriter.java -> does this mean later in the function or TODO?
+
+-------------------------------------
+author: Landin Hensley
+date: 2017-10-20 23:49:49.000000000
+
+Patch Set 1:
+
+(6 comments)
+
+Thanks for your comments. I had to rewrite the PackWriter part to ensure that it behaves correctly when the same blob appears as both ".git*" and non-".git*", but I think it turned out for the better.
+
+Line:635, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/ObjectWalk.java -> Added javadoc xxx@xxx.xxx (for this and other public methods).
+
+I've added a test for the issue when a blob appears both as a .git* file and a non-.git* file, and then realized that it doesn't work. :-P
+
+I rewrote the PackWriter part to make it work. As a bonus, the diff is no longer so invasive.
+
+Line:929, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> Changed to use a constant (here and elsewhere).
+
+As for controlling advertisement with a config, I agree, but if possible I would like to delay implementing that until my corresponding proposal to Git gets accepted in its current form (if it gets accepted). I'm happy if this patch is kept at a negative score until (i) my corresponding proposal to Git gets accepted, and (ii) I add the config option.
+
+Line:1511, org.eclipse.jgit/src/org/eclipse/jgit/transport/UploadPack.java -> Done
+
+Line:1989, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriter.java -> In the end, I rewrote this part. Thanks for letting me know - I'm no longer using the "final".
+
+Line:1997, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriter.java -> I made another method to do the filtering now (should have done this from the start), so there is no longer this parameter.
+
+Line:2003, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriter.java -> Meant to be later in the whole process (because I didn't want to change addObject from being non-throwing to throwing).
+
+However, now I have put this object-size-reading code into another method "filterAndAddObject" that can throw IOException, so this comment is no longer necessary.
+
+-------------------------------------

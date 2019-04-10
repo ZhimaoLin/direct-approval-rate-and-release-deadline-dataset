@@ -1,0 +1,89 @@
+DESCRIPTION
+
+Shallow fetch: Respect "shallow" lines
+
+When fetching from a shallow clone, the client sends "have" lines
+to tell the server about objects it already has and "shallow" lines
+to tell where its local history terminates. In some circumstances,
+the server fails to honor the shallow lines and fails to return
+objects that the client needs.
+
+UploadPack passes the "have" lines to PackWriter so PackWriter can
+omit them from the generated pack. UploadPack processes "shallow"
+lines by calling RevWalk.assumeShallow() with the set of shallow
+commits. RevWalk creates and caches RevCommits for these shallow
+commits, clearing out their parents. That way, walks correctly
+terminate at the shallow commits instead of assuming the client had
+history going back behind them. UploadPack converts its RevWalk to an
+ObjectWalk, maintaining the cached RevCommits, and passes it to
+PackWriter.
+
+Unfortunately, to support shallow fetches the PackWriter does the
+following:
+  if (shallowPack && !(walk instanceof DepthWalk.ObjectWalk))
+    walk = new DepthWalk.ObjectWalk(reader, depth);
+
+That is, when the client sends a "deepen" line (fetch --depth=<n>)
+and the caller has not passed in a DepthWalk.ObjectWalk, PackWriter
+throws away the RevWalk that was passed in and makes a new one. The
+cleared parent lists prepared by RevWalk.assumeShallow() are lost.
+Fortunately UploadPack intends to pass in a DepthWalk.ObjectWalk.
+It tries to create it by calling toObjectWalkWithSameObjects() on
+a DepthWalk.RevWalk. But it doesn't work: because DepthWalk.RevWalk
+does not override the standard RevWalk#toObjectWalkWithSameObjects
+implementation, the result is a plain ObjectWalk instead of an
+instance of DepthWalk.ObjectWalk.
+
+The result is that the "shallow" information is thrown away and
+objects reachable from the shallow commits can be omitted from the
+pack sent when fetching with --depth from a shallow clone.
+
+Somewhat accidentally, this bug is limited to fetching the direct
+parent of a commit that the client reports as both a "have" and a
+"shallow". In terms of queueing objects for the object walk,
+DepthGenerator ignores commits marked by markStart() and only
+queues commits marked by markRoot(). Have commits are marked via
+markStart() and want commits are marked via markRoot(). If a want
+commit is an ancestor of a have commit then that have commit is never
+enqueued in the ObjectWalk, and the lazy propagation of that have
+commit's "uninteresting" state never takes place. The call to
+markStart() for a have commit does create RevCommit objects for both
+that commit and its parent, so only if the want commit is the same as
+the have commit's parent does the want appear "uninteresting".
+
+Change-Id: I6e14b57b2f85e52d28cdcf356df647870f475440
+Signed-off-by: Ariel Sawyer xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Ariel Sawyer
+date: 2016-08-05 00:21:28.000000000
+
+Uploaded patch set 6: Patch Set 5 was rebased.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-08-05 00:29:12.000000000
+
+Patch Set 6:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/8876/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-08-05 00:40:31.000000000
+
+Patch Set 6: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/8876/ : SUCCESS
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-08-05 22:37:51.000000000
+
+Change has been successfully merged into the git repository by Eden Lin
+
+-------------------------------------

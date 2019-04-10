@@ -1,0 +1,187 @@
+DESCRIPTION
+
+MB-16919: Process buffered items at consumer one vbucket at a time
+
+It is observed that the DcpConsumer's ProcesserTask takes too
+long in certain scenarios. This is because the processer task
+iterates over all vbuckets every time the task runs.
+
+To avoid long run times for the ProcesserTask, this change
+modifies the processing logic such that every time the task runs,
+the buffered items of only a single vbucket that was notified
+are processed.
+
+In a minimal test with a sample set of 1000, no apparent
+regressions were seen in Observe-REPLICATE_TO_ONE latencies,
+(with direct processing disabled and only buffering at the
+consumer):
+
+                    <---------- (Percentiles) ----------->
+(ms.)       MEAN    80th    85th    90th    95th    99th
+Before:     200.29  209.34  209.87  210.30  211.03  211.71
+After:      199.26  209.84  210.31  210.89  211.52  211.97
+
+Change-Id: I5ba74951e57d756efc1541193df87be300e2ca3e
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2016-02-02 18:42:01.262000000
+
+Uploaded patch set 13.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-02 18:42:06.882000000
+
+Patch Set 13:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1559/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-02 18:53:57.308000000
+
+Patch Set 13: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1559/ : FAILURE
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2339/ : FAILURE
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-02 19:48:10.768000000
+
+Patch Set 13: -Verified
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2341/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-02 20:06:11.551000000
+
+Patch Set 13: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1562/ : FAILURE
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2341/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-02 20:19:47.634000000
+
+Patch Set 13: -Verified
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1563/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-02 20:28:34.464000000
+
+Patch Set 13: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2341/ : SUCCESS
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1563/ : SUCCESS
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-02-03 10:01:40.157000000
+
+Patch Set 13: Code-Review-1
+
+(2 comments)
+
+Line:71, src/dcp/consumer.cc -> We'll always hit this case even if there's nothing todo.
+
+1. A single vbucket is ready and is pushed onto vbReady, the Processor task is woken up by L807 and processerNotification is now true
+
+2. Processor::run handles the ready vb, vbReady is empty and L58 returns all_processed
+
+3. The task arrives at L70 and notifiedProcessor returns true because we've swapped processerNotification from true to false.
+
+4. snooze(0);
+
+5. Processor is rescheduled even though there's no more work, the task runs, finds "all_processed" and does a snooze(1) at L73
+
+Overall my view is that we should be aiming for our tasks to sleep forever if there's no work. The tasks shouldn't be waking up every n seconds just in-case. 
+
+E.g. In ActiveStreamCheckpointProcessorTask::run it first sets the sleep time to be INT_MAX, it says if I have no work, I will sleep until i have work.
+
+Line:73, src/dcp/consumer.cc -> There's a logic issue here which can cause the task to sleep for 1 or 5 seconds even though someone has just pushed a VB onto vbReady and/or vbReady has work, basically we may pause for 5 seconds...
+
+1. Processor::run executes and processerNotification is true.
+1.1 vbReady contains say 1,2,3
+2. processBufferItems returns cannot_process because of the replicationThrottle
+2.1 vbReady still contains 1,2,3
+3. The task does a snooze(0) because L70 is true L71 does the snooze(0) and is processerNotification false
+4. Processor::run executes and processerNotification is false.
+4.1 vbReady contains 1,2,3
+5. processBufferItems still returns cannot_process because of the replicationThrottle - sleepFor = 5
+6. L70 evaluates false
+7. Now we're logically about to execute L73 and we interleave the wakeup code (L804) the problem occurs.
+
+7.1 L805 pushes VB 4 and returns true
+7.2 L806 returns true - processerNotification went false to true
+7.3 L804 executes the wake function
+7.4 L73 executes the snooze(sleepFor) 
+
+7.3 is basically cancelled by 7.4
+
+We now sleep for 5 seconds even though the client just did a wakeup and at any point the replicationThrottle may have cleared, yet 5 seconds go by when the task does nothing.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-02-04 00:25:11.654000000
+
+Patch Set 13:
+
+(2 comments)
+
+Line:71, src/dcp/consumer.cc -> This makes sense to me.
+
+Line:73, src/dcp/consumer.cc -> I'm hoping I have not mistaken your comment - but here's what will happen in your scenario:
+
+When snooze(sleepFor) runs, note that it isn't the system's snooze running, all the function does is set the wakeTime of the task to (currentTime + sleepFor) and executes the rest of the code in the block, and then the task is added to the future queue of the scheduler. So what happens now (after setting snooze to sleepFor), the condition in L75 returns true (as the processerNofitication was set to true in L806), and overwrites the wake time to (currentTime + 0) - which means wake up right away. So I believe the task sleeping for 5 seconds in such a scenario shouldn't happen.
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-02-04 10:38:12.781000000
+
+Patch Set 13:
+
+(1 comment)
+
+Line:73, src/dcp/consumer.cc -> I'm sure I found in recent development that snooze overlapping with wake will cause the wake todo nothing, so I try and put the snooze above the work (hence the snooze(INT_MAX) in snapshot processor)
+
+http://src.Piper Jefferson.org/source/xref/trunk/ep-engine/src/tasks.cc#56
+http://src.Piper Jefferson.org/source/xref/trunk/ep-engine/src/taskqueue.cc#273
+
+I think if snooze interleaves at line 275 it nullifies the wake?
+
+However i've definitely seen that if snooze/wake overlap they are unpredictable. I had assumed that if calling wake on a task it would run at least once, but i found it actually may or may not run depending on where a snooze(X) interleaves.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-02-04 16:31:59.951000000
+
+Patch Set 13:
+
+(1 comment)
+
+Line:73, src/dcp/consumer.cc -> So I guess that's the reason for the code below. Even if the wake is somehow nullified by the snooze above, processerNotification is set to true prior to it, and the condition below will return true => snooze(0) is called setting wake time to current time.
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-02-09 19:41:30.850000000
+
+Change has been successfully cherry-picked as b8053b25b2c21a3ba216e1fccbbdbcaefad66b73
+
+-------------------------------------

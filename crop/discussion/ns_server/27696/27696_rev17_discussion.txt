@@ -1,0 +1,82 @@
+DESCRIPTION
+
+MB-7960: XDCR on pipelined memcached binary protocol
+
+This commit implements XDCR over binary memcached binary protocol
+(MBP), namely, "xmem" replication mode. We keep current XDCR to
+CAPI, namely "capi". The default replication mode will be "xmem",
+but users can switch back to "capi" through ns_server parameter:
+
+"xdcr_replication_mode",
+
+or, environtment parameter:
+
+XDCR_REPLICATION_MODE
+
+e.g.  export XDCR_REPLICATION_MODE="capi"
+
+Like existent XDCR parameters, env parameter will always override
+ns_server paraemeter.
+
+In "xmem" mode XDCR, each vb replicator creates a server process
+(xmem_srv), which may create one or multiple child worker process
+(xmem_worker) responsible for all communications to remote memcached,
+e.g, connect, select_bucket, build and send memcahced request via
+MBP, and disconnect. The server process will relay request from vb
+replicator worker (vb_rep_worker) to xmem worker process, and return
+results back to vb replicator worker. The xmem_srv process is also
+repsonsible for load balancing, stats collection and report, and
+replay errors from child xme_worker process to vb replicator. The
+default num of xmem_worker created by xmem_srv is 1, which can be
+adjusted by ns_server parameter "xdcr_xmem_worker" and environemnt
+paraemeter "XDCR_XMEM_WORKER".
+
+This enhancement provides an alternative replication mode along
+with current CAPI mode. It is completely a lower level data commutation
+protocol change and has no impact to upper level XDCR protocol. The
+benefit is mostly performance-wise: increased throughput, improved
+scalability, etc. It should be completely transparent to users, in
+particular, we maintain these invariants:
+
+no change to current replication protocol;
+no change to current XDCR stats;
+no change to current XDCR checkpoint behavior;
+no change to current XDCR behavior during topology change;
+all current XDCR functional tests shall pass.
+
+Change-Id: I3c6acb885baed33bdcbeb4d2f5165d036146d080
+Reviewed-on: http://review.couchbase.org/27696
+Reviewed-by: Macie Morton <Macie xxx@xxx.xxx
+Tested-by: Macie Morton <Macie xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Macie Morton
+date: 2013-08-08 18:41:39.761000000
+
+Change has been successfully cherry-picked as 33db03012360f93befbbafb624ef2c453ca493bb
+
+-------------------------------------
+author: Nathalie Landry
+date: 2013-08-09 08:28:37.398000000
+
+Patch Set 17:
+
+(1 comment)
+
+see inline
+
+Line:329, src/xdc_vbucket_rep_xmem_worker.erl -> accidently spotted this. Which I somehow didn't spot earlier.
+
+this is most definitely a bug. You need to wait until sender is done, not kill it.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2013-08-09 11:05:44.302000000
+
+Patch Set 17:
+
+ignore my previous comment. You're doing kill after waiting for all replies which is correct
+
+-------------------------------------

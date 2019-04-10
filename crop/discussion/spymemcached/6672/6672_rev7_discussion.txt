@@ -1,0 +1,132 @@
+DESCRIPTION
+
+Added vbucket configuration parser from JSON.
+
+This parser from JSON has several methods for parsing JSON, beans to
+store configuration settings and unit tests.
+
+Change-Id: I478b274e7901e8c1729c20fcc29577b8aff651af
+
+
+COMMENTS
+
+author: Noah Dean
+date: 2011-06-07 06:52:26.293000000
+
+Uploaded patch set 7.
+
+-------------------------------------
+author: Noah Dean
+date: 2011-06-07 06:56:54.213000000
+
+Patch Set 7: I would prefer that you didn't submit this
+
+(2 inline comments)
+
+I updated the patch to make it compile.  Eclipse made some minor changes when doing that (such as xxx@xxx.xxx and rearranging imports).
+
+I'm still just a bit uncomfortable with this, but I'll read through the rest to see if it starts to make sense.
+
+Line:18, src/main/java/net/spy/memcached/vbucket/config/Pool.java -> I'm still uncomfortable with this.  Eclipse gives me a warning about it not being used, so I think it is, too.
+
+Line:18, src/main/java/net/spy/memcached/vbucket/config/Bucket.java -> This not being final and read-only makes me really uncomfortable.  It doesn't seem necessary.  My eclipse config automatically flags it as final when I save since it's not mutated.  That it can be edited via the "getNodes" seems a little scary.
+
+-------------------------------------
+author: Asher Vang
+date: 2011-06-07 07:02:47.378000000
+
+Patch Set 7:
+
+Unfortunately I can't build spy at all (not even the trunk) on my mac.. it bitch about a missing class.. Trying to build buildr on my solaris box complains about something (it doesn't tell my why it fails)..
+
+Right now I think we've got waaaay to much stuff in the pipeline, and this is code that we've been using in the client manager so it was accepted there at some point. I think most of the refactoring to get the code consistent with respect to tabs/indentation etc should be done at a single pass when we're done. SPending time now to clean up each commit is just too much work, since changing one of them may affect the next one etc... (and having to look at a thousands of lines of diff that just change indentations multiple times isn't that interesting to me ;-))
+
+-------------------------------------
+author: Noah Dean
+date: 2011-06-07 07:13:19.518000000
+
+Patch Set 7:
+
+You should be able to install jruby and then "jgem install buildr"  That's working for me.
+
+I'm not tNathalie Landrying about style kinds of things.  This is more about unprotected mutable objects and stuff.
+
+I'm assuming the purpose of the review is to get the code right.  As far as I can tell, eclipse is correct.  It's telling me there's dead code here, and it's showing me (and I've seen in a couple of places) objects that are modified after construction when it's just as easy (and much safer and at least a tiny bit more efficient) to not do that.
+
+If we just want to push stuff through I can stop looking at it, but I don't want to OK something that's philosophically different from the core design without being very comfortable with it.  There's likely not a huge gap here (I've done a few edits before, but there was a lot of missing context at the time).
+
+I could make a pass at cleaning it up with full context, of course.  Or I guess I could just ignore it for now and get in on the cleanup party.
+
+-------------------------------------
+author: Asher Vang
+date: 2011-06-07 07:27:38.524000000
+
+Patch Set 7:
+
+Asher xxx@xxx.xxx jgem install buildr                                                                               JRuby limited openssl loaded. gem install jruby-openssl for full support.
+http://wiki.jruby.org/wiki/JRuby_Builtin_OpenSSL
+ERROR:  could not find gem buildr locally or in a repository
+
+so I'm stuck without being able to compile it ;)
+
+Don't get me wrong, I don't think we should push stuff through that is completely broken.. Since the code is completely without documentation it's a bit hard to tell how it will be used.. I was under the impression that this code will execute in a dedicated "thread", and then the resulting object would be copied out and only accessed in a read-only mode from the other threads..
+
+-------------------------------------
+author: Noah Dean
+date: 2011-06-07 07:45:17.068000000
+
+Patch Set 7:
+
+That might be the case, but I think the difference between probably harmless and provably harmless is pretty small in a lot of these.
+
+Once something is mutable, say a mutable collection of mutable objects and released from the insides of an object, it gets really hard really fast to tell what might be changing it.  If nothing can change it, you don't have to think about it much.
+
+This is what I just ran into with the node locators.  Since they're actively accessed by multiple threads concurrently, it was always trivial to see exactly what goes in and out of them.  Now, after following a chain of mutable object references from within the two node locators that have mutability, I've found two different concurrency bugs that I think could be very nasty and unpredictable.  I would really just rather not have these kinds of things happen.
+
+-------------------------------------
+author: Andreas Short
+date: 2011-06-07 16:11:35.961000000
+
+Patch Set 7:
+
+@Noah Dean: you must have some compiler settings that are different.  they all compile and pass tests.  I have to say, while your IDE doesn't like some things, mine doesn't like others that have been there for years.  Starting threads from a ctor, for instance.
+
+The main issue with a lot of this code is that it was originally used at a higher level where it was intended thread safe.  It was then pushed down into this client, but probably should have been rewritten.  
+
+I do believe that the modifications to the vbucket Maps are sound.  Your points are good, but it's more about preventing future bugs from occurring than it is about fixing any current issues.  I have plenty of current issues and testing that I think are probably higher priority at the moment.
+
+-------------------------------------
+author: Jakob Lozano
+date: 2011-06-07 16:43:31.507000000
+
+Patch Set 7:
+
+The issue with leaving thread safety issues undone is that it'll be too easy to not get back to them.  Fix it once so the code doesn't have to be fixed twice.
+
+-------------------------------------
+author: Andreas Short
+date: 2011-06-07 17:29:12.159000000
+
+Patch Set 7:
+
+I agree with you Blair, but this isn't necessarily wrong, as it's only accessed from one thread today.  It's just not impossible to make wrong with some other code change.
+
+The entire REST configuration is wNathalie Landryed, turned into a Config, and then atomically swapped from a read only (not yet deep copy) to something the NodeLocator uses.  If a node doesn't exist for a given vbucketmap, we'll catch it and fail.  The risk is really low.
+
+Oh, and by the way, this only happens when the cluster actually changes in a way that is important to this bucket.  In other words, only when servers are added/removed.
+
+I'll see what I can do with it, but I really think we're staring at a tree and ignoring a forest here.
+
+-------------------------------------
+author: Andreas Short
+date: 2011-06-07 22:10:23.635000000
+
+Patch Set 7: (2 inline comments)
+
+
+
+Line:18, src/main/java/net/spy/memcached/vbucket/config/Pool.java -> Also not used, so removed.
+
+Line:18, src/main/java/net/spy/memcached/vbucket/config/Bucket.java -> Turns out it's not used.  Killed.
+
+-------------------------------------

@@ -1,0 +1,68 @@
+DESCRIPTION
+
+oprofile: fix for NPE when getting the number of counters in Power.
+
+Change-Id: I5f18abd15309164d2b9c2e88cb2481fa3f341ed7
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2014-07-18 11:35:31.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/7804/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-07-18 12:23:31.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/7804/ : SUCCESS
+
+-------------------------------------
+author: Nathanael Holden
+date: 2014-07-18 16:24:08.000000000
+
+Patch Set 3: Code-Review-1
+
+(1 comment)
+
+Line:147, oprofile/org.eclipse.linuxtools.oprofile.core/src/org/eclipse/linuxtools/internal/oprofile/core/Oprofile.java -> I don't think this is right. if info is null at this point then either the kernel module is believed to not be loaded, or OpInfo.getInfo() returns null. Given that initializeOProfileCore() seems to fix the issue, I would guess that isKernelModuleLoaded() is returning false when it should be true.
+
+Could you look into if this is the case, and if so, how one can detect whether it's loaded on Power ? Currently we check for the existence of either "/dev/oprofile/cpu_type" or "/proc/sys/dev/oprofile/cpu_type" .
+
+-------------------------------------
+author: Logan Yoder
+date: 2014-08-18 19:38:47.000000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:147, oprofile/org.eclipse.linuxtools.oprofile.core/src/org/eclipse/linuxtools/internal/oprofile/core/Oprofile.java -> I've figured out what's the problem, it happens when you leverage operf instead of opcontrol. Roberto, member of my project, is going to send a fix.
+
+The problem is at Oprofile's initializeOprofileModule() logic don't work if you use operf:
+
+----------
+static private void initializeOprofileModule() {
+        // Check if kernel module is loaded, if not, try to load it
+        if (!isKernelModuleLoaded()) {
+            initializeOprofile();
+        }
+
+        if (isKernelModuleLoaded()) {
+            initializeOprofileCore();
+        }
+    }
+-------------
+
+It's going to enter first "if" since the module isn't loaded. The initializeOprofile do nothing if you using operf because there isn't any module to be loaded at all. Then the second "if" is going to fail, initializeOprofileCore is never called, resulting in info object not being fulfilled.
+
+initializeOprofileCore must be always called if you use operf. If you use opcontrol and modules is unloaded, you load properly, if it fails, you raise an exception or log an error.
+
+-------------------------------------

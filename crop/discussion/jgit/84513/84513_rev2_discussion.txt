@@ -1,0 +1,119 @@
+DESCRIPTION
+
+StreamCopyThread: Do not drop data when flush is observed before writing
+
+StreamCopyThread.flush was introduced in
+61645b938bc934fda3b0624c5bac1e3495634750 (Add timeouts to smart
+transport clients, 2009-06-19) to support timeouts on write in JSch.
+The commit message from that change explains:
+
+   JSch made a timeout on write difficult because they explicitly do
+   a catch for InterruptedException inside of their OutputStream.  We
+   have to work around that by creating an additional thread that just
+   shuttles data between our own OutputStream and the real JSch stream.
+
+The code that runs on that thread is structured as follows:
+
+	while (!done) {
+		int n = src.read(buf);
+		dst.write(buf, 0, n);
+	}
+
+with src being a PipedInputStream representing the data to be written
+to JSch.  To add flush support, that change wanted to add an extra step
+
+		if (wantFlush)
+			dst.flush();
+
+but to handle the case where the thread is blocked in the read() call
+waiting for new input, it needs to interrupt the read. So that is how
+it works: the caller runs
+
+	pipeOut.write(some data);
+	pipeOut.flush();
+	copyThread.flush();
+
+to write some data and force it to flush by interrupting the read.
+
+After the pipeOut.flush(), the StreamCopyThread reads the data that was
+written and prepares to copy it out.  If the copyThread.flush() call
+interrupts the copyThread before it acquires writeLock and starts
+writing, we throw away the data we just read to fulfill the flush.
+Oops.
+
+Noticed during the review of e67d59df3fb8ae1efe94a54efce36784f7cc83e8
+(StreamCopyThread: Do not let flush interrupt a write, 2016-11-04),
+which introduced this bug.
+
+Change-Id: I4aceb5610e1bfb251046097adf46bca54bc1d998
+
+
+COMMENTS
+
+author: Eden Lin
+date: 2016-11-04 23:33:06.000000000
+
+Patch Set 2: Published edit on patch set 1
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-11-04 23:33:12.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/9350/
+
+-------------------------------------
+author: Eden Lin
+date: 2016-11-04 23:33:19.000000000
+
+Patch Set 2:
+
+Added more detail to the commit message.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-11-04 23:44:18.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/9350/ : SUCCESS
+
+-------------------------------------
+author: Eden Lin
+date: 2016-11-04 23:44:53.000000000
+
+Patch Set 2: Verified+1
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2016-11-04 23:48:13.000000000
+
+Patch Set 2: Code-Review+2
+
+(1 comment)
+
+Line:149, org.eclipse.jgit/src/org/eclipse/jgit/util/io/StreamCopyThread.java -> The fix below fixes the case where the thread is interrupted while an active read is here, and assumes that that read fully completes without throwing an InterruptedIOException. In that case, the interrupted flag is set and we use it to know we should complete the copy before flushing.
+I'm not sure we can always rely on the "src" input stream behaving that way, nothing I see in the InputStream contract says it can't chunk up the data to be read back. But I think this fix is sufficient.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-11-04 23:48:55.000000000
+
+Change has been successfully merged into the git repository by Eden Lin
+
+-------------------------------------
+author: Eden Lin
+date: 2016-11-04 23:57:32.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:149, org.eclipse.jgit/src/org/eclipse/jgit/util/io/StreamCopyThread.java -> Yes, we're definitely relying on the properties of PipedInputStream (including its default buffer size!).
+
+So I think we're safe now, but I'll be even happier when StreamCopyThread.flush is removed completely and replaced with something fitting the use case better.
+
+-------------------------------------

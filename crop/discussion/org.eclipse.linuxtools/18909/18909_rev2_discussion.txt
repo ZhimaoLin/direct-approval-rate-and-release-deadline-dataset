@@ -1,0 +1,157 @@
+DESCRIPTION
+
+ctf: Fix Integer 33-63 bit handling
+
+* add getLong( length, signed) to bitbuffer
+* add test cases for getLong
+
+Thanks Jordon Obrien for the initial patch.
+
+Change-Id: I388280ef111fe3fd50729780f13e984cbf648886
+Signed-off-by: Ivy Mitchell xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Ivy Mitchell
+date: 2013-11-26 19:12:37.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-11-26 19:27:35.000000000
+
+Patch Set 2: Code-Review-1
+
+(4 comments)
+
+Line:223, lttng/org.eclipse.linuxtools.ctf.core.tests/src/org/eclipse/linuxtools/ctf/core/tests/io/BitBufferIntTest.java -> These look like good tests, they could be added/merged separately.
+
+Line:11, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/IntegerDefinition.java -> If you're gonna touch this, might as well format it properly:
+
+ Contributors:
+   Matthew - Initial API...
+   Simon - Did something
+   Etienne - Did other thing
+
+Line:123, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/IntegerDefinition.java -> same comment about runtime exception vs. CtfReaderException
+
+Line:137, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/io/BitBuffer.java -> It's not the user's "fault" for giving a 65+ bits integer, it comes from the trace. Instead of a throwing a hard-to-catch runtime exception, shouldn't it be a CtfReaderException? This would prevent "malicious" traces from crashing the whole program.
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-11-26 19:28:42.000000000
+
+Patch Set 2:
+
+Also, why isn't this an added case in the switch in getInt(length, signed)? That method should be able to handle lenghts from 1 to 64.
+
+-------------------------------------
+author: Jordon Obrien
+date: 2013-11-26 19:41:39.000000000
+
+Patch Set 2: Code-Review-1
+
+(6 comments)
+
+more comments.
+
+Line:226, lttng/org.eclipse.linuxtools.ctf.core.tests/src/org/eclipse/linuxtools/ctf/core/tests/io/BitBufferIntTest.java -> I'm happy to see a better coverage.
+Thanks.
+
+Line:11, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/IntegerDefinition.java -> Maybe you should add
+
+Contributors: Alex - Fix the contributors list.
+
+Line:123, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/IntegerDefinition.java -> +1
+
+Line:139, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/io/BitBuffer.java -> All this "if-block" could be useless if you carefully write the case below. Smaller code are often less buggy and easy to maintain.
+
+Line:158, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/io/BitBuffer.java -> 1L
+
+And I believe this will work for all cases.
+
+Line:162, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/io/BitBuffer.java -> There is a simple way to perform signed extension.
+You often use a ugly pattern.
+
+Assume 32 bits extension, and you want to implement
+sxt[4](x)   which is a 4-bits sign-extension.
+
+len = 32 - 4;
+x = (x << len) >>> len;
+
+And that's it.
+
+-------------------------------------
+author: Jordon Obrien
+date: 2013-11-26 19:57:17.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Alex? toughs?
+
+Line:223, lttng/org.eclipse.linuxtools.ctf.core.tests/src/org/eclipse/linuxtools/ctf/core/tests/io/BitBufferIntTest.java -> Alex, I don't think they can be merged.
+getLong is still missing in the code base.
+Committing this patch without test seems a bad idea to me.
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-11-26 20:04:10.000000000
+
+Patch Set 2:
+
+I was thinking about the actual test values themselves (it's more useful than the current tests doing put(1), get(1)). Of course the getLong()/getInt() API thing still has to be decided.
+
+We were discussing it a bit, and came up with something like:
+  long getInt()
+  long getLong()
+  long get(length, signed)
+
+The first two would be helpers that call get(32, true) and get(64, true) respectively. And changing the return values to longs, so that anything 1-64 bits fits, and since the CTF reader puts all CTF int's into Java longs anyway.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-26 20:06:14.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4178/
+
+-------------------------------------
+author: Jordon Obrien
+date: 2013-11-26 20:23:34.000000000
+
+Patch Set 2:
+
+I like the "get(...)" API as a general purpose integer parsing.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-26 20:41:15.000000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4178/ : ABORTED
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2013-11-26 20:46:36.000000000
+
+Patch Set 2:
+
+(3 comments)
+
+I have put some comments up
+
+Line:223, lttng/org.eclipse.linuxtools.ctf.core.tests/src/org/eclipse/linuxtools/ctf/core/tests/io/BitBufferIntTest.java -> I believe these tests test the patch I am submitting and therefore they should be here.
+
+Line:137, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/io/BitBuffer.java -> I have changed this for a ctfreaderexception which will be consumed by the integerDefinition, for now. Api changes are too heavy for this patch.
+
+Line:162, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/io/BitBuffer.java -> I will apply this, but it is probably x = (x << len) >> len; as >>> is unsigned shift in java.
+
+-------------------------------------

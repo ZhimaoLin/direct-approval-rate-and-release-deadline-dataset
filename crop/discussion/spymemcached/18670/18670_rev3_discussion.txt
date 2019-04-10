@@ -1,0 +1,103 @@
+DESCRIPTION
+
+Disable optimization by default.  SPY-88 workaround.
+
+Change-Id: I755b18aa487247a445657726ae2dc8dad6a27991
+
+
+COMMENTS
+
+author: Andreas Short
+date: 2012-07-23 08:28:08.684000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2012-07-23 08:34:17.987000000
+
+Patch Set 3:
+
+According to the wall clock time of the test suite there shouldn't be any measurable difference (1 second more for me, but in 138 seconds and various exceptions I don't account it to that). Take this with a grain of salt though since I don't know how much tests really apply to the optimization process at all.
+
+In general, my opinion is that - since its an optimization - it is safe to assume that is is disabled by default. If someone encouters performance issue he can still turn it on - we should just make sure that the side-effects of this optimizations are well documented.
+
+-------------------------------------
+author: Andreas Short
+date: 2012-07-23 08:42:38.109000000
+
+Patch Set 3:
+
+Hey, thanks for the thoughts Michael!
+
+Optimization has been on by default for a number of years, so I am wary of turning it off.  
+
+That said, I don't think most people operate at the extremes of performance, and correctness is probably more important than performance.  My work this weekend seems to show everything here is correct, and it's tests that have been incorrect previously.  The getBulk methods are reliably failing, and further investigation does show that the complete() is called prematurely for many of those operations.  I think this would lead to what appears to be a cache miss, when in reality the operation is still in flight.
+
+I had to back off and disable optimization as we need to get 2.8.2 released (and CouchbaseClient 1.0.3 which depends on it).
+
+-------------------------------------
+author: Kenny Maynard
+date: 2012-07-23 17:13:47.464000000
+
+Patch Set 3: Looks good to me, approved
+
+Ok. I just wanted to make sure this was thought about. My main concern is that someone upgrading to 2.8.1 might see a performance drop if they don't change their code. I think if e add this to the release notes then this should be okay.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2012-07-23 17:50:24.328000000
+
+Patch Set 3: I would prefer that you didn't submit this
+
+Actually, I think you need to modify the multi set test cases to turn on optimization so that they execute correctly.
+
+-------------------------------------
+author: Andreas Short
+date: 2012-07-23 18:03:43.671000000
+
+Patch Set 3:
+
+I'm not sure what you mean.  Doing a multi-get and a multi-set is independent of optimization.  Can you describe the change you think needs to be made more specifically?
+
+-------------------------------------
+author: Kenny Maynard
+date: 2012-07-23 18:06:46.863000000
+
+Patch Set 3:
+
+Don't we have tests that test to make sure multi sets are working properly? We only have api calls for multi get and multi sets are batched together in the TCPMemcachedNodeImpl.
+
+-------------------------------------
+author: Andreas Short
+date: 2012-07-23 18:14:17.837000000
+
+Patch Set 3:
+
+We do have tests, but there's a big difference between a getBulk (a.k.a. multiget) and optimization.
+
+Optimization is a function of a MemcachedNode to try to fold together a larger number of operations into either a protocol level multiget targeted to a specific server over either ascii or binary protocol.
+
+getBulk is a highlevel way for a client library to request a bunch of items together and get the results back in a collection.  
+
+getBulk can use optimization, but doesn't depend on it.  I did find that with optimization on, it fails on both the ascii and binary side after making the OperationState volatile.  
+
+I guess I'm not sure which test needs to be modified to make this correct?  Maybe there's one that's overriding optimize?  For me, all tests expected to pass are passing with this change.
+
+-------------------------------------
+author: Andreas Short
+date: 2012-07-23 18:17:00.439000000
+
+Patch Set 3:
+
+By the way, what do you mean by multiSet?  There is no protocol multiset or a method in the client for setting multiple keys.  There's only optimization, which is really about pipelining multiple operations and being efficient about how we do the sets.  Maybe there's something I'm not thinking of?
+
+-------------------------------------
+author: Kenny Maynard
+date: 2012-07-23 18:17:29.371000000
+
+Patch Set 3: Looks good to me, approved
+
+Ok sounds like you've looked into this already.
+
+-------------------------------------

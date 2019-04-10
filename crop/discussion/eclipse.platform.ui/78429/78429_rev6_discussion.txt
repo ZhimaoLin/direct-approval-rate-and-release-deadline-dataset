@@ -1,0 +1,90 @@
+DESCRIPTION
+
+Bug 459833 - ConcurrentModificationException in ServiceLocator.dispose
+
+To avoid complicated locking inside
+activate/deactivate/dispose/disposeServices and register methods, change
+the type of servicesToDispose from HashMap to ConcurrentHashMap. This
+will avoid still possible ConcurrentModificationException in
+activate/deactivate/disposeServices methods.
+
+Changed "disposed" and "e4Context" fields to volatile to
+avoid wrong values being used in different threads.
+
+Changed registerService() to throw IllegalStateException with additional
+information about service/implementor types if the locator instance was
+already disposed.
+
+Change-Id: If34128da2c9677fe9b12bbcb0cfab0ab45f991c5
+Signed-off-by: Jayvion Booth xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Jayvion Booth
+date: 2016-08-05 09:33:17.000000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Jayvion Booth
+date: 2016-08-05 11:27:22.000000000
+
+Patch Set 6:
+
+> Uploaded patch set 6.
+
+Hudson build *was* triggered and has succeeded, but there was no comment added, see 
+https://bugs.eclipse.org/bugs/show_bug.cgi?id=499218
+
+-------------------------------------
+author: Teagan Marsh
+date: 2016-08-05 14:24:26.000000000
+
+Patch Set 6:
+
+(3 comments)
+
+A few comments.  Is there any value in accumulating the servicesToDisposed, since we're not disposing of them?  Would simplifying the logic so that we log an error on registerService during/after dispose, and otherwise throw the service instance away, help avoid concurrent modification issues?
+
+Line:155, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/services/ServiceLocator.java -> We should use SafeRunner to do the dispose.
+
+Line:74, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/services/ServiceLocator.java -> Might be better to use AtomicBoolean?
+
+Or maybe the e4Context should be nulled on dispose().
+
+Line:244, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/services/ServiceLocator.java -> I think this should only log the message as the IllegalStateException as this is a change of behaviour and could have some bad effect.  Plus, since this case seems to be recursive on dispose(), we'll actually interrupt our dispose() (see comment about using SafeRunner)
+
+-------------------------------------
+author: Jayvion Booth
+date: 2016-08-05 14:40:02.000000000
+
+Patch Set 6:
+
+(3 comments)
+
+> (3 comments)
+ > 
+ > A few comments.  Is there any value in accumulating the
+ > servicesToDisposed, since we're not disposing of them?  Would
+ > simplifying the logic so that we log an error on registerService
+ > during/after dispose, and otherwise throw the service instance
+ > away, help avoid concurrent modification issues?
+
+The servicesToDisposed is wrongly named. It should be just "services", because they are used elsewhere too (get/activate/deactivate).
+
+Line:155, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/services/ServiceLocator.java -> Only for dispose or for activate/deactivate too? If safe, then for all.
+
+Line:74, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/services/ServiceLocator.java -> What would be the benefit of AtomicBoolean?
+
+The context is already nulled on dispose, but it is not provided at the very beginning, which does not mean we were already disposed. So the flag itself makes sense.
+
+Line:244, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/services/ServiceLocator.java -> OK. Will only error log this.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-08-08 16:12:53.000000000
+
+Change has been successfully merged into the git repository by Jayvion Booth
+
+-------------------------------------

@@ -1,0 +1,66 @@
+DESCRIPTION
+
+Remove explicit call to HashTable clear in VBucketMemoryDeletionTask
+
+HashTable will (must) be rather cleared in the destructor of VBucket
+object.
+
+Otherwise, race condition flagged by thread/address sanitizers when StoredValue
+is stored in more than one data structure.
+(like in both HashTable and Linked list in
+ http://review.Piper Jefferson.org/#/c/74440)
+
+16:55:17 ==27000==ERROR: AddressSanitizer: heap-use-after-free on address 0x60700001be60 at pc 0x2b5e33efd0ae bp 0x7ffd62e2d270 sp 0x7ffd62e2d268
+16:55:17 READ of size 8 at 0x60700001be60 thread T0
+16:55:17     #0 0x2b5e33efd0ad in boost::intrusive::list_node_traits<void*>::get_next(boost::intrusive::list_node<void*>* const&) /home/Piper Jefferson/jenkins/workspace/ep-engine-addresssanitizer-master/build/tlm/deps/boost.exploded/include/boost/intrusive/detail/list_node.hpp:63:13
+16:55:17     #1 0x2b5e33efd0ad in boost::intrusive::list_iterator<boost::intrusive::mhtraits<StoredValue, boost::intrusive::list_member_hook<void, void, void>, &StoredValue::hook_>, true>::operator++() /home/Piper Jefferson/jenkins/workspace/ep-engine-addresssanitizer-master/build/tlm/deps/boost.exploded/include/boost/intrusive/detail/list_iterator.hpp:81
+16:55:17     #2 0x2b5e33efd0ad in void boost::intrusive::list_impl<boost::intrusive::mhtraits<StoredValue, boost::intrusive::list_member_hook<void, void, void>, &StoredValue::hook_>, unsigned long, true, void>::clear_and_dispose<boost::intrusive::detail::null_disposer>(boost::intrusive::detail::null_disposer) /home/Piper Jefferson/jenkins/workspace/ep-engine-addresssanitizer-master/build/tlm/deps/boost.exploded/include/boost/intrusive/list.hpp:744
+16:55:17     #3 0x2b5e33efd0ad in boost::intrusive::list_impl<boost::intrusive::mhtraits<StoredValue, boost::intrusive::list_member_hook<void, void, void>, &StoredValue::hook_>, unsigned long, true, void>::clear() /home/Piper Jefferson/jenkins/workspace/ep-engine-addresssanitizer-master/build/tlm/deps/boost.exploded/include/boost/intrusive/list.hpp:719
+16:55:17     #4 0x2b5e33efd0ad in BasicLinkedList::~BasicLinkedList() /home/Piper Jefferson/jenkins/workspace/ep-engine-addresssanitizer-master/ep-engine/src/linkedlist.cc:30
+16:55:17     #5 0x2b5e33efd0ad in BasicLinkedList::~BasicLinkedList() /home/Piper Jefferson/jenkins/workspace/ep-engine-addresssanitizer-master/ep-engine/src/linkedlist.cc:25
+16:55:17     #6 0x2b5e33e5ece3 in std::default_delete<SequenceList>::operator()(SequenceList*) const /usr/bin/../lib/gcc/x86_64-linux-gnu/4.9/../../../../include/c++/4.9/bits/unique_ptr.h:76:2
+16:55:17     #7 0x2b5e33e5ece3 in std::unique_ptr<SequenceList, std::default_delete<SequenceList> >::~unique_ptr() /usr/bin/../lib/gcc/x86_64-linux-gnu/4.9/../../../../include/c++/4.9/bits/unique_ptr.h:236
+16:55:17     #8 0x2b5e33e5ece3 in EphemeralVBucket::~EphemeralVBucket() /home/Piper Jefferson/jenkins/workspace/ep-engine-addresssanitizer-master/ep-engine/src/ephemeral_vb.h:24
+16:55:17     #9 0x2b5e33e5ece3 in EphemeralVBucket::~EphemeralVBucket() /home/Piper Jefferson/jenkins/workspace/ep-engine-addresssanitizer-master/ep-engine/src/ephemeral_vb.h:24
+16:55:17     #10 0x2b5e33eaee1c in RCPtr<VBucket>::~RCPtr() /home/Piper Jefferson/jenkins/workspace/ep-engine-addresssanitizer-master/ep-engine/src/atomic.h:158:13
+16:55:17     #11 0x2b5e33eaee1c in KVBucket::deleteVBucket(unsigned short, void const*) /home/Piper Jefferson/jenkins/workspace/ep-engine-addresssanitizer-master/ep-engine/src/kv_bucket.cc:902
+16:55:17     #12 0x2b5e33e2cce5 in EventuallyPersistentEngine::deleteVBucket(unsigned short, void const*) /home/Piper Jefferson/jenkins/workspace/ep-engine-addresssanitizer-master/ep-engine/src/ep_engine.h:532:16
+
+Change-Id: Ib46448cd396396dff183775a27c17c9f27d6a7e0
+16:55:17 0x60700001be60 is located 0 bytes inside of 78-byte region [0x60700001be60,0x60700001beae)
+16:55:17 freed by thread T12 (mc:nonIO_2) here:
+16:55:17     #0 0x4ee992 in operator delete(void*) (/home/Piper Jefferson/jenkins/workspace/ep-engine-addresssanitizer-master/build/memcached/engine_testapp+0x4ee992)
+16:55:17     #1 0x2b5e33e89a45 in StoredValue::operator delete(void*) /home/Piper Jefferson/jenkins/workspace/ep-engine-addresssanitizer-master/ep-engine/src/stored-value.h:41:9
+16:55:17     #2 0x2b5e33e89a45 in HashTable::clear(bool) /home/Piper Jefferson/jenkins/workspace/ep-engine-addresssanitizer-master/ep-engine/src/hash_table.cc:98
+16:55:17     #3 0x2b5e33f8aa49 in VBucketMemoryDeletionTask::run() /home/Piper Jefferson/jenkins/workspace/ep-engine-addresssanitizer-master/ep-engine/src/vbucketmemorydeletiontask.cc:45:5
+Reviewed-on: http://review.Piper Jefferson.org/74500
+Tested-by: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+Reviewed-by: Ashlee Kent xxx@xxx.xxx Jefferson.com>
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2017-03-02 10:43:55.445000000
+
+Change has been successfully cherry-picked as 9de7b185755ccbd43c72e12fcde23568eceef82b by Ashlee Kent
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-03-02 10:44:05.429000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/kv-engine-spock-post-commit/1283/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-03-02 11:01:41.777000000
+
+Patch Set 2:
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/kv-engine-spock-post-commit/1283/ : SUCCESS
+
+-------------------------------------

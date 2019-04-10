@@ -1,0 +1,69 @@
+DESCRIPTION
+
+Support creating pack bitmap indexes in PackWriter.
+
+Update the PackWriter to support writing out pack bitmap indexes,
+a parallel ".bitmap" file to the ".pack" file.
+Bitmaps are selected at commits every 100 to 10,000 commits for
+each unique path from the start. The most recent 20,000 commits
+have a bitmap every 100 commits. From there, the distance linearly
+increasing with the total number of commits in the graph. Commits
+with more than 1 parent are prefered over ones with 1 or less.
+
+Bitmaps are used to speed up the counting phase when packing, for
+requests that are not shallow. The PackWriterBitmapWalker uses
+a RevFilter to proactively mark commits with RevFlag.SEEN, when
+they appear in a bitmap. The walker produces the full closure
+of reachable ObjectIds, given the collection of starting ObjectIds.
+
+For fetch request, two ObjectWalks are executed to compute the
+ObjectIds reachable from the haves and from the wants. The
+ObjectIds needed to be written are determined by taking all the
+resulting wants AND NOT the haves.
+
+For clone requests, we get cached pack support for "free" since
+it is possible to determine if all of the ObjectIds in a pack file
+are included in the resulting list of ObjectIds to write.
+
+On my machine, the best times for clones and fetches of the linux
+kernel repository (with about 2.6M objects and 300K commits) are
+tabulated below:
+
+Operation                   Index V2               Index VE003
+Clone                       37530ms (524.06 MiB)     82ms (524.06 MiB)
+Fetch (1 commit back)          75ms                 107ms
+Fetch (10 commits back)       456ms (269.51 KiB)    341ms (265.19 KiB)
+Fetch (100 commits back)      449ms (269.91 KiB)    337ms (267.28 KiB)
+Fetch (1000 commits back)    2229ms ( 14.75 MiB)    189ms ( 14.42 MiB)
+Fetch (10000 commits back)   2177ms ( 16.30 MiB)    254ms ( 15.88 MiB)
+Fetch (100000 commits back) 14340ms (185.83 MiB)   1655ms (189.39 MiB)
+
+Change-Id: Icdb0cdd66ff168917fb9ef17b96093990cc6a98d
+
+
+COMMENTS
+
+author: Warren Watkins
+date: 2013-02-07 22:40:48.000000000
+
+Uploaded patch set 13.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-02-07 22:55:27.000000000
+
+Patch Set 13:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2915/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-02-07 22:59:38.000000000
+
+Patch Set 13: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2915/ : SUCCESS
+
+-------------------------------------

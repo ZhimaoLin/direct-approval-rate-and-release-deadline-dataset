@@ -1,0 +1,161 @@
+DESCRIPTION
+
+[RFC] Garbage collector for FileRepositories
+
+This is work in progress. It is mainly a copy what Shawn wrote in
+DfsGarbageCollector which is enhanced by handling index and reflog
+entries. It's not ready at all but I want to share it fast to see
+whether I am heading in the right direction.
+
+Change-Id: I14ea5cb7e0fd1b5c50b994fd77f4e05bfbb9d911
+Signed-off-by: Zachary Orozco xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Zachary Orozco
+date: 2011-12-01 09:36:19.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-12-01 09:36:29.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1098/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-12-01 09:39:39.000000000
+
+Patch Set 3: Build Successful
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1098/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2011-12-01 13:40:48.000000000
+
+Patch Set 3: (1 inline comment)
+
+
+
+Line:1, org.eclipse.jgit.test/tst/org/eclipse/jgit/storage/file/GCTest.java -> missing license header
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-12-01 17:46:22.000000000
+
+Patch Set 3: (13 inline comments)
+
+
+
+Line:74, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Move my name to be in the copyright header if its really derived?
+
+Line:78, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> GarbageCollector or Repacker?
+
+Line:95, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Should take a ProgressMonitor
+
+Line:96, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Don't allow a null repository. :-)
+
+Line:110, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> This takes a while, also pass a ProgressMonitor.
+
+Line:119, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Don't go about it this direction. Instead list all of the loose objects. Look at CachedObjectDirectory's constructor to build the set of what is loose, then scan the packs and ask "do you contain this object?" if so you can remove that loose object.
+
+FWIW in C Git the progress monitor here is over the 256 different loose object directories. We update it once per ?? top level directory examined.
+
+Line:137, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Drop this assertion. It is legal for JGit to create a index version 1 on a FileRepository.
+
+Line:142, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> This can all be removed. In the DFS storage system, objects can only be in packs. If the list of packs is empty, the repository is empty, and packing does not need to continue.  On a local filesystem there may be loose objects that have to be packed so this test is not enough.
+
+Line:182, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> if the repo is bare, there is no index, so this method should produce an empty set.
+
+Line:183, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> don't lock it, just read it.
+
+Line:193, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Doing a diff here isn't really useful. PackWriter can tell you if the objects were seen already elsewhere or not. So just have this method scan the DirCache and process any objects in it.
+
+Line:218, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Do not write directly to this pack's file. The pack name is the SHA-1 of the object names. If the repository is already full packed and we are doing a repack (such as to change compression settings), the output file name is also the input file. If you just write to it immediately we truncate the data and destroy the repository.
+
+Instead write both the pack and the idx file into temporary files and try to perform an atomic rename over onto the real names as close as possible. Yes when repacking an existing pack back onto itself there is a window of time where the pack would appear corrupt as the idx and pack don't match.
+
+You could first rename away the old files to a temp name, then rename the new files over.
+
+This problem does not arise on the DFS system because there we use unique file names that have nothing to do with the contents.
+
+Line:236, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> If the pack was just replaced, there is some danger that the existing PackIndex object in memory is out of date relative to the current file. We need to make sure we remove the old PackFile and its PackIndex from the ObjectDatabase implementation before we add the pack.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2011-12-02 22:19:03.000000000
+
+Patch Set 3: I would prefer that you didn't submit this
+
+(10 inline comments)
+
+worked on some of your comments. Can't propose that new version yet but still wanted to tell you about which things are done and where I have questions.
+
+Line:1, org.eclipse.jgit.test/tst/org/eclipse/jgit/storage/file/GCTest.java -> Done
+
+Line:74, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Sure!
+
+Line:78, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> No, I really thought that this should in the future become a complete GC. I was inspecting also native git implementation (saw you're name mentionend oft there) and based on that I came to the 5 steps of gc which I planned to implement here (ok, 4 steps, rerere_gc will not come soon). If this class grows big enough (or if reasons come up to have the steps beeing available as own classes) we can split it. If we split then there will be a repack class, of course!. But for now I wanted to stay in one class.
+
+Line:95, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done
+
+Line:96, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done
+
+Line:110, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done
+
+Line:137, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done
+
+Line:142, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done
+
+Line:182, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> yes, I also stumbled over that because my tests cases used bare repos in the beginning which led to an empty treewalk and AIOOB exceptions. Fixed it!
+
+Line:218, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Got it. About renaming old files first to temp files first: I guess that while this long running gc works the repo should be accessible and consistent. If I would rename the old packs to temp files then they would vanish for other git processes leaving a repo which is not consistent (not all referenced objs can be found). I guess it's better to write into temp files and rename them to valid files in the end. After renaming we could delete uneeded pack files.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-12-09 15:25:34.000000000
+
+Patch Set 3: (1 inline comment)
+
+
+
+Line:218, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Correct, we want to keep the repository accessible during the repack phase with readers not seeing half-written files.
+
+Renaming the old files to temp files is a bad idea. I don't know what possessed me to suggest that to you earlier. Just rename the new temp files onto the real names, if the rename fails because the filesystem won't let you do that, try deleting the real name and then renaming. Yay windows with open files and all that. :-)
+
+-------------------------------------
+author: Zachary Orozco
+date: 2012-01-26 21:09:54.000000000
+
+Patch Set 3: (1 inline comment)
+
+
+
+Line:119, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done
+
+-------------------------------------
+author: Zachary Orozco
+date: 2012-02-13 17:02:21.000000000
+
+Patch Set 3: (1 inline comment)
+
+
+
+Line:236, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> How can we "replace" a packfile? If we have created a packfile for id X and the objectrepository already contains a cached packfile for id X - then the cached packfile and the cached index data should be equivalent to what we have produced newly. No problem if I don't update pack and indexdata atomically. Or?
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2012-07-29 13:39:12.000000000
+
+Your change could not be merged due to a path conflict.
+
+Please merge (or rebase) the change locally and upload the resolution for review.
+
+-------------------------------------

@@ -1,0 +1,101 @@
+DESCRIPTION
+
+lttng: Fix Resources view event list
+
+With the fix to the event iterator (42acdc2), it is no longer required
+to add 'null' events in the zoomed event list for all empty ranges to
+hide underlying events in the full range event list. This simplifies the
+building of event list in the Resources view.
+
+If required, 'null' events are added at the start or end of the list to
+properly identify the time range that the list represents.
+
+Adds an interface to TimeEvent to split an event while keeping it's
+class type and value.
+
+Some trace specific fields are moved out of the generic TimeGraphEntry.
+
+Change-Id: I6b3058227e64e456601b40fa2ea6c0afe3886f14
+Signed-off-by: Luciana Barry xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Luciana Barry
+date: 2013-07-25 21:46:19.000000000
+
+Uploaded patch set 9.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-07-25 21:46:25.000000000
+
+Patch Set 9:
+
+Build Started https://hudson.eclipse.org/sandbox/job/linuxtools/2983/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-07-25 22:01:55.000000000
+
+Patch Set 9: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/linuxtools/2983/ : SUCCESS
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-08-09 18:45:52.000000000
+
+Patch Set 9:
+
+(8 comments)
+
+Some comments.
+
+If it ends up adding more LoCs overall, is it really a "simplification"?
+
+Line:24, lttng/org.eclipse.linuxtools.lttng2.kernel.ui/src/org/eclipse/linuxtools/internal/lttng2/kernel/ui/views/controlflow/ControlFlowEntry.java -> see comment in ResourcesEntry about this fTrace
+
+Line:39, lttng/org.eclipse.linuxtools.lttng2.kernel.ui/src/org/eclipse/linuxtools/internal/lttng2/kernel/ui/views/resources/ResourcesEntry.java -> Any reason this was moved down from TimeGraphEntry? If every implementation is gonna have a fTrace, it might as well remain in the super-class.
+
+The only eyebrows-raising element could have been having the down-cast fTrace in the getter. But if the field is final and your constructor only allows LttngKernelTrace, that cast should always be safe.
+
+Line:173, lttng/org.eclipse.linuxtools.lttng2.kernel.ui/src/org/eclipse/linuxtools/internal/lttng2/kernel/ui/views/resources/ResourcesView.java -> This cast is unsafe(?) It should be wrapped in an instanceof check (and could throw IllegalArgument if not the right type is sent in parameter).
+
+*Ideally*, generics could be used to make this compile-time type-safe (ResourcesView extends AbstractTimeGraphView<ResourcesEntry> or something like that). But that'd be out of the scope of this change...
+
+Line:116, lttng/org.eclipse.linuxtools.lttng2.kernel.ui/src/org/eclipse/linuxtools/internal/lttng2/kernel/ui/views/resources/ResourcesPresentationProvider.java -> Unsafe cast. Why is TimeEvent.getValue() not in the interface? Or should this method take a TimeEvent as parameter instead? What's the point of having an interface if it's not being used?
+
+Line:37, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/model/TimeGraphEntry.java -> It'd be safer to use a real object than a 'null'. Especially with a List, you can use a final List and call .clear() to make a new empty array.
+
+Line:138, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/model/TimeGraphEntry.java -> if fEventList cannot be null, this check becomes unnecessary
+
+Line:161, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/model/TimeGraphEntry.java -> pre-emptive Sonar warning about storing arrays directly ;) Doing a shallow-copy:
+ fEventList.clear();
+ fEventList.addAll(eventList);
+should not take much longer to execute, and we would maintain the internal fEventList reference.
+
+Line:171, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/model/TimeGraphEntry.java -> same for fZoomedEventList
+
+-------------------------------------
+author: Luciana Barry
+date: 2013-08-09 21:05:00.000000000
+
+Patch Set 9:
+
+(5 comments)
+
+Line:39, lttng/org.eclipse.linuxtools.lttng2.kernel.ui/src/org/eclipse/linuxtools/internal/lttng2/kernel/ui/views/resources/ResourcesEntry.java -> Because TimeGraphEntry represents a row in a graphical widget, it shouldn't know anything about traces.
+
+Line:173, lttng/org.eclipse.linuxtools.lttng2.kernel.ui/src/org/eclipse/linuxtools/internal/lttng2/kernel/ui/views/resources/ResourcesView.java -> The only entries that can be received are those ResourcesEntry  that are added to the entry list by the buildEventList method above.
+We wouldn't want to use generics because some other implementation could have a mix of different types.
+
+Line:116, lttng/org.eclipse.linuxtools.lttng2.kernel.ui/src/org/eclipse/linuxtools/internal/lttng2/kernel/ui/views/resources/ResourcesPresentationProvider.java -> It's not unsafe if the Resources View only puts instances of TimeEvent in its event lists. The method getValue() is not in the interface because it's not mandatory that all implementations of ITimeEvent have a value, even less specifically an int value.
+
+Line:37, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/model/TimeGraphEntry.java -> Then the iterator wouldn't be thread safe, unless it itself makes yet another copy of the list. But I'll make sure the list is never null.
+
+Line:161, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/model/TimeGraphEntry.java -> I could not measure a noticeable difference either way. But because the list fed to the iterator should never shrink, I prefer to create a new list with the constructor that takes a list as parameter.
+
+-------------------------------------

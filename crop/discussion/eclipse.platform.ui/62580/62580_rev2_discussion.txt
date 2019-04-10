@@ -1,0 +1,57 @@
+DESCRIPTION
+
+Bug 483842 - Use the Composite#requestLayout method in Platform UI
+
+Change-Id: Ide3b417844d81a82113ffd48113fd118388264e1
+Signed-off-by: Zaid Mosley xxx@xxx.xxx
+
+COMMENTS
+
+author: Zaid Mosley
+date: 2015-12-14 08:53:57.000000000
+
+Patch Set 2:
+
+Stefan, here is the SWT.CHANGED also used. AFAIK  requestLayout is still a valid replacement for that but would be nice to get your confirmation.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-12-14 08:54:02.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/7736/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-12-14 09:21:04.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/7736/ : SUCCESS
+
+-------------------------------------
+author: Kelly Potter
+date: 2015-12-15 20:23:19.000000000
+
+Patch Set 2: Code-Review-1
+
+(4 comments)
+
+Fyi, you forgot to add me as a reviewer here.
+
+Line:111, bundles/org.eclipse.e4.ui.workLeon Ochoach.addons.swt/src/org/eclipse/e4/ui/workbench/addons/dndaddon/DragHost.java -> This new code isn't equivalent. You need to invoke requestLayout() on each child that changed, not the shell (their parent). Look back through the method and find any control that was modified in any way. Invoke requestLayout() on those controls.
+
+Line:120, bundles/org.eclipse.e4.ui.workLeon Ochoach.addons.swt/src/org/eclipse/e4/ui/workbench/addons/dndaddon/DragHost.java -> dragElement's old parent is being modified here. We should call requestLayout on it here (unless the remove(...) method does this for free).
+
+Line:130, bundles/org.eclipse.e4.ui.workLeon Ochoach.addons.swt/src/org/eclipse/e4/ui/workbench/addons/dndaddon/DragHost.java -> Remove the call to tb.layout(true). There is no good reason to ever invoke layout with true as the last argument. Doing so is equivalent to using the SWT.CHANGED flag -- it recursively blows away all the layout caches. That should never be necessary if the caches are always being invalidated at the correct times.
+
+I'm curious why this call to layout(...) was ever here. It basically triggers one layout synchronously and a second one asynchronously. There's no good reason to do this unless you're working around something. We should test this code after making this change to figure out what that "something" was.
+
+What happens if dragElement.getWidget() isn't a ToolItem? We should be triggering a layout in those cases, too.
+
+Line:134, bundles/org.eclipse.e4.ui.workLeon Ochoach.addons.swt/src/org/eclipse/e4/ui/workbench/addons/dndaddon/DragHost.java -> Should requestLayout on baseWindow (or whatever control is attached to it) after removing one of its children -- unless the remove(...) method does this for free or unless dragWindow is a Shell.
+
+-------------------------------------

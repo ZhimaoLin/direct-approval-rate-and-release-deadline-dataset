@@ -1,0 +1,89 @@
+DESCRIPTION
+
+Fix using wrong content length for gzipped object
+
+If the content is being gzipped and the "Content-Length" is not
+the actual content length, it is the content length after being
+gzipped.
+
+Change-Id: I8d5284dad608e3abd8217823da2b365e8cd998b0
+Signed-off-by: Paloma Kennedy xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Paloma Kennedy
+date: 2016-11-23 00:08:51.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-11-23 00:08:58.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/9443/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-11-23 00:23:05.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/9443/ : SUCCESS
+
+-------------------------------------
+author: Eden Lin
+date: 2016-11-23 00:40:35.000000000
+
+Patch Set 1: Code-Review-1
+
+(1 comment)
+
+Please add some information about the context to the commit message. E.g.:
+
+ dump HTTP: Avoid being confused by Content-Length of a gzipped stream
+
+ TransportHttp sets 'Accept-Encoding: gzip' to allow the server to
+ compress HTTP responses. When fetching a loose object over HTTP,
+ it uses the following code to read the response:
+
+	InputStream in = openInputStream(c);
+	int len = c.getContentLength();
+	return new FileStream(in, len);
+
+ If the content is gzipped, openInputStream decompresses it and produces
+ the correct content for the object. Unfortunately the Content-Length
+ header contains the length of the compressed stream instead of the actual
+ content length. Use a length of -1 instead --- we don't know the actual
+ length.
+
+ Loose objects are already compressed, so the gzip encoding typically
+ produces a longer compressed payload. The value from the Content-Length
+ is too high, producing EOFException:
+
+  org.eclipse.jgit.errors.TransportException: Short read of block.
+        at org.eclipse.jgit.transport.BasePackFetchConnection.doFetch(BasePackFetchConnection.java:377)
+        at org.eclipse.jgit.transport.BasePackFetchConnection.fetch(BasePackFetchConnection.java:308)
+        at org.eclipse.jgit.transport.BasePackFetchConnection.fetch(BasePackFetchConnection.java:298)
+        at org.eclipse.jgit.transport.FetchProcess.fetchObjects(FetchProcess.java:245)
+  Caused by: java.io.EOFException: Short read of block.
+        at org.eclipse.jgit.util.IO.readFully(IO.java:249)
+        at org.eclipse.jgit.transport.PacketLineIn.readLength(PacketLineIn.java:225)
+        at org.eclipse.jgit.transport.PacketLineIn.readString(PacketLineIn.java:155)
+        at org.eclipse.jgit.transport.PacketLineIn.readACK(PacketLineIn.java:119)
+        at org.eclipse.jgit.transport.BasePackFetchConnection.negotiate(BasePackFetchConnection.java:667)
+        at org.eclipse.jgit.transport.BasePackFetchConnection.doFetch(BasePackFetchConnection.java:363)
+
+Line:690, org.eclipse.jgit/src/org/eclipse/jgit/transport/TransportHttp.java -> Can this check be factored out into a separate function? That way there's no risk of openInputStream and open getting out of sync.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-11-23 01:25:26.000000000
+
+Change has been successfully merged into the git repository by Eden Lin
+
+-------------------------------------

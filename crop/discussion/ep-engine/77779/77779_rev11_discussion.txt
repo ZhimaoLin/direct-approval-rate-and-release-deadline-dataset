@@ -1,0 +1,75 @@
+DESCRIPTION
+
+MB-24246: update highestDedupedSeqno when an existing value is changed
+
+Without this, rangeReads are allowed to stop "too early" - potentially
+missing out on items that have been updated, i.e.,
+
+^ = HDDS (HighestDedupedSeqno)
+
+ A₁   B₂   C₃            Initial items
+[A₁   B₂   C₃]           rangeRead 1-3
+[A₁   B₂   C₃]  B'₄       Update B
+ A₁   B₂   C₃   B'₄       RR ends
+[A₁   B₂   C₃]  B'₄       new rangeRead, still consistent
+ A₁   B₂   C₃   B'₄       RR ends
+ A₁        C₃   B'₄       purger removes stale B
+!A₁        C₃!  B'₄       RR 1-3 could be requested, but would be
+inconsistent. The HDDS serves to extend the end of a rangeRead to the
+most recently deduped item, in this case B' replaced an older B.
+
+Currently, this updates the HDDS too soon in the case of a stale item,
+forcing the rangeRead to include the new version immediately even though
+the stale item is still present and would still allow a valid range.
+This is to be improved in a coming patch, in which the TombstonePurger
+will update the HDDS when removing the stale item.
+
+Change-Id: If6c57a86bab56ccc007b0fe17c9229218bb0c2c7
+
+
+COMMENTS
+
+author: Jace Townsend
+date: 2017-05-10 13:17:44.200000000
+
+Uploaded patch set 11.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-05-10 13:31:25.719000000
+
+Patch Set 11: Code-Review+2
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-05-10 14:00:15.273000000
+
+Patch Set 11: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6421/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5612/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4918/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/163/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-05-10 15:11:56.602000000
+
+Patch Set 11: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5612/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4918/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/163/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6424/ : SUCCESS
+
+-------------------------------------

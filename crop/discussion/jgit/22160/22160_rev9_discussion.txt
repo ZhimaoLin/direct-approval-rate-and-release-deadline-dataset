@@ -1,0 +1,151 @@
+DESCRIPTION
+
+Fix a number of failing conflict situations
+
+Adds further tests where the working tree is dirty (differs from
+index) and where we have staged but uncommitted changes.
+
+Fixed the test case 9 for file/directory conflicts.
+
+Bug: 428819
+Change-Id: Ie44a288b052abe936ebb74272d0fefef3b218a7a
+Signed-off-by: Karter Mora xxx@xxx.xxx
+Signed-off-by: Juliet Cantu xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Juliet Cantu
+date: 2014-03-30 21:00:43.000000000
+
+Patch Set 9: Commit message was updated
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-03-30 21:11:19.000000000
+
+Patch Set 9:
+
+Build Started https://hudson.eclipse.org/egit/job/jgit.gerrit/4919/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-03-30 21:22:10.000000000
+
+Patch Set 9: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/jgit.gerrit/4919/ : SUCCESS
+
+-------------------------------------
+author: Juliet Cantu
+date: 2014-04-09 20:17:07.000000000
+
+Patch Set 9:
+
+Chris, you are the only one who really understand this...
+
+-------------------------------------
+author: Zachary Orozco
+date: 2014-04-11 06:45:40.000000000
+
+Patch Set 9:
+
+sorry, I am quite busy with non jgit tasks. But I'll review today evening.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2014-04-11 22:39:32.000000000
+
+Patch Set 9: Code-Review-1
+
+(6 comments)
+
+Line:655, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> This modification is not covered by a test. If I remove this the tests still succeed. Please add a test.
+
+On the other hand I think that if statement is not needed. The mask is "FDF" means we have files in HEAD and MERGE and a directory in INDEX. This means: there will always be a DirectoryFileConflict. No chance that walk.isDirectoryFileConflict() is false.
+
+Line:669, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> Same argument as before: how can walk.isDirectoryFileConflict() be false if the mask is FFD?
+
+Line:693, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> hmmm. For the current path we only see files in HEAD,MERGE,INDEX. Means for these three states we definitly don't have a file/directory conflict and also not for the pathes of the parents (any prefixes of the current path). If we see files here then all our parent pathes must be directories. So they also don't face a file/directory conflict.
+
+But: there could be a folder in the working tree for the current path or for any parent path. walk.isDirectoryFileConflict() is checking for the workingtree while our ffMask is ignoring the working tree.
+
+To understand better what we gain with this change we need a test.
+
+Line:701, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> yes!
+
+Line:741, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> We need some else block here. You sorrounded the previous statement "update(...)" with a new if statement. But if you don't provide an else here and "f!=null" then we jump to 743 or 750. These blocks are not meant to handle situations where we have nothing in HEAD (check the comments). I would add an explicit else here.
+
+Line:860, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> I agree to this change. Only with your change we are doing what is described in the javadoc.
+
+But I am wondering why this is not hit by any test. If I take this change and replace this file (DirCacheCheckout.java) with the previous version ... then all new tests are still green. It seems we  don't need any modification in DirCacheCheckout.java to let the tests succeed.
+
+We should add tests which cover the modifications in this file.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2014-04-12 04:51:11.000000000
+
+Patch Set 9:
+
+(5 comments)
+
+Line:655, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> Without this  CheckoutTest.fileModeTestFileThenFileWithFolderInIndex
+and  CheckoutTest.fileModeTestFileWithFolderInIndex fails (in the pgm bundle tests)
+
+Line:669, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> CheckoutTest.fileModeTestFolderThenFileWithMissingInWorkingTree fals if I unchange this. Is the test wong?
+
+Line:693, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> Without this CheckoutTest.fileModeTestFolderThenMissingWithFileInWorkingTree fails
+
+Line:741, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> I added the braces around the surrounding if, so no; we will not jump to 743 or 750
+
+Line:860, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> See CheckoutTest.fileModeTestFolderWithMissingInWorkingTree
+and CheckoutTest.fileModeTestMissingThenFolderWithFileInWorkingTree
+
+-------------------------------------
+author: Zachary Orozco
+date: 2014-04-17 10:35:34.000000000
+
+Patch Set 9:
+
+(3 comments)
+
+Here comes another attempt to make the tests green. One of the bugs of old code was that we where relying on a DircacheEntry with correct objectid even for a tree. Since we don't have tree's in the index (native git has support for optional tree entries, jgit don't (at least doesn't write those entries)) artificial entries with objectid=zeroid where returned.
+
+I also think the documented behaviour for directory-file conflict 9 was wrong (didn't match native git's behaviour). I corrected the java-docs.
+
+That's a tricky area because native git doesn't really document how it behaves in case of file/folder conflicts.
+
+Line:613, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> Imagine f=null but the index contains some uncommitted subtree. With your change you would update and overwrite the index. Won't we loose uncommited data?
+
+On the other hand if index and workingtree differ just because the workingtree is null ... then we don't want to report an error.
+
+I'll suggest to move the f==null check inside the isModified.
+
+Line:655, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> Regarding my complaints about missing tests: Right, I overlooked it. I reverted the DirCacheCheckout modifications and run the tests with maven on commandline (just "mvn clean install") - but then the CheckoutTest is not executed but skipped. Don't know yet why.
+
+Anyhow: I still don't think we need this.How can walk.isDirectoryFileConflict() be true of mask is FDF? No need to check.
+
+Line:741, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> Right, we will not go to 743 or 750. But before, whenever we entered this block we were sure we take a decision here. Now you surrounded the decision with an if. If the if condition is not met we will not take a decision here. I am not sure that rest of this method is prepared to this. If you don't decide here explicitly what we should do with this path then the default action will take place: remove the path from the index and leave the working tree as it is. Is that what you wanted?
+
+-------------------------------------
+author: Juliet Cantu
+date: 2014-04-26 11:33:55.000000000
+
+Patch Set 9:
+
+(1 comment)
+
+Line:655, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> Because CheckoutTest is in the pgm.test package not jgit.test ?
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2014-05-17 17:01:51.000000000
+
+The change could not be merged due to a path conflict.
+
+Please rebase the change locally and upload the rebased commit for review.
+
+-------------------------------------

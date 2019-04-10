@@ -1,0 +1,120 @@
+DESCRIPTION
+
+Delete non empty directories before checkout
+
+I the checkout path is currently a non-empty directory (and was a link
+or a regular file before), this directory will be removed before
+performing checkout, but only if the checkout path is specified.
+
+Bug: 474973
+Change-Id: Ifc6c61592d9b54d26c66367163acdebea369145c
+Signed-off-by: Jayvion Booth xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2015-09-17 14:27:58.000000000
+
+Patch Set 11:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7103/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-09-17 14:39:45.000000000
+
+Patch Set 11: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7103/ : SUCCESS
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-09-21 08:35:54.000000000
+
+Patch Set 11:
+
+Ping...
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-09-23 08:52:10.000000000
+
+Patch Set 11:
+
+(1 comment)
+
+I would suggest not to add the deletion of trees as a side effect of checkoutEntry(). Calling update() on a entry will ultimately cause that checkoutEntry() is called for that path. There are many calls to update() in DirCacheCheckout in a lot of different situations and I doubt that the callers have made sure that a deletion of a subtree would be ok. Often it is not harmful because in the end we will see conflicts and don't do any updates to the filesystem. I care so much because deleting file hierarchies in a "rm -fr" fashion is a such dangerous operation and I fear we may delete to many files (e.g. ignored files which we should not touch)
+
+I would suggest to more explicitly take the decision to delete subtrees and not to have it as a side effect of updating some parent folder. How do we do it the the very straightforward case where a is a file f in HEAD and index but it's a folder in the commit you want to checkout. In this case processEntry() makes sure that "f" is put into the "removed" set and "f/x" goes into "updated". Maybe we can do something similar and take the decision to delete subtrees in processEntry().
+
+Line:631, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> One example place where I see problems: Just by inspecting HEAD,index and merge we decide we want to update that path. We don't look at the filesystem and don't check whether name is a directory. But this call will lead to the call to checkoutEntry() (if we are not by luck stopped by conflicts) and it will delete files which we haven't inspected.
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-09-27 08:53:56.000000000
+
+Patch Set 11:
+
+> (1 comment)
+ > 
+ > I would suggest not to add the deletion of trees as a side effect
+ > of checkoutEntry(). Calling update() on a entry will ultimately
+ > cause that checkoutEntry() is called for that path. There are many
+ > calls to update() in DirCacheCheckout in a lot of different
+ > situations and I doubt that the callers have made sure that a
+ > deletion of a subtree would be ok. Often it is not harmful because
+ > in the end we will see conflicts and don't do any updates to the
+ > filesystem. I care so much because deleting file hierarchies in a
+ > "rm -fr" fashion is a such dangerous operation and I fear we may
+ > delete to many files (e.g. ignored files which we should not touch)
+
+I see. I've tried to understand & change the code but it is simply not called if we do explicit checkout of a path, so the change would not fix my original issue.
+ 
+ > I would suggest to more explicitly take the decision to delete
+ > subtrees and not to have it as a side effect of updating some
+ > parent folder. How do we do it the the very straightforward case
+ > where a is a file f in HEAD and index but it's a folder in the
+ > commit you want to checkout. In this case processEntry() makes sure
+ > that "f" is put into the "removed" set and "f/x" goes into
+ > "updated". Maybe we can do something similar and take the decision
+ > to delete subtrees in processEntry().
+
+As before, the code in qurestion is not called on CheckoutCommand.checkoutPath() which is what I'm trying to fix here.
+
+So I understand your points and to avoid any unwanted changes on update() the next patch introduces a second DirCacheCheckout.checkoutEntry() method which takes an explicit boolean deleteRecursive argument to emphasize that the target path will be deleted in any case.
+
+I've redirected only CheckoutCommand.checkoutPath() and StashApplyCommand.checkoutPath() to call this new method, and the rest will still use the old implementation.
+
+I've also updated javadoc of both methods to clearly state what they will do in case of non-empty directories.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-10-06 21:15:12.000000000
+
+Patch Set 11:
+
+> I see. I've tried to understand & change the code but it is simply
+ > not called if we do explicit checkout of a path, so the change
+ > would not fix my original issue.
+
+I also overlooked this fact that in case of "git checkout ... <path>"
+we skip a lot of the code which jgit executes for a "git checkout" without pathes.
+(e.g. all the complicated checkout rules defined in 
+https://www.kernel.org/pub/software/scm/git/docs/git-read-tree.html mostly
+implemented in DirCacheCheckout.processEntry()).
+
+I like the idea of having a flag for #checkoutEntry() which tells whether it should run
+in the "git checkout -- <path>" mode or not. Only when pathes are
+specified checkoutEntry() will sometimes delete files. In the non-path
+mode it's not checkoutEntry()'s business to delete files.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-10-09 15:09:46.000000000
+
+Change has been successfully merged into the git repository by Zachary Orozco
+
+-------------------------------------

@@ -1,0 +1,125 @@
+DESCRIPTION
+
+MB-5307 Reimplement compaction daemon.
+
+In attempt to make the structure clearer and more modular I chose to
+implement every single compactor as an independent process (possibly
+spawning other compactor processes).
+
+Major differences from previous version of compaction daemon:
+
+ - all the compaction settings are stored in ns_server config (to
+   avoid unnecessary synchronization back and forth);
+ - compactions can be triggered by user via corresponding APIs;
+ - compaction daemon can be put in a paused state (e.g. during
+   rebalance) and then unpaused again which will cause compactions to
+   be resumed more or less from the same point;
+ - parallel database and view compaction option has some effect again.
+
+Change-Id: I2984d0f73a90cdf7c5304775693cc75aaa47fd6f
+
+
+COMMENTS
+
+author: Nathalie Landry
+date: 2012-05-21 19:02:44.247000000
+
+Patch Set 1: (7 inline comments)
+
+looks good. I've found some minor things.
+
+I think we should also consider doing something with logging in this code. Logging itself is good. But it's a bit less good that there's quite a lot logging when everything is idle.
+
+This may cause a bit too "accelerated" rotation of debug logs thus making it less useful.
+
+Not sure what to do though. Those logging messages are useful, except when nothing needs to be done. Looks like something we could address in ale. I.e. some sort of logging transactions where we send a bunch of logging messages and then when we find out if those past messages are useful we can either commit or rollback them. This seems a bit too large change though. Unless we can hack it into ale quickly. 
+
+I'm thinking perhaps if some erlang:{put,get} key is set, we'll just append messages to this "global variable" instead of sending it to loggers. And than special api to commit/rollback messages can just process this. Again, please, think twice before actually doing this. If this is easy and quick, lets do it. Otherwise we'll need something else.
+
+Line:59, src/compaction_daemon.erl -> this guys need to initiate compaction on all nodes
+
+Line:523, src/compaction_daemon.erl -> I'm slightly concerned with non-synchronous shutdown of child here. Looks like we should wait until child is dead before exiting
+
+Line:578, src/compaction_daemon.erl -> usort perhaps should be done here in order to remove seemingly quite likely duplicates (see birthday paradox)
+
+Line:619, src/compaction_daemon.erl -> perhaps we should ignore race with vbucket disappearing under us
+
+Line:655, src/compaction_daemon.erl -> logging here is right in principle. But we'll be repeating it twice per minute. That's alarming.
+
+Line:662, src/compaction_daemon.erl -> see ns_storage_conf:extract_disk_size_for_path. That code is battle-tested (i.e. handles windows). So perhaps something should be extracted from there instead of reinventing it here
+
+Line:910, src/compaction_daemon.erl -> I'm slightly concerned that if allowed period is very wide (like almost day) we'll have "herd" of thousands of this calls right after end of allowed period.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-05-21 21:31:27.190000000
+
+Patch Set 1:
+
+notified Filipe about new code
+
+-------------------------------------
+author: Porter Oconnor
+date: 2012-05-22 13:06:15.136000000
+
+Patch Set 1: Looks good to me, but someone else must approve
+
+(5 inline comments)
+
+Looks good to me Aliaksey, good work! :)
+Just some minor comments added (none is a blocker).
+
+Line:443, src/compaction_daemon.erl -> Side note, 'changes_done' in existing tasks correspond to number of entries in the sequence tree processed (~ number of documents). Here seems to be number of databases compacted.
+
+Line:619, src/compaction_daemon.erl -> Yes, ideally you would get the fragmentation and trigger compaction while the database is open, without any close/reopen in between.
+
+Line:626, src/compaction_daemon.erl -> Is data_size ever not present in the result from get_db_info? If so, it's a bug in couchdb.
+
+Line:696, src/compaction_daemon.erl -> same as above
+
+Line:699, src/compaction_daemon.erl -> If I understand correctly (I didn't read everything very carefully), if the main view group doesn't need compaction, this will not check if the replica group needs compaction and trigger it, right?
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2012-05-23 11:03:08.056000000
+
+Patch Set 1: (5 inline comments)
+
+
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2012-05-23 11:03:07.496000000
+
+MISMATCHED INLINE COMMENT
+Line:443, src/compaction_daemon.erl -> Changed these to vbuckets_done and total_vbuckets to avoid confusion.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2012-05-23 11:03:07.496000000
+
+MISMATCHED INLINE COMMENT
+Line:578, src/compaction_daemon.erl -> Duplicates are indeed likely here. But I tend to think that they are harmless here. And actually it's how it used to work. Anyway I changed this part to select unique vbuckets.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2012-05-23 11:03:07.496000000
+
+MISMATCHED INLINE COMMENT
+Line:626, src/compaction_daemon.erl -> Never seen this. I just preserved the behaviour of the old compaction daemon here. I may be unneeded at all.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2012-05-23 11:03:07.496000000
+
+MISMATCHED INLINE COMMENT
+Line:699, src/compaction_daemon.erl -> Indeed. Thanks for finding this.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2012-05-23 11:03:07.496000000
+
+MISMATCHED INLINE COMMENT
+Line:910, src/compaction_daemon.erl -> For some reason I thought that a timer is removed when creator process dies. Turned out it only the case for *_interval type of functions in timer module.
+
+-------------------------------------

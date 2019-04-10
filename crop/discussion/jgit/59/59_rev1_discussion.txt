@@ -1,0 +1,227 @@
+DESCRIPTION
+
+Add locking capability to the IO SPI based on Java Concurrency Lock API
+
+The lock implementation for local FS has 2 layer for locking, first JVM
+level using the Java Concurrency API and second level is in local FS and
+its Git specific *.lock files.
+
+This change basically replaces the LockFile implementation in JGit Lib.
+
+Signed-off-by: Konnor Snyder xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2009-10-16 16:08:26.000000000
+
+Patch Set 1: Do not submit; No score
+
+This is massively complex, and its just trying to poorly implement the simple concept we already have in Git which is atomic file replacement.
+
+All we really need is an API that lets us open a temporary output stream, write to that stream, ensure that stream is closed and safely stored, and then say "OK, atomically make this Entry match the stream we just wrote, if you fail, let us know".
+
+To be honest, after reading most of this code, I fail to see how we can easily get that behavior.
+
+-------------------------------------
+author: Konnor Snyder
+date: 2009-10-17 02:14:33.000000000
+
+Patch Set 1: No score
+
+I agree with the *BAD* locking implementation, mainly in the _git_ locking layer part, will try to improve it.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:79, org.eclipse.jgit.io/src/org/eclipse/jgit/io/localfs/LocalFileEntry.java -> Ugh.  It was bad enough that we had to use an extra 16 bytes per File (8 byte object header for LockFileEntry, 2 fields for localFile and storageSystem) but now we need *another* 8 bytes for the lock file data that few if any LocalFileEntries will need?
+
+-------------------------------------
+author: Konnor Snyder
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:79, org.eclipse.jgit.io/src/org/eclipse/jgit/io/localfs/LocalFileEntry.java -> Never thought of it that way :(, will surely pay more attention next round.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:181, org.eclipse.jgit.io/src/org/eclipse/jgit/io/localfs/LocalFileEntry.java -> If lock is true you just truncated a file that wasn't supposed to be modified until the new version was fully written to disk *and* the lock was released.
+
+Git relies on doing atomic updates on the filesystem by writing the new content to a new temporary file, and renaming that over the real file name once the new content is completely written.  This method *COMPLETELY* ignores that scheme, making it incompatible and useless for JGit.
+
+-------------------------------------
+author: Konnor Snyder
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:181, org.eclipse.jgit.io/src/org/eclipse/jgit/io/localfs/LocalFileEntry.java -> I actually probably made a disastrous design issue here :( as I was giving priority to port FileLock more easily and was not giving priority to lock simplification, I guess, thats a mistake I made, will fix this lock staff in next round, at least will try.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:201, org.eclipse.jgit.io/src/org/eclipse/jgit/io/Entry.java -> Maybe "create()" is better.  I think the new is implied by the fact that we are creating it.
+
+But given that an Entry can be a Directory or a Stream (aka a file) maybe this should indicate better that it creates a stream here and not a directory.
+
+So instead:
+
+  public boolean createDirectory();  // instead of mkdirs
+  public boolean createStream();
+
+-------------------------------------
+author: Konnor Snyder
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:201, org.eclipse.jgit.io/src/org/eclipse/jgit/io/Entry.java -> Well I like the mkdirs as it is more common for file like operations so I would go for "create" :).
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:216, org.eclipse.jgit.io/src/org/eclipse/jgit/io/Entry.java -> Why are we exposing this implementation detail?
+
+-------------------------------------
+author: Konnor Snyder
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:216, org.eclipse.jgit.io/src/org/eclipse/jgit/io/Entry.java -> I did that part for minimizing change in FileLock code, I just wanted to API'zd it, it was a serious mistake :(, will fix the whole locking issue in next round.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:60, org.eclipse.jgit.io/src/org/eclipse/jgit/io/lock/LockManager.java -> Race condition, multiple instances could be constructed at once.
+
+-------------------------------------
+author: Konnor Snyder
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:60, org.eclipse.jgit.io/src/org/eclipse/jgit/io/lock/LockManager.java -> Agree! Don't know why I made this trivial mistake. Will instead make it final and move it to a static initializer block.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:65, org.eclipse.jgit.io/src/org/eclipse/jgit/io/lock/LockManager.java -> Blank line after method before next declaration.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:69, org.eclipse.jgit.io/src/org/eclipse/jgit/io/lock/LockManager.java -> No point in Hashtable if you are protecting the map yourself anyway by your own synchronized methods.
+
+-------------------------------------
+author: Konnor Snyder
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:69, org.eclipse.jgit.io/src/org/eclipse/jgit/io/lock/LockManager.java -> I was actually a bit confused what to use, so will be switching to HashMap
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:81, org.eclipse.jgit.io/src/org/eclipse/jgit/io/lock/LockManager.java -> Unnecessary given the next two lines which perform a get and test for null on the result.
+
+-------------------------------------
+author: Konnor Snyder
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:81, org.eclipse.jgit.io/src/org/eclipse/jgit/io/lock/LockManager.java -> Some habits just die hard :(, thanks for pointing it, it will simply vanish in next round...
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:94, org.eclipse.jgit.io/src/org/eclipse/jgit/io/lock/LockManager.java -> Unnecessary assignment to 0.
+
+-------------------------------------
+author: Konnor Snyder
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:94, org.eclipse.jgit.io/src/org/eclipse/jgit/io/lock/LockManager.java -> Well, I know its unnecessary but I like to initialize to default values, if its not a performance issue, I guess I will still retain it.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:95, org.eclipse.jgit.io/src/org/eclipse/jgit/io/lock/LockManager.java -> Should be final.
+
+-------------------------------------
+author: Konnor Snyder
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:95, org.eclipse.jgit.io/src/org/eclipse/jgit/io/lock/LockManager.java -> Agree!
+
+-------------------------------------
+author: Konnor Snyder
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:109, org.eclipse.jgit.io/src/org/eclipse/jgit/io/lock/LockManager.java -> This unlocking will go from here to retain the lock for infinity as commented on abstract lockable.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:66, org.eclipse.jgit.io/src/org/eclipse/jgit/io/lock/AbstractLockable.java -> Ugh.  We shouldn't rely on GC to release locks.  If a caller leaks a lock and doesn't release it, the lock probably should stay held indefinitely.  The caller might not have fully cleaned up after themselves, another access to the same resource could find it in an inconsistent state.  Its also easier to identify a caller who didn't clean up if the entire system grinds to a halt because the lock is still valid and nobody can get it anymore.  If the system sometimes suddenly frees up because a GC ran and finalization ran, then its a lot harder to identify a problem.
+
+-------------------------------------
+author: Konnor Snyder
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:66, org.eclipse.jgit.io/src/org/eclipse/jgit/io/lock/AbstractLockable.java -> Agree! Will change in LockManager.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:203, org.eclipse.jgit.io/src/org/eclipse/jgit/io/lock/AbstractLockable.java -> So callers can easily catch IOException when dealing with file IO and abort and recover, but callers can't easily catch lock failures, abort and recover?
+
+-------------------------------------
+author: Konnor Snyder
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:203, org.eclipse.jgit.io/src/org/eclipse/jgit/io/lock/AbstractLockable.java -> Well, the issue is with the Lock interface it does not throw IOException for lock() and lockInteruptablly() so needed to take this way; but should have had
+it documented in Lockable by overriding them, that will be done in next round.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:54, org.eclipse.jgit.io/src/org/eclipse/jgit/io/lock/Lockable.java -> Do we really want to have to implement something like newCondition() as specified by the Lock interface?  Why do we even need to conform to their semantics?
+
+-------------------------------------
+author: Konnor Snyder
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:54, org.eclipse.jgit.io/src/org/eclipse/jgit/io/lock/Lockable.java -> It is useless if we think from egit perspective, but in the long run conforming a standard lock API will benefit us when using HBase or AppEngine at the backend; I am not sure why it will be used just now, but it might and the implementation is not that difficult. IMHO, we should retain it.
+
+-------------------------------------

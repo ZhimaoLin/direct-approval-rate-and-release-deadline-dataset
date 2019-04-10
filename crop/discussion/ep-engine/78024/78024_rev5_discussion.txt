@@ -1,0 +1,95 @@
+DESCRIPTION
+
+MB-24294: Stop couch-kvstore changing the file revision
+
+There's a lot of code around the open paths which may open a different
+file-revision to the one requested, which is the cause of MB-24294.
+
+In summary we asked for 0.couch.6, which doesn't yet exist and the
+checkNewRevNum function (now removed) would then look for 0.couch.*
+files and depending on the async delete task's progress may find
+0.couch.5 and direct saveDocs into that VB, which is about to be
+deleted...
+
+The main fix here is to remove checkNewRevNum, if we have a
+dbFileRevMap value of n, we should open/create 0.couch.n and never
+anything else.
+
+This lead onto finding an issue where the RO instance of CouchKVStore
+was relying on populating it's "copy" of the revision map via failing
+to open 0.couch.0 and then looking for 0.couch.* and updating the map
+from what it finds. So this is fixed by having a single dbFileRevMap
+which is now referenced by the RW/RO pair.
+
+Change-Id: I03dbb0c0a3e635397a12d85ea6092aa1312354b7
+
+
+COMMENTS
+
+author: Jim WNathalie Landryer
+date: 2017-05-18 09:31:17.431000000
+
+Patch Set 5: Patch Set 4 was rebased
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-05-18 09:58:32.915000000
+
+Patch Set 5: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6608/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/320/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5773/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/5077/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-05-18 10:30:53.165000000
+
+Patch Set 5: Code-Review-1
+
+(5 comments)
+
+Approach looks good, just a few minor/stylistic comments.
+
+Line:40, src/kvshard.cc -> Style: IMHO nicer to use unique_ptr's move-assignment operator.
+
+Line:184, src/couch-kvstore/couch-kvstore.h -> Nit: this is arguably misleading as one could read it as making the object its called on read-only (given it's non-static).
+
+What do you think to renaming - to something like `createReadOnlyStore`, or maybe `makeReadOnlyStore`?
+
+Line:620, src/couch-kvstore/couch-kvstore.h -> Comment needs updating - given this is passed by reference it can't be null now.
+
+Line:624, src/couch-kvstore/couch-kvstore.h -> big?
+
+Line:627, src/couch-kvstore/couch-kvstore.h -> You could remove the need for this by having the caller pass in a pre-sized vector for dbFileRevMap.
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2017-05-19 13:51:31.897000000
+
+Patch Set 5:
+
+(3 comments)
+
+updating now
+
+Line:40, src/kvshard.cc -> Done
+
+Line:184, src/couch-kvstore/couch-kvstore.h -> good call, will update
+
+Line:627, src/couch-kvstore/couch-kvstore.h -> Hmm, the issue I had is that dbFileRevMap is a vector of std::atomic and can't be resized etc.., so to reduce wastage the RO instance has a reference to the RW instance's internal vector *and* the RO instance owns a zero sized vector.  So passing a size around for the initialiser list is the only way i could achieve  this without RO store having it's own sized vector which it never uses
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-05-19 14:42:38.064000000
+
+MISMATCHED INLINE COMMENT
+Line:627, src/couch-kvstore/couch-kvstore.h -> Ah, fair point.
+
+-------------------------------------

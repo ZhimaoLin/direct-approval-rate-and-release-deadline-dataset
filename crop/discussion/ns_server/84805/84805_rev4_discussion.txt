@@ -1,0 +1,242 @@
+DESCRIPTION
+
+MB-20581: Monitor disk failure stats.
+
+If any of these stats show sustained failure for the duration specified
+by the user then report error.
+
+Change-Id: I8fe1a7beb86c84fe4bf3b80f6a533442560a287e
+
+
+COMMENTS
+
+author: Ella Beltran
+date: 2017-10-25 21:03:38.305000000
+
+Uploaded patch set 4: Commit message was updated.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-10-25 21:03:47.699000000
+
+Patch Set 4:
+
+Build Started http://cv.jenkins.couchbase.com/job/ns-server-test/626/
+
+-------------------------------------
+author: Ella Beltran
+date: 2017-10-25 21:06:18.271000000
+
+Patch Set 4: Verified+1
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-10-25 21:12:06.140000000
+
+Patch Set 4: Well-Formed+1
+
+Permission granted to commit to restricted branch
+
+-------------------------------------
+author: Philip Lara
+date: 2017-10-25 22:36:50.840000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:184, src/kv_stats_monitor.erl -> I think we need to mention bucket in this error message.
+
+And overall:
+what will happen if bucket gets deleted, and we get here after the deletion, but before we receive config event {buckets, ...}. Will we get an error or {ok, []}?
+
+-------------------------------------
+author: Philip Lara
+date: 2017-10-25 22:39:24.366000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:184, src/kv_stats_monitor.erl -> I see that we get {ok, []}, which is fine.
+
+-------------------------------------
+author: Philip Lara
+date: 2017-10-25 23:06:03.499000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:195, src/kv_stats_monitor.erl -> You don't need foldl here. lists:map is enough
+
+-------------------------------------
+author: Philip Lara
+date: 2017-10-25 23:14:51.386000000
+
+Patch Set 4:
+
+Do I understand this correctly:
+If TimePeriod = 100sec and 50 of them have 2 failures happen, and other 50 have 0 failures happen during the second, then despite 100 failures happening in 100 sec, which is > 60, it won't trigger the failover.
+
+-------------------------------------
+author: Ella Beltran
+date: 2017-10-26 02:12:38.010000000
+
+Patch Set 4: -Verified
+
+(2 comments)
+
+Line:184, src/kv_stats_monitor.erl -> Yes, will display the bucket name in error message.
+
+Line:195, src/kv_stats_monitor.erl -> Yes, the foldl can be replaced with lists:map.
+
+-------------------------------------
+author: Ella Beltran
+date: 2017-10-26 02:54:11.148000000
+
+Patch Set 4:
+
+Yes, since we are looking for sustained failure, we are not interested in the value of the stat itself but rather the number of samples where the stat has increased. The threshold is for the number of samples.
+
+A timePeriod of 100s has 100 stat samples (one per second). If 60 of those samples show an increment over the previous sample then that is considered a sustained failure.
+
+ EP engine retry policy for write failure is to retry the write every second and indefinitely. As long as the disk failure continues to exist, the ep_item_commit_failed (or the ep_data_write_failed) stat will continue to increase. This is irrespective of whether the client continues to perform writes or not. As a result, more or less every sample of the write related failure stats should show an increment over the previous one.
+
+EP engine's retry policy for reads is different. They do not retry reads on read failure. The ep_data_read_failed stat will continue to increase as long as the client is performing read ops and the disk failure continues to exist.
+
+-------------------------------------
+author: Philip Lara
+date: 2017-10-26 19:30:44.384000000
+
+Patch Set 4:
+
+I think we need this explanation in the module header.
+
+If ep-engine retries each second and we sample once per second, it's quite probable that we can register 2 failures in one second and 0 in the next one. It seems to me that if one bit will represent 2 seconds interval, it will be more reliable.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2017-10-26 22:17:52.121000000
+
+Patch Set 4:
+
+(2 comments)
+
+See couple of comments inline. Also, I don't think we should spread the autofailover configuration over multiple REST APIs. Semantically, they are a single thing (for example, it's not very useful to have disk failure autofailover enabled when autofailover is disabled), so they should be configurable through the same REST API.
+
+Line:115, src/kv_stats_monitor.erl -> I don't think it's a good idea to depend on a particular order  or number of kv pairs. That sort of defeats the purpose of proplists. If you want to add an extra option into the config in the future version, you'd have to take extra care just because of this.
+
+Line:210, src/kv_stats_monitor.erl -> This looks like a job for lists:filter.
+
+-------------------------------------
+author: Ella Beltran
+date: 2017-10-27 17:38:36.225000000
+
+Patch Set 4:
+
+> I think we need this explanation in the module header.
+ > 
+ > If ep-engine retries each second and we sample once per second,
+ > it's quite probable that we can register 2 failures in one second
+ > and 0 in the next one. It seems to me that if one bit will
+ > represent 2 seconds interval, it will be more reliable.
+
+
+Yes, I will add the explanation to module header. 
+
+I had also thought of scenario where two failures get registered in one second and zero in the next one. But, felt it is OK if not every sample registers a failure. Since the threshold is at 60%, it needs only 60% of samples to register the failure. 
+
+But, in worst case, it is possible to have a scenario where only every other sample registers a failure. The probability of running in to this is more if the TimePeriod is set to some low value.
+
+One option is to change the REFRESH_INTERVAL to 2 seconds and divide the TimePeriod by 2 during calculations. Let me think more on this.
+
+-------------------------------------
+author: Ella Beltran
+date: 2017-10-27 17:42:01.234000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:115, src/kv_stats_monitor.erl -> Yes, of course. This was an inadvertent change when I rearranged the code. The code uses proplists elsewhere for this.
+
+-------------------------------------
+author: Ella Beltran
+date: 2017-10-27 17:45:29.576000000
+
+Patch Set 4:
+
+> (2 comments)
+ > 
+ > See couple of comments inline. Also, I don't think we should spread
+ > the autofailover configuration over multiple REST APIs.
+ > Semantically, they are a single thing (for example, it's not very
+ > useful to have disk failure autofailover enabled when autofailover
+ > is disabled), so they should be configurable through the same REST
+ > API.
+
+
+
+Yes, I also started with the settings for "auto-failover on disk issue"s in the 
+auto-failover REST API because that seems to the natural place for it. 
+
+But, I changed my mind later for reasons mentioned below. 
+
+What the new setting does really is enable the monitoring of the disk failure stats. 
+And, the monitoring logic is independent of auto-failover logic. 
+E.g. We monitor ns-server heartbeats, dcp traffic, ready buckets even when 
+auto-failover is turned off. 
+
+ Along those lines, I thought we should monitor for the disk stats irrespective of 
+whether auto-failover is turned on or not. 
+
+And, if we are not going to tie in the setting with auto-failover, then does it 
+make sense to have it In the auto-failover REST API?
+
+Also, auto-failover need not be the only consumer of the status returned by 
+the monitors. 
+E.g. Today, we generate the “communication issue” alert based on information 
+from the ns_server-monitor. 
+Similarly, in future we may decide to generate some alert based on information
+ from the KV stats monitor. 
+
+One option is to keep the API separate as it is currently in the code, but 
+rename it to something like monitorDiskIssues?
+
+Another to thing to consider is that we may have more such failure monitors
+ in future.  E.g. monitor index service for xyz problem. 
+
+Also, how should this all be presented in the UI. There is an open item for 
+Rob/UI folks for general revamp of the auto-failover settings page.
+
+I myself had gone little bit back and forth on the REST APIs and am 
+open to suggestions/ideas.
+
+-------------------------------------
+author: Kian Santos
+date: 2017-10-27 19:28:48.935000000
+
+Patch Set 4:
+
+My vote would be for one REST API & I guess I might change the "time period" parameter to be "KV disk failure time period" with the idea that if the value is 0, disk failure auto failover is disabled.
+
+In the future as we are asked to add auto failover for things like index or FTS disk failures or whatever might go wrong with eventing, I think we plan to add them with a service qualifier.
+
+The CLI is already used to this - the model is that users set all the parameters for a given configuration setting. Mike has thought about adding something like an --overlay option for convenience where the CLI would read the current config and overlay whatever parameter values are passed to it by the users.
+
+At any rate, that would be my vote. :-)
+
+-------------------------------------
+author: Noe Perry
+date: 2017-10-27 19:52:05.406000000
+
+Patch Set 4:
+
+(2 comments)
+
+Line:35, src/kv_stats_monitor.erl -> Should we allow this to be configurable via a diag/eval?
+
+Line:88, src/kv_stats_monitor.erl -> It looks like nothing is being done when it's disabled, so maybe we should refrain from re-arming the timer.
+
+-------------------------------------

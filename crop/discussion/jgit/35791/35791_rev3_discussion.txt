@@ -1,0 +1,109 @@
+DESCRIPTION
+
+Support for the post-commit hook
+
+Change-Id: I391d2bb293a5cf6f5f26e294c9fa47707bcee0d1
+Signed-off-by: Gustavo Green xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Gustavo Green
+date: 2014-11-04 11:05:20.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-11-04 11:10:54.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/5663/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-11-04 11:19:10.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/5663/ : SUCCESS
+
+-------------------------------------
+author: Jayvion Booth
+date: 2014-11-04 14:22:33.000000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:286, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> Introduce CommitResult object extending RevCommit and adding "result" of the commit OR adding those results to the CommitCommand itself? 
+I would not change RevCommit itself by adding "commit operation results" to it, but also throwing an exception is not really nice.
+
+-------------------------------------
+author: Gustavo Green
+date: 2014-11-05 09:40:23.000000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:286, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> The issue I had with this one is that the user might want to know his hook failed... but this 'non-blocking' failure should go up all the way to EGit before we can log it properly in the error log. And there are way too many possibilities of failure "down below" :
+
+- A hook written in python and throwing an exception out (or a syntax error) will have a non-zero exit code.
+- A hook written in shell without strict mode enabled "may" have an exit code of 127 the syntax error was on the very last command... but an exit code of "0" if the failure happened earlier than the last command
+
+The "post-commit" hook cannot block a commit from happening ... but if it did fail, cgit (in command line) would have at least shown us the stderr with the failure message.
+The "pre-commit" is worse : what if it had an exception or syntax error right in the middle of the script but still exited with 0? The commit goes through and the user has no idea that something went wrong. The commit would also go through using cgit... but with a CLI we would have seen the stderr of the hook, telling us about the error. Here, I only show the errors when the hook as a whole fails (non-zero exit code).
+
+I believe that here, what JGit should do is log a warning... but it should do so in a way that EGit can "intercept" to log it in the eclipse error log instead of the console.
+
+We can't just throw an exception : the commit didn't fail. JGit doesn't have a logger either. So the only way to "show" the hooks' stderr to the user as warnings would be either to redirect to System.err (bleh) or to somehow "store" them, as you mention, in either a CommitResult (but we'd need a RebaseResult, CherryPickResult, .... as well, and we need this to be high-level enough for EGit to be able to retrieve them...) or in the commands themselves, which doesn't feel right : myCommand.getLog()? myCommand.getOutput()?.
+
+Another option is to just "swallow" the errors that happen in hooks that do not fail and expect the clients (writers of the hook) to be strict ("set -e" at the beginning of their hook or make sure there aren't errors arising). That doesn't feel right either, but I think that this first version could come without support for a logger since support for the hooks is pretty demanded, and failures from the hooks are not the norm.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2014-11-05 12:39:33.000000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:286, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> What JGit sometimes does when it needs help from higher layers (e.g. from EGit) is introducing callbacks. JGits RebaseCommand needs definitly interaction with EGit and has the notion of InteractiveHandler. A lot of other commands want to inform EGit about the progress of the operation and allow the caller to specify ProgressMonitor. You may think about adding a HookErrorHandler. Something like CommitCommand.setHookErrorHandler(ErrorHandler h) which EGit may set. JGit will call the handler if hook handling leads to errors.
+
+-------------------------------------
+author: Jayvion Booth
+date: 2014-11-05 12:55:49.000000000
+
+Patch Set 3:
+
++1 for HookErrorHandler callback. 
+It will receive both exit status and std out/err output.
+
+-------------------------------------
+author: Gustavo Green
+date: 2014-11-05 13:07:31.000000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:286, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> That might well be a nice solution... would allow us to retrieve not only the standard error but also the standard output, if the hook had some info to relay. The hook can fail in a multiple of ways, JGit determines if that's a blocking failure, a warning or an information... and EGit can log that to the user.
+
+Do I change the existing commits (I need to introduce the error handler in the first, "API" review, then make use of it in all five reviews for individual hooks) or would you rather I do this in separate reviews (which would probably be one review to introduce the error handler and one following every individual hook's review to introduce the error handling)?
+
+-------------------------------------
+author: Zachary Orozco
+date: 2014-11-05 13:23:34.000000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:286, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> I would add the HookErrorHandler interface to 
+in change 35476.
+
+-------------------------------------

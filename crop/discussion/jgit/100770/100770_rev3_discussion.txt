@@ -1,0 +1,66 @@
+DESCRIPTION
+
+RefDirectory: Throw exception if CAS of packed ref list fails
+
+The contents of the packedRefList AtomicReference should never differ
+from what we expect prior to writing, because this segment of the code
+is protected by the packed-refs lock file on disk. If it does happen,
+whether due to programmer error or a rogue process not respecting the
+locking protocol, it's better to let the caller know than to silently
+drop the whole commit operation on the floor.
+
+The existing concurrentOnlyOneWritesPackedRefs test is inherently
+nondeterministic as written, and was already about 6% flaky as measured
+by bazel:
+
+  $ bazel test --runs_per_test=200 //org.eclipse.jgit.test:org_eclipse_jgit_internal_storage_file_GcPackRefsTest
+  ...
+  INFO: Elapsed time: 42.608s, Critical Path: 10.35s
+  //org.eclipse.jgit.test:org_eclipse_jgit_internal_storage_file_GcPackRefsTest FAILED in 12 out of 200 in 1.6s
+    Stats over 200 runs: max = 1.6s, min = 1.1s, avg = 1.3s, dev = 0.1s
+
+This flakiness was caused by the assumption that exactly one of the 2
+threads would fail, when both might actually succeed in practice due to
+racing on the compare-and-swap.
+
+For whatever reason, this change affected the interleaving behavior in
+such a way that the flakiness jumped to around 50%. Making the
+interleaving of the test fully deterministic is beyond the scope of this
+change, but a simple tweak to the assertion is enough to make it pass
+consistently 200+ times both before and after this change.
+
+Change-Id: I5ff4dc39ee05bda88d47909acb70118f3d0c8f74
+
+
+COMMENTS
+
+author: Santos Moore
+date: 2017-07-05 20:44:32.000000000
+
+Uploaded patch set 3: Commit message was updated.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-07-05 20:58:26.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/10415/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-07-05 21:27:05.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/10415/ : SUCCESS
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2017-07-06 16:15:35.000000000
+
+Patch Set 3: Code-Review+2
+
+-------------------------------------

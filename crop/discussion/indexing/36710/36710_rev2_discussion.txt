@@ -1,0 +1,76 @@
+DESCRIPTION
+
+CBIDXT-52 Initial Implementation for Mutation Manager
+
+MutationManager handles messages from Indexer to manage Mutation Streams
+and flush mutations from mutation queues.
+
+Change-Id: Idecbf250e4a6670f5a048ad7e1116b0ba6feeb2e
+
+
+COMMENTS
+
+author: Maliyah Fischer
+date: 2014-05-05 18:07:11.062000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Dominique Stanton
+date: 2014-05-05 22:37:03.441000000
+
+Patch Set 2:
+
+(5 comments)
+
+Line:100, secondary/indexer/mutation_manager.go -> How do we tell if there is a race condition where new reader is being added to the map (in handleOpenStream but not yet get the mutex).
+
+Line:147, secondary/indexer/mutation_manager.go -> If for any reason, the supvRespch or supvCmdch is closed, mutation manager will termiate its loop.  This is probably OK, but it is good to call it out as part of the contract.
+
+Line:192, secondary/indexer/mutation_manager.go -> Is m.supvCmdch a synchronus channel?  The mutation manager is reading command from supvCmdch and it is also putting result back to the same channel.  It is good to call it out as part of the contract if this is the case.  There are a few functions putting result back to the command channel.
+
+Line:346, secondary/indexer/mutation_manager.go -> This is a synchronous channel.   Is there any possiblity that the stream reader may have terminated with explicitly being "closed" (e.g. due to panic)?
+
+Line:519, secondary/indexer/mutation_manager.go -> Why we need an anonymous goroutine here?   This is synchronous.
+
+-------------------------------------
+author: Maliyah Fischer
+date: 2014-05-06 13:17:31.901000000
+
+Patch Set 2:
+
+(5 comments)
+
+Line:100, secondary/indexer/mutation_manager.go -> Indexer is the only entity which requests mutation manager to open/close a stream or to shutdown the mutation manager. Indexer is expected not to add more streams once it has requested shutdown. If Indexer has already requested to OpenStream, it is expected to wait for response before any new request (including shutdown). I'll write out the contract more explicitly. Every request on the SupvCmdCh by indexer will have a response back on the same channel. This enables indexer to know when it can make another request. Only in case of flush, there is one more response sent on the supvRespch when the flush finishes.
+
+Line:147, secondary/indexer/mutation_manager.go -> Sure.Will write it as part of the contract.
+
+Line:192, secondary/indexer/mutation_manager.go -> Yes supvCmdch is synchronous. For every request read from the SupvCmdch, mutation manager will write a response back on the same channel. Indexer needs to wait for the response and then proceed with the next request. As flusher is the only time consuming request, strategy there is to first Ack the request and then send a message on supvRespch when flush finishes. So effectively, except for flush completion and worker messages, communication between indexer and mutation manager is synchronous.
+
+Line:346, secondary/indexer/mutation_manager.go -> Thanks for pointing this out. This needs to be fixed.
+
+Line:519, secondary/indexer/mutation_manager.go -> The anonymous goroutine is to execute it asynchronously to free the lock held in line 496 early. Defer only gets executed once a function ends. The lock is acquired again in line 511 once the flush is done, to update the flush map. During the duration of flush, lock is not held.
+
+-------------------------------------
+author: Dominique Stanton
+date: 2014-05-06 17:07:08.644000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:100, secondary/indexer/mutation_manager.go -> This function will not completely shutdown the mutation manager's run() goroutine until the indexer closes the supvCmdch. Is that right?  It would be nice if shutdown() can completely clean up all resources allocated by the mutation manager.
+
+Line:519, secondary/indexer/mutation_manager.go -> If this routine needs to return before flush completes, then this certainly make sense.
+
+-------------------------------------
+author: Maliyah Fischer
+date: 2014-05-07 16:28:29.604000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:100, secondary/indexer/mutation_manager.go -> sure.will address this in next patchset.
+
+-------------------------------------

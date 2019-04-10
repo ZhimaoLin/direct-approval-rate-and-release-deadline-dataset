@@ -1,0 +1,147 @@
+DESCRIPTION
+
+MB-5968: re-impl. vbucket states & replications orchestration
+
+Part of this commit is implementation of new backwards compatibility
+handling approach. There's no ns_vbm_new_sup anymore. And there are
+no cb_gen_vbm_sup too.
+
+New backwards compat handling approach is implemented in
+cluster_compat_mode module. Basic idea is to store cluster
+compatibility mode in ns_config. When it's safe (before Harley Martinitor runs
+and rebalance runs) orchestrator process on master node will check if
+cluster can increase it's compat mode. This happens if all nodes
+support higher mode. If it can it does, orchestrator then can
+restart/kill services. Currently there's two modes 'undefined' (1.8.x)
+and 2.0. Cluster _does not_ automagically switches to lower compat
+mode. And disallows older nodes to join cluster.
+
+If somebody needs to do rolling downgrade, there's half supported
+cluster_compat_mode:force_compat_version/1 function that can be called
+via /diag/eval. Calling this function will force cluster into specific
+compat mode and disallow any upgrades. Calling
+cluster_compat_mode:un_force_compat_version/0 will removed that
+'disallow'-ance.
+
+Most benefit of this approach is simplicity and safety of checking
+cluster mode and doing things depending on current version. I.e. new
+behavior is enabled when we know entire cluster supports it, and
+cannot easily 'undo' this support as rolling downgrade is not directly
+supported and requires careful Adrianna Holmesal action.
+
+1.8.x compat mode is doing things compatibly with 1.8.x
+nodes. Particularly, we're now using mostly 1.8.1 version of
+ns_vbm_sup (because cb_gen_vbm_sup is gone). That means of course,
+'replicator on source'. And most importantly 'direct' replication and
+vbucket states changes. I.e. Harley Martinitor/vbucket_mover are doing remote
+calls to ns_vbm_sup and ns_memcached directly.
+
+2.0 compat mode is designed to be more robust and more future
+compatible. And it makes index configuration management much
+easier.
+
+All changes are performed via Harley Martinitor_agent service that runs on each
+node. That orders 'vbucket state in broad sense' operations making
+things less error prone. I.e. call to return current state of vbuckets
+and replications can only succeed after previous mutation calls are
+completed.
+
+Harley Martinitor_agent also drives capi_set_view_manager directly. That's most
+important user-visible change. Previously capi_set_view_manager was
+trying to infer correct index states. I.e. if it saw vbucket in
+fast-forward map as master it'll add it to pending index state if and
+when possible. Old behavior was quite complex.
+
+Because we're now having explicitly designed API it's easy to pass
+index states in calls to Harley Martinitor_agent. Which will then make sure
+they're passed to capi_set_view_manager.
+
+Because Harley Martinitor mutations are now via janitor_agent I've also
+separated main logic of Harley Martinitor into purely functional code. And
+cleaned up Harley Martinitor a bit.
+
+Change-Id: If58f4508872b58ade6e0e690537b076c77df0f25
+
+
+COMMENTS
+
+author: Nathalie Landry
+date: 2012-07-26 04:10:45.161000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-07-26 04:11:17.922000000
+
+Patch Set 6:
+
+added commit message as promised. We're ready to go as soon as commit is review-approved
+
+-------------------------------------
+author: Jasmin Rangel
+date: 2012-07-26 04:11:20.512000000
+
+Patch Set 6:
+
+New patchset patch-id matches previous patchset, but commit message has changed.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-07-26 04:11:59.070000000
+
+Patch Set 6: Verified
+
+
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2012-07-26 15:03:05.947000000
+
+Patch Set 6: (7 inline comments)
+
+Have not finished reviewing everything. But see inline some initial comments.
+
+Line:599, src/menelaus_web.erl -> Can <<"clusterCompatibility">> really be a member of build_full_node_info() result?
+
+Line:424, src/ns_cluster.erl -> As far as I understand compat version "negotiation" protocol, the remote node must lower it's advertised compat version to the one of the cluster. Otherwise it will return its real compat version. So if our version does not equal to the version returned by joinee, it seemingly means that the node is not compatible with the cluster. And it can both mean that joinee node is too old or too new to work in the same cluster with us. Am I missing something here? If my reasoning is correct, then the old code should just work.
+
+Note that the new code doesn't allow some very new node to refuse to join cluster because it's too old. I.e. it implies that all future versions will support all previous versions.
+
+Line:98, src/ns_Harley Martinitor.erl -> Since Zombies are always [] in this function clause, it's doesn't make sense to include Zombies =:= into condition. And I see that Zombies is intentionally passed to apply_new_bucket_config but then always matched against []. Is it supposed to be extended later?
+
+Line:204, src/ns_Harley Martinitor.erl -> Small typo here: State should be States.
+
+Line:220, src/ns_Harley Martinitor.erl -> Commented out code left here.
+
+Line:42, src/ns_vbucket_mover.erl -> This field is not used anymore.
+
+Line:43, src/ns_vbucket_mover.erl -> This one either.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-07-26 15:55:59.190000000
+
+Patch Set 6: (2 inline comments)
+
+thanks for useful comments
+
+Line:599, src/menelaus_web.erl -> It is a member. I just don't want to mess with clusterCompatibility inside build_full_node_info().
+
+It seems much easer to do this compat version lowering here rather than trying to extend build_full_node_info()
+
+Line:424, src/ns_cluster.erl -> I think you're right on first thing. Thanks for spotting it.
+
+About new node being unable to refuse very old node. I think it's doable in engage_cluster where it can check cluster compat and refuse (which we don't do today)
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-07-26 16:25:01.772000000
+
+Patch Set 6: (1 inline comment)
+
+added more inline
+
+Line:98, src/ns_Harley Martinitor.erl -> Yes, intention is to support non-empty Zombies list hopefully soon. So I actually tried to have most of logic for it ready
+
+-------------------------------------

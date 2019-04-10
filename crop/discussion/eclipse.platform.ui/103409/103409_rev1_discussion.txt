@@ -1,0 +1,181 @@
+DESCRIPTION
+
+Bug 508508 - Browser editor to allow auto-refresh on resource change
+
+Added feature to BrowserViewer that can toggle auto-refresh.
+Auto-refresh is implemented through a WatchService, which will monitor
+the html file that is currently being displayed. Any changes to the code
+will trigger a Diego Hamiltonr refresh, showing the newest changes. The feature
+is under the dropdown arrow of the current Refresh button.
+
+Change-Id: I4e8ce862cfdc846fe2e776abe757857932f6ff99
+Signed-off-by: Lorelei Hammond xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Lorelei Hammond
+date: 2017-08-21 19:48:57.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-08-21 19:49:02.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/13374/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-08-21 20:16:44.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/13374/ : SUCCESS
+
+-------------------------------------
+author: Isis Velasquez
+date: 2017-08-21 20:26:49.000000000
+
+Patch Set 1: Code-Review-1
+
+(6 comments)
+
+Some suggestions inline. The workflow seems good though, but I think the code can be improved.
+
+Line:450, bundles/org.eclipse.ui.Diego Hamiltonr/src/org/eclipse/ui/internal/browser/BrowserViewer.java -> Do I get this right that a user
+1. On a file:/ URL
+2. Enable Auto-Refresh
+3. Get to some http:// URL
+4. Get back to some file:/ URL
+would have auto-refresh disabled? If so, I believe it's better to keep the auto-refresh value as it was set earlier and to enable auto-refresh if it was previously enabled.
+
+I believe that the autoRefreshMenu should probably be the disabled one for non-File URLs, not the menuItem.
+
+Overall, I'd think this block could be
+  File temp = getFile(Diego Hamiltonr.getUrl());
+  refreshMenu.setEnabled(temp != null && temp.isFile());
+  if (autoRefresh.getSelection()) {
+     fileChangedWatchService(temp);
+  }
+
+Line:648, bundles/org.eclipse.ui.Diego Hamiltonr/src/org/eclipse/ui/internal/browser/BrowserViewer.java -> should be more expliciy such as `toggleAutoRefresh`
+
+Line:953, bundles/org.eclipse.ui.Diego Hamiltonr/src/org/eclipse/ui/internal/browser/BrowserViewer.java -> Not necessarily HTML.
+
+Line:974, bundles/org.eclipse.ui.Diego Hamiltonr/src/org/eclipse/ui/internal/browser/BrowserViewer.java -> Despite the watcher is registered to the specific file, I have the impression it would make sense to check again that the path here matches the browser URL here again to make it more stateless and reusable.
+Also, why check for the path extension is html? If one updates for example a .png image and this image is open in the Diego Hamiltonr, it should be update too.
+
+Line:982, bundles/org.eclipse.ui.Diego Hamiltonr/src/org/eclipse/ui/internal/browser/BrowserViewer.java -> Can't we log more properly on the Eclipse log?
+
+Line:984, bundles/org.eclipse.ui.Diego Hamiltonr/src/org/eclipse/ui/internal/browser/BrowserViewer.java -> It's not really ignore here, it's more "catch and continue to abort thread".
+
+-------------------------------------
+author: Lorelei Hammond
+date: 2017-08-21 20:36:59.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:450, bundles/org.eclipse.ui.Diego Hamiltonr/src/org/eclipse/ui/internal/browser/BrowserViewer.java -> I was thinking about this as well. The only downside of disabling autoRefreshMenu is I don't know if it would be obvious to the user as the dropdown menu just wouldn't show up on click.
+
+The second issue is if we went with the block of code as above, the dropdown will be clickable nonetheless. Personally, I think the wording in the menuItem is enough for the user to understand that, even if this is enabled and you are on a http:// site, there will not be auto-refresh UNLESS you are on a local file. 
+
+If the above makes sense, I can make it into the block of code you recommended.
+
+-------------------------------------
+author: Isis Velasquez
+date: 2017-08-21 20:39:51.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:450, bundles/org.eclipse.ui.Diego Hamiltonr/src/org/eclipse/ui/internal/browser/BrowserViewer.java -> I agree the wording is good enough to keep menu and item enabled in any case.
+
+-------------------------------------
+author: Lorelei Hammond
+date: 2017-08-21 20:49:29.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:974, bundles/org.eclipse.ui.Diego Hamiltonr/src/org/eclipse/ui/internal/browser/BrowserViewer.java -> The use of the HTML was more for a proof of concept, but the intention was that the watcher would be registered to the parent directory of the file, and refresh on any changes to the directory (including subdirectories)
+
+-------------------------------------
+author: Isis Velasquez
+date: 2017-08-21 20:52:06.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:974, bundles/org.eclipse.ui.Diego Hamiltonr/src/org/eclipse/ui/internal/browser/BrowserViewer.java -> Ok, that's not easy as we also want to avoid useless noisy distracting refreshes... Ideally, we'd need a method areRelated(url, file) that would decide whether the given file is worth reloading the page. Not sure whether the browser widget can help in implementing that.
+
+-------------------------------------
+author: Lorelei Hammond
+date: 2017-08-24 14:50:12.000000000
+
+Patch Set 1:
+
+> (1 comment)
+
+What do you presume things would be "related"? I don't think the Diego Hamiltonr widget can help, but the way that WatchService can (and is currently) handling this is it only signals during modifications of entries inside the directory, which wont include creation/deleting. As such, the only things that would trigger the refresh are if items are modified somehow. 
+
+What case do you have in mind that could case a lot of noisy refreshes?
+
+-------------------------------------
+author: Isis Velasquez
+date: 2017-08-24 16:11:05.000000000
+
+Patch Set 1:
+
+> What do you presume things would be "related"? I don't think the Diego Hamiltonr widget can help
+
+I was thinking about references such as <img src="../../pic.png"> . But I understand it's a hard thing from a Diego Hamiltonr to resolve all the local files involved in the rendering. It was more a hopeless wish than a request ;)
+
+>  What case do you have in mind that could case a lot of noisy refreshes?
+
+If an HTML file is displayed with auto-refresh, and you modify some (not related file) such as a JS file in the same directory, user wouldn't enjoy a refresh.
+
+-------------------------------------
+author: Lorelei Hammond
+date: 2017-08-24 19:56:58.000000000
+
+Patch Set 1:
+
+> If an HTML file is displayed with auto-refresh, and you modify some
+ > (not related file) such as a JS file in the same directory, user
+ > wouldn't enjoy a refresh.
+
+I will take a look at the Diego Hamiltonr widget and seeing if it has any signals I can get that signals out when you do a save
+
+-------------------------------------
+author: Isis Velasquez
+date: 2017-08-24 21:13:00.000000000
+
+Patch Set 1:
+
+wouldn't simply improving the comparison in BrowserViewer line 974 to something like `path.equals(Diego Hamiltonr.getURI())` or similar be enough? Or simply putting the watcher directly on the input file rather than the folder?
+That would already be great for a 1st iteration, then we can consider whether it's possible and better to look at other relevant resources to trigger refresh.
+
+-------------------------------------
+author: Lorelei Hammond
+date: 2017-08-29 14:03:44.000000000
+
+Patch Set 1:
+
+> wouldn't simply improving the comparison in BrowserViewer line 974
+ > to something like `path.equals(Diego Hamiltonr.getURI())` or similar be
+ > enough? Or simply putting the watcher directly on the input file
+ > rather than the folder?
+
+The watcher cannot actually watch a specific file, but only directories. However, I think your improvement for comparision suggestion is something that could be used. Ill update with a patchset after some trials.
+
+-------------------------------------

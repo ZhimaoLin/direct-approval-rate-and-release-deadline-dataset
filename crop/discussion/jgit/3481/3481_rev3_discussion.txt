@@ -1,0 +1,158 @@
+DESCRIPTION
+
+Let RefDirectory use FileSnapShot to handle fast updates
+
+Since this change may affect performance and memory consumption on every
+access to a loose ref I explicitly made it a RFC to collect opinions.
+
+Previously RefDirectory.scanRef() was not detecting an update of a
+loose ref when the update didn't changed the modification time of
+the backing file. RefDirectory cached loose refs and the way to detect
+outdated cache entries was to compare lastmodification timestamp on the
+file representing the ref. If two updates to the same ref happen faster
+than the filesystem-timer granularity (for linux this is 2 seconds)
+there is the possiblity that we don't detect the update.
+
+Because of this bug EGit's PushOperationTest only works with 2 second
+sleeps inside.
+
+This change let RefDirectory use FileSnapshot to detect such situations.
+FileSnapshot helps to remember when a file was last read from disk and
+therefore enables to decide when to load a file from disk although
+modification time has not changed.
+
+Change-Id: I03b9a137af097ec69c4c5e2eaa512d2bdd7fe080
+Signed-off-by: Zachary Orozco xxx@xxx.xxx
+Signed-off-by: Malia Sampson xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Malia Sampson
+date: 2011-05-23 19:49:06.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Malia Sampson
+date: 2011-05-23 19:49:24.000000000
+
+Patch Set 3: Looks good to me, but someone else must approve; IP review completed
+
+Looks good.
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-05-23 19:56:15.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/479/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-05-23 20:02:10.000000000
+
+Patch Set 3: Build Successful
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/479/ : SUCCESS
+
+-------------------------------------
+author: Malia Sampson
+date: 2011-05-25 13:46:48.000000000
+
+Patch Set 3: Looks good to me, approved; Build Successful
+
+I'm happy with this work.
+
+-------------------------------------
+author: Malia Sampson
+date: 2011-05-25 13:46:49.000000000
+
+Change has been successfully merged into the git repository.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-05-25 17:02:45.000000000
+
+Patch Set 3: (1 inline comment)
+
+
+
+Line:10, /COMMIT_MSG -> Next time you take an RFC change of mine and drop the RFC from the commit subject... please re-read the commit message to make sure there aren't statements like this still in the body.  :-)
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-05-25 17:10:39.000000000
+
+Patch Set 3: (4 inline comments)
+
+Notes to self, we need to fix this class still.
+
+Line:855, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/RefDirectory.java -> Drop this test and handle it through the FileNotFoundException below. We are unlikely to be here unless the caller received our path from a readdir() result, which means we are very likely to have exists() return true, making exists() pointless.
+
+If the user application feeds us a file path explicitly (e.g. getRef("refs/heads/master")) we should try the open call first, its again somewhat likely the reference actually exists and we need to read it from disk. If it doesn't exist, the exception is a bit more expensive than the stat(), but I think its a smaller percentage of requests that are doing getRef() for non-existing names.
+
+Line:888, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/RefDirectory.java -> This is somehow wrong. The file may have been modified between the time we read the file above with IO.readSome() and now. We need to be capturing the lastModified() before IO.readSome().
+
+We already have it, its in the otherSnapshot.
+
+Line:909, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/RefDirectory.java -> Again, wrong, same as above, we need to use otherSnapshot.
+
+Line:1082, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/RefDirectory.java -> I think all of these constructors should change to take FileSnapshot instead of long mtime.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2011-05-27 15:54:14.000000000
+
+Patch Set 3: (1 inline comment)
+
+
+
+Line:10, /COMMIT_MSG -> My fault, I overlooked this line. 
+
+Regarding: "RFC change of mine". Really, I wrote this change completely on my own some days back. Only now I checked your open proposals and saw that you have a similar open change. I would hate if somebody hijacks my open proposals without telling me and therefore it's important for me to make clear that I haven't copied your work. The fact my change contains mistakes you wouldn't do gives some proof, or? 
+
+How to proceed? I have no problems if we just take your proposal and let this one overwrite my change. Or we revert mine before.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-05-27 17:03:17.000000000
+
+Patch Set 3: (1 inline comment)
+
+
+
+Line:10, /COMMIT_MSG -> Oy. It was so similar to my own change that I assumed you had just cherry-picked mine, updated a few things, and pushed it back! I didn't realize it was actually a different change. I apologize for assuming this was based on my work. FWIW, my change was I1556b7e7ea21c31ff76bca930269e0cc7d55cd26
+
+I think its stupid to revert this. Lets just make a new commit that fixes some of the comments I made in the post-submit review.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2011-05-30 05:32:17.000000000
+
+Patch Set 3: (1 inline comment)
+
+
+
+Line:10, /COMMIT_MSG -> Great that this is clarified. I have a day off today but will propose a fix for this one this night.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2011-05-30 22:30:42.000000000
+
+Patch Set 3: (4 inline comments)
+
+
+
+Line:855, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/RefDirectory.java -> Done
+
+Line:888, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/RefDirectory.java -> Done
+
+Line:909, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/RefDirectory.java -> Done
+
+Line:1082, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/RefDirectory.java -> Done
+
+-------------------------------------

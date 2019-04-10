@@ -1,0 +1,62 @@
+DESCRIPTION
+
+JVMCBC-251: Improve clean up of threads used by the SDK
+
+This is a backport of the same change in 1.2.1
+(see 3cd763d423f96425a224f7c772a289c3d840a108)
+Changes from RxJava 1.0.15 couldn't be backported because this branch
+relies on 1.0.4, which doesn't have the necessary elements for a simple
+backport.
+
+Motivation:
+-----------
+It has been observed by users running the SDK in a Tomcat container that
+cb-io threads were still remaining active after a shutdown().
+
+Looking into it, some possible improvements for shutdown path were found
+for cb-io thread as well as some dependencies.
+
+Modifications:
+--------------
+Refactored the code in DefaultCoreEnvironment's shutdown so that it
+better tracks status of each component it attempts to shut down, logs it
+and allow some components to shut down in "best effort" mode (ie Netty's
+ThreadDeathWatcher, that will reinitialize if there is some IO going on)
+
+Improved cleanup of cb-io threads (netty's io pool) by more aggressive
+timeouts.
+
+Added a shutdown hook instructing Netty's ThreadDeathWatcher to shutdown
+in a best effort way (ie. won't cause env().shutdown() to return false).
+
+Added integration test to verify cleanup in a scenario closer to reality
+that spawns threads in RxJava, Netty and LatencyUtils as well as SDK.
+
+Not Backported:
+---------------
+Updated CoreScheduler to reflect improvements in latest RxJava snapshot
+(1.0.15), taking the same approach at shutdown implemented in it's
+EventLoopScheduler implementation.
+
+Added cleanup of PauseDetector threads (LatencyUtils latency metrics).
+
+Results:
+--------
+Threads from components managed by the SDK are now more properly cleaned
+up, and problems during clean up are more easily detected and visible in
+the logs.
+
+Change-Id: I70fc0e65159cb3e72f336ef8d7e397a8d575d23d
+Reviewed-on: http://review.couchbase.org/56005
+Tested-by: Estrella Humphrey xxx@xxx.xxx
+Reviewed-by: Natasha Sullivan xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Gerrit Code Review
+date: 2015-10-12 15:21:54.602000000
+
+Change has been successfully cherry-picked as 58384f1535da4aecc1590801aca11ac1b693521a
+
+-------------------------------------

@@ -1,0 +1,88 @@
+DESCRIPTION
+
+Fix symlink content comparison on MacOS in tree walk
+
+Symlinks on MacOS are written as UTF-8 NFD, but
+readSymbolicLink().toString() converts to NFC with potentially fewer
+bytes. May occur in particular if the link target has non-ASCII
+characters for which the NFC and NFD encodings differ. This may lead
+to an EOFException: Short read of block.
+
+Fix by allowing the read to succeed even if less than the expected
+number of bytes are returned by the entry's input stream.
+
+Includes a new MacOS-only test.
+
+Change-Id: I264c5972d67b1cbb1ed690580f5706e671b9affd
+Signed-off-by: Alayna Houston xxx@xxx.xxx
+
+COMMENTS
+
+author: Brenden Conley
+date: 2015-12-30 13:47:30.000000000
+
+Patch Set 5:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7859/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-12-30 13:56:12.000000000
+
+Patch Set 5: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7859/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2015-12-30 14:28:27.000000000
+
+Patch Set 5: Code-Review+1
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-12-30 20:20:13.000000000
+
+Patch Set 5: Code-Review-1
+
+(2 comments)
+
+Line:1049, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> This is crazy. The symlink is read as a string, encoded as a byte sequence, shoved through an InputStream which we leak above, then decoded using a different FS instance than was used to read the symlink.
+
+I have to wonder how much of the NFC-NFD bug is just caused by all of the transitions going on here.
+
+Line:139, org.eclipse.jgit.test/tst/org/eclipse/jgit/indexdiff/IndexDiffWithSymlinkTest.java -> If only we had a library in Java that supported creating objects in a Git repository, we wouldn't need to depend on executing git fast-import from a JUnit test.
+
+-------------------------------------
+author: Alayna Houston
+date: 2015-12-30 20:50:58.000000000
+
+Patch Set 5:
+
+(2 comments)
+
+Line:1049, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> I quite agree with the stuff going on in the input stream and the back-and-forth between byte[] and String is "crazy". We could maybe shortcut this and do directly File.readSymbolicLink().toString() (this function is called only for symbolic links), but I was looking for the minimum change. Maybe I should have been bolder...
+
+Line:139, org.eclipse.jgit.test/tst/org/eclipse/jgit/indexdiff/IndexDiffWithSymlinkTest.java -> In this case though, I explicitly want cgit to create the repo. I was quite astonished to see cgit create an NFC-encoded link, and I want that exact behavior here. If the repo was created through Java, we'd end up with an NFD link.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-12-30 21:46:40.000000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:139, org.eclipse.jgit.test/tst/org/eclipse/jgit/indexdiff/IndexDiffWithSymlinkTest.java -> TreeFormatter will happily accept anything with its:
+
+  append(byte[] name, FileMode mode, AnyObjectId id)
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-10-10 22:31:01.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

@@ -1,0 +1,83 @@
+DESCRIPTION
+
+Move BG Fetch related logic to EPVBucket from VBucket
+
+BG (background) Fetch is an operation needed only in persistant bucket
+and mostly with full_eviction policy. Ephemeral buckets do not have
+BG fetch hence do not support functions related to BG fetch.
+
+This commit only moves the BG Fetch related logic in VBucket to
+EPVBucket. There maybe other modules like 'KVBucket' class which will
+be handled later.
+
+In the base class VBucket, the eviction modes (VALUE and FULL) are not
+abstracted very well. There are mostly implemented as if-else. Hence it was
+not possible (easily) to make BG fetch operations private to the persitent
+vbucket class EPVBucket. But the commit exploits the fact that BG fetch
+operations are called only if FULL_EVICTION mode and in case of deleted
+items that predicted to be on the disk by bloomfilter.
+
+The commit assumes that Ephemeral vbuckets work only in "VALUE_EVICTION" policy
+and that bloomfilter does not predict any item to be on the disk for Ephemeral
+vbuckets. Hence logical exception is raised if any BG Fetch operation is called
+in an Ephemeral vbucket.
+
+Change-Id: I6d85b84a27395549bdfbf91abac857289cf156b3
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2017-02-28 17:18:01.190000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-02-28 17:29:27.720000000
+
+Patch Set 6: Code-Review-1
+
+(4 comments)
+
+Line:5032, src/ep_engine.cc -> Why don't we just return ENGINE_ENOTSUP back to the caller - memcached should then handle generating the response packet for us?
+
+(here and elsewhere).
+
+Line:6746, tests/ep_testsuite.cc -> Similary this - split the change to make this Ephemeral-only into it;s own patch.
+
+Line:54, src/vbucket.h -> This is the sort of thing you could split into an initial patch - just simple textual rearrangement of code.
+
+Line:904, src/ep_engine.h -> Please document the new argument.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-02-28 17:33:06.357000000
+
+Patch Set 6: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/2941/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/4121/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/3692/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/4323/ : SUCCESS
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-02-28 20:19:03.043000000
+
+Patch Set 6:
+
+(3 comments)
+
+Line:5032, src/ep_engine.cc -> Actually error codes are sent as response in "status" field. See that return values are always a success
+
+Line:54, src/vbucket.h -> This is moved from VBucket to EPVbucket because of the other things ( notifyOnPersistence() and notifyAllPendingConnsFailed() ) that moved from VBucket to EPVbucket
+
+Line:904, src/ep_engine.h -> Done
+
+-------------------------------------

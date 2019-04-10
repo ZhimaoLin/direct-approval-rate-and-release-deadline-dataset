@@ -1,0 +1,125 @@
+DESCRIPTION
+
+Add a method to ObjectInserter to read back inserted objects
+
+In the DFS implementation, flushing an inserter writes a new pack to
+the storage system and is potentially very slow, but was the only way
+to ensure previously-inserted objects were available. For some tasks,
+like performing a series of three-way merges, the total size of all
+inserted objects may be small enough to avoid flushing the in-memory
+buffered data. DfsOutputStream already provides a read method to read
+back from the not-yet-flushed data, so use this to provide an
+ObjectReader in the DFS case.
+
+In the file-backed case, objects are written out loosely on the fly,
+so the implementation can just return the existing WindowCursor.
+
+Change-Id: I454fdfb88f4d215e31b7da2b2a069853b197b3dd
+
+
+COMMENTS
+
+author: Santos Moore
+date: 2014-06-26 22:29:51.000000000
+
+Uploaded patch set 8.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-06-26 22:46:31.000000000
+
+Patch Set 8:
+
+Build Started https://hudson.eclipse.org/egit/job/jgit.gerrit/5271/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-06-26 23:04:30.000000000
+
+Patch Set 8: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/jgit.gerrit/5271/ : SUCCESS
+
+-------------------------------------
+author: Eden Lin
+date: 2014-07-02 16:36:28.000000000
+
+Patch Set 8:
+
+(2 comments)
+
+Line:411, org.eclipse.jgit/src/org/eclipse/jgit/lib/ObjectInserter.java -> Does this need a Repository and not just an ObjectDatabase?
+
+Does every ObjectInserter have an associated ObjectDatabase? Maybe having to provide db as an argument could be temporary until a minor API bump that lets us add getObjectDatabase() as an abstract method in ObjectInserter.
+
+Line:312, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsInserter.java -> This comment is confusing me. currPtr is an offset in currPtr?
+
+(optional) The patch would be easier to review (and merges touching the same code would be less scary) if neither of the new variables were named currPtr.
+
+-------------------------------------
+author: Eden Lin
+date: 2014-07-02 18:07:01.000000000
+
+Patch Set 8:
+
+(3 comments)
+
+Line:370, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsInserter.java -> (optional) At this point currPtr == currLen so it doesn't matter, but it would be more obvious what is happening if this line used the same variable as the 'if'.
+
+Line:241, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsInserter.java -> Unlike flushBlock(), this doesn't put the newly written data in the DfsBlockCache. That seems good because otherwise we'd be asking a lot of the block cache by putting partial blocks there. Am I right in assuming that DfsOutputStream#read is meant to be fast already so this shouldn't hurt anything?
+
+Line:497, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsInserter.java -> (optional) Probably worth a comment that the DfsObjectInserter doesn't make deltas so this should never happen.
+
+-------------------------------------
+author: Eden Lin
+date: 2014-07-02 18:18:29.000000000
+
+Patch Set 8: Code-Review-1
+
+(1 comment)
+
+Thanks for a pleasant read. My only real complaint is the comment on currPtr (s/currPtr/currBuf/ in the comment should fix it, I think).
+
+Line:82, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/dfs/DfsInserterTest.java -> (optional) Might also be worth testing ins.release() (i.e., the case where the pack is never committed but gets discarded instead).
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2014-07-02 22:38:59.000000000
+
+Patch Set 8:
+
+(2 comments)
+
+Line:411, org.eclipse.jgit/src/org/eclipse/jgit/lib/ObjectInserter.java -> xxx@xxx.xxx 3.5 tag
+
+Line:2, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/dfs/DfsInserterTest.java -> s/2013/2014/ ?
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2014-08-13 05:48:17.000000000
+
+Patch Set 8:
+
+(4 comments)
+
+Line:411, org.eclipse.jgit/src/org/eclipse/jgit/lib/ObjectInserter.java -> I am just going to break the API here. Nobody outside of JGit should be implementing ObjectInserter, unless they are also building a storage backend. Storage backends are internal API, we can change them at any time.
+
+Passing an argument to this function is useless. The inserter always has sufficient context to make a reader, otherwise it can't do its job properly. Its just buried in the subclasses because its implementation specific.
+
+Screw the API rules. We are adding an abstract method. If that means our next release _MUST_ be 4.0 to appease the mythical implementation that doesn't exist, so be it.
+
+Line:2, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/dfs/DfsInserterTest.java -> No, 2013 is correct. The first version of this test was written and published in 2013. The fact that it took our project more than a year to accept the code doesn't change the year it came into existence.
+
+Line:82, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/dfs/DfsInserterTest.java -> Done, added testInserterDiscardsPack
+
+Line:241, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsInserter.java -> Basically, yes. Partial block storage isn't well supported by DfsBlockCache. We also assume the caller is going to do a burst of inserts followed by a few (if any) reads. The burst of inserts may fill out most if not all of a block; the next read will load that block into the cache if required. If no read happens, no cache activity occurs.
+
+DfsOutputStream.read() is assumed to run at reasonable latencies (<200 ms). So incurring that periodically at block size intervals when the caller transitions from insert activity to read activity should be acceptable performance.
+
+FWIW DfsPackParser sort of suffers from the same problem during delta chain resolution when the incoming pack is larger than what the block cache can support. Implementations do really need reasonable response time from read.
+
+But I don't think we should be flushing after every object. Instead flushes should happen no more frequently than during transitions between inserting and reading.
+
+-------------------------------------

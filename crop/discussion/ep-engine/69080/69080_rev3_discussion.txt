@@ -1,0 +1,125 @@
+DESCRIPTION
+
+MB-21448: replace-with-CAS should return NOT_FOUND for deleted items
+
+Regression test for MB-21448 - if an attempt is made to perform a CAS
+operation on a logically deleted item we should return NOT_FOUND (aka
+KEY_ENOENT) and *not* INVALID_CAS (aka KEY_EEXISTS).
+
+The reason for this "intermittent" behaviour is that we are
+essentially racing with the writer thread. The sequence of events for
+deleting an item is as follows:
+
+1. User calls DELETE, which locates the key in the HashTable, and then
+   sets the deleted flag on that StoredValue (but crucially leaves the
+   StoredValue in the HashTable). A deletion operation is then
+   enqueued in the CheckpointManager (to write the deletion to disk).
+
+2. When the flusher runs for this vBucket, it calls
+   CouchKVStore::commit which after committing invokes
+   PersistenceCallback::callback to inform ep-engine that the item has
+   been persisted to disk (and we can now remove from the HashTable).
+
+3. The callback locates the item in the HashTable and finally
+   physically removes the StoredValue.
+
+The issue here is the client is essentially racing with (3) above. If
+the client replace-with-CAS operation is processed before (3), then
+the StoredValue is still in the HashTable, and hence unlocked_set
+returns NOT_FOUND (aka KEY_ENOENT):
+
+    } else if (cas && cas != v->getCas()) {  // line 1078
+        if (v->isTempDeletedItem() || v->isTempNonExistentItem()) {
+            return NOT_FOUND;
+        }
+
+If on the other hand the client replace-with-CAS operation is
+processed after (3), then the StoredValue no longer exists in the
+HashTable, and we instead hit this case where v is NULL:
+
+    if (v) {
+        ...
+    } else if (cas != 0) {  // line 1102
+        rv = NOT_FOUND;
+
+Solution is to make the unlocked_set behave as if an item doesn't
+exist (i.e. post (3) state), even if it's currently present but
+deleted.
+
+Change-Id: If353a310e5096dc838c6db9f673d85515d090842
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2016-10-26 14:20:10.168000000
+
+Patch Set 3: Published edit on patch set 2
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-26 14:20:19.547000000
+
+Patch Set 3:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/1635/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-26 14:24:01.891000000
+
+Patch Set 3:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/1253/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-26 14:27:06.978000000
+
+Patch Set 3:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/1448/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-26 14:27:17.803000000
+
+Patch Set 3:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-watson/272/ (4/4)
+
+-------------------------------------
+author: Kymani Ramirez
+date: 2016-10-26 14:36:25.401000000
+
+Patch Set 3: Code-Review+2
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-26 14:38:24.212000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/1253/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/1635/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/1448/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-watson/272/ : SUCCESS
+
+-------------------------------------
+author: Asher Vang
+date: 2016-10-27 09:26:38.816000000
+
+Patch Set 3: Code-Review+2
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-10-27 10:43:28.856000000
+
+Change has been successfully cherry-picked as 4d23f3cfdffbce96e33f3d83d102cd4f7bb771d3 by Ashlee Kent
+
+-------------------------------------

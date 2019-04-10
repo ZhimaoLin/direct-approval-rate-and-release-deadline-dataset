@@ -1,0 +1,229 @@
+DESCRIPTION
+
+Design documentation.
+
+- index_manager overview document.
+- index_manager design document.
+- projector overview document.
+- projector design document.
+- router overview document.
+
+Change-Id: I8d7b67c2419df63e36cb6e053fc67595db5b2c31
+
+
+COMMENTS
+
+author: Leonel Abbott
+date: 2014-03-19 17:00:14.882000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Justice Schneider
+date: 2014-03-19 21:27:37.367000000
+
+Patch Set 1: Verified+1 Code-Review+2
+
+-------------------------------------
+author: Dominique Stanton
+date: 2014-03-20 00:31:47.211000000
+
+Patch Set 1:
+
+(44 comments)
+
+Line:15, secondary/docs/design/markdown/projector.md -> Does the coordinator need to know which <bucket,vbucket> does the projector is respsonsible for?    It would be good that the cooridndator does not have know.   So the coordinator is agnostic to KV topology changes (e.g. KV rebalancing).   But need to double check if this is the case.
+
+Line:16, secondary/docs/design/markdown/projector.md -> Is admin server a thread or a process?
+
+Line:26, secondary/docs/design/markdown/projector.md -> So your  assumption is that the projector is residing in a different node than ep-engine.  We don't have a design in place to have the projector maps to multiple kv-node yet.
+
+Line:30, secondary/docs/design/markdown/projector.md -> You may want to drop a note saying that we could use UPR snapshot marker as sync message as well.   Even though, doing this would not help in terms of recovery (since the index snapshot consolidates all vbuckets)
+
+Line:49, secondary/docs/design/markdown/projector.md -> I believe that based on the discussion with Siri and Deep, we will allow the mutation queue to be drained as well during initial index load.    This is to ensure that existing index will be kept up-to-date.
+
+Does your statement mean either "initial" OR "incremental" is allowed?
+
+Line:51, secondary/docs/design/markdown/projector.md -> I believe that you would continue to receive mutations for the incremental stream, just that you won't flush those mutations to the storage until the catch-up queue has "caught up".  
+
+The statement is correct saying that there should be only one catch-up queue at a given time.  but it is not clear do you mean "initial" or "incremental" streams are  disallowed while there is catch-up traffic.
+
+Line:55, secondary/docs/design/markdown/projector.md -> is there a particular reason to limit to one topic for index loading?  Given this design (today), we have a limitation of disallowing the admin to load other indexes until the previous index loading is completed.  What if we enhance in the future to allow multiple concurrent index loading?   Would this design impose a limitation in the future?
+
+Line:13, secondary/docs/design/markdown/index_manager_design.md -> Would it be better if this is renamed to "IndexDefn" or "IndexDefinition", just to be clear?
+
+Line:32, secondary/docs/design/markdown/index_manager_design.md -> "list of projectors" -- "list of routers"
+
+For V1, isn't projectors and routers being together?   We have not designed them to be on different processes/nodes.
+
+Line:36, secondary/docs/design/markdown/index_manager_design.md -> Who "assigns" the local-indexer-node id?  ns_server?
+
+Make sure you abstract the node id -- just in case we have more than 255 nodes in the future.   It won't end up having to touch a lot of change to change from a byte to an integer for example.
+
+Line:56, secondary/docs/design/markdown/index_manager_design.md -> Why sometimes you identify a local indexer using byte (local indexer node id), and sometimes as string?  Is this the connection string?  If so, don't you need a map between indexer-node-id and the connection string?
+
+Line:65, secondary/docs/design/markdown/index_manager_design.md -> The partitionMap is essentially the master and replica map.    
+
+This struct will change quite a bit if you have range partitioning.   How can you specify topology that tailors to different partitioning scheme?
+
+Line:72, secondary/docs/design/markdown/index_manager_design.md -> What is a "partition-id"?   Not sure if I see it being defined.
+
+Line:75, secondary/docs/design/markdown/index_manager_design.md -> why is the timestamp part of the topology?  A topology defines the distribution of index data and its container.
+
+Line:110, secondary/docs/design/markdown/index_manager_design.md -> Who will send this message?
+
+Line:163, secondary/docs/design/markdown/index_manager_design.md -> Why you need to maintain one current timestamp per index topology?  Will you only need one timestamp per vbucket?
+
+Line:171, secondary/docs/design/markdown/index_manager_design.md -> It will be a lot of overhead replicating the stabiltiy timestamps
+
+Line:178, secondary/docs/design/markdown/index_manager_design.md -> Can the new master get the stability timestamp from the indexer nodes, so you don't have to keep replicating the timestamp between coordinator master and its replica?
+
+Line:187, secondary/docs/design/markdown/index_manager_design.md -> This only applies if the coordinator consolidates the timestamps and picks the smallest seqNo from all the indexer nodes.  If the coordinator is generating the timestamp based on sync msg, then the timestamp generation is slow only if the coordinator is slow (in receiving the sync messages).
+
+Line:194, secondary/docs/design/markdown/index_manager_design.md -> This alternative is only going to handle the case when the coordinator is running on a slow node.
+
+Line:305, secondary/docs/design/markdown/index_manager_design.md -> You will have to update this map when there is KV rebalance.
+Will it be easier if you keep a source id in every sync msg sending to the coordinator.  In this case, the coordinator can tell exactly which projector is having problem.  It is up to the projector to manage which {bucket, vbucket) it is handling, and this info will not spill over to the coordinator.  So now, the coordinator does not have to worry about vbucket map changes due to KV rebalancing.
+
+Line:317, secondary/docs/design/markdown/index_manager_design.md -> What if the coordinator is restart, but the projectors and indexers are up?
+
+Line:324, secondary/docs/design/markdown/index_manager_design.md -> Possibility of race condition?
+
+Line:334, secondary/docs/design/markdown/index_manager_design.md -> Only if ns_server says the node is dead.   Is there a facility in kv that allows each process to prepare before shutting down?  If so, then the projector can send a notification to the coordinator upon shutdown.
+
+Line:367, secondary/docs/design/markdown/index_manager_design.md -> This content may already be obsolete.
+
+Line:18, secondary/docs/design/markdown/projector_design.md -> This is just for receive msg, not "send/receive".  Correct?
+
+Line:22, secondary/docs/design/markdown/projector_design.md -> It is for KV cluster or UPR provider connection address?   A cluster, strictly speaking, contains multiple nodes.
+
+Line:34, secondary/docs/design/markdown/projector_design.md -> For the time being, do we need this to be serializable (between projector to router)?
+
+Line:47, secondary/docs/design/markdown/projector_design.md -> What this message is for?
+
+Line:72, secondary/docs/design/markdown/projector_design.md -> I think you mean UPR connection.   Need to standardize on terminology, since I think this is the first time that I see the term "per-vbucket input queue"?
+
+... After reading down the page, I now see what you mean by "per-vbucket input queue".
+
+Line:75, secondary/docs/design/markdown/projector_design.md -> Again, standardize the term "UPR mutation queue", 'per-vbucket input queue", "UPR connection".
+
+Line:79, secondary/docs/design/markdown/projector_design.md -> "we" -- just to be specific -- I think you mean the indexer can detect whether it is INSERT or UPDATE by introspecting the back index once the key version arrives at the indexer?
+
+Line:83, secondary/docs/design/markdown/projector_design.md -> For old document, you mean if "previous version of the document is being sent along with the mutated document through UPR"?
+
+Line:85, secondary/docs/design/markdown/projector_design.md -> To be specific, need to specify what if old key versions are not available
+
+Line:93, secondary/docs/design/markdown/projector_design.md -> In case of catch-up and index building, the index-topology would not be coming from index coordinator.
+
+Line:96, secondary/docs/design/markdown/projector_design.md -> does a single projector connection contain a single UPR connection?  A UPR connection cannot span between 2 buckets, can it?
+
+Line:97, secondary/docs/design/markdown/projector_design.md -> A single UPR connection?  Or one UPR connection per bucket?
+
+Line:99, secondary/docs/design/markdown/projector_design.md -> What is the significant to have one input/output queue per vbucket?  If you have 10 nodes and 10 bucket, you will have about 2000 queues?
+
+Line:104, secondary/docs/design/markdown/projector_design.md -> define the condition when the output queue will fill up.  What if the output channel have multiple recipients.
+
+Line:115, secondary/docs/design/markdown/projector_design.md -> The incremental index stream is shared.   A single slow-indexer-node should not terminate this connection.
+
+Line:121, secondary/docs/design/markdown/projector_design.md -> Here, you imply that the wake-up message from the coordinator would have the vbucketId?  In this case, the coordinator would have to know the mapping between projector and {bucket, vbucket}?    This map would need to be updated whenever there is KV rebalance.
+
+Line:127, secondary/docs/design/markdown/projector_design.md -> Does it require index coordinator to open up a UPR connection itself?
+
+Line:139, secondary/docs/design/markdown/projector_design.md -> Define "alive"
+
+Line:156, secondary/docs/design/markdown/projector_design.md -> From kv?
+
+-------------------------------------
+author: Leonel Abbott
+date: 2014-03-24 05:59:53.103000000
+
+Patch Set 1:
+
+(30 comments)
+
+Line:15, secondary/docs/design/markdown/projector.md -> We can keep Index Coordinator agnostic to projector topology.
+
+Line:16, secondary/docs/design/markdown/projector.md -> Thread.
+
+Line:26, secondary/docs/design/markdown/projector.md -> Done
+
+Line:30, secondary/docs/design/markdown/projector.md -> Done
+
+Line:49, secondary/docs/design/markdown/projector.md -> From the indexer point of view, that is correct. Above point was from system perspective. I have added another bullet point,
+* From local-indexer point of view, at any given time it can simultaneously
+  receive one "maintenance stream", one "backfill stream" and one "catchup
+  stream"
+
+Line:51, secondary/docs/design/markdown/projector.md -> same as above.
+
+Line:55, secondary/docs/design/markdown/projector.md -> My understanding is that we want to avoid backfill overload on the kv side, so we explicitly disallow concurrent initial index build. If that is not big concern, we can allow concurrent initial index build.
+
+Any suggestion on how we can identify concurrent initial index build ? Some kind of id ?
+
+Line:13, secondary/docs/design/markdown/index_manager_design.md -> Done
+
+Line:32, secondary/docs/design/markdown/index_manager_design.md -> Yes. they are same. removed the list of routers. And in relevant places in other documents.
+
+Line:36, secondary/docs/design/markdown/index_manager_design.md -> We were planning that Index-Coordinator can assign the node-id.
+
+Will type-cast it as Nodeid. In the next patch-set `indexers` will be declared as `map[Nodeid]string`.
+
+Line:56, secondary/docs/design/markdown/index_manager_design.md -> `servers` declaration is changed to []Nodeid.
+Btw, map of nodeid -> connectionAddr will be maintained by StateContext.indexers field.
+
+Line:65, secondary/docs/design/markdown/index_manager_design.md -> Will circulate an email on this. In a nutshell IndexTopology is not fully complete from the perspective of partitioning algorithm.
+
+Line:72, secondary/docs/design/markdown/index_manager_design.md -> I think this declaration is wrong. I will update it in the new patch-set.
+
+Line:75, secondary/docs/design/markdown/index_manager_design.md -> I realize emedding a copy of currentTimestamp under each IndexTopology might blow up the size of StateContext. I will move this field and the next field `currentVbuuid` back to StateContext.
+
+Line:110, secondary/docs/design/markdown/index_manager_design.md -> I am expecting that ns-server will post this to all IndexManager. Another alternative is, IndexManager will keep polling for it.
+
+Line:163, secondary/docs/design/markdown/index_manager_design.md -> Changed it. per bucket currentTimestamp is globally managed now. This will avoid blow-up of StateContext / IndexTopology size.
+
+Line:171, secondary/docs/design/markdown/index_manager_design.md -> I think in one of our previous discussion I understood that indexer node (during recovery) will need a history of stabilityTimestamps.
+
+It is gone now. The recent proposal says local indexer node does not take part in query until it comes out of recovery mode.
+
+I will remove history of stabilityTimestamps. Not needed for V1.
+
+Line:178, secondary/docs/design/markdown/index_manager_design.md -> Changed the point to,
+
+* if Index-Coordinator fails in between, new Index-Coordinator can either get
+  the last stability timestamp from indexer node or it can maintian a copy of
+  it in StateContext. As an optimization Index-Coordinator can use hash
+  value of stability timestamp to publish it to indexer node and for replication.
+
+Line:194, secondary/docs/design/markdown/index_manager_design.md -> Done
+
+Line:305, secondary/docs/design/markdown/index_manager_design.md -> Alternately we can have projectors to poll for vbmap every 2 seconds and start a STREAM during rebalance. Since flow control mechanism are changing and we are planning to isolate KV interactions within projector, we can get rid of stream wakeup routine altogether.
+
+I will re-work the document.
+
+Line:317, secondary/docs/design/markdown/index_manager_design.md -> Done
+
+Line:324, secondary/docs/design/markdown/index_manager_design.md -> Done
+
+Line:334, secondary/docs/design/markdown/index_manager_design.md -> Done
+
+Line:18, secondary/docs/design/markdown/projector_design.md -> Done
+
+Line:22, secondary/docs/design/markdown/projector_design.md -> UPR producer address.
+
+Line:34, secondary/docs/design/markdown/projector_design.md -> We need this serialized per vbucket. across vbuckets we don't have to worry about serialization.
+
+Line:47, secondary/docs/design/markdown/projector_design.md -> Removed.
+
+Line:79, secondary/docs/design/markdown/projector_design.md -> Yes.
+
+Line:83, secondary/docs/design/markdown/projector_design.md -> Made it more specific.
+
+Line:85, secondary/docs/design/markdown/projector_design.md -> Done
+
+-------------------------------------
+author: Leonel Abbott
+date: 2014-03-24 06:00:00.470000000
+
+Patch Set 2: Patch Set 1 was rebased
+
+-------------------------------------

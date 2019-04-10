@@ -1,0 +1,149 @@
+DESCRIPTION
+
+projector rollback and generic Feed, endpoint.
+
+adminport:
+
+- Removed RequestStat() API. It is upto the hosting application to gather
+  statistics (including its adminport) and send back relevant response.
+- graceful shutdown of admin-port server based on ConnState callback.
+
+projector:
+
+- Feed, BucketFeed and KVFeed are collapsed into single gen-server for control
+  path.
+  - There is also a back-channel to Feed from datapath to communicate ROLLBACK
+    and other response status.
+- refactored adminport.go and projector.go with simpler and richer set of
+  APIs, this is mostly based on the indexer use cases.
+- projector client is now available for coordinator and indexer which provides
+  a natural set of APIs that directly map to adminport requests.
+- implemented upr-rollback handling.
+  - UPR can response with ROLLBACK for StreamRequest, this needs to be
+    captured and communicated back.
+- API calls to start, restart, shutdown vbucket streams wait for corresponding
+  response from UPR and only then returns back to the caller.
+  This implies that downstream components like indexer / coordinator might
+  start receiving mutations, before request to projector has returned.
+- RouterEndpoints are generic, while creating a Feed, application must supply
+  a RouterEndpointFactory function that will be used by Feed to instantiate
+  RouterEndpoints.
+  - RouterEndpoints must implement Endpoint{} interface.
+- Improvised Evaluator{} and Router{} interface so the projector can be
+  entirely agnostic about partitions, topology and endpoints.
+- moved to DP4 query.
+
+protobuf:
+
+- Makefile fixed to rewrite import for goprotobuf.
+- streamlined (simplified) request messages for projector's adminport.
+- Evaluator{} and Router{} interface is implemented by IndexInst{}
+  structure. Constructing an instance based on IndexInst{} structure will
+  automatically fit in with projector's evaluation and routing algorithm.
+
+dataport:
+
+- endpoints are specific to downstream components, hence moved endpoint
+  client to dataport package and refactored as DataportEndpoint.
+  - corresponding factory function is also provided.
+- data structures defined under common/mutation.go are specific to dataport,
+  hence renamed them to include DataPort prefix.
+
+misc:
+
+- debug.go includes a helper function dump stack-trace at ERROR level.
+
+patchset-3:
+- upgraded to latest gomemcached changes (merging UprOpcode to CommandCode).
+- golint changes
+- fixed tools/*
+- partition key expression is optional
+
+patchset-4:
+- StreamBegin is pushed downstream with start-sequence number,
+  this is applicable for starting a new feed, add streams for a bucket,
+  restarting streams for existing buckets.
+- `bucketname` field in VbKeyVersions is mandatory.
+
+patchset-5:
+- reverting kv_sender.go and meta_repo.go to `origin:master` version.
+
+patchset-6:
+- CBIDXT-66: consolidating dataport behaviour to ConnectionError.
+- CBIDXT-221: collapse mutation-channel and side-band channel in dataport.
+
+patchset-8:
+- CBIDXT-231: WHERE clause can be specified in CREATE INDEX DDL to skip
+  documents that does not evaluate to true. On the projector, this
+  means -
+  * If WHERE clause predicate is empty, always proceed evaluating for
+    secondary-keys like described earlier.
+  * Else,
+    * If predicate is true, proceed evaluating for secondary-keys
+      like described earlier.
+    * Else, skip document and broadcast UpsertDeletion for docid.
+
+patchset-9:
+- CBIDXT-100: Handle UPR_EXPIRATION message.
+  Handled in the same way as UPR_DELETION.
+
+patchset-10:
+- CBIDXT-51: flow control between router and downstream endpoint.
+
+patchset-11:
+- use FailsafeOpAsync(), instead of FailsafeOp(), for asynchronous call
+  to gen-server.
+
+patchset-12:
+- CBIDXT-236: StackTrace() for panics.
+
+Change-Id: I37b483fc7d8cdc83ff1658e4c321c4b8f6c3b193
+
+
+COMMENTS
+
+author: Leonel Abbott
+date: 2014-10-08 10:33:52.270000000
+
+Uploaded patch set 12.
+
+-------------------------------------
+author: Dominique Stanton
+date: 2014-10-10 01:50:58.063000000
+
+Patch Set 12:
+
+(5 comments)
+
+Line:42, secondary/projector/engine.go -> Let's say a document has 2 fields, each going to a different index, but both indexes are put in the same node.  With this API, does it mean that they will be send out as 2 messages -- even though they are for the same node?
+
+Line:138, secondary/adminport/admin_httpd.go -> What if Start() is being mistakenly being called twice?    Will net.Listen() return an error if the net addr is already being listended on?  This is probably the only place where you don't get a mutex while acessing s.lis.
+
+Line:212, secondary/adminport/admin_httpd.go -> How many goroutines could be running in terms of lock contention?
+
+Line:155, secondary/common/util.go -> See comment on FailsafeOpNoblock
+
+Line:168, secondary/common/util.go -> How would it be failsafe if reqch is closed?   What if cmd is closed, how would the caller knows so to break the loop in the caller function?
+
+-------------------------------------
+author: Leonel Abbott
+date: 2014-10-10 05:39:34.283000000
+
+Patch Set 12:
+
+(4 comments)
+
+Line:42, secondary/projector/engine.go -> VbucketRoutine generates this message. So it will use the first engine (index-instance) to compose the data structure for the endpoint and publish it to the endpoint (constructed using endpoint factory).
+
+If there are more than one engine, it will ignore them.
+
+Line:138, secondary/adminport/admin_httpd.go -> Done
+
+Line:212, secondary/adminport/admin_httpd.go -> Typically one go-routine per http-request. I guess lock contention will be minimal and even otherwise number of adminport requests won't be many, few per second.
+
+Line:168, secondary/common/util.go -> - reqch shall never be closed.
+- caller can either interpret the error message returned
+   or it can simply ignore the message.
+- synchronous calls should not use this.
+
+-------------------------------------

@@ -1,0 +1,89 @@
+DESCRIPTION
+
+AddCommand: Avoid unnecessary string conversions
+
+Change-Id: I13634caeccd9f675a86adfdfa94099b6fb75463a
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2015-12-24 06:26:58.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-12-24 06:27:06.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7793/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-12-24 06:35:57.000000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7793/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-12-24 06:41:44.000000000
+
+Patch Set 4: Code-Review+1
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-12-28 13:17:25.000000000
+
+Patch Set 4: Code-Review+1
+
+(2 comments)
+
+Line:175, org.eclipse.jgit/src/org/eclipse/jgit/api/AddCommand.java -> You are not only replacing unnecessary Strings but you are also modifying when we continue. You are adding that we continue only when stage is >0. I do think that's correct but I want to understand better. Before we where ignoring stage and just relied on the fact that current path equals previous path. Have you changed this just to make the code clearer and faster or was something wrong with looking only at the pathes? Can it happen that path.equals(lastpath) and current entry has stage==0?
+
+Line:216, org.eclipse.jgit/src/org/eclipse/jgit/api/AddCommand.java -> I old code when we reached this line we have bee sure that entry was a fresh constructed object (and therefore length/lastmodified=0). Now you reuse the old entry and therefore reset the length/lastmodified values. But what is with the other attributes of the reused entry like assumeValid,updateNeeded. Could it be we have to reset them also?
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-12-28 18:49:12.000000000
+
+Patch Set 4:
+
+(2 comments)
+
+Line:175, org.eclipse.jgit/src/org/eclipse/jgit/api/AddCommand.java -> Correct, previously we ignored stage and used the paths being identical to indicate its the same path and we are skipping stages.
+
+Here I am using the fact that its cheaper to check stage than it is to compare the paths to short-circuit out of the conditional without checking the path on every entry.
+
+So this doesn't really change when we continue. We should continue in the same cases where we did before.
+
+And we still check the path because the stage > 0 is not sufficient to ensure its the same path. It could be some other path's conflict. So we do still check the path. We just assume stage > 0 is not common and therefore use it to avoid more expensive tests (path check) that we know would fail.
+
+Line:216, org.eclipse.jgit/src/org/eclipse/jgit/api/AddCommand.java -> I think the old code was wrong. By not reusing the old entry we lost things like the assumeValid and updateNeeded flags.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-12-28 19:24:28.000000000
+
+Patch Set 4: Code-Review+2
+
+(1 comment)
+
+Line:216, org.eclipse.jgit/src/org/eclipse/jgit/api/AddCommand.java -> assumeValid can never be true in the existing entry by this point. Above we test entry != null && entry.isAssumeValid() and keep the exiting entry without looking at the working tree. This means we never get here with assumeValid set.
+
+So we never need to clear assumeValid in this part of the code.
+
+updateNeeded is only used in the unit tests. Doesn't look like it cares if we left it true here or force it false.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-12-28 19:24:33.000000000
+
+Change has been successfully merged into the git repository by Yoselin Hanna
+
+-------------------------------------

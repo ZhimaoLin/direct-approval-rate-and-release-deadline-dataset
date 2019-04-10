@@ -1,0 +1,177 @@
+DESCRIPTION
+
+Fix RefUpdate performance for existing Refs
+
+No longer invoke the expensive RefDatabase.isNameConflicting() check on
+updating existing refs, reducing batch ref update time by ~97%.
+
+The RefDirectory implementation of isNameConflicting() is quite
+slow (it has to do an expensive loose-ref scan) but it's only necessary
+to perform this check on ref update if the ref is being *created* - if
+the ref already exists, we can already guarantee that it does not
+conflict with any other refs.
+
+C-Git seems to use a similar condition before making the
+is_refname_available() check:
+
+https://github.com/git/git/blob/v1.8.1.4/refs.c#L1660-L1670
+
+As an example of the effects on performance, here's a simple timing
+experiment using The BFG to remove one file from the JGit repo:
+
+---
+$ wget http://repo1.maven.org/maven2/com/madgag/bfg-repo-cleaner/1.0.1/bfg-1.0.1.jar
+$ git clone --mirror https://git.eclipse.org/r/p/jgit/jgit.git
+$ java -jar bfg-1.0.1.jar -D make_jgit.sh jgit.git
+....
+Updating references:    100% (5760/5760)
+...Ref update completed in 148,949 ms.
+
+BFG run is complete!
+---
+
+The execution time for the run is completely dominated by the batch ref
+update at the end. Repeating the experiment with BFG v1.0.2 (using JGit
+patched with this change), the refs update is dramatically reduced:
+
+---
+Updating references:    100% (5760/5760)
+...Ref update completed in 4,327 ms.
+---
+
+Change-Id: I9057bc4ee22f9cc269b1cc00c493841c71527cd6
+
+
+COMMENTS
+
+author: Kendrick Carrillo
+date: 2013-03-01 22:04:38.000000000
+
+Patch Set 1:
+
+I assert that:
+
+1. I have authored 100% of the content I'm contributing
+2. I have the rights to donate the content to Eclipse
+3. I contribute the content under the EPL
+
+http://wiki.eclipse.org/Development_Resources/Handling_Git_Contributions#Gerrit
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-03-01 22:04:56.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3033/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-03-01 22:13:13.000000000
+
+Patch Set 1: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3033/ : SUCCESS
+
+-------------------------------------
+author: Kendrick Carrillo
+date: 2013-03-01 22:26:59.000000000
+
+Patch Set 1:
+
+pleasantly surprised to see Robin has just been working in a the same area with a more substantial change in I17d0b3cc (Speed up clone/fetch with large number of refs) which would address performance for ref creation :)
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2013-03-03 21:31:11.000000000
+
+Patch Set 1: Looks good to me, but someone else must approve; Unclean IP, do not check in
+
+JGit isn't licensed under EPL so you need to contribute it under its EDL license
+[1] which is Eclipse form of BSD license
+
+[1] http://www.eclipse.org/org/documents/edl-v10.php
+
+-------------------------------------
+author: Kendrick Carrillo
+date: 2013-03-03 22:20:13.000000000
+
+Patch Set 1:
+
+I assert that:
+
+1. I have authored 100% of the content I'm contributing
+
+2. I have the rights to donate the content to Eclipse
+
+3. I contribute the content under the EDL
+
+Thanks for pointing that out!
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2013-03-04 06:23:36.000000000
+
+Patch Set 1: IP review completed
+
+
+
+-------------------------------------
+author: Juliet Cantu
+date: 2013-03-04 20:31:49.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:16, /COMMIT_MSG -> I was thinking that we cannot rely on that because packed refs may exist in conflicting forms, but when you update you create a loose ref.  Normally the conflict checks should prevent this, but...
+
+-------------------------------------
+author: Juliet Cantu
+date: 2013-03-04 20:40:50.000000000
+
+Patch Set 1:
+
+This doesn't help with clone or a fetch with many refs. It seems we should merge our patches.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2013-03-04 21:00:49.000000000
+
+Patch Set 1: Looks good to me, but someone else must approve
+
+
+
+-------------------------------------
+author: Kendrick Carrillo
+date: 2013-03-04 22:29:32.000000000
+
+Patch Set 1: (1 inline comment)
+
+Yup, this change doesn't help on clone/fetch with many new refs, just for update of existing refs. It does have the virtue of being a very small change.
+
+Robin's patch is more ambitious, would be very happy to see that go in! Just needs to address Shawn's comments?
+
+IANAC (I Am Not A Committer), but am happy to review or submit an updated patch on I17d0b3ccc27f868c8497607d8e57bf7082e65ba3 if that helps.
+
+Line:16, /COMMIT_MSG -> If the refs in .git/packed-refs exist in conflicted forms, won't they continue to be in conflict even if we abort the ref update and don't create the loose ref?
+
+I confess I'm not sure, but don't I think I can see a way that omitting the isNameConflicting() check (in the case of existing refs) would make things worse.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2013-03-05 00:11:07.000000000
+
+Patch Set 1: Looks good to me, approved
+
+
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2013-03-05 00:11:09.000000000
+
+Change has been successfully merged into the git repository.
+
+-------------------------------------

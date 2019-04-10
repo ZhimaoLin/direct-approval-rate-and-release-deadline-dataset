@@ -1,0 +1,124 @@
+DESCRIPTION
+
+MB-14192: Implement compaction callback for ForestKVStore
+
+Implement the compaction callback to purge tombstone entries
+and update the bloom filter for ForestKVStore
+
+Change-Id: Ifaefddfd60e69f66a0f4f299f9373f87c2743f32
+
+
+COMMENTS
+
+author: Hugo Blankenship
+date: 2015-12-09 07:45:18.771000000
+
+Patch Set 10:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1000/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-12-09 07:55:08.229000000
+
+Patch Set 10: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1753/ : SUCCESS
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1000/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-12-09 09:45:25.801000000
+
+Patch Set 10: Code-Review-1
+
+(12 comments)
+
+Line:91, src/kvstore.h -> Given only ForestKVStore needs this argument, why don't you just add ForestKVStore as an explicit argument to the compaction callback? That'll be more type-safe (and remove the need for the cast in the callback).
+
+Line:1624, src/ep.cc -> Any particular reason why you reverted the C++11 style range-based for here? Personally I think it's much clearer than the more verbose C++03 style one...
+
+Line:1354, src/forest-kvstore/forest-kvstore.cc -> C++, please use C++-style casts (i.e. reinterpret_cast<>)
+
+Line:1355, src/forest-kvstore/forest-kvstore.cc -> Ditto
+
+Line:1358, src/forest-kvstore/forest-kvstore.cc -> What does the magic number '9' relate to?
+
+Line:1360, src/forest-kvstore/forest-kvstore.cc -> This will throw an exception (invalid_argument / out_of_range) if the input could not be converted. You should probably check for this, maybe re-throw as std::invalid_argument).
+
+Line:1383, src/forest-kvstore/forest-kvstore.cc -> Please don't use magic numbers here. For example replace the first 4 with sizeof(exptime).
+
+Line:1397, src/forest-kvstore/forest-kvstore.cc -> Perf: You're performing two searches of the map here - the result of find() above already points to the element you're interested in.
+
+Line:1400, src/forest-kvstore/forest-kvstore.cc -> Note that creating a std::string from a {ptr, len} pair requires it takes a copy of the data. This seems like it could get expensive, particularly for large (e.g. 20MB) documents. 
+
+Take a look at const_sized_buffer which allows you to pass around a reference to an existing data. It's probably more efficient to use that as the argument to expiryCallback / bloomFilterCallback.
+
+Line:1423, src/forest-kvstore/forest-kvstore.cc -> More magic numbers
+
+Line:236, src/forest-kvstore/forest-kvstore.h -> Typo
+
+Line:247, src/forest-kvstore/forest-kvstore.h -> Doc doesn't appear to be modified - please make it const if possible. Additionally it also appears to always be non-NULL - use a reference if that is the case.
+
+-------------------------------------
+author: Bobby Buck
+date: 2015-12-10 02:52:41.192000000
+
+Patch Set 10:
+
+(12 comments)
+
+Line:91, src/kvstore.h -> The compaction callback prototype provided by forestdb is a generic prototype. I am not sure if explicitly passing a very ep-engine specific type would be appropriate. That's why it seems to provide a ctx argument which is a opaque pointer to store application specific stuff.
+
+Line:1624, src/ep.cc -> Done
+
+Line:1354, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:1355, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:1358, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:1360, src/forest-kvstore/forest-kvstore.cc -> I am not sure if ForestDB would be catching exception rethrown from here. I will catch the exception and log a message.
+
+Line:1383, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:1397, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:1400, src/forest-kvstore/forest-kvstore.cc -> Its just the copy of the key (max 250 bytes).
+
+Line:1423, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:236, src/forest-kvstore/forest-kvstore.h -> Done
+
+Line:247, src/forest-kvstore/forest-kvstore.h -> Done
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-12-10 09:13:26.574000000
+
+Patch Set 10:
+
+(1 comment)
+
+Line:91, src/kvstore.h -> ctx is  fine, it's more that we are adding essentially Store-specific things to the generic compaction_ctx. 
+
+Let's leave for now, it just feels like this struct is getting a bit large and complex...
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-03-18 04:12:14.791000000
+
+The change could not be merged due to a path conflict.
+
+Please rebase the change locally and upload the rebased commit for review.
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-03-18 07:20:22.829000000
+
+Change has been successfully cherry-picked as f40217bd57ff7e29a8d4962dd89fae95747280a4
+
+-------------------------------------

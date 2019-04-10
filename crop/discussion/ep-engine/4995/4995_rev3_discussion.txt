@@ -1,0 +1,110 @@
+DESCRIPTION
+
+MB-3522 Fix to the DB inconsistency issue caused by expiry window.
+
+We observed the DB inconsistency issue during the warmup time, which
+is incurred by the bug in the disk IO optimization using item expiry
+window. For example, the following sequence of operations cause the
+the DB inconsistency:
+1) set (k1,v1) with expiry time 0 (permanent)
+2) set (k1,v2) with expiry time 2 sec.
+3) Restart the engine.
+After warmup, we still have the item (k1,v1) from database.
+
+This change fixes the above issue by deleting the old item from
+database when the flusher skips the new item that will be expired
+within current_time + expiry_window.
+
+Change-Id: I1efd525e17656fc5ea5d757d0b2cfa140af457b3
+
+
+COMMENTS
+
+author: Abby Duran
+date: 2011-03-19 23:45:19.100000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Noah Dean
+date: 2011-03-19 23:59:54.196000000
+
+Patch Set 3: (1 inline comment)
+
+
+
+Line:1419, ep.cc -> Does this items to be deleted earlier than their expiration?
+
+-------------------------------------
+author: Abby Duran
+date: 2011-03-20 00:26:30.688000000
+
+Patch Set 3: (1 inline comment)
+
+
+
+Line:1419, ep.cc -> Hmm... I don't think this will delete an item earlier than its expiration. The deletion part of this function will just remove the old item from database  with the rowid. The PersistenceCallback won't delete the new item from hashtable, but instead the item pager will purge it later.
+
+-------------------------------------
+author: Noah Dean
+date: 2011-03-20 00:39:31.733000000
+
+Patch Set 3: (1 inline comment)
+
+
+
+Line:1419, ep.cc -> Won't it get deleted when the deletion callback fires after the delete completes?  This is starting to seem complicated.  :/
+
+(or it's simple and I don't understand it all anymore)
+
+-------------------------------------
+author: Abby Duran
+date: 2011-03-20 01:39:45.848000000
+
+Patch Set 3: (1 inline comment)
+
+
+
+Line:1419, ep.cc -> I understand what you concerned, but the deletion callback won't delete the new item as v->isDeleted() is false in the deletion callback:
+
+if (v && v->isDeleted()) {
+    bool deleted = vb->ht.unlocked_del(queuedItem.getKey(), bucket_num);
+...
+}
+
+-------------------------------------
+author: Noah Dean
+date: 2011-03-20 03:10:09.113000000
+
+Patch Set 3: Looks good to me, approved
+
+(1 inline comment)
+
+
+
+Line:1419, ep.cc -> Yep.  That makes sense.  Thanks.  :)
+
+-------------------------------------
+author: Andreas Short
+date: 2011-03-20 18:35:39.142000000
+
+Patch Set 3: Looks good to me, but someone else must approve
+
+
+
+-------------------------------------
+author: Brandon Owens
+date: 2011-03-21 18:00:50.091000000
+
+Patch Set 3: Verified
+
+Eyeballed verified by Matt.
+We'll do a build and Keith will verify with his scripts.
+
+-------------------------------------
+author: Brandon Owens
+date: 2011-03-21 18:00:50.202000000
+
+Change has been successfully cherry-picked as 2ebfeccfae8e39cb400ac58c1eeb336408f436cc.
+
+-------------------------------------

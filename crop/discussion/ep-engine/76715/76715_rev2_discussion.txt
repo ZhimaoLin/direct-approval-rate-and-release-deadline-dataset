@@ -1,0 +1,71 @@
+DESCRIPTION
+
+MB-23795: Move StoredValue::stale to OSV; guard  with SeqList::writeLock
+
+Ths stale flag in (Ordered)StoredValue needs to be read by the
+tombstone purger when iterating the sequenceList; however at this
+point there is no HashTable lock available - the OSV has been released
+from the hashTable and hence we have no way to determine it's bucket
+(without reading the key to recalculate - and that's not possible
+without first acquiring the lock!).
+
+To allow us to safely access the stale flag, move it from being
+protected by the HT locks to the SequenceList::writeLock, and move to
+OSV so it doesn't share with the other bitfields in the same
+byte. While on the face of it this might seen like a serious
+performance degredation having to serialise on a single lock, it
+actually doesn't appear to be /that/ bad:
+
+1) The stale flag is only accessed rarely:
+
+   a) Set to false when a StoredValue is initially created (and this
+      doesn't need the lock as the item isn't in the SeqList yet)
+
+   b) Set to true when an item becomes stale (result of concurrent
+      update & rangeRead, or deleted item is aged out and marked Stale).
+
+   c) Read during tombStone purging.
+
+2) Even when we *do* need to access the stale flag, we have already
+   acquired the writeLock in the hot path
+   (updateStoredValue/markItemStale).
+
+Note: This will increase contention during a tombstone purge, as it
+will need to acquire and release the writeLock for every seqList
+element; this is an area which should be looked at for future
+performance improvement - for example can the stale flag be made
+atomic, or can we add lightweight, per-OSV lock?
+
+Note(2): This increases the size of OSV by 8 bytes, as moving Stale to
+it pushes up the alignment requirements (it was previously aligned to
+8 bytes), although we've only added 1 bit to it. Better solution would
+be to pack this into the boost_list hook, // or introduce per-OSV
+microlock to guard the whole object.
+
+Change-Id: If814b966a10c64fada204998410dafc5ad255351
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2017-04-12 17:59:15.776000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-04-12 18:00:12.031000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4519/ : ABORTED
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/5741/ : ABORTED
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5237/ : ABORTED
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/5975/ : ABORTED
+
+-------------------------------------

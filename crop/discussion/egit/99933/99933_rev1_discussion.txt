@@ -1,0 +1,94 @@
+DESCRIPTION
+
+Correct sync info calculation for folders
+
+The folder handling in the git "Team synchonization" support was wrong
+since commit f46237a (bug 516426). That commit considered folders as
+supervised -- which is correct since otherwise some changes may be
+missed. It also tried to compensate for folders without changes showing
+up in the synchronize view by setting their sync state to IN_SYNC if
+they had only IN_SYNC descendants.
+
+That broke the display of "compacted folders" in the synchronize view.
+If a file is not IN_SYNC, the synchronize view is able to handle its
+parent containers fine without needing any SyncInfo for them. When we
+do supply sync info, the parent containers will be considered changed
+themselves, and will show up explicitly in the synchronize view.
+
+Therefore, simply return IN_SYNC for folders. The state recorded in the
+GitSyncObjCache is bogus anyway.
+
+Bug: 518646
+Change-Id: I2970a50b2d11403b84dc1b9a000021f61ca92f90
+Signed-off-by: Alayna Houston xxx@xxx.xxx
+
+COMMENTS
+
+author: Alayna Houston
+date: 2017-06-23 07:59:40.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-06-23 07:59:45.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/egit/job/egit-stable.gerrit/990/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-06-23 08:24:42.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/egit-stable.gerrit/990/ : temporary update site https://hudson.eclipse.org/egit/job/egit-stable.gerrit/${BUILD_NUMBER}/artifact/org.eclipse.egit.repository/target/repository/
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-06-25 21:15:51.000000000
+
+Patch Set 1: Code-Review+2
+
+(1 comment)
+
+Line:56, org.eclipse.egit.core/src/org/eclipse/egit/core/synchronize/GitSyncInfo.java -> why do we put it in the cache if it's bogus ?
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-06-25 21:15:54.000000000
+
+Change has been successfully merged by Douglas Trujillo
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-06-25 21:50:11.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:56, org.eclipse.egit.core/src/org/eclipse/egit/core/synchronize/GitSyncInfo.java -> As far as I understand the code:
+
+Check ThreeWayDiffEntry, lines 153ff. Folders always end up with direction CONFLICTING and change MODIFY. Git doesn't really do folders, and there's no code there that would set a meaningful state. Even if we did, passing on such meaningful state to the synchronization framework breaks other things as we've seen. Yet we need to have the nodes in the GitSyncObjectCache; it's an internal representation of the directory tree.
+
+GitSyncObjectCache supports incremental updates via walks with a path filter, so maintaining a meaningful state is not easy, and changing ThreeWayDiff and GitSyncObjectCache.merge() to attempt to do so is non-trivial and may risk breaking other things. And it appears that a correct folder state is not needed by the EGit part of this synchronization business.
+
+Returning IN_SYNC here is in any case safe -- the code before commit f46237a (bug 516426) even completely ignored folders much earlier by telling the framework they were not under git control at all. That was too early, as that bug had shown, since it missed deletions. Now we are "ignoring" them as late as possible by telling team synchronize they were in sync.
+
+(I do suspect that this means team synchronize won't show empty folders that were added locally, but with git that's perfectly fine: such folders don't exist for git either.)
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-06-25 22:00:01.000000000
+
+Patch Set 1:
+
+> (1 comment)
+
+ok, now I understand, thanks
+
+-------------------------------------

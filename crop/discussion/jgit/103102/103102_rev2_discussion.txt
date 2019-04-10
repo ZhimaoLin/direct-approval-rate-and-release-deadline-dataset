@@ -1,0 +1,129 @@
+DESCRIPTION
+
+Improve getting typed values from a Config
+
+Make the handling of typed values somewhat configurable by using
+a separate converter. The default converter is the same as before;
+just the implementations of the getters were moved. They also still
+raise IllegalArgumentException on invalid values as before.
+
+The converter can be set globally via Config.setTypedConfigGetter(),
+which EGit can use in its core Activator to plug in a variant that
+catches the IllegalArgumentException, logs the problem, and then
+returns the default value.
+
+In this way the behavior for other users of the JGit library is
+unchanged, while EGit can deal gracefully with invalid git configs.
+
+Bug: 520978
+Change-Id: Ie8f81d206e358b6cc57aa29b9d7ad2a5d34b86a1
+Signed-off-by: Alayna Houston xxx@xxx.xxx
+
+COMMENTS
+
+author: Alayna Houston
+date: 2017-08-21 06:52:35.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-08-21 06:52:44.000000000
+
+Patch Set 2:
+
+Build Started https://ci.eclipse.org/jgit/job/jgit.gerrit/11129/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-08-21 07:05:33.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://ci.eclipse.org/jgit/job/jgit.gerrit/11129/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-08-21 21:14:43.000000000
+
+Patch Set 2: Code-Review+1
+
+looks good
+
+did you also consider specialised config classes ? E.g. RemoteConfig throws IllegalArgumentException if an illegal refspec was configured, e.g. missing colon in the fetch refspec throws an IllegalArgumentException in RemoteConfig line 198
+
+[remote "origin"]
+	fetch = +refs/heads/*refs/remotes/origin/*
+
+java.lang.IllegalArgumentException: Invalid wildcards +refs/heads/*refs/remotes/origin/*
+	at org.eclipse.jgit.transport.RefSpec.<init>(RefSpec.java:196)
+	at org.eclipse.jgit.transport.RefSpec.<init>(RefSpec.java:226)
+	at org.eclipse.jgit.transport.RemoteConfig.<init>(RemoteConfig.java:198)
+	at org.eclipse.egit.gitflow.GitFlowConfig.getDefaultRemoteConfig(GitFlowConfig.java:251)
+	at org.eclipse.egit.gitflow.GitFlowConfig.hasDefaultRemote(GitFlowConfig.java:262)
+	at org.eclipse.egit.gitflow.ui.internal.properties.RepositoryPropertyTester.test(RepositoryPropertyTester.java:74)
+	at org.eclipse.core.internal.expressions.Property.test(Property.java:58)
+...
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-08-21 21:44:51.000000000
+
+Patch Set 2:
+
+> looks good
+ > 
+ > did you also consider specialised config classes ? E.g.
+ > RemoteConfig throws IllegalArgumentException if an illegal refspec
+ > was configured, e.g. missing colon in the fetch refspec throws an
+ > IllegalArgumentException in RemoteConfig line 198
+
+I know it does. Also if there is an invalid tagopt, see bug 429625. Looks like it's created differently (doesn't use getEnum()) because of the dashes in the values.
+
+Don't know yet how to deal with invalid RefSpecs... looks like those would need to be handled wherever the RefSpec constructor is used. Or maybe there'd be a cleverer way.
+
+diff.algorithm = patience will need special handling at call sites. (And also should not be reported as an "invalid config" but as a "value that JGit cannot understand".)
+
+I currently don't have a better idea for a more complete way to deal with this than factoring out the typed getters.
+
+Maybe that's the way to go for RefSpec, too: add new getters to TypedConfigGetter to return a (list of) RefSpecs read from a config key, and then override as appropriate to log and ignore invalid ones. And rewrite all places where RefSpecs are read from Config to use the new getter methods?
+
+And maybe this factoring out of typed getters is not quite right yet and there would be a better approach...
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-08-22 05:26:18.000000000
+
+Patch Set 2:
+
+> Maybe that's the way to go for RefSpec, too: add new getters to
+ > TypedConfigGetter to return a (list of) RefSpecs read from a config
+ > key, and then override as appropriate to log and ignore invalid
+ > ones. And rewrite all places where RefSpecs are read from Config to
+ > use the new getter methods?
+
+I suggest the following for this change here: let's wait with merging for now. I'll do a follow-up change trying to deal with RefSpecs using this new TypedConfigGetter. If that works out satisfactorily, we can go forward with this.
+
+Makes no sense to merge this now if we'll discover that for RefSpecs or similar cases we'd actually need something different.
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-08-22 07:20:26.000000000
+
+Patch Set 2:
+
+> I'll do a follow-up change trying to deal with
+ > RefSpecs using this new TypedConfigGetter. If that works out
+ > satisfactorily, we can go forward with this.
+
+Follow-up change for RefSpecs is https://git.eclipse.org/r/#/c/103423/ .
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-08-26 06:58:52.000000000
+
+Patch Set 2: Code-Review+2
+
+-------------------------------------

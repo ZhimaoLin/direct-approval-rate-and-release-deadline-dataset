@@ -1,0 +1,138 @@
+DESCRIPTION
+
+[RFC] Provide native lstat() via JNI
+
+If you run the tests on a platform where the native library is not
+available set the System property org.eclipse.jgit.fs.native to false to
+skip the test of the native code.
+
+For now only implemented on MacOSX until we decided on the
+platforms to support.
+
+Also integration of native make into build is not yet done.
+Build jgitnative using CDT this will copy the resulting shared
+library to the native bundle.
+
+Change-Id: Iffb12334b5440d49b6d2623ceb91f4d873f217a0
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Douglas Trujillo
+date: 2010-11-19 23:34:45.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-11-23 23:22:31.000000000
+
+Patch Set 4: I would prefer that you didn't submit this
+
+(15 inline comments)
+
+
+
+Line:57, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/FSAccess.java -> Minor style-nit:  I prefer these to be one line:
+
+  /** The only instance of FSAccess. */
+
+Line:72, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/FSAccess.java -> Style-nit: Braces aren't necessary here.
+
+Line:96, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/FSAccess.java -> Style-nit: Trailing space.
+
+Line:50, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/NoSuchFileException.java -> "As soon as Java 7 is our minimum supported platform".
+
+Line:73, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/NoSuchFileException.java -> Translate this?
+
+Line:55, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/LStat.java -> We probably need to slap "Fix this before 2038" warning here, and update that bug about JGit 2038 issues.  See RevCommit for an example of the warning I put on it.
+
+DirCacheEntry probably also needs a warning for its P_MTIME slot.  We can add that later.
+
+Line:102, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/LStat.java -> This is going to overflow as its all computed as an int.  Also, the precedence of + and << isn't that widely known, so we prefer to wrap with () here to make the order of operations clear to everyone.
+
+So instead:
+
+  size = ((long)rawlstat[9]) + (((long)rawlstat[10]) << 32);
+
+FWIW, given that almost everywhere else we use big endian ordering, its weird to see the high 32 bits of the size occur later in the array than the low 32 bits.
+
+Line:74, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/FSAccessJava.java -> Isn't this behavior different from the native ENOENT case?  When the file doesn't exist:
+
+In FSAccessJava you are returning an apparently valid LStat with the mode REGULAR_FILE, but -1 for lastModified and file length.
+
+In FSAccessNative I think you are throwing NoSuchFileException.
+
+The Java code needs to trap that, doesn't it?
+
+  long sz = file.length();
+  if (sz < 0)
+    throw new NoSuchFileExeption(file);
+
+  return new LStat(file.lastModified(), mode, sz);
+
+Line:91, jgitnative/lstat.c -> This shouldn't require a cast to long.  Casting to jint should cast to a 32 bit value, which will truncate the upper bits (if any) and leave you with the low 32.  So this is just:
+
+  elems[9] = (jint) finfo.st_size;
+
+Line:92, jgitnative/lstat.c -> This expression is wrong.  You want the upper 32 bits here, but only if st_size is > 4:
+
+  if (sizeof(finfo.st_size) == 8)
+    elems[10] = (jint) (finfo.st_size >> 32);
+  else
+    elems[10] = 0;
+
+Line:103, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/FSAccessNative.java -> Should we localize this string?
+
+Line:50, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/NotDirectoryException.java -> "As soon as Java 7 is our minimum supported platform".
+
+Line:49, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/AccessDeniedException.java -> Style-nit: Trailing whitespace.
+
+Line:50, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/AccessDeniedException.java -> I would reword this and say, "as soon as Java 7 is our minimum supported platform".
+
+Line:73, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/AccessDeniedException.java -> Should we localize this?
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2010-11-24 23:21:59.000000000
+
+Patch Set 4: (16 inline comments)
+
+
+
+Line:57, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/FSAccess.java -> Done
+
+Line:72, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/FSAccess.java -> Done
+
+Line:96, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/FSAccess.java -> Done
+
+Line:50, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/NoSuchFileException.java -> Done
+
+Line:73, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/NoSuchFileException.java -> Done
+
+Line:55, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/LStat.java -> Done
+
+Line:102, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/LStat.java -> Done.
+
+The compiler prevents the second cast saying that is unnecessary.
+
+Line:74, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/FSAccessJava.java -> Done
+
+Line:91, jgitnative/lstat.c -> Done
+
+Line:92, jgitnative/lstat.c -> Done
+
+Line:130, jgitnative/lstat.c -> missed to throw the exception :-(
+
+Line:103, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/FSAccessNative.java -> Done
+
+Line:50, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/NotDirectoryException.java -> Done
+
+Line:49, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/AccessDeniedException.java -> Done
+
+Line:50, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/AccessDeniedException.java -> Done
+
+Line:73, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/AccessDeniedException.java -> Done
+
+-------------------------------------

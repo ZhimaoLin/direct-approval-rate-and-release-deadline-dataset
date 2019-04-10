@@ -1,0 +1,259 @@
+DESCRIPTION
+
+MB-4617: Incorrect disk space reported
+
+Prefix matching is insufficient in the presence of bind mounts or symlinks.
+eg: we have two devices:
+/dev/hda1 is mounted as /mount1
+/dev/hda2 is mounted as /mount2
+but we also have a bind mount of /dev/hda2/foo, mounted as /mount1/bar
+
+Prefix matching would match the path "/mount1/bar" against /mount1 and decide it is on
+device hda1, but actually it is on hda2
+
+Instead we should use the device number of the file, obtained via file:read_file_info/1, and
+match this to the device number of a mounted device to find which device it is on.
+
+Change-Id: I2bfa70f4d4e3f81d5b643e2b7ff7cc1cfe6a7d40
+
+
+COMMENTS
+
+author: Cullen Stafford
+date: 2013-01-02 19:16:14.338000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Jasmin Rangel
+date: 2013-01-02 19:16:19.307000000
+
+Patch Set 4:
+
+New patchset patch-id matches previous patchset, but commit message has changed.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2013-01-02 19:33:19.470000000
+
+Patch Set 4: I would prefer that you didn't submit this
+
+see above.
+
+-------------------------------------
+author: Cullen Stafford
+date: 2013-01-03 10:30:44.244000000
+
+Patch Set 4:
+
+Aliaksey - Thanks for taking the time to look at this.
+
+Can you provide more detail on what you mean by "remote paths"? On Windows, any remote file system will be mounted as a device, so read_file_info should provide a device number. Likewise on Linux, any remote file system must be mounted and will therefore have a device number. AFAIK, stat'ing any accessible file, local or remote will always provide a device number.
+
+Regarding cases where the current implementation doesn't work, please see the git comment for the patch:
+
+eg: we have two devices:
+/dev/hda1 is mounted as /mount1
+/dev/hda2 is mounted as /mount2
+but we also have a bind mount of /dev/hda2/foo, mounted as /mount1/bar
+
+Prefix matching would match the path "/mount1/bar" against /mount1 and decide it is on
+device hda1, but actually it is on hda2
+
+This is (a slightly simplified version of) the situation we have in our production environment, which is where we see the incorrect behaviour.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2013-01-03 18:49:51.497000000
+
+Patch Set 4:
+
+remote path means path of on other host. That's used together with disk_sup:get_disk_data() from same host.
+
+I'm now confident that MB-4617 is caused not by incorrectness of path matching, but rather by too infrequent update of disk data in disk_sup.
+
+-------------------------------------
+author: Cullen Stafford
+date: 2013-01-04 10:46:17.609000000
+
+Patch Set 4:
+
+Aliaksey, I'm afraid I have to respectfully disagree. As the original reporter of MB-4617 (via Perry) I can tell you that this is not an intermittent problem where disk data is eventually reported correctly. 
+
+The problem is consistent, and has been occurring for over a year on our clusters. It's not something that fixes itself after a while, as would occur if disk_sup was returning stale data.
+
+From the first day we installed Membase (as it was then) to the present day, our clusters consistently report incorrect disk space available.
+
+If you believe this is an issue with disk_sup, can you propose a way that I can test your theory? Can you propose a better fix?
+
+-------------------------------------
+author: Nathalie Landry
+date: 2013-01-04 22:11:01.015000000
+
+Patch Set 4:
+
+Well, I've built original code and covered it with unit tests. I did that in fact twice. There's another version in JS code (used to show free space on setup wizard page where data path is chosen). Let me explain why I think it works.
+
+Your argument: "Prefix matching would match the path "/mount1/bar" against /mount1 and decide it is on
+device hda1, but actually it is on hda2" is incorrect.
+
+Because before seeking first match, we sort all known mount points using descending order of their length.
+
+I.e. /mount1/bar will always be considered _before_ /mount1.
+
+If this code is indeed broken, please provide specific conditions where it fails. Adding it to one of cases tested by unit test would be extra nice.
+
+Thanks again for spending your time figuring out this case.
+
+Also are you 100% sure it cannot be delay-ness of disk_sup updates ?
+
+-------------------------------------
+author: Cullen Stafford
+date: 2013-01-16 19:00:19.216000000
+
+Patch Set 4:
+
+Sorry for the slow response, I’ve been away on vacation and didn’t get a chance to reply to this before I left.
+
+Thanks for your patience in working though this issue. My apologies if I’ve done a poor job of explaining the issue clearly enough. Llet me try again to explain the problem as I understand it.
+
+Firstly, in answer to your question, I am 100% sure that this cannot be due to a delay in disk_sup updated. Our Couchbase clusters have consistently reported completely incorrect disk usage data for over a year. In fact, they have consistently reported that we have a negative amount of free space, which cannot be true. Here’s a copy/paste from the Cluster Overview page of the webconsole:
+
+Usable Free Space (14.1 GB)   Total Cluster Storage (42.7 GB)
+In Use (660 GB)	Other Data (0 B)	Free (-662762652728 B)
+
+Notice that “Total Cluster Storage” is reported as “42.7GB” but “In Use” is reported as “660GB”. In Use cannot possibly be greater than Total Storage, no matter how delayed disk_sup data may be.
+
+
+I spent some time debugging this, so I’ll try to explain clearly, and step by step, what I believe the problem is:
+
+In our configuration, we have several mount points, but for simplicity, only 3 matter. For consistency, I’ll use the same names as in the patch comment, above:
+/dev/hda1 is mounted as /mount1
+/dev/hda2 is mounted as /mount2
+
+Finally,
+/dev/hda2/foo is a Bind Mount, mounted as /mount1/bar
+(http://docs.1h.com/Bind_mounts)
+
+When extract_disk_stats_for_path is called, it is passed two arguments. One is a list of DiskStats, as obtained from disk_sup:get_disk_data(). The other is a Path for which we wish to obtain disk stats.
+
+The problem is that disk_sup:get_disk_data only returns disk information about *regular* mount points. It does *not* return disk information about bind mounts. So the list returned from disk_sup:get_disk_data looks like this:
+
+[ {“/mount1”, 12345, 25},
+  {“/mount2”, 98765, 10} ]
+
+Notice that /mount1/bar is not listed, since it is a bind mount, not a regular mount. (This is a point that I failed to highlight clearly before)
+
+The current implementation attempts to match the Path against this list of DiskStats. In our case, we try to match the Path “/mount1/bar”. The best match for this is ”/mount1” (aka /dev/hda1), so we report that it has 12345 kbytes of space.
+
+But /mount1/bar is actually a bind mount of /dev/hda2/foo, and has 98765 kbytes of space. So in short, we report the incorrect amount of space for this path.
+
+I believe that the correct way to fix this issue is to match based on device number, rather than path.
+
+Having looked at this further, I believe my patch is insufficient as it currently stands, though:
+Both the DiskStats and Path arguments may be sent to us from a remote host, so we cannot use stat (or file:read_file_info) to obtain the device number for the Path, or for the mount points listed in DiskStats.
+
+In order to fix the problem properly, I propose that we need to either:
+1)	Provide device numbers for the Path and DiskStats arguments, by sending these from the remote host.
+or
+2)	Obtain DiskStats information for bind mounts as well as regular mount points.
+
+I’m not sure #2 is viable, since I don’t know if it’s possible to obtain information about bind mounts from Erlang (the disksup docs don’t show anything) and I’m not sure whether it would work correctly with symlinks (unless Path is fully expanded using canonicalize_file_name or a similar function (http://linux.die.net/man/3/canonicalize_file_name))
+
+I hope that explanation makes more sense. Please let me know if you have further questions or better suggestions for how to fix this.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2013-01-16 19:05:22.863000000
+
+Patch Set 4:
+
+thank you for your feedback.
+
+In my own testing (or quite modern GNU/Linux distro) I was unable to see output of disksup lacking bind mounts.
+
+I have to assume that it has to be due to different version of df too (which disksup is using behind the scenes).
+
+In addition to that we now have clear evidence that disksup also fails to report nfs mounts.
+
+I believe right fix would be to find a working way to get free space statistics for all mounts, which we need e.g. for nfs.
+
+-------------------------------------
+author: Cullen Stafford
+date: 2013-01-16 19:12:27.809000000
+
+Patch Set 4:
+
+You may be correct that this is related to df version. I do not see bind mounts listed by df either, so if disksup uses that to obtain its data, that could explain the issue.
+
+On our system (RHEL6), df --version reports:
+
+$ df --version
+df (GNU coreutils) 8.4
+Copyright (C) 2010 Free Software Foundation, Inc.
+License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>.
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+
+Written by Torbjorn Granlund, David MacKenzie, and Paul Eggert.
+
+Do you have any suggestions how to obtain a more complete list of free space statistics for all mounts?
+
+-------------------------------------
+author: Nathalie Landry
+date: 2013-01-16 19:17:20.011000000
+
+Patch Set 4:
+
+thank you very much for confirming my suspicion.
+
+I see that trying df -a on RHEL 5 works at least for bind mounts.
+
+We'll consider doing something as part of our package.
+
+Meanwhile I suggest the following workaround:
+
+You can place df wrapper in /opt/couchbase/bin and make this wrapper add -a option.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2013-01-16 19:26:28.908000000
+
+Patch Set 4:
+
+hm, apparently df wrapper won't help. disksup is asking for df at specific path. Sadly
+
+-------------------------------------
+author: Cullen Stafford
+date: 2013-01-17 13:16:53.502000000
+
+Patch Set 4:
+
+Looking at the code for os_mon
+https://github.com/yrashk/erlang/blob/master/lib/os_mon/src/disksup.erl
+
+it appears that disksup also specifically requests "df -lk", which according to the manpage is short for "df --local --block-size=1K"
+
+So its specifically trying to only look at local file systems, not NFS. Whether that should or should not include bind mounts is unclear, but it certainly isn't going to work for NFS mounts.
+
+Do you have any proposal for how to fix this? One way might be to essentially re-implement disksup:get_disk_data. It appears to be a thin wrapper around df -lk, so writing a replacement which is a wrapper around df -a should be possible. The downside to that approach is that it won't be very portable, since it will rely on the output format of df, and also seems like reinventing the wheel somewhat.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2013-01-17 18:14:20.265000000
+
+Patch Set 4:
+
+I'll think about that a bit more. Indeed forking disksup is a possibility.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2013-03-14 17:42:21.276000000
+
+Patch Set 4: Abandoned
+
+author agrees that we need some alternative fix.
+
+One straightforward way would be to fork corresponding disksup code from erlang and change df arguments so that nfs mounts are not excluded.
+
+-------------------------------------

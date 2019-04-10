@@ -1,0 +1,126 @@
+DESCRIPTION
+
+MB-23936: Use Threadlocal variables to accumulate stats
+
+Currently when we allocate/deallocate memory, we update the per bucket
+variable `totalMemory`. Mutiple threads contend on this variable heavily
+as mem allocation/deallocation happen often. The primary idea of
+this commit is to maintain threadlocal mem counters for each bucket and
+merge it to the `totalMemory` once the local counter reaches a threshold
+either based on size or no.of times the local counter has been updated.
+This does show a notable increase in overall performance.
+
+Limitations:
+-----------
+- We create one thread local variable per bucket. Different OS'es seem
+  to enforce different limits on the no.of tlv. Although we have a hard
+  limit of 10 buckets, I'm noting this here for future reference.
+   -> [NetBSD:256 Linux:1024 OSX:512 Windows:1088]
+
+- Windows does not seem to provide an api for releasing the mem
+  allocated for a thread-local on thread exit in a way like pthreads do.
+  So there will be a small leak of about (3*long) on every bucket
+  unload.
+
+- Valgrind might say that the unit tests have leaks on the
+  threadlocals. This is because, in the tests, bucket init happens on
+  the main thread & when main thread exits the program it does not
+  call pthread_exit, so the dtors are not called.
+
+Change-Id: Id14ced2776a29afae18831b372140dd028136b32
+
+
+COMMENTS
+
+author: Trace Williamson
+date: 2017-04-21 17:30:18.866000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-04-21 18:04:34.068000000
+
+Patch Set 6: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6175/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4703/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/5923/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5406/ : SUCCESS
+
+-------------------------------------
+author: Keira Washington
+date: 2017-04-21 19:27:40.394000000
+
+Patch Set 6:
+
+(8 comments)
+
+Line:660, src/ep_engine.cc -> a) This isn't a vbucket-level param so should be in a different section
+b) You should probably add these options to cbepctl's documentation
+
+Line:1878, src/ep_engine.cc -> nit: I know the other lines do this, but it would be simpler to just use the equality operator ```key == "mem_merge_count_threshold"```
+
+Line:40, src/threadlocal_win32.h -> There should only be one private section for variables (ie. stick this down below).
+
+Line:42, src/threadlocal_win32.h -> nullptr
+
+Line:181, src/stats.h -> nullptr (you can use clang-tidy-diff with some of the modernise options to catch these automatically).
+
+Line:214, src/stats.h -> nit: Function names should describe what they do rather than what they respond to, and be in imperative form. e.g. 'handleMemAllocated'.
+
+Line:217, src/stats.h -> ditto
+
+Line:181, src/objectregistry.cc -> Whitespace only changes, please remove
+
+-------------------------------------
+author: Keira Washington
+date: 2017-04-21 19:27:49.372000000
+
+Patch Set 6: Code-Review-1
+
+-------------------------------------
+author: Trace Williamson
+date: 2017-04-21 21:21:50.581000000
+
+Patch Set 6:
+
+(6 comments)
+
+Line:660, src/ep_engine.cc -> I'm not familiar with this. I just followed how other similar configurations were passed around. If this needs to be changed, I would need to know how (mebbe why)
+
+Line:1878, src/ep_engine.cc -> Definitely your suggestion is much cleaner. But it would be better if code convention is consistent atleast within the same function. If I'm going to change just this line, I'm quite sure another dev is going to point that out. Mebbe in a separate commit, I can change the whole function, if that makes you happy ;)
+
+Line:40, src/threadlocal_win32.h -> Done. My bad. Fixed it in the other class, but missed it here
+
+Line:181, src/stats.h -> Done. my bad
+
+Line:214, src/stats.h -> Sounds correct. But I just followed the same naming conventions, from the original function that this code was moved :(. Lets discuss this offline.
+
+Line:217, src/stats.h -> same as above
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-24 09:31:12.640000000
+
+Patch Set 6:
+
+(1 comment)
+
+Line:660, src/ep_engine.cc -> a) setFlushParam would probably be a better place - while it has been abused somewhat, that's where other "global" things like max_num_readers/writers live.
+
+b) see docs/stats.org in the source tree.
+
+-------------------------------------
+author: Trace Williamson
+date: 2017-04-24 17:12:08.101000000
+
+MISMATCHED INLINE COMMENT
+Line:660, src/ep_engine.cc -> Will look into this.
+
+-------------------------------------

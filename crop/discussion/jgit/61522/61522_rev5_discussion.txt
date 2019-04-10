@@ -1,0 +1,155 @@
+DESCRIPTION
+
+Delay locating .gitattributes until requested
+
+Instead of checking every entry for .gitattributes only look for the
+entry on request by TreeWalk.  This avoids impacting uses like RevWalk
+filtering history.
+
+When the attrs is requested skip to the start of the tree and look for
+.gitattributes until either it is found, or it is impossible to be
+present.  Due to the sorting rules of tree entries .gitattributes
+should be among the first or second entries in the tree so very few
+entries will need to be considered.
+
+Waiting to find the .gitattributes file by native ordering may miss
+attrs for files like .config, which sorts before .gitattributes.
+Starting from the front of the tree on demand ensures the attributes
+are parsed as early as necessary to process any entry in the tree.
+
+Due to TreeWalk recursively processing up the tree of iterators we
+cannot just reset the current CanonicalTreeParser to the start as
+parent parsers share the same path buffer as their children.
+Resetting a parent to look for .gitattributes may overwrite path
+buffer data used by a child iterator.  Work around this by building a
+new temporary CanonicalTreeParser instance.
+
+Change-Id: Ife950253b687be325340d27e9915c9a40df2641c
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2015-11-30 02:57:18.000000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-11-30 02:57:24.000000000
+
+Patch Set 5:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7648/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-11-30 03:05:21.000000000
+
+Patch Set 5: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7648/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-11-30 14:51:14.000000000
+
+Patch Set 5:
+
+(2 comments)
+
+Line:402, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/CanonicalTreeParser.java -> Just for info:
+It took me a little bit to find out why this works. I tried to write a test which checks that a ".content" file has really the attributes defined by a ".gitattributes". I thought that since .gitattributes is not parsed when .content is processed this could fail (you mentioned this problem in the commit message). But I learned that 'raw' is a buffer to a complete Tree data structure (and not only up to the point we parsed so far). Therefore this temporary "itr" TreeParser can "overtake" the original TreeParser and look ahead.
+
+Line:28, /COMMIT_MSG -> Don't get this. While we are processing a child how could a parent iterator being reset and influence us? Or should the sentence be
+
+"Resetting a child to look for .gitattributes may overwrite path buffer used by a parent iterator."
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-11-30 15:20:32.000000000
+
+Patch Set 5:
+
+(2 comments)
+
+Line:402, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/CanonicalTreeParser.java -> Correct. It is too slow to incrementally load the contents of a tree. We pull the entire contents into a contiguous byte[] in one step from the storage layer and then can parse the byte[] incrementally here.
+
+So raw contains the complete listing. Unfortunately the format cannot be searched by binary search (believe me I've tried, its mixed text/binary format makes it ambiguous and thus impossible). So we have to linearly scan to find anything.
+
+So "this" is scanning files for TreeWalk, but to look ahead or behind we need the 2nd CanonicalTreeParser to go through other entries.
+
+Line:28, /COMMIT_MSG -> This is accurate. I stand by what I wrote in the commit message.
+
+Every AbstractTreeIterator (which CanonicalTreeParser is) contains a path byte[]. When the iterator dives into a subtree it supplies its path instance to its child (1). They share the same byte[].
+
+This allows the child to append his current entry name (2) to the end of the byte[] and have a contiguous representation of the path of a file.
+
+Diving again into a grandchild tree, the grandchild shares the same path buffer instance as both ancestors. So the granchild can append his name again (3):
+
+  path = {"src/main/frobinator.c"}
+           ^1 ^2   ^3
+
+Upon creation each child iterator adds "/" to the path buffer at the end of the parent's entry, and then appends its own entries as it parses them.
+
+If the parent suddenly goes back and reprocesses his entries using the same path buffer it overwrites its entry name:
+
+  path = {".gitattributesnator.c"}
+  path = {"src/main/frobinator.c"}
+           ^1 ^2   ^3
+
+Notice we have lost much of "/main/frobi". The parent has replaced contents in the path buffer with a longer entry name, and since the path buffer was shared down into the children, the children have lost the text they contributed.
+
+This behavior is fine if the children are done and get discarded. Its not fine when the children are still referenced by TreeWalk and are still being iterated.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-11-30 21:57:15.000000000
+
+Patch Set 5: Code-Review+1
+
+(2 comments)
+
+Line:402, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/CanonicalTreeParser.java -> ok
+
+Line:28, /COMMIT_MSG -> I still didn't get where the problem is until your last sentence. I had the wrong assumption we always don't reference the children anymore once we are done with a subtree. I agree, the children are corrupted when parent resets and thats a problem if they are still referenced.
+
+Side question: how do we manage sharing the same path buffer when we are entering multiple subtrees on the same level. We first visit src/main/a, fall back to src/ and then visit src/other/b. At least when we appending the '/b' don't we invalidate the path for the entry src/main/a.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-11-30 23:54:10.000000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:28, /COMMIT_MSG -> Yes, we discard children once we are done with a subtree. So when "src/main/a" is done we discard the children for "main" and "a" and those are probably reclaimed by Java GC before we enter "src/other/b".
+
+The issue here was TreeWalk's get attributes code walking up the tree. It would get attributes for "src/main/a", then "src/main", then "src". If "src" resets itself to look for .gitattributes it clobbers its live children "src/main" and "src/main/a".
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-12-01 00:03:09.000000000
+
+Patch Set 5: Code-Review+2
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-12-01 00:03:11.000000000
+
+Change has been successfully merged into the git repository by Yoselin Hanna
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-12-01 05:49:09.000000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:28, /COMMIT_MSG -> That was the missing bit: the code for attributes re-visits parents before a subtree is fully processed. +2
+
+-------------------------------------

@@ -1,0 +1,246 @@
+DESCRIPTION
+
+MB-21916: Make use of StoredDocKey
+
+Where std::string stored a key, now we use StoredDocKey
+When we passed std::string& through interfaces we now
+pass DocKey as much as possible, thus delaying the
+heap alloc and memcpy to the places we really need
+to store a key.
+
+This patch does not store the namespace in StoredValue
+This patch does not store the namespace in couchstore/fdb
+
+Thus any keys created in say Collections namespace will
+not work. This is correct as this patch does not make
+any assertions about the support of non-DefaultCollection
+
+Change-Id: Ibc7f59183e59f43d55fad5e582232e2891231179
+
+
+COMMENTS
+
+author: Jim WNathalie Landryer
+date: 2016-12-06 21:38:38.653000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-12-06 21:38:48.197000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/2061/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-12-06 21:38:48.392000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/824/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-12-06 21:39:05.194000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1981/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-12-06 21:39:21.461000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1655/ (4/4)
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-12-06 21:40:12.487000000
+
+Patch Set 1:
+
+sorry - hard to make smaller without lots of temporary std::string/StoredDocKey shimming
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-12-06 21:45:08.760000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:51, src/bloomfilter.h -> DocKey is passed by value everywhere as it copies the style of the previous places that were using const_byte_buffer (which was passed by value)... the engineAPI passes DocKey by reference. Surely reference would be marginally cheaper then the pass by-value? It's just a search and replace to switch to const DocKey& key... what do people think?
+
+DocKey after alignment is 24 bytes...
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-12-06 21:47:24.109000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/824/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1655/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1981/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/2061/ : FAILURE
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-12-07 09:40:48.635000000
+
+Patch Set 1: Code-Review-1
+
+(31 comments)
+
+Line:620, src/ep_engine.cc -> I think this will always perform a memory alloc here (as we always execute the LOG() macro body - which is another issue - but I digress).
+
+Suggest you instead move the declaration of the DocKey object used in the evictKey call below before this debug msg, and then use the DocKey for the string value.
+
+Line:729, src/ep_engine.cc -> Ditto
+
+Line:4225, src/ep_engine.cc -> Probably a bunch of other uses, but I just realised here - is data() guaranteed to return a null-terminated string? I don't think it does (given it's the data() from const_char_buffer).
+
+I think you need to use the `%.*s` formatter and include the size() in printf()-style calls.
+
+Line:4780, src/ep_engine.cc -> Same as above - memory alloc.
+
+Line:769, src/couch-kvstore/couch-kvstore.cc -> Seems be a few instances of this - consider a helper method which reduces our need of reinterpret_cast<> and improves readability:
+
+ DocKey make_DocKey(sized_buf buf, DocNameSpace);
+
++ a variant for StoredDocKey?
+
+Line:1936, src/couch-kvstore/couch-kvstore.cc -> Desirable to keep the const if possible.
+
+Line:1951, src/couch-kvstore/couch-kvstore.cc -> ditto
+
+Line:508, src/checkpoint.h -> Given in this case you're passing a const& - so cannot be modified - can this be a DocKey instead?
+
+I think in general as we evolve the APIs, we should prefer DocKey (non-owning) to StoredDocKey where possible. Reason being that DocKey is the "cheaper" abstraction - if you have the "wrong" type in a function, one can cheaply create a DocKey from a StoredDocKey, but not the other way around (as you'd have to dynamically allocate memory).
+
+(This is similar to discussions I've seen on string_view v.s. std::string&  v.s. char* in APIs for passing read-only string-like objects. You basically find that unless all functions in your stack take string_view (or char* if null-terminated), then the std::string& functions - even if rare - end up "polluting" your call-chain as you're forced to create std::string temporaries just to pass into APIs.
+
+This creation can either be explicit, or with a converting operator / constructors, but either way you end up with lots of very short-lived std::string objects.
+
+Line:560, src/checkpoint.h -> I don't know if we have a good convention on this, but I'm thinking that we should use a different style for static const members (I assume these should also be const?). 
+
+For example, they are logically similar to our enums or classes (as they are immutable), so maybe:
+
+ static const StoredDocKey DummyKey;
+
+What do you think?
+
+Line:662, src/forest-kvstore/forest-kvstore.cc -> Same null-termination issue as previously mentioned.
+
+Line:666, src/forest-kvstore/forest-kvstore.cc -> ditto
+
+Line:1312, src/forest-kvstore/forest-kvstore.cc -> ditto
+
+Line:1362, src/forest-kvstore/forest-kvstore.cc -> ditto
+
+Line:871, src/tapconnection.cc -> Same as prev - mem alloc.
+
+Line:889, src/tapconnection.cc -> Also here
+
+Line:389, src/item.h -> Same here
+
+Line:226, src/hash_table.h -> As per the earlier comment, this feels like it should be able to take a DocKey (I might be wrong).
+
+Line:446, src/hash_table.h -> I think this comment change can be reverted?
+
+Line:2743, src/ep.cc -> Funky alignment
+
+Line:2824, src/ep.cc -> Funky alignment
+
+Line:3862, src/ep.cc -> Funky alignment
+
+Line:388, src/checkpoint.cc -> Note: If you end up doing this lots you might prefer to define an operator+() taking a StoredDocKey and std::string, and returning a string 
+
+http://en.cppreference.com/w/cpp/string/basic_string/operator%2B
+
+Line:416, src/checkpoint.cc -> Similary here, you could define a stream operator which just chains to std::string's.
+
+Line:1047, src/checkpoint.cc -> auto ?
+
+Line:1650, src/checkpoint.cc -> Same - simpler to use auto here?
+
+Line:1793, src/checkpoint.cc -> Style - I think I preferred the previous style, as that (to me) made it more obvious the differences between each case. Now you have to "stare into" each case to spot how they differ (and there is more code duplication, even if the line count is lower)
+
+Consider returning to the previous form?
+
+Line:51, src/bloomfilter.h -> This seems to wax / wane depending on the relative cost of copy v.s. indirection, as CPUs change. 
+
+Recent advice[1] suggests that:
+
+> two or three words (doubles, pointers, references) are usually best passed by value
+
+So I think you could go either way here. I'd probably suggest sticking with whatever is the simplest for you, and then we can adjust etc in future if we see any hotness in the profile.
+
+(One addendum I would make to the C++ Core Guidelines advice - our new/delete are much more expensive than "normal" when inside ep-engine, due to memory tracking etc. As such anything which creates allocations on the heap should be minimised. Obviously that's not the case here (DocKey is almost a pod and has no dynamic allocations internally), but I just wanted to mention).
+
+[1]: http://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#a-namerf-inaf16-for-in-parameters-pass-cheaply-copied-types-by-value-and-others-by-reference-to-const
+
+Line:382, src/vbucket.h -> DocKey possible?
+
+Line:189, src/tasks.h -> Ah yes, you spotted it also ;)
+
+Line:633, src/stored-value.h -> Nit: keep the const?
+
+Line:61, src/item.cc -> Same as previous comments, is this null-terminated?
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-12-07 10:02:48.173000000
+
+Patch Set 1:
+
+(1 comment)
+
+great comments, will go through asap
+
+Line:382, src/vbucket.h -> hmm, these should all be DocKey, was sure i fixed this earlier, although i suspect I grepped for StoredDocKey& and made sure to switch this to DocKey. Likely the same for others you've highlighted
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-12-07 10:26:29.308000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:508, src/checkpoint.h -> Done
+
+Line:560, src/checkpoint.h -> yep, this is const, DummyKey seems reasonable
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-12-07 12:11:28.759000000
+
+Patch Set 1:
+
+(4 comments)
+
+Line:4225, src/ep_engine.cc -> correct, not safe
+
+Line:769, src/couch-kvstore/couch-kvstore.cc -> Done
+
+Line:189, src/tasks.h -> hehe, this should of been TODO and fixed before upload :D
+
+Line:61, src/item.cc -> Hmm yes and no.... this is now really calling data() on the underlying std::string, fixing with ostream an StoredDocKey
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-12-16 10:59:14.994000000
+
+Change has been successfully cherry-picked as f734f13fa4c8b63df977501464dae41d1ed71996 by Ashlee Kent
+
+-------------------------------------

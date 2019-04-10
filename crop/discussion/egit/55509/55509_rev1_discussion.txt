@@ -1,0 +1,156 @@
+DESCRIPTION
+
+Rewrite CommitMessageViewer to use JFace
+
+The goal is to get the commit message viewer in the git history view to
+use the same (configurable) hyperlink colors and other hyperlink
+infrastructure as the SpellcheckableMessageArea. This is complicated by
+two things:
+
+* custom hyperlinks to commits with custom opening, and
+* no clear model-view separation; getting the data from git,
+  formatting, and coloring were all lumped together.
+
+Therefore, improve the model-view separation:
+
+* Get rid of hand-crafted SWT text range coloring. CommitInfoBuilder is
+  restricted to getting the data from the repo, formatting, and
+  returning semantic information (hyperlinks, header and footer
+  ranges). It doesn't do syntax-coloring anymore.
+* CommitMessageViewer uses a partitioning on its document to split it
+  logically into header, body, and footer. It also gets a custom
+  hyperlink detector to deal with the custom commit hyperlinks.
+* GitHistoryPage uses a presentation reconciler with damager/repairers
+  that know how to syntax-color each partition (and hyperlinks).
+* Made the HyperlinkTokenScanner a bit more flexible to rebuild the
+  italicizing of Signed-off-by footer lines. Fixed a bug along the way
+  (if "fill paragraphs" was on, it would put footer lines onto one
+  line).
+
+Visually, there are no changes except the colors of hyperlinks, which
+now follow SpellcheckableMessageArea and are configurable.
+
+Bug: 340623
+Change-Id: Ie1b5907110ba716d262e4b5773fed7e3a5150d0d
+Signed-off-by: Alayna Houston xxx@xxx.xxx
+
+COMMENTS
+
+author: Alayna Houston
+date: 2015-09-09 05:29:25.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-09-09 05:29:31.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/7567/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-09-09 05:51:14.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/7567/ : SUCCESS
+
+-------------------------------------
+author: Alayna Houston
+date: 2015-09-09 15:08:05.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:575, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/history/CommitMessageViewer.java -> BTW (unrelated to this change): there are menu items and preferences for "wrap" and "fill paragraphs". However, I don't see any implementation for "wrap", and "fill" is IMO not useful without soft-wrap as it just turns every paragraph into a single long line, which doesn't strike me as user-friendly.
+
+What's up with these two features? Is anybody planning on completing them, or should they be simply removed?
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2015-09-10 14:41:02.000000000
+
+Patch Set 1: Code-Review-1
+
+the commit detail pane (bottom left) shows only
+
+ commit sha1
+
+until I click twice on a file in the changed file list (bottom right pane). I have history view linked with selection and observer this when history view has been freshly opened. Clicking on a different repository seems also to fix this.
+
+will do more testing soon
+
+-------------------------------------
+author: Alayna Houston
+date: 2015-09-10 17:40:48.000000000
+
+Patch Set 1:
+
+> the commit detail pane (bottom left) shows only
+ > 
+ > commit sha1
+
+I cannot reproduce this. Could you give more precise steps to reproduce, please? Which repo(s), which commit? Where's the selection initially? Does this happen at Eclipse start, or when history view is initially closed (not visible at all) and then opened ("show view...")? Does the SHA1 correspond to any commit you'd expect to see?
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2015-09-10 19:21:53.000000000
+
+Patch Set 1: Code-Review+1
+
+(1 comment)
+
+I could reduce the test workspace which shows the problem to a single tiny test repository, then I created another new workspace with the same repository and project imported and it doesn't happen. No idea what's the difference.
+
+Next I tried the same without your change and still face the same problem in the first workspace. This proves it's not related to your patch, maybe this workspace got corrupted somehow.
+
+Your patch looks good, I'll submit it after rebasing it
+
+Line:575, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/history/CommitMessageViewer.java -> they are around since years and I agree they seem to be not really useful
+
+-------------------------------------
+author: Alayna Houston
+date: 2015-09-10 20:06:44.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:575, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/history/CommitMessageViewer.java -> So no objections if I remove both wrap and fill completely?
+
+Besides wrap not being implemented, fill also causes an exception:
+
+* Switch on "fill paragraphs" in git history preferences
+* Have a commit message visible in the git history
+* Open preferences again, go to git history preference
+  page, select "reset defaults" and "apply".
+
+Results in an exception:
+
+java.lang.ClassCastException: java.lang.String cannot be cast to java.lang.Boolean
+	at org.eclipse.egit.ui.internal.history.CommitMessageViewer$1.propertyChange(CommitMessageViewer.java:134)
+	at org.eclipse.ui.preferences.ScopedPreferenceStore$3.run(ScopedPreferenceStore.java:351)
+	at org.eclipse.core.runtime.SafeRunner.run(SafeRunner.java:42)
+	at org.eclipse.ui.preferences.ScopedPreferenceStore.firePropertyChangeEvent(ScopedPreferenceStore.java:347)
+	at org.eclipse.ui.preferences.ScopedPreferenceStore.setToDefault(ScopedPreferenceStore.java:544)
+	at org.eclipse.jface.preference.FieldEditor.store(FieldEditor.java:681)
+	at org.eclipse.jface.preference.FieldEditorPreferencePage.performOk(FieldEditorPreferencePage.java:344)
+	at org.eclipse.jface.preference.PreferencePage.performApply(PreferencePage.java:464)
+
+
+The PreferenceChangeEvent contains String values in this case.
+
+The exception is reported to the user as an error dialog.
+
+-------------------------------------
+author: Gerrit Johnathan Pham
+date: 2015-09-10 21:02:38.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

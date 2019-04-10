@@ -1,0 +1,222 @@
+DESCRIPTION
+
+tmf: Add TmfEventTableColumn class
+
+Introduce the concept of "event table column" objects. This
+object will contain:
+- The initial column configuration (the "ColumnData")
+- The "functor" defining how to populate the cell in this column
+  for a given event.
+
+The base framework now defines 4 columns, that are available for
+all trace types (whose getter methods are currently in ITmfEvent):
+- Timestamp
+- Source*
+- Event Type
+- Reference*
+- Contents (fields)
+
+(* = Subject to future deletion, since now trace type can implement their
+ own columns with very specific meanings, no need for these vague getters
+ anymore.)
+
+Every trace type can now specify *extra* columns it wants to display,
+in addition to the 5 default ones.
+
+This is the first step towards decoupling the trace type, event table,
+and column order and number. This will eventually allow displaying all
+the possible trace type columns in an experiment of heterogeneous traces.
+
+Change-Id: I4ffdb0564114a92a58a271a7a99d3ca43fa57e31
+Signed-off-by: Braxton Mccarthy xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Braxton Mccarthy
+date: 2014-07-24 21:36:00.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-07-24 21:39:51.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/7945/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-07-24 22:27:20.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/7945/ : SUCCESS
+
+-------------------------------------
+author: Luciana Barry
+date: 2014-07-28 16:03:01.000000000
+
+Patch Set 1: Code-Review-1
+
+(6 comments)
+
+Line:96, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/events/TmfEventTableColumn.java -> Could we have a default implementation that gets the string from the event content (field) where 'field' is the column's FIELD_ID else the column name?
+
+Line:106, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/events/TmfEventTableColumn.java -> Perhaps some trace type would like to use the default columns by with a customized header? Could we add optional constructor that takes a column name as input?
+
+Line:49, lttng/org.eclipse.linuxtools.btf.ui/src/org/eclipse/linuxtools/btf/ui/BtfEventViewer.java -> Perhaps all these classes can be avoided if there is a default implementation for TmfEventTableColum.getItmeString(). Here we just need to specify the column headers in each constructor.
+
+Line:345, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/events/TmfEventsTable.java -> I believe the subclass should specify the full list of columns it wants to show by default (which may or may not include the default columns). Not all trace types want to show the default columns.
+
+Line:351, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/events/TmfEventsTable.java -> This should be an ordered list. Use List.
+
+Line:1951, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/events/TmfEventsTable.java -> Can't you just not deprecate this and no need to add getCurrentItemStrings()?
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-07-28 18:38:57.000000000
+
+Patch Set 1:
+
+(6 comments)
+
+Thanks for the review, update coming.
+
+Line:96, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/events/TmfEventTableColumn.java -> Good idea! It is indeed a use-case that comes back often, so it would make column definition easier.
+
+Line:106, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/events/TmfEventTableColumn.java -> As mentioned in the other comment, if we reduce the set of default columns to the bare minimum (timestamp and content), then trace types are free to define whatever columns with the names they want.
+
+Line:49, lttng/org.eclipse.linuxtools.btf.ui/src/org/eclipse/linuxtools/btf/ui/BtfEventViewer.java -> yep, will do so
+
+Line:345, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/events/TmfEventsTable.java -> If a "concept" exists in ITmfEvent, then it should apply for all trace types. If not, it shouldn't be in ITmfEvent. So we should be able to provide a column for those common concepts.
+
+If we keep only let's say Timestamp and Content as default, would there be any reason for trace types to hide those?
+
+Also, if a trace type wants to hide some columns, we may want to keep it available but just hide it on the UI side. Column-hiding is another layer we could implement.
+
+Line:351, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/events/TmfEventsTable.java -> No! The order here is important, but anything Iterable defines an order. List additionally defines an "index". An index here doesn't make sense, because the "second column" you define might end up being pushed away by the other columns from another trace type, so it wont be in second position anymore.
+
+The implementer will probably use a List underneath, but the interface shouldn't force it. (Iterable would probably be enough, but I kept Collection because it has .size(), which we may use for calculating widths etc.)
+
+Line:1951, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/events/TmfEventsTable.java -> Yeah I realized afterwards that it was the same method we had before... but then by deprecating it, we give an error/warning for existing code (that should move to using columns), just as a kind of heads-up that things aren't the same anymore.
+
+-------------------------------------
+author: Luciana Barry
+date: 2014-07-28 19:44:14.000000000
+
+Patch Set 1:
+
+(3 comments)
+
+Line:334, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/events/TmfEventsTable.java -> Tested it and found that this breaks a lot of extension's tables... I wonder if we could be nicer by adding base columns with the provided column names (that would return the corresponding content field)? But still wouldn't guarantee that it would match the subclass' getItemStrings implementation. I bet we could find a way to make it blend for all un-updated extensions by using a TmfDeprecatedColumn implementation ;)
+
+Line:345, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/events/TmfEventsTable.java -> Yes, the default columns should always be available by a 'column chooser' that can be implemented later.
+But the subclass should be able to specify the initially visible columns and the default columns should not be mandatory in that list. There are definitely many many extensions currently that don't have a Content column.
+
+Line:351, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/events/TmfEventsTable.java -> Yes! ;)
+If it's a Collection someone might use a HashSet and then the visible columns will be in a random order.
+It doesn't matter if the order of columns is later changed, this is the initial ordered list and only applies to the constructor.
+
+-------------------------------------
+author: Luciana Barry
+date: 2014-07-28 20:06:49.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:29, lttng/org.eclipse.linuxtools.gdbtrace.ui/META-INF/MANIFEST.MF -> Other plug-ins add this to the build.properties as a jars.extra.classpath instead. Do we want to do the same?
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-07-28 20:29:58.000000000
+
+Patch Set 1:
+
+(2 comments)
+
+I'll remove the default "source" and "reference" columns for now, and trace types that want to show those can have their custom columns.
+
+I'll look at column hiding, but that would be in a subsequent patch.
+
+Line:345, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/events/TmfEventsTable.java -> I agree, we should make the column available, but the trace type should be able to hide it if they want to. Maybe as part of the ITmfEventTableColumns interface?
+
+Line:351, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/events/TmfEventsTable.java -> No! :P
+
+Sorry to be adamant about this, but we use Lists (and worse, [] arrays) in many many places in interfaces where we shouldn't.
+
+Any collection has the definition of an "iteration order", many methods in Java classes use it (I'm thinking of List.addAll(Collection) for example). A HashSet "shuffles" the order compared to the insertion order, but a LinkedHashSet doesn't, so why not allow it?
+
+Although the Javadoc should be clear about it, and right now it isn't.
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-07-28 20:32:26.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:334, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/events/TmfEventsTable.java -> Yeah, expectedly, since we ignore the paramater there won't be any extra columns at all.
+
+What would be more effort, implementing a generic deprecated-column-wrapper, or just updating the extensions? ;)
+
+-------------------------------------
+author: Luciana Barry
+date: 2014-07-28 22:09:47.000000000
+
+Patch Set 1:
+
+(7 comments)
+
+Some comments apply for reordering columns, which is another patch (which doesn't modify TmfEventsTable so I couldn't leave file comments there)...
+
+Line:334, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/events/TmfEventsTable.java -> Definitely more effort to update all the extensions... The wrapper could be very simple and probably be very close to what you did with CustomEventTableColumn.
+
+Line:345, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/events/TmfEventsTable.java -> I guess it depends, is the plan to create all columns and immediately use setVisible(false) to hide some of them, or to dispose and create columns when you use the column chooser? Then you should only create the initially visible columns. It seems more intuitive to me for the subclass to give exactly what it wants to see.
+
+Line:351, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/events/TmfEventsTable.java -> From the Collection description, "Some are ordered and others unordered." so if order matters, like here, we should not use Collection. Unless your future plan is that here we specify a 'bag' of available columns and another interface specifies the initial order of columns, then this can be a Collection and the other interface should be a List. But there's no hint of it in this patch.
+
+Line:517, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/events/TmfEventsTable.java -> When you reorder columns you have to hover over the original first column's margin, wherever it might be...
+
+Line:876, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/events/TmfEventsTable.java -> When you reorder columns, the menu shows the bookmark actions whenever the mouse is on any column to the left of the original first column. I guess it would be better to have an unmovable first column for the bookmark/filter/search icons that is not tied to any column text.
+
+Line:1951, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/events/TmfEventsTable.java -> Actually this method should return strings in the current order of columns, then things would be the same as before. But it returns strings in the 'original' order because fColumns is not updated when you reorder columns.
+
+Line:1972, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/events/TmfEventsTable.java -> When used by setItemData, it needs to be the original order of columns (for item.setText()), so it does not match the description. When used by exportToText, I would guess that the user wants the export in the current column order? Maybe setItemData could just iterate over the columns itself and call setText(int, String) for each, unless that is much slower?
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-07-28 22:43:51.000000000
+
+Patch Set 1:
+
+(3 comments)
+
+Line:345, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/events/TmfEventsTable.java -> Yeah I was thinking setVisible(false), so the column object is always created (they're singletons, so not too much of an issue to create those objects in advance), and then we can control the visibility via a right-click menu from the header. In that we list all the possible columns, so they have to have been created.
+
+... wait the "default" columns are not singletons though, TODO
+
+Line:351, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/events/TmfEventsTable.java -> New version has a better javadoc comment. It mimics List's addAll() (the result are put in something sorted, so if you care about the order, check your collection's iteration order).
+
+Line:1951, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/events/TmfEventsTable.java -> Hmm, good point, there is a discrepancy between the order of fColumns and the order of the columns in the view. Initially I was planning on have fColumns follow the columns in the view (hence the linked list), but turns out that even if you move the columns in the view, the table's getColumns()[] array still matches the same ones. So I kind of forgot about it.
+
+If we make fColums's order follow the displayed order, then the exportToText should correctly get the strings in the order they are currently displayed. However, do we lose anything if we don't "remember" the initial order? This needs to be thought out a bit...
+
+-------------------------------------
+author: Luciana Barry
+date: 2014-07-29 15:59:44.000000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:345, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/events/TmfEventsTable.java -> Turns out there is no setVisible() for columns. You have to use setWidth(0) and setResizeable(false), if you want to keep the columns. But then you'll still be updating the hidden columns text, or have special check to avoid it.
+
+Line:1951, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/viewers/events/TmfEventsTable.java -> The original order is always equal to getColumns(). To get the current order you need to use getColumnOrder(). So perhaps you don't need fColumns at all. So probably if you use the current column order in this method it keeps the original meaning. Then for setText() you can just call getItemStrings(fTable.getColumns(), event).
+
+-------------------------------------

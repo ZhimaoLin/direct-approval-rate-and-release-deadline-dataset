@@ -1,0 +1,84 @@
+DESCRIPTION
+
+Fix LockFile semantics when running on NFS
+
+When running on NFS there was a chance that JGits LockFile
+semantic is broken because File#createNewFile() may allow
+multiple clients to create the same file in parallel. This
+change provides a fix which is only used when the new config
+option core.supportsAtomicCreateNewFile is set to false. The
+default for this option is true.
+
+If the config option core.supportsAtomicCreateNewFile is true
+then File#createNewFile() is trusted and the behaviour doesn't
+change.
+
+But if core.supportsAtomicCreateNewFile is set to false then after
+successful creation of the lock file a hardlink to that lock file is
+created and the attribute nlink of the lock file is checked to be 2. If
+multiple clients manage to create the same lock file nlink would be
+greater than 2 showing the error.
+
+This expensive workaround is described in
+ https://www.time-travellers.org/shane/papers/NFS_considered_harmful.html
+section III.d) "Exclusive File Creation"
+
+Change-Id: I3d2cc48d8eb280d5f7039eb94da37804f903be6a
+
+
+COMMENTS
+
+author: Douglas Trujillo
+date: 2017-11-22 12:39:20.000000000
+
+Uploaded patch set 5: Patch Set 4 was rebased.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-11-22 12:39:30.000000000
+
+Patch Set 5:
+
+Build Started https://ci.eclipse.org/jgit/job/jgit-stable.gerrit/17/ (1/2)
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-11-22 12:45:02.000000000
+
+Patch Set 5:
+
+Build Started https://ci.eclipse.org/jgit/job/jgit.gerrit/11644/ (2/2)
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-11-22 13:01:29.000000000
+
+Patch Set 5: Verified+1
+
+Build Successful 
+
+https://ci.eclipse.org/jgit/job/jgit-stable.gerrit/17/ : SUCCESS
+
+https://ci.eclipse.org/jgit/job/jgit.gerrit/11644/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-11-22 13:31:13.000000000
+
+Patch Set 5: Code-Review-1
+
+(1 comment)
+
+Line:234, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/FileRepository.java -> I think this is wrong, we should not get a global FS configuration parameter from a repository specific configuration. At the moment JGit only has a singleton FS instance i.e. the same JGit instance cannot handle two different filesystems with different configurations. I propose we get this configuration parameter from the global ~/.gitconfig.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2017-11-22 16:11:40.000000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:234, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/FileRepository.java -> Agreed. I moved reading this configuration option to FS classes. Whenever the FS class is asked for supportAtomicFileCreation() and this option is not yet read it will be read from system/global config. Repo config is not read anymore.
+
+-------------------------------------

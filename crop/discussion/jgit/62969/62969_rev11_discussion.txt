@@ -1,0 +1,104 @@
+DESCRIPTION
+
+RefTreeDb: Ref database using refs/txn/committed
+
+Instead of storing references in the local filesystem rely on the
+RefTree rooted at refs/txn/committed.  This avoids needing to store
+references in the packed-refs file by keeping all data rooted under
+a single refs/txn/committed ref.
+
+Performance to scan all references from a well packed RefTree is very
+close to reading the packed-refs file from local disk.
+
+Storing a packed RefTree is smaller due to pack file compression,
+about 49.39 bytes/ref (on average) compared to packed-refs using
+~65.49 bytes/ref.
+
+Change-Id: I75caa631162dc127a780095066195cbacc746d49
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2016-01-09 00:58:33.000000000
+
+Uploaded patch set 11.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-01-09 01:06:02.000000000
+
+Patch Set 11:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7821/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-01-09 01:13:56.000000000
+
+Patch Set 11: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7821/ : SUCCESS
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2016-01-09 06:45:52.000000000
+
+Patch Set 11: Code-Review-1
+
+(6 comments)
+
+Went through the tests more thoroughly this time.
+
+Line:427, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/reftree/RefTreeDbTest.java -> This confused me until I understood that update() performs a RefTreeUpdate on refs/txn/commited vs. the one on refs/txn/tmp immediately above.
+
+Changing the helper methods may help: 
+
+ObjectId txnCommitted() -> ObjectId getTxnCommittedRef()
+
+void update() -> ObjectId updateTxnCommittedRef()
+
+Line:439, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/reftree/RefTreeDbTest.java -> testUnionBehavior_DirectWriteToHeadsViaBootstrapNotVisible
+
+But if you wrote via the bootstrap to refs/txn/tmp, that would be visible, wouldn't it? If so add a test showing that. This indicates that "UNION" was not the right concept for this layering.
+
+Line:483, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/reftree/RefTreeDbTest.java -> Duplicate line.
+
+Line:485, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/reftree/RefTreeDbTest.java -> Add a comment that writing to HEADS via the bootstrap invalidates the RefTree under refs/txn/committed, so subsequent writes to that tree will fail.
+
+Line:526, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/reftree/RefTreeDbTest.java -> testRejectBehavior_RefTreeUpdateRefusesTxnNamespace
+
+I see below that the default is REJECT_REFS_TXN. Probably better to explicitly set that in all tests that rely on it.
+
+Add a testUnionBehavior_RefTreeUpdateRefusesTxnNamespace test too.
+
+Line:556, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/reftree/RefTreeDbTest.java -> Hmm, I hadn't understood that was how it worked. HIDE_REFS_TXN doesn't indicate that, but neither did HIDDEN. Maybe Layering enum values should be:
+SHOW_ALL -> (back to) UNION (refs/txn served by bootstrap)
+HIDE_REFS_TXN -> ALL_REFTREE (refs/txn served by reftree)
+REJECT_REFS_TXN -> HIDE_REFS_TXN (refs/txn not served and attempts to modify it are rejected)
+
+I'm not 100% sure yet that the use cases justify this complexity.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2016-01-09 20:52:48.000000000
+
+Patch Set 11:
+
+(2 comments)
+
+Line:427, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/reftree/RefTreeDbTest.java -> Renamed txnCommitted() to getTxnCommitted().
+
+Leaving update() alone because it doesn't update refs/txn/committed refs in this test. Its updating "user" refs inside of the RefTree so that they can be read back using RefTreeDatabase.
+
+Line:439, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/reftree/RefTreeDbTest.java -> I think I see your point about the layering now. I'm going to remove it altogether and just disallow writes to refs/txn/ namespace.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-01-12 00:01:06.000000000
+
+Change has been successfully merged into the git repository by Yoselin Hanna
+
+-------------------------------------

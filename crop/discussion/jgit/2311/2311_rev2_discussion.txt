@@ -1,0 +1,156 @@
+DESCRIPTION
+
+[RFC] Added utility to split out subtrees.
+
+This change is inspired by the subtree merge strategy built into Git[1]
+and Avery Pennarun's git-subtree script[2].  The git subtree merge
+strategy allows the root directory of one Git project (i.e. a sub
+project) to be merged into a subdirectory of another Git project (i.e.
+the super project).   This merge will include all the history of the sub
+project.   Avery's git-subtree script allows for the reverse operation:
+subdirectories of a Git project can be split into their own project
+(which includes the history of the subdirectory).
+
+The main logic of splitting out subtrees is handled by the
+SubtreeSplitter class.  This class figures out what subtrees to split
+out using two methods.  The first is for the caller to provide an
+explicit list of subtree paths. The second method is for the splitter to
+read a config file called ".gitsubtree" from the root of the initial
+commit.  This file also provides a list of subtrees that should be split
+out of each commit it processes.
+
+The SubtreeSplitter class also allows commits to be "rewritten" such
+that split out subtree commits will be readded as parent commits to the
+commit they were split from.  This gives the appearance that the change
+originated in the subtree and was then merged in.  This is useful as it
+can allow changes to a projects subtree to be easily shared with other
+projects.
+
+For example, consider the following commit graph.  Commit E was merged
+in as a subtree creating commit B.  In commit C, the contents of that
+subtree were modified.
+
+-----------------------------------
+  A---B---C  super-project
+     /
+D---E        subtree-project
+-----------------------------------
+
+The subtree spliter logic will split out the modification in the subtree
+into its own commit and merge it back in again in as follows:  Commit F is
+split out automatically from the change to the subtree in C.  C is then
+modified to include F as a parent which results in C'.  (Note that the
+trees that C and C' point to are exactly the same - no actual changes
+are made to the content of the commit.)
+
+-----------------------------------
+  A---B---C'  super-project
+     /   /
+D---E---F     subtree-project
+-----------------------------------
+
+Because change C did introduce a modification to the subtree, F is
+actually now a new branch diverging from the original subtree project.
+If changes continue in upstream the full picture will look like this:
+
+-----------------------------------
+    A---B---C'  super-project
+       /   /
+  D---E---F     subtree-branch
+       \
+        G---H   subtree-upstream
+-----------------------------------
+
+Later on it may be desirable to merge in the latest changes from
+subtree-upstream into the super project.  For example if
+subtree-upstream commit H is merged into super-project, the result
+will look like this:
+
+-----------------------------------
+    A---B---C'--I   super-project
+       /   /   /
+  D---E---F   /     subtree-branch
+       \     /
+        G---H       subtree-upstream
+-----------------------------------
+
+When the subtree splitter is invoked the following operations will
+occur.  J will be created automatically and I will be rewritten as I' to
+include J as a parent.
+
+-----------------------------------
+    A---B---C'--I'  super-project
+       /   /   /
+  D---E---F---J     subtree-branch
+       \     /
+        G---H       subtree-upstream
+-----------------------------------
+
+One possible area of concern is the logic that determines if the parent
+of a given commit belongs to a subtree merge.  This analysis is needed
+when trying to split out subtrees from a commit graph that already
+contains subtree merges.  If existing subtrees merges are detected for a
+subtree that is being split out, the existing subtree commits will be
+used.
+
+For now, this is handled by by simply comparing each parent of a commit
+against the list of known subtrees (the list is read from the config file
+of the root tree).  The most similar tree is determined by counting the
+number of identical files between the two trees.  In the future, it may
+be necessary to make this more robust.  For example, a score could be
+generated which is based off of identical files, similar files, renamed
+files etc.  Another approach would be to perform a test merge to
+determine what subtree the parent is most compatible with.
+
+[1]: http://www.kernel.org/pub/software/scm/git/docs/howto/using-merge-subtree.html
+[2]: https://github.com/apenwarr/git-subtree
+
+Change-Id: I5c4ca3a653953a3eab713c721ee4a6b6e4d5c1d0
+
+
+COMMENTS
+
+author: Khalil Bernard
+date: 2011-03-17 14:19:21.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-03-17 14:21:24.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/113/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-03-17 14:24:06.000000000
+
+Patch Set 2: Build Successful
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/113/ : SUCCESS
+
+-------------------------------------
+author: Khalil Bernard
+date: 2011-03-17 14:40:00.000000000
+
+Patch Set 2: I would prefer that you didn't submit this
+
+I've added some test cases.  I'd also like some feedback in general on this approach.
+
+To reiterate, the reason we're making this change is to add support for automatic subtree splitting/rewriting to Gerrit as an alternative to submodules.  For some background on this, visit our original change to Gerrit here: https://review.source.android.com/#change,20163.
+
+We've been running a modified version of Gerrit here at Garmin that includes this change.  We're hoping that we can get our changes mainlined so we don't have to run a custom version.
+
+-------------------------------------
+author: Malia Sampson
+date: 2011-03-17 16:31:12.000000000
+
+Patch Set 2: Unclean IP, do not check in
+
+We'll need a CQ, but I'll wait for comments from Shawn until I start the CQ process...
+
+-------------------------------------

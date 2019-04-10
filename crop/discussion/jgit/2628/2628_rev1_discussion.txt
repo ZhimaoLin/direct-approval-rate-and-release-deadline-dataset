@@ -1,0 +1,80 @@
+DESCRIPTION
+
+Properly close pack in WindowCache
+
+Change-Id: I6480de1420b8e8d5c356e93de96e74dcf915ebf8
+Signed-off-by: Malia Sampson xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2011-03-02 18:00:35.000000000
+
+Patch Set 1: Do not submit
+
+(1 inline comment)
+
+
+
+Line:321, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/WindowCache.java -> NO.
+
+We ONLY want the pack closed when an exception goes up the call stack. If the read method was good and returns successfully, the pack should stay open.
+
+-------------------------------------
+author: Malia Sampson
+date: 2011-03-02 19:15:43.000000000
+
+Patch Set 1:
+
+Ok, that makes sense.
+
+When does the pack close otherwise?
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-03-02 19:21:09.000000000
+
+Patch Set 1:
+
+The pack is normally closed when the last window to it is evicted from the WindowCache.
+
+This eviction occurs one of two ways:
+
+The first is by the weak LRU popping the least-recently-used window in order to release resources to keep the cache under the byte or open file limits. As these windows are popped the open window count on PackFile gets decreased, and the file is closed when the count drops to 0.
+
+The second is when WindowCache spins the ReferenceQueue. If the JVM GC killed some of our SoftReferences in order to free up heap memory WindowCache will (eventually) spin those now dead references out and decrement the open window count on the associated PackFile. When the count drops to 0, the file is closed.
+
+I just made a patch to C Git today that doesn't keep the file open if there is exactly 1 window on it. This might be useful in JGit too, but less so because the default window size is so much smaller (8 Kib in JGit). So it might not be worth my time to try and do.
+
+Are you seeing file leaking or something Chris? This code is one of the most heavily exercised areas in Gerrit Code Review servers and the current version has been running in production pretty solidly for nearly 6 months.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2011-03-02 23:14:43.000000000
+
+Patch Set 1:
+
+This comes from https://bugs.eclipse.org/bugs/show_bug.cgi?id=300084.
+
+The problem can be fixed by replacing the OS layer :)
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-03-02 23:33:29.000000000
+
+Patch Set 1:
+
+I just replied on that bug, I think the issue is EGit isn't closing the repository when it should, which means the PackFile is still open within JGit's caches.
+
+If EGit wants to delete the repository, it really needs to ensure the packs have been closed first.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-03-04 14:22:22.000000000
+
+Patch Set 1: Abandoned
+
+This isn't the way to fix the bug that was reported.
+
+-------------------------------------

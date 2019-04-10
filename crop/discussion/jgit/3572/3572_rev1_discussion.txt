@@ -1,0 +1,146 @@
+DESCRIPTION
+
+RFC: Use a repository specific path encoding
+
+Introduces a setting which can be set per repository or globally. Default
+is still UTF-8 (Composed Normal Form) on all platforms.
+
+This touches quite a lot of places and I changes direction on the
+way.
+
+Should I add DirCacheOptions and TreeOptions and try to extend the
+use. A pronlem I found was that I did not find a good source, i.e.
+config, everywhere.
+
+AFAIK: This patch "works", but so far only with manual testing with
+one repo committed using Msys git (ISO-88591-1) and one with EGit.
+
+Two repositories committed on Windows are included as zips. The EGit repo can
+be used as-is on most *nix-like systems today, assuming UTF-8 encoding. Mac
+non-ascii and C git presents a special problem since it recodes file names,
+but lets ignore that for now. C Git isn't even compatible with itself on Macs.
+
+The Msys repo will not be usable with EGit without this patch. It will work on
+*nix systems with C Git (again excluding Macs).
+
+See also I897a50c2e290928fb671798e9ddf2cf9db7a9f53
+
+Bug: 325828
+Change-Id: I97ce21d8a05c85432d315f128108cb063c9c9401
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2011-05-29 21:45:59.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/537/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-05-29 21:49:25.000000000
+
+Patch Set 1: Build Successful
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/537/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-05-30 18:17:52.000000000
+
+Patch Set 1: (7 inline comments)
+
+This isn't as bad as it seems. I think our major issue to work out is what single object will hold the path Charset object, and how to hang that off the ObjectReader and Repository in a way that isn't completely horrible to look at in the future.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2011-05-31 06:08:41.000000000
+
+Patch Set 1: (3 inline comments)
+
+
+
+Line:410, org.eclipse.jgit/src/org/eclipse/jgit/diff/DiffFormatter.java -> Ack.
+
+Line:71, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeOptions.java -> That's the whole point of this patch.  The caveat is that there must exist a bidirectional translation for this to work, which I believe there is for most users.
+
+Not sure about what to do about HFS+ and repos generated with C Git (decomposed file names), yet. Java composes the names for us, with only a little loss (a few code points lose their identify be the decomposition process that HFS+ imposes). Maybe handling this as a case-insensivity problem is the way to go.
+
+Line:444, org.eclipse.jgit/src/org/eclipse/jgit/lib/ObjectReader.java -> Would TreeOptions be ok? I'm not sure about what kind of options would be a good long term fit.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-05-31 14:13:22.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:444, org.eclipse.jgit/src/org/eclipse/jgit/lib/ObjectReader.java -> Yea, we can use TreeOptions here.
+
+Please define the method above release().
+
+I wish we could define a reasonable default implementation. But its not possible because the class doesn't have any reference back to the Repository or ObjectDatabase.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-05-30 18:17:51.000000000
+
+MISMATCHED INLINE COMMENT
+Line:410, org.eclipse.jgit/src/org/eclipse/jgit/diff/DiffFormatter.java -> You should instead try to cache the TreeOptions object inside of the Config by using the SectionParser API (see CoreConfig as an example). That way we don't do a linear search through the variables every time we try to acquire the configuration. Instead we only trigger the linear search when there was a variable change and the cached objects had to be invalidated.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-05-30 18:17:51.000000000
+
+MISMATCHED INLINE COMMENT
+Line:269, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/AbstractTreeIterator.java -> I don't usually write asserts. :-)
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-05-30 18:17:51.000000000
+
+MISMATCHED INLINE COMMENT
+Line:55, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/TreeOptions.java -> Why can't this just be CoreConfig? I will admit I haven't read all of the code yet, but we should be setting the path encoding option in one location (e.g. CoreConfig) and have everyone try to use that whenever possible.
+
+Or... if CoreConfig is too heavy for some contexts, always use the TreeOptions object but put this in the .lib package rather than treewalk. (By too heavy, I mean its hard to create a one-off configuration that isn't connected to a specific Repository.)
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-05-30 18:17:51.000000000
+
+MISMATCHED INLINE COMMENT
+Line:76, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/TreeOptions.java -> I would like to see this at least more standardized into the "core" section for Git's configuration. Msysgit should use the same key we do.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-05-30 18:17:51.000000000
+
+MISMATCHED INLINE COMMENT
+Line:49, org.eclipse.jgit/src/org/eclipse/jgit/util/ByteUtil.java -> Nit: private constructor.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-05-30 18:17:51.000000000
+
+MISMATCHED INLINE COMMENT
+Line:71, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeOptions.java -> Stupid question... can the working tree have a different encoding than the repository?
+
+What if my *NIX system thinks the correct encoding is UTF-8, but the repository maintainer has chosen to use ISO-8859-1? Can I set the path encoding within the repository to be ISO-8859-1 but my working tree to UTF-8 and have JGit perform automatic translation between the two?
+
+I think this works magically (*sigh*). In all of our working tree code we use String and File objects to point to the working tree. Java will handle the encoding/decoding to the filesystem itself. So within JGit we just need to encode/decode the String/File to the in-repository encoding. Am I understanding this right?
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-05-30 18:17:51.000000000
+
+MISMATCHED INLINE COMMENT
+Line:444, org.eclipse.jgit/src/org/eclipse/jgit/lib/ObjectReader.java -> Wow. I don't really like the idea of the path encoding being on the ObjectReader. I would instead prefer exposing the repository configuration, or some other configuration source.
+
+That may simplify some contexts because then you can get the CoreConfig or something similar from the ObjectReader.
+
+-------------------------------------

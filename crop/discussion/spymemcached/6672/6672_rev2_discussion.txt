@@ -1,0 +1,120 @@
+DESCRIPTION
+
+Added vbucket configuration parser from JSON.
+
+This parser from JSON has several methods for parsing JSON, beans to
+store configuration settings and unit tests.
+
+Change-Id: I478b274e7901e8c1729c20fcc29577b8aff651af
+
+
+COMMENTS
+
+author: Andreas Short
+date: 2011-06-03 19:32:49.868000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Andreas Short
+date: 2011-06-03 19:42:16.420000000
+
+Patch Set 2: (1 inline comment)
+
+Addressed all comments in previous commit.
+
+Line:18, src/main/java/net/spy/memcached/vbucket/config/Pool.java -> Dustin had previously asked why this should be a ConcurrentHashMap.  
+
+Summary is that it probably shouldn't be, but it feels safer to leave it alone for the moment.  In the HTTP Configuration provider, I believe netty will only do all of it's work on one thread, so this need not be thread safe.  That said, it probably should be rewritten to do all of this object model differently.
+
+This is the one change I did not make simply because I think it's safer to leave it alone for now.  You can get a HashMap pretty hosed if it were mutated by multiple threads, and I need to look more at how Netty deals with propogating events when monitoring something like this.  
+
+Looking at the code still to come in, it's only accessed when there is a reconfiguration event, and then only from a single method and then only to get the list of buckets that belongs to a pool.  In other words, it's infrequent changes (only config changes to a membase cluster) that lead to a HashMap of buckets.  In nearly all cases, this updates the internal object model of the cluster it's tNathalie Landrying with, but has zero effect on what is happening with the NodeLocator and client.  The only case where it would is when the bucket the MemcachedClient is initialized to use is removed from the cluster.  In that case, asynchronously the NodeLocator will eventually start whining, but before that it'll try sending operations to a cluster that will refuse to handle them.  It's all reasonably safe failure as far as I can see.
+
+-------------------------------------
+author: Jakob Lozano
+date: 2011-06-03 19:56:34.691000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:18, src/main/java/net/spy/memcached/vbucket/config/Pool.java -> Does the reconfiguration update a single key/value pair in the map?
+
+If the code is going to replace the map in place, then suggest using a java.util.concurrent.atomic.AtomicReference that wraps a immutable map, built with Collections.unmodifiableMap(), and you can have a java.util.HashMap in there, so you only have one place where synchronization is done.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2011-06-03 20:03:06.291000000
+
+Patch Set 2: Verified
+
+
+
+-------------------------------------
+author: Noah Dean
+date: 2011-06-03 20:23:52.154000000
+
+Patch Set 2: I would prefer that you didn't submit this
+
+(1 inline comment)
+
+Mutability makes me a bit uncomfortable.  :/
+
+Line:18, src/main/java/net/spy/memcached/vbucket/config/Pool.java -> I agree with that.  I think it's hugely important to understand the places where things can change and make them very explicit and justified.  Ideally, we only generate garbage.
+
+-------------------------------------
+author: Andreas Short
+date: 2011-06-03 20:58:58.205000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:18, src/main/java/net/spy/memcached/vbucket/config/Pool.java -> The coming code updates individual key/value pairs in the map, yes.  It probably shouldn't.
+
+I'm going to ask, is this okay for now?  We're tNathalie Landrying about something that very rarely changes, and if it does change, from the user perspective it really doesn't matter if the Map is swapped atomically or the entry in the map is swapped atomically.  In the current implementation, there is no sharing of these objects between different instances of MemcachedClient, and each MemcachedClient uses one and only one Bucket entry.  The fact that Bucket "bar" can change while I can only ever use bucket "foo" is really irrelevant.  
+
+If two HTTP updates in extremely short succession delete and recreate bucket "foo", which I'm using things would go wonky for a period of time, but in a deterministic and acceptable way.  Doing a map swap atomically won't really change this.
+
+-------------------------------------
+author: Noah Dean
+date: 2011-06-03 21:27:46.084000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:18, src/main/java/net/spy/memcached/vbucket/config/Pool.java -> I'm just concerned that it's leaky -- it's too easy to lose control of where changes occur.
+
+This class itself doesn't "own" the data in the sense that somewhere something calls getBuckets() and then changes that.  I think at the very least this class should own all of the changes to its own data.  At that point, there's really little point in arguing for concurrent map vs. copy and replace map because it can only happen in one place.
+
+-------------------------------------
+author: Noah Dean
+date: 2011-06-03 22:08:04.446000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:18, src/main/java/net/spy/memcached/vbucket/config/Pool.java -> I think I'll just remove it in this change.  It's not used.  When it's used, we'll work out the API and make sure all access is obvious.
+
+-------------------------------------
+author: Andreas Short
+date: 2011-06-04 00:22:03.842000000
+
+Patch Set 2: (1 inline comment)
+
+That's confusing.  My draft here got stuck on an old commit.  Now it doesn't matter since I'm fixing things up though.  I guess you never got the comment.
+
+Line:18, src/main/java/net/spy/memcached/vbucket/config/Pool.java -> It is used in commits that I'm still trying to straighten out.  I'm fine with that, but this is all doing two things (which I can be blamed for).
+
+#1 making the work I have to do to get this integrated much harder
+#2 creating much more divergence with code people are currently running (in the prerelease)
+
+I don't so much mind #1, in that we come up with a better product.  I'm taking heat from a lot of other angles that perhaps I shouldn't care about, but #2 is scary.
+
+It feels like we're going to end up with an RC/GA that while more maintainable, is more likely to have bugs than the prerelease.  Here's an idea of what I'm coping with and trying to make each commit understandable and tested:
+https://skitch.com/Andreas Short/fn68f/java-memcached-client-branch-27cleanup
+
+-------------------------------------

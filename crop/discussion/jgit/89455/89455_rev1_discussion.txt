@@ -1,0 +1,127 @@
+DESCRIPTION
+
+gc: loosen unreferenced objects
+
+An unreferenced object might appear in a pack.  This could only happen
+because it was previously referenced, and then later that reference
+was removed.  When we gc, we copy the referenced objects into a new
+pack, and delete the old pack.  This would remove the unreferenced
+object.  Now we first create a loose object from any unreferenced
+object in the doomed pack.  This kicks off the two-week grace period
+for that object, after which it will be collected if it's not
+referenced.
+
+This matches the behavior of regular git.
+
+Change-Id: I59539aca1d0d83622c41aa9bfbdd72fa868ee9fb
+Signed-off-by: Carissa Dunn xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Carissa Dunn
+date: 2017-01-24 16:47:06.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Eden Lin
+date: 2017-01-24 16:54:52.000000000
+
+Patch Set 1: Code-Review-1
+
+How does this interact with https://git.eclipse.org/r/76018?
+
+I think if we want to do this, it will need to be guarded by a config so users can decide whether they want to have unreferenced objects become loose or go in an UNREACHABLE_GARBAGE pack.
+
+-------------------------------------
+author: Eden Lin
+date: 2017-01-24 17:03:45.000000000
+
+Patch Set 1: -Code-Review
+
+-------------------------------------
+author: Eden Lin
+date: 2017-01-24 17:05:43.000000000
+
+Patch Set 1:
+
+> How does this interact with https://git.eclipse.org/r/76018?
+ > 
+ > I think if we want to do this, it will need to be guarded by a
+ > config so users can decide whether they want to have unreferenced
+ > objects become loose or go in an UNREACHABLE_GARBAGE pack.
+
+Ah, https://git.eclipse.org/r/76018 is DfsRepository-specific. I take it back.
+
+Something like that change is needed to avoid a race. Neither jgit nor git recursively touches all objects indirectly referenced by a loose object to reset the grace period when an unreferenced object becomes referenced. For UNREACHABLE_GARBAGE packs, https://git.eclipse.org/r/59282 resets the grace period for an unreachable object and its unreachable ancestors when it gets re-pushed.
+
+But what you're doing here doesn't make anything worse. It's a start.
+
+-------------------------------------
+author: Eden Lin
+date: 2017-01-24 17:12:29.000000000
+
+Patch Set 1: Code-Review+1
+
+(5 comments)
+
+Line:222, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> nit: newer jgit code tends to avoid 'final' for locals where it's not needed
+
+Line:223, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> optional: can decrease nesting by reversing the test:
+
+  if (existing.contains(oid)) {
+    continue;
+  }
+  existing.add(oid);
+  ...
+
+Line:230, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> optional nit: this could be a two-element enum to make the behavior more obvious (see Effective Java second edition item 40, p190)
+
+Line:231, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> Why is this catch/throw needed? MissingObjectException is an IOException
+
+Line:256, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> same nit about 'final' (and likewise below)
+
+-------------------------------------
+author: Carissa Dunn
+date: 2017-01-24 17:57:57.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+> How does this interact with https://git.eclipse.org/r/76018?
+ > 
+ > I think if we want to do this, it will need to be guarded by a
+ > config so users can decide whether they want to have unreferenced
+ > objects become loose or go in an UNREACHABLE_GARBAGE pack.
+
+ > How does this interact with https://git.eclipse.org/r/76018?
+ > 
+ > I think if we want to do this, it will need to be guarded by a
+ > config so users can decide whether they want to have unreferenced
+ > objects become loose or go in an UNREACHABLE_GARBAGE pack.
+
+I don't think DfsGarbageCollector and GC interact at all.  Just eyeballing the code, it looks like GarbageCollectCommand, for instance, chooses which one to runbased on the type of the repository. I don't know whether DfsGarbageCollector should be corrected to use this same loosening code; I've never used the DFS backend so I don't know what users expect there.  But for the filesystem backend, it makes the most sense to match regular git.
+
+Line:230, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> Because the existing code uses true/false for this, I think it's easier to keep it for now.  But if someone else feels strongly, I can change it.
+
+-------------------------------------
+author: Eden Lin
+date: 2017-01-24 18:00:33.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:230, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> It's internal API so I don't feel strongly.
+
+What existing code are you referring to?
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2017-01-24 22:38:08.000000000
+
+Change has been successfully merged into the git repository by Eden Lin
+
+-------------------------------------

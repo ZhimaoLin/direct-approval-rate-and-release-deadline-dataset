@@ -1,0 +1,85 @@
+DESCRIPTION
+
+UploadPack: Permit flushing progress messages under smart HTTP
+
+If UploadPack invokes flush() on the output stream we pass it, its
+most likely the progress messages coming down the side band stream.
+As pack generation can take a while, we want to push that down
+at the client as early as we can, to keep the connection alive,
+and to let the user know we are still working on their behalf.
+
+Ensure we dump the temporary buffer whenever flush() is invoked,
+otherwise the messages don't get sent in a timely fashion to the
+user agent (in this case, git fetch).
+
+We specifically don't implement flush() for ReceivePack right now,
+as that protocol currently does not provide progress messages to
+the user, but it does invoke flush several times, as the different
+streams include '0000' type flush-pkts to denote various end points.
+
+Change-Id: I797c90a2c562a416223dc0704785f61ac64e0220
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-06-24 00:33:46.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-06-24 00:35:40.000000000
+
+Patch Set 4: Looks good to me, but someone else must approve; IP review completed
+
+
+
+-------------------------------------
+author: Blake Oneal
+date: 2010-06-30 08:46:39.000000000
+
+Patch Set 4: Looks good to me, but someone else must approve
+
+(1 inline comment)
+
+
+
+Line:287, org.eclipse.jgit/src/org/eclipse/jgit/util/TemporaryBuffer.java -> When you do the switch here, the overflow won't be flushed until the BufferedReader fills up. Does it make sense to do a flush() at his point, prior to returning the BufferedReader, to ensure that this part is done before wrapping the stream?
+
+Secondly, can the result of overflow() ever be a buffered writer (e.g. if we call this twice)? Should we code for that possibility and not wrap a wrapped bufferedoutputstream if that's the case? e.g. have something like if (!overflow instanceof BufferedOutputStream) overflow = new BufferedOutputStream(overflow,..)
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-06-30 16:06:06.000000000
+
+Patch Set 4: (1 inline comment)
+
+
+
+Line:287, org.eclipse.jgit/src/org/eclipse/jgit/util/TemporaryBuffer.java -> Alex, I'm not sure what you are talking about with a BufferedReader filling up.  It doesn't make sense in context, this class is about an output stream.
+
+Assuming you meant the BufferedOutputStream we are working with here, its not important that the stream is flushed when this method is run.  During reachedInCoreLimit(), we don't care that the underlying stream gets a flush, we just need to start spooling this stuff out of memory before we explode the heap.  So when that method calls switchToOverflow() invoking flush isn't worth it, it could cause a partial block (what is left in the last buffer) to be written to the underlying stream, which may be a wasted system call that could have easily been aggregated with subsequent writes to this stream.
+
+During doFlush() above, we switch to the overflow stream, then flush it.  So the BufferedOutputStream gets flushed, and the underlying OutputStream that is created by our subclass is also flushed.
+
+Yes, the subclass can implement overflow() to return a BufferedOutputStream.  That means we might double-buffer here.  However, its not worth checking to see if the stream is a BufferedOutputStream and special case around it.  BufferedOutputStream stacks well, so long as the wrapping BOS uses a buffer size that is >= the buffer size of the inner BOS, the inner BOS will become a no-op and simply pass through the wrapper's byte array to the underlying stream.  The default buffer size in the Sun JDK is 8192 bytes, which is the same size as our block size here.
+
+However, the intent is that the subclass' overflow() method is a raw stream, without buffering, and that we supply buffering since our class is called TemporaryBuffer.  For example our File subclass directly returns the FileOutputStream.  Where it gets more complex is in UploadPackServlet, where the overflow stream is the ServletOutputStream.  Buffering on that is undefined, and it most certainly does not extend BufferedOutputStream.  Some servlet containers buffer that in 1 MiB chunks.  Some don't buffer it at all.  Its hard to say what will happen.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-07-01 22:10:48.000000000
+
+Patch Set 4: Looks good to me, approved; IP review completed
+
+
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-07-27 16:11:59.000000000
+
+Change has been successfully pushed.
+
+-------------------------------------

@@ -1,0 +1,98 @@
+DESCRIPTION
+
+Only fetch tags that do not exist locally with auto-follow
+
+This corresponds to what C Git does, quoting from the fetch man page:
+
+  This is done by first fetching from the remote using the given
+  <refspec>s, and if the repository has objects that are pointed by
+  remote tags that it does not yet have, then fetch those missing tags.
+
+Before, JGit would also fetch tags that exist locally but point to a
+different object, resulting in REJECTED results for these.
+
+Bug: 388095
+Change-Id: Ib03d2d82e9c4b60179d626cfd5174be1da6388b2
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2013-04-27 15:01:19.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3438/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-04-27 15:06:41.000000000
+
+Patch Set 1: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3438/ : SUCCESS
+
+-------------------------------------
+author: Carlie Harper
+date: 2013-04-29 15:00:51.000000000
+
+Patch Set 1:
+
+Works well and the code is much more understandable than before.
+
+In order to understand the logic with wantTag and additionalTags myself I had to add two more unit tests:
+
+- One where the tag does not point to the same commit as the branch does and where therefore it is fetched only afterwards using the additionalTags Collection (see fetchShouldAutoFollowTag2 below)
+- One where there is a tag but it does not point to a commit which is on the local repository after fetch (see fetchShouldNotFetchTagsFromOtherBranches below)
+
+I think such tests would be very useful.
+
+
+xxx@xxx.xxx
+	public void fetchShouldAutoFollowTag2() throws Exception {
+		remoteGit.commit().setMessage("commit").call();
+		Ref tagRef = remoteGit.tag().setName("foo").call();
+
+		remoteGit.commit().setMessage("commit2").call();
+
+		RefSpec spec = new RefSpec("refs/heads/*:refs/remotes/origin/*");
+		git.fetch().setRemote("test").setRefSpecs(spec)
+				.setTagOpt(TagOpt.AUTO_FOLLOW).call();
+
+		assertEquals(tagRef.getObjectId(), db.resolve("foo"));
+	}
+
+xxx@xxx.xxx
+	public void fetchShouldNotFetchTagsFromOtherBranches() throws Exception {
+		remoteGit.commit().setMessage("commit").call();
+		remoteGit.checkout().setName("other").setCreateBranch(true).call();
+		remoteGit.commit().setMessage("commit2").call();
+		RefSpec spec = new RefSpec(
+				"refs/heads/master:refs/remotes/origin/master");
+		git.fetch().setRemote("test").setRefSpecs(spec)
+				.setTagOpt(TagOpt.AUTO_FOLLOW).call();
+
+		assertNull(db.resolve("foo"));
+	}
+
+-------------------------------------
+author: Danika Greer
+date: 2013-04-29 16:35:14.000000000
+
+Patch Set 1:
+
+Thanks for writing the tests! I also had to think a bit about the cases while implementing it, and the code doesn't have good coverage there.
+
+Is it ok if I add the tests to this change and add you as "Also-by"?
+
+-------------------------------------
+author: Carlie Harper
+date: 2013-04-30 06:55:38.000000000
+
+Patch Set 1:
+
+Yes, if you also find them useful, please add them to the code and add me as "Also-by" if you want.
+
+-------------------------------------

@@ -1,0 +1,73 @@
+DESCRIPTION
+
+MB-21379: Ensure vals data structure is thread safe in ep_testsuite
+
+When developing additional stats test for ep-engine_perfsuite, the
+following data race was uncovered.
+
+The patch ensures that access to vals, requested_stat_name and
+actual_stat_value are protected with a mutex.  It has been
+confirmed that with this patch the ThreadSanitizer issue no longer
+occurs.
+
+30: Running [0007/0009]: Stat latency with set executed in separate thread (couchstore)...==================
+30: WARNING: ThreadSanitizer: data race (pid=35923)
+30:   Write of size 1 at 0x7d180004aff2 by thread T15:
+30:     #0 memcpy <null> (libtsan.so.0+0x00000002617a)
+30:     #1 std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >::_M_assign(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) <null> (libstdc++.so.6+0x00000011f3c1)
+30:     #2 STATWRITER_NAMESPACE::add_casted_stat(char const*, char const*, void (*)(char const*, unsigned short, char const*, unsigned int, void const*), void const*) /home/Kymani Ramirez/master/ep-engine/src/statwriter.h:39 (ep.so+0x0000000e5c04)
+30:     #3 StatCheckpointVisitor::addCheckpointStat(void const*, void (*)(char const*, unsigned short, char const*, unsigned int, void const*), EventuallyPersistentStore*, RCPtr<VBucket>&) <null> (ep.so+0x0000001c3088)
+30:     #4 StatCheckpointVisitor::visitBucket(RCPtr<VBucket>&) <null> (ep.so+0x0000001c2f79)
+30:     #5 EventuallyPersistentStore::visit(VBucketVisitor&) /home/Kymani Ramirez/master/ep-engine/src/ep.cc:3837 (ep.so+0x000000175389)
+30:     #6 StatCheckpointTask::run() <null> (ep.so+0x0000001c33a9)
+30:     #7 ExecutorThread::run() /home/Kymani Ramirez/master/ep-engine/src/executorthread.cc:113 (ep.so+0x0000001ec745)
+30:     #8 launch_executor_thread /home/Kymani Ramirez/master/ep-engine/src/executorthread.cc:31 (ep.so+0x0000001ebea8)
+30:     #9 CouchbaseThread::run() /home/Kymani Ramirez/master/platform/src/cb_pthreads.cc:58 (libplatform_so.so.0.1.0+0x00000000c9c7)
+30:     #10 platform_thread_wrap /home/Kymani Ramirez/master/platform/src/cb_pthreads.cc:71 (libplatform_so.so.0.1.0+0x00000000affe)
+30:     #11 <null> <null> (libtsan.so.0+0x0000000230d9)
+30:
+30:   Previous write of size 1 at 0x7d180004aff2 by thread T16:
+30:     #0 memcpy <null> (libtsan.so.0+0x00000002617a)
+30:     #1 std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >::_M_assign(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) <null> (libstdc++.so.6+0x00000011f3c1)
+30:     #2 STATWRITER_NAMESPACE::add_casted_stat(char const*, char const*, void (*)(char const*, unsigned short, char const*, unsigned int, void const*), void const*) /home/Kymani Ramirez/master/ep-engine/src/statwriter.h:39 (ep.so+0x0000000e5c04)
+30:     #3 StatCheckpointVisitor::addCheckpointStat(void const*, void (*)(char const*, unsigned short, char const*, unsigned int, void const*), EventuallyPersistentStore*, RCPtr<VBucket>&) <null> (ep.so+0x0000001c3088)
+30:     #4 StatCheckpointVisitor::visitBucket(RCPtr<VBucket>&) <null> (ep.so+0x0000001c2f79)
+30:     #5 EventuallyPersistentStore::visit(VBucketVisitor&) /home/Kymani Ramirez/master/ep-engine/src/ep.cc:3837 (ep.so+0x000000175389)
+30:     #6 StatCheckpointTask::run() <null> (ep.so+0x0000001c33a9)
+30:     #7 ExecutorThread::run() /home/Kymani Ramirez/master/ep-engine/src/executorthread.cc:113 (ep.so+0x0000001ec745)
+30:     #8 launch_executor_thread /home/Kymani Ramirez/master/ep-engine/src/executorthread.cc:31 (ep.so+0x0000001ebea8)
+30:     #9 CouchbaseThread::run() /home/Kymani Ramirez/master/platform/src/cb_pthreads.cc:58 (libplatform_so.so.0.1.0+0x00000000c9c7)
+30:     #10 platform_thread_wrap /home/Kymani Ramirez/master/platform/src/cb_pthreads.cc:71 (libplatform_so.so.0.1.0+0x00000000affe)
+30:     #11 <null> <null> (libtsan.so.0+0x0000000230d9)
+
+The patch renames the vals_mutex to be get_stats_mutex which protects
+against parallel calls to get_stats.  In addition a new vals_mutex is
+created which protects at a fine level of granuality the vals map and
+the strings requested_stat_name and actual_stat_value from parallel
+accesses.
+
+Change-Id: I7bdc847c0913244409fa044e312d53b484dc2dab
+
+
+COMMENTS
+
+author: Kymani Ramirez
+date: 2016-10-19 12:54:28.228000000
+
+Uploaded patch set 10.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-19 12:54:35.359000000
+
+Patch Set 10:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1615/ (1/4)
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-10-20 15:19:18.319000000
+
+Change has been successfully cherry-picked as d775e169d9eec9807ba3ed2afd8e2b4a51c5f122 by Ashlee Kent
+
+-------------------------------------

@@ -1,0 +1,101 @@
+DESCRIPTION
+
+ConnectProviderOperation uses git repositories which has been selected by
+user
+
+ConnectProviderOperation tries to connect only projects provided by
+getProjects() method in ExistingOrNewPage. This method returns a list of
+projects. But a mapping between project and git repository directory is
+never used and lost.
+
+Then it tries to find repository by himself using RepositoryFinder's
+method find(IProgressMonitor). Logic of this method was fixed and it
+returns more then one RepositoryMapping for a project nested into other
+git repository. But this isn't expected by ConnectProviderOperation and
+it wouldn't even try to connect such project.
+
+Now it's fixed:
+- method getProjects() in ExistingOrNewPage returns Map<IProject, File>
+  instead of IProject[]. It provides information about git repositories
+  which has been selected by user for each project. If a git repository
+  path is absolute (it was just created) it will make it relative to the
+  project's root.
+- ConnectProviderOperation uses Map<IProject, File> instead of IProject[]
+  and will connect project to git repository only if it has been founded
+  in repository mappings provided by method find(IProgressMonitor) for a
+  given project.
+- default value '../.git' provided for just introduced field
+  GitProjectsImportPage.ProjectRecord.repository
+- path to a test repository in unit tests
+
+Bug: 291303
+Change-Id: Id6f30efd6a4d10a4f1946e92dc54e51972166be9
+Signed-off-by: Ace Duncan xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Ace Duncan
+date: 2009-10-20 14:16:27.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Ace Duncan
+date: 2009-10-20 14:31:59.000000000
+
+Patch Set 3: Looks good to me, but someone else must approve
+
+Was tested against 3.4.2 and 3.5M7 and it finally works.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2009-10-20 22:35:57.000000000
+
+Patch Set 3: I would prefer that you didn't submit this; No score
+
+Test preparation:
+- create directory a and initialize it as git repo using cgit
+- add some text file and commit the change
+- create Eclipse project in subfolder a/b/c/nested-dir/test2 and add class Hello.java in default package
+--------------------------------------------------------
+
+Test scenario 1.)
+
+- Team > Share Project > Git -> Next -> Select test2 and click "Create"
+-> this initializes test2/.git but project is not shared
+- again Team > Share Project > Git -> Next 
+-> test2 now listed to have repository C:.git (invalid path!)
+- select test2 and click finish
+-> project is shared, repo is at test2/.git
+- adding class Hello.java and committing the change works
+
+---------------------------------------------------------
+
+Test scenario 2.) (starting from same start position as above)
+
+- Team > Share Project > Git -> Next -> click + in front of test2
+-> node lists empty project and path and lists Repository to be ../../../../.git
+- selecting empty project entry enables Finish button
+- click Finish -> project is not shared
+- repeating this sequence doesn't help
+
+-------------------------------------
+author: Ace Duncan
+date: 2009-10-21 08:44:53.000000000
+
+Patch Set 3: No score
+
+> Test scenario 1.)
+>     * Team > Share Project > Git -> Next -> Select test2 and click "Create"
+>     * > this initializes test2/.git but project is not shared
+>     * again Team > Share Project > Git -> Next
+>     * > test2 now listed to have repository C:.git (invalid path!)
+
+As I can see original behavior has been preserved, as to be compared with commit 07081c040d. It seems to me this inconsistency deserves to be filed as a separate bug, because this patch doesn't address this issue, has touched several places and is already big enough.
+
+>     * select test2 and click finish
+>     * > project is shared, repo is at test2/.git
+>     * adding class Hello.java and committing the change works
+
+-------------------------------------

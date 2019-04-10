@@ -1,0 +1,68 @@
+DESCRIPTION
+
+MB-19273: Fix data race on PassiveStream::buffer.{bytes,items}
+
+As reported by ThreadSanitizer (see below), there is a dirty read on
+{{buffer.items}} & {{buffer.bytes}} during stat writing, due to
+PassiveStream::addStats not acquiring the {{bufMutex}} lock before
+reading.
+
+This appears benign as the stat is only user sent to users, not used
+by ns_server etc for any calculation.
+
+WARNING: ThreadSanitizer: data race (pid=28418)
+  Read of size 8 at 0x7d5000018128 by main thread (mutexes: write M23810, write M969):
+    #0 void STATWRITER_NAMESPACE::add_casted_stat<unsigned long>(char const*, unsigned long const&, void (*)(char const*, unsigned short, char const*, unsigned int, void const*), void const*) ep-engine/src/statwriter.h:47 (ep.so+0x0000000afe89)
+    #1 PassiveStream::addStats(void (*)(char const*, unsigned short, char const*, unsigned int, void const*), void const*) ep-engine/src/dcp-stream.cc:1512 (ep.so+0x0000002a04ba)
+    #2 DcpConsumer::addStats(void (*)(char const*, unsigned short, char const*, unsigned int, void const*), void const*) ep-engine/src/dcp-consumer.cc:555 (ep.so+0x00000026e867)
+
+  Previous write of size 8 at 0x7d5000018128 by thread T18 (mutexes: write M23762):
+    #0 PassiveStream::processBufferedMessages(unsigned int&) ep-engine/src/dcp-stream.cc:1311 (ep.so+0x00000029e196)
+    #1 DcpConsumer::processBufferedItems() ep-engine/src/dcp-consumer.cc:599 (ep.so+0x0000002647e9)
+    #2 Processer::run() ep-engine/src/dcp-consumer.cc:48 (ep.so+0x0000002643ef)
+
+Change-Id: I443e85d59ffda3827b670e747794b3fcb69c4f7c
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2016-04-21 08:41:50.833000000
+
+Uploaded patch set 3: Patch Set 2 was rebased.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-21 08:42:06.699000000
+
+Patch Set 3:
+
+Branch restricted. PLEASE READ this URL: 
+
+http://server.jenkins.Piper Jefferson.com/job/restricted-branch-check/12647/artifact/restricted.html : FAILURE
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-21 08:58:00.479000000
+
+Patch Set 3:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/514/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-21 09:14:16.419000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/514/ : SUCCESS
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-04-23 01:11:29.733000000
+
+Change has been successfully cherry-picked as 78f946d67c577f1eb3d1a1824650f4167364c783
+
+-------------------------------------

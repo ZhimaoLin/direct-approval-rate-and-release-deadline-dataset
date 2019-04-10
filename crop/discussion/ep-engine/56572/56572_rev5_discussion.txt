@@ -1,0 +1,129 @@
+DESCRIPTION
+
+MB-14193: Support file statistics at shard level
+
+All file statistics will be at a shard level with ForestDB as backend.
+The file statistics exposed at vbucket level with be eventually
+deprecated.
+
+Change-Id: Iff2fd5a128e43d61e63da99df51d3df96b5a2597
+
+
+COMMENTS
+
+author: Hugo Blankenship
+date: 2015-11-03 03:37:47.835000000
+
+Patch Set 5:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/733/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-11-03 03:49:29.021000000
+
+Patch Set 5: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1491/ : FAILURE
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/733/ : FAILURE
+
+Make encountered an error building one or more targets. ( http://factory.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/733/ )
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-11-03 08:52:19.150000000
+
+Patch Set 5: Code-Review-1
+
+(6 comments)
+
+Line:1136, src/ep.cc -> Maybe change NOTE to TODO for ease of searching?
+
+Line:1139, src/ep.cc -> Pretty sure getBackend() returns a std::string, so just use normal equality.
+
+Line:658, src/forest-kvstore/forest-kvstore.cc -> You should probably include more information in here so we can actually debug any problems - what fileId / what filename, etc?
+
+Line:1005, src/forest-kvstore/forest-kvstore.cc -> Ditto - what shardId, etc?
+
+Line:1257, src/forest-kvstore/forest-kvstore.cc -> Ditto
+
+Line:162, src/kvshard.h -> Could you add some comments describing what these represent? How does fileSpaceUsed differ from fileSize?
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-11-03 09:02:48.059000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:1150, src/ep.cc -> Similar to the comments on the previous review - this doesn't look right - EVStore shouldn't know or care about the details of the storage system - this should be refactored to methods on the KVStore class hierarchy.
+
+-------------------------------------
+author: Bobby Buck
+date: 2015-11-05 04:16:08.638000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:1150, src/ep.cc -> If my understanding is correct, the vbucket and shard objects can't be accessed from within the KVStore. I believe this was intentional by design.
+
+-------------------------------------
+author: Bobby Buck
+date: 2015-11-05 04:50:58.637000000
+
+Patch Set 5:
+
+(6 comments)
+
+Line:1136, src/ep.cc -> Done
+
+Line:1139, src/ep.cc -> Is there any particular technical deficiency to using compare?
+
+Line:658, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:1005, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:1257, src/forest-kvstore/forest-kvstore.cc -> Done
+
+Line:162, src/kvshard.h -> Done
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-11-05 09:21:19.516000000
+
+Patch Set 5:
+
+(2 comments)
+
+Line:1139, src/ep.cc -> No, it'll work, but it's simpler to just use == :
+
+ if (config.getBackend() == "couchdb") {
+
+vs
+
+ if (config.getBackend().compare("couchdb") == 0) {
+
+"Everything should be made as simple as possible, but no simpler"
+
+In the compare case there (1) more for the reader to read, and (2) they have to know what the semantics of compare() are - what does zero mean exactly? With == they don't need any additional context - it's explicit that the two must be equal.
+
+Line:1150, src/ep.cc -> I think this is the problem - ulimtatley EPEngine shouldn't need to know anything about the underlying implementation.
+
+We should be able to tomorrow add a new derived class from KVStore (DaveStore), and as long as DaveStore implements all methods of KVStore, EPStore should be able to use it for storage with essentially zero code changes[1].
+
+What I'm seeing here (and in the other, related patch) is not that - EVStore is getting explicitly tied to the underlying storage layer, and that breaks the whole point of the KVStore abstract base class.
+
+Bear in mind that both of these storage systems (CouchStore & KVStore) are going to be around for a long time yet. Given this code is going in today, and won't actually be active until Watson.Next (IIRC), we're tNathalie Landrying about a bare minimum of 1 year where we have both of these codepaths live on the master branch - and that's assuming we drop Couchstore support in the first release that has forestDB - which feels very aggressive to me.
+
+Additionally, we support a major release for at least 18 months from release (see http://www.Piper Jefferson.com/support-policy). Therefore we're tNathalie Landrying about this code in master (which is what watson will use) needing to be supported until Q4 2017.
+
+In short I think it's important we get this kind of thing right, as in the long term it'll only cost us more if we don't.
+
+[1] Ok, you'll need a couple of lines on construction to choose which subclass to instantiate, but you get the idea.
+
+-------------------------------------

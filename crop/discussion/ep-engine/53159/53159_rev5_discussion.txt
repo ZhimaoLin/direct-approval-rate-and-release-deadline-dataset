@@ -1,0 +1,120 @@
+DESCRIPTION
+
+Moving Snappy (un)compress logic to seperate file
+
+Also consolidate the length calculations into
+snappy_compress and snappy_uncompress functions.
+
+Change-Id: I0b40bfca7ab10ea6eebb71282f205bda251fc853
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2015-07-15 00:35:03.619000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-07-15 00:35:10.000000000
+
+Patch Set 5:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/491/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-07-15 01:01:56.605000000
+
+Patch Set 5: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/491/ : SUCCESS
+
+-------------------------------------
+author: Asher Vang
+date: 2015-07-15 07:28:30.837000000
+
+Patch Set 5: Code-Review-1
+
+(3 comments)
+
+We need to add a check for malloc returning nullptr.. that may cause crashes.. the rest is just comments :)
+
+Line:29, src/compress.cc -> what if malloc returns nullptr? you could alternatively replace this with
+
+    char *temp = new char[inflated_length];
+
+(to get rid of the casts) and then wrap the call's with
+
+    try {
+        foo = doSnappyUncompress(...);
+    } catch (std::bad_alloc) {
+        ... failed to allocate memory
+    }
+
+Line:44, src/compress.cc -> same as above... (or we could just check for nullptr)
+
+Line:32, src/compress.h -> what about:
+
+    <error code> doSnappyUncompress(const char buffer, size_t len, std::vector<char> &compressed);
+
+In the method you do:
+
+     compressed.resize(...potential max ...);
+     snappy_compress( compressed.data() ...)
+     compressed.resize( get the actual compressed size);
+
+and now the clients may access it as compressed.data() and compressed.size()
+
+(of course if you're going to just stash the data away somewhere your struct may be better ;)
+
+oh, and if you're just going to use this from C++ you don't really need the typedef.. you can might as well just use:
+
+    struct snap_buf {
+
+    };
+
+and you can still reference it as snap_buf without having to type struct first ;-) (you can even add a constructor to it that initialize buf to nullptr and set the length to 0)
+
+
+One of the reasons why I think we should return error codes instead (you could of course use exceptions as well) is that I think the compress method should "fail" if the end result is bigger than the input data, and we want to handle that differently than memory allocation failures etc.
+
+
+(I'm also wondering if we should move these functions to the "platform" repo so that we can use the same code in memcached where we have "auto-inflate" of objects to send to connections that don't want compressed data..
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-07-15 19:58:47.887000000
+
+Patch Set 5:
+
+(2 comments)
+
+Line:29, src/compress.cc -> Done
+
+Line:32, src/compress.h -> Thank you for all the explanation Trond.
+
+Since I'm stashing the returned value else where, for now I'm going to go ahead and use snap_buf : ).
+
+It makes sense that if the compressed data is bigger than the original we should fail the operation, and since this patch is meant for just refactoring/consolidating today's code, I think I should add the error_code for these operations as a separate patch over this.
+
+Let me know if that sounds ok to you?
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-07-17 17:20:12.751000000
+
+The change could not be merged due to a path conflict.
+
+Please rebase the change locally and upload the rebased commit for review.
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-07-17 17:20:23.414000000
+
+Change has been successfully cherry-picked as 32fda12f88c0632a4ff9089c0804d7c94609293f
+
+-------------------------------------

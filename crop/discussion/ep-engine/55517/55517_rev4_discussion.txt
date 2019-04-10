@@ -1,0 +1,138 @@
+DESCRIPTION
+
+MB-16357: Prevent race of compaction's expiration and vb state change
+
+Test-case courtesy: JimWNathalie Landryer
+(Testcase that forces compaction expiry and DCP mutations to overlap)
+
+Change-Id: I1a1535c73475f2a9cc219ae3a5279e213220bde9
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2015-09-25 01:42:49.581000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-09-25 01:42:54.777000000
+
+Patch Set 4:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/114/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-09-25 01:57:25.624000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/114/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-09-25 08:03:22.351000000
+
+Patch Set 4: Code-Review-2
+
+(2 comments)
+
+Line:486, src/ep.cc -> I think this is still racy.
+
+From what I can see there's no lock held here and when vb->setState() is called; therefore the vbucket state could change to replica on the next line and we'd result in performing a delete.
+
+Line:1247, src/ep.cc -> Note I think this comment is misleading - as we are in a callback this will just do nothing for this instance, the callback will still continue getting called.
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2015-09-25 09:07:04.642000000
+
+Patch Set 4: Code-Review-2
+
+(1 comment)
+
+Line:486, src/ep.cc -> I've put some wider impacting comments on the MB... As dave says the entire code block needs to execute whilst active, so full mutual exclusion with setState needs to happen. Nearly everywhere we do getState() == <some-state> is at risk of some kind of racey bug
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2015-09-25 09:08:23.926000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:11307, tests/ep_testsuite.cc -> I don't understand why you've reverted the use of std::thread from the original testcase? We should be aiming to use modern C++ correctly throughout.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-09-25 15:05:54.830000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:11307, tests/ep_testsuite.cc -> The first patch uses your test code as you'd written it, but as you can see it failed compilation on a bunch of unsupported errors. I suppose we do not have the latest C++ support for 3.x.y, I can revert all this code to the original while merging into sherlock.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-09-25 15:18:43.947000000
+
+Patch Set 4:
+
+(2 comments)
+
+Line:486, src/ep.cc -> You're right, getState, and setState need to acquire a common lock. The transition of a vbucket is first from active to dead, before it either gets marked as a replica or is just removed.
+
+We attempt sending any remaining items in the checkpoint queues for the vbucket even after it is marked as dead, just to make sure we've left nothing behind. Note that once a vbucket is marked as dead, we can no longer add items to its dirty queue.
+
+Line:1247, src/ep.cc -> The callback gets called once per vbucket, if while iterating through the expired items list, we figure that we don't need to bother expiring any more items, we can stop iterating through the list and just return, so I'm not sure I understand why it could be misleading.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-09-25 15:23:05.925000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:486, src/ep.cc -> I just noticed the vbucket_state is atomic. I think we may be okay with this, I'll make sure though.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-09-25 15:26:01.053000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:486, src/ep.cc -> My mistake, I re-read your comment DaveR. I'll address this race window.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-09-25 15:34:10.609000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:1247, src/ep.cc -> Because in this context (the callback) returning has no effect on if any subsequent callbacks are triggered - i.e this function has no control / ability to "stop attempting to expire the rest of the items"...
+
+It looks to me that this comment has been c/p from deleteExpiredItems() - which it *is* valid in that function, just not here.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-09-25 15:38:52.544000000
+
+Patch Set 4:
+
+(2 comments)
+
+Line:536, src/ep.cc -> I just realized that this is incorrect, as the list here contains items to expire over all vbuckets, I"ll change this on the next patch.
+
+Line:1247, src/ep.cc -> To be honest, this comment this makes more sense to me here than in the function above : ), It is incorrect in the function above (I put a new comment there)
+
+-------------------------------------

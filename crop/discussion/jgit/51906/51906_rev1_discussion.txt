@@ -1,0 +1,193 @@
+DESCRIPTION
+
+WIP: First attempt at adding support for DIR_NO_GITLINKS
+
+Bug: 436200
+Change-Id: I54379058a244e27e13a7e4a572f5f2170da452db
+Signed-off-by: Renee Levy xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Renee Levy
+date: 2015-07-14 09:03:24.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-07-14 09:03:31.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/6912/
+
+-------------------------------------
+author: Renee Levy
+date: 2015-07-14 09:07:42.000000000
+
+Patch Set 1:
+
+This is a replacement for https://git.eclipse.org/r/#/c/51405/ .  All I've done so far is to rebase it on top of the latest master (reflecting the changes to LocalDiskRepositoryTestCase).  Next steps are to move the setting out of `Repository` and into `WorkTreeOptions`, and to write the additional test cases discussed in the other Gerritt comment thread.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-07-14 09:10:39.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/6912/ : SUCCESS
+
+-------------------------------------
+author: Renee Levy
+date: 2015-07-16 05:37:23.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:57, org.eclipse.jgit.test/tst/org/eclipse/jgit/lib/DirectoryFlagsTest.java -> Christian,
+
+I spent some time yesterday and today working on trying to change this API the way you suggested in your comments on my other branch, which was basically that we could get rid of the 'DirectoryFlags' entirely, and put the 'DirNoGitlinks' setting onto the 'WorkingTreeOptions' class.  Then the 'Repository' class wouldn't need to have any awareness of it (which, as you stated, matches up with native git in that they don't expose that setting through porcelain).
+
+I started by trying to rework this test to just figure out what the API would look like.  So, I'd get rid of the 'setDirectoryFlags' stuff in the method above, and then instead, on this 'add' command, I'd need to somehow pass in the setting value.  This is what I ended up with:
+
+    
+    Git git = new Git(db);
+    WorkingTreeOptions options = new WorkingTreeOptions();
+    FileTreeIterator iterator = new FileTreeIterator(db, options);
+    git.add().setWorkingTreeIterator(iterator).addFilepattern("sub/nested/a.txt").call();
+
+
+The problem is that there is no public constructor for WorkingTreeOptions, it's always constructed based on some Config object that I'm not really familiar with yet... but it doesn't look to me like it would necessarily be safe to mess around with it?
+
+The only ideas I've come up with so far are to call something like 'db.getConfig().get(WorkingTreeOptions.KEY)', and then call a setter on that, but that doesn't seem like a great API.  
+
+Or I could make the FileTreeIterator constructor take a boolean 'dirNoGitlinks' argument directly and then attach that to the 'WorkingTreeOptions' object from somewhere inside of FileTreeIterator, so the WorkingTreeOptions class would never be consumed as part of the API for the end user.  But that boolean argument doesn't seem very flexible in case you need to add other options to the iterator/workingTreeOptions in the future.
+
+Any thoughts?
+
+I will be travelling for the next week or so but I will definitely pick this back up as soon as I get back, so any advice you might have would be greatly appreciated!
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-08-11 09:09:46.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:190, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/FileTreeIterator.java -> Please change the evaluation order: file.exists() should be avoided if possible to minimize file I/O load.
+
+-------------------------------------
+author: Renee Levy
+date: 2015-08-11 09:18:11.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:190, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/FileTreeIterator.java -> Good suggestion, thanks.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-08-12 10:15:03.000000000
+
+Patch Set 1:
+
+Regarding the API: You could also add a setter for DIR_NO_GITLINKS in WorkingTreeOptions. Then you could contruct with standard constructor and call the setter afterwards.
+
+I also think that adding a config parameter would be great so that this option is automatically set based on the config. I always fear that people just use the API to set this option for a single instance of FileTreeIterator. But afterwards they do with JGit "git commit -a", "git status"; "git diff" and all these commands create their own FileTreeIterators without setting this flag. And then they get unexpected diffs, unexpected submodules in the index, ... . If one could set a config param then all FileTreeIterator would be consistent.
+
+So, my ideal solution would be two things: a setter (or an additional constructor) in WorkingTreeOptions and a new config param (e.g. core.dirNoGitlinks).
+
+-------------------------------------
+author: Renee Levy
+date: 2015-08-12 10:23:57.000000000
+
+Patch Set 1:
+
+> Regarding the API: You could also add a setter for DIR_NO_GITLINKS
+ > in WorkingTreeOptions. Then you could contruct with standard
+ > constructor and call the setter afterwards.
+ > 
+ > I also think that adding a config parameter would be great so that
+ > this option is automatically set based on the config. I always fear
+ > that people just use the API to set this option for a single
+ > instance of FileTreeIterator. But afterwards they do with JGit "git
+ > commit -a", "git status"; "git diff" and all these commands create
+ > their own FileTreeIterators without setting this flag. And then
+ > they get unexpected diffs, unexpected submodules in the index, ...
+ > . If one could set a config param then all FileTreeIterator would
+ > be consistent.
+ > 
+ > So, my ideal solution would be two things: a setter (or an
+ > additional constructor) in WorkingTreeOptions and a new config
+ > param (e.g. core.dirNoGitlinks).
+
+ > Regarding the API: You could also add a setter for DIR_NO_GITLINKS
+ > in WorkingTreeOptions. Then you could contruct with standard
+ > constructor and call the setter afterwards.
+ > 
+ > I also think that adding a config parameter would be great so that
+ > this option is automatically set based on the config. I always fear
+ > that people just use the API to set this option for a single
+ > instance of FileTreeIterator. But afterwards they do with JGit "git
+ > commit -a", "git status"; "git diff" and all these commands create
+ > their own FileTreeIterators without setting this flag. And then
+ > they get unexpected diffs, unexpected submodules in the index, ...
+ > . If one could set a config param then all FileTreeIterator would
+ > be consistent.
+ > 
+ > So, my ideal solution would be two things: a setter (or an
+ > additional constructor) in WorkingTreeOptions and a new config
+ > param (e.g. core.dirNoGitlinks).
+
+Christian, thank you so much for the feedback.  Your suggestion about supporting it via config makes perfect sense and I'll make sure to include that case in one of the tests that I write.
+
+The one thing that I am still confused about, though, is your statement that I "could construct with the standard constructor and then call the setter afterwards."  This is exactly the thing I'm stuck on - there is no public constructor for WorkingTreeOptions, and I'm not familiar enough with how the `Config` stuff works to know what I should do about that.
+
+So, the snipped of code that I included in my comment is not valid, because the line `WorkingTreeOptions options = new WorkingTreeOptions();` won't compile, because there is no public constructor.
+
+If I knew that it was safe to do so, I could just say that the API is that you have to access the `WorkingTreeOptions` by pulling it out of the config, e.g. `repo.getConfig().get(WorkingTreeOptions.KEY)`, and then calling the setter on it.
+
+Or I might even be OK with just saying that the ONLY way to set this behavior is via the configuration, but I'm not sure how to programatically specify configuration before constructing an instance of `Git`/`Repo`, and we're not using any on-disk config files in our case.
+
+Thoughts?
+
+Thanks again for the feedback!
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-08-13 07:40:48.000000000
+
+Patch Set 1:
+
+Your code snippet with "new WorkingTreeOptions()" wouldn't be ok because it concentrates only on your DIR_NO_GITLINKS and wants to make sure that this flag is set. But there are more independent options (filemode,autocrlf) which are also important and which you probably also want to be set. Therefore I think we have to get an instance of WorkingTreeOptions which is read from the config. Aftwerwards we can call setDirNoGitlinks() on it. 
+
+So, i personally think that calling "repo.getConfig().get(WorkingTreeOptions.KEY)" is really needed to get your instance of WorkingTreeOptions.
+
+-------------------------------------
+author: Renee Levy
+date: 2015-08-13 08:54:42.000000000
+
+Patch Set 1:
+
+> Your code snippet with "new WorkingTreeOptions()" wouldn't be ok
+ > because it concentrates only on your DIR_NO_GITLINKS and wants to
+ > make sure that this flag is set. But there are more independent
+ > options (filemode,autocrlf) which are also important and which you
+ > probably also want to be set. Therefore I think we have to get an
+ > instance of WorkingTreeOptions which is read from the config.
+ > Aftwerwards we can call setDirNoGitlinks() on it.
+ > 
+ > So, i personally think that calling "repo.getConfig().get(WorkingTreeOptions.KEY)"
+ > is really needed to get your instance of WorkingTreeOptions.
+
+Great.  I wasn't sure if that was a safe way to write the consuming code, but it sounds like it should be and is preferable for other reasons, so that sounds totally fine to me.
+
+Thank you!  I think that unblocks me for now and I'll start working on moving my branch in that direction.
+
+-------------------------------------

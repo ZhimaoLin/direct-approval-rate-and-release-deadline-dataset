@@ -1,0 +1,288 @@
+DESCRIPTION
+
+Rewrite reference handling to be abstract and accurate
+
+This commit actually does two major changes to the way references
+are handled within JGit.  Unfortunately they were easier to do as
+a single commit.
+
+Disambiguate symbolic references:
+---------------------------------
+
+  Reporting a symbolic reference such as HEAD as though it were
+  any other normal reference like refs/heads/master causes subtle
+  programming errors.  We have been bitten by this error on several
+  occasions, as have some downstream applications written by myself.
+
+  Instead of reporting HEAD as a reference whose name differs from
+  its "original name", report it as an actual SymbolicRef object
+  that the application can test the type and examine the target of.
+
+  With this change, Ref is now an abstract type with different
+  subclasses for the different types.
+
+  In the classical example of "HEAD" being a symbolic reference to
+  branch "refs/heads/master", the Repository.getAllRefs() method
+  will now return:
+
+      Map<String, Ref> all = repository.getAllRefs();
+      SymbolicRef HEAD = (SymbolicRef) all.get("HEAD");
+      ObjectIdRef master = (ObjectIdRef) all.get("refs/heads/master");
+
+      assertSame(master,               HEAD.getTarget());
+      assertSame(master.getObjectId(), HEAD.getObjectId());
+
+      assertEquals("HEAD",              HEAD.getName());
+      assertEquals("refs/heads/master", master.getName());
+
+  A nice side-effect of this change is the storage type of the
+  symbolic reference is no longer ambiguous with the storge type
+  of the underlying reference it targets.  In the above example,
+  if master was only available in the packed-refs file, then the
+  following is also true:
+
+      assertEquals(Ref.Storage.LOOSE,  HEAD.getStorage());
+      assertEquals(Ref.Storage.PACKED, master.getStorage());
+
+  (Prior to this change we returned the ambiguous storage of
+   LOOSE_PACKED for HEAD, which was confusing since it wasn't
+   actually true on disk).
+
+  Another nice side-effect of this change is all intermediate
+  symbolic references are preserved, and are therefore visible
+  to the application when they walk the target chain.  We can
+  now correctly inspect chains of symbolic references.
+
+  As a result of this change the Ref.getOrigName() method has been
+  removed from the API.  Applications should identify a symbolic
+  reference by testing for instanceof SymbolicRef and not by using
+  an arcane string comparsion between properties.
+
+Abstract the RefDatabase storage:
+---------------------------------
+
+  RefDatabase is now abstract, similar to ObjectDatabase, and a
+  new concrete implementation called RefDirectory is used for the
+  traditional on-disk storage layout.  In the future we plan to
+  support additional implementations, such as a pure in-memory
+  RefDatabase for unit testing purposes.
+
+  The implementation of the in-memory reference cache, reading, and
+  update routines has been completely rewritten.  Most of the code
+  was heavily borrowed or cribbed from the prior implementation,
+  so copyright notices have been left intact as much as possible.
+
+  The RefDirectory cache no longer confuses symoblic references
+  with normal references.  This permits the cache to resolve the
+  value of a symbolic reference as late as possible, ensuring it
+  is always current, without needing to maintain reverse pointers.
+
+  The cache is now a single map (rather than 3), reducing the
+  in-memory footprint and improving access times by reducing the
+  number of map operations required per-reference read or updated.
+
+  The RefLogWriter class has been fully folded into RefDirectory
+  and is therefore deleted.  Maintaining the reference's log is
+  the responsiblity of the database implementation, and not all
+  implementations will use java.io for access.  Future work still
+  remains to be done to abstract the ReflogReader class away from
+  local disk IO.
+
+Change-Id: I26b9287c45a4b2d2be35ba2849daa316f5eec85d
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-01-12 20:40:37.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-01-12 20:54:31.000000000
+
+Patch Set 3: Looks good to me, but someone else must approve; IP review completed
+
+
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-01-16 22:18:59.000000000
+
+Patch Set 3: I would prefer that you didn't submit this
+
+The rejecting factor here is those places that lack test coverage for non-trivcial code or where there is a condition in the code that was not covered.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-01-16 22:28:21.000000000
+
+Patch Set 3:
+
+testinmg error handling in RefUpdateDirectory is quite imoportant too
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-01-16 23:14:06.000000000
+
+Patch Set 3: I would prefer that you didn't submit this
+
+
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:105, org.eclipse.jgit/src/org/eclipse/jgit/lib/RefDirectoryUpdate.java -> No test coverage?
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:111, org.eclipse.jgit/src/org/eclipse/jgit/lib/RefDirectoryUpdate.java -> No test coverage?
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:119, org.eclipse.jgit/src/org/eclipse/jgit/lib/RefDirectoryUpdate.java -> No test coverage
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:121, org.eclipse.jgit/src/org/eclipse/jgit/lib/RefDirectoryUpdate.java -> No test coverage
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:597, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceivePack.java -> I'm not very fond of instanceof tests
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:90, org.eclipse.jgit/src/org/eclipse/jgit/lib/RefDatabase.java -> Make abstract or call from subclasses
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:90, org.eclipse.jgit/src/org/eclipse/jgit/lib/RefDatabase.java -> Thanks, create() and close() will be abstract in the next iteration.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:92, org.eclipse.jgit/src/org/eclipse/jgit/lib/RefRename.java -> no coverage
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:118, org.eclipse.jgit/src/org/eclipse/jgit/lib/RefRename.java -> No test coverage
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:128, org.eclipse.jgit/src/org/eclipse/jgit/lib/RefRename.java -> No test coverage
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:136, org.eclipse.jgit/src/org/eclipse/jgit/lib/RefRename.java -> No test coverage
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:143, org.eclipse.jgit/src/org/eclipse/jgit/lib/RefRename.java -> No test coverage (maye was not before either)
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:166, org.eclipse.jgit.test/tst/org/eclipse/jgit/transport/RefSpecTest.java -> Yea, there's a known bug where Gerrit starts a comment in the middle of a string containing /*.  Gerrit's syntax coloring doesn't have a full grasp on the language model because its seeing text one line at a time, not the full file content.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:166, org.eclipse.jgit.test/tst/org/eclipse/jgit/transport/RefSpecTest.java -> Gerrit thinks a comment starts here...
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:332, org.eclipse.jgit/src/org/eclipse/jgit/lib/RefUpdate.java -> Littöe  test coverage
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:173, org.eclipse.jgit.test/tst/org/eclipse/jgit/lib/RefTest.java -> Good point.  I'll add getTarget() and isSymbolic() to the Ref API, so we don't have to do instanceof and downcasts.  I'll respin the series on the same base and upload replacements shortly.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:173, org.eclipse.jgit.test/tst/org/eclipse/jgit/lib/RefTest.java -> Can't we make getTarget a part of the Ref API?
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:216, org.eclipse.jgit/src/org/eclipse/jgit/lib/RefDirectory.java -> This condition is not covered by any tests
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:236, org.eclipse.jgit/src/org/eclipse/jgit/lib/RefDirectory.java -> No tests anymore?
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:324, org.eclipse.jgit/src/org/eclipse/jgit/lib/RefDirectory.java -> No test coveage
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:376, org.eclipse.jgit/src/org/eclipse/jgit/lib/RefDirectory.java -> No test coverage
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:585, org.eclipse.jgit/src/org/eclipse/jgit/lib/RefDirectory.java -> no test coverage
+
+-------------------------------------

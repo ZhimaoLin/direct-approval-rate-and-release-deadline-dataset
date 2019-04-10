@@ -1,0 +1,44 @@
+DESCRIPTION
+
+MB-19691: Address data race on vb_state::high_seqno
+
+As identified by threadSanitizer (see below). Note that the read of
+the disk highseqno is essentially pointless (it's only used in debug
+logs), so just remove that to avoid the race.
+
+WARNING: ThreadSanitizer: data race (pid=94198)
+  Write of size 8 at 0x7d1000017fd8 by thread T14 (mutexes: write M15079):
+    #0 CouchKVStore::saveDocs(unsigned short, unsigned long, _doc**, _docinfo**, unsigned long, KVStatsCtx&, unsigned long, unsigned long) ep-engine/src/couch-kvstore/couch-kvstore.cc:1804 (ep.so+0x000000325c3a)
+    #1 CouchKVStore::commit2couchstore(Callback<KVStatsCtx>*, unsigned long, unsigned long) ep-engine/src/couch-kvstore/couch-kvstore.cc:1669 (ep.so+0x00000031f94f)
+    #2 CouchKVStore::commit(Callback<KVStatsCtx>*, unsigned long, unsigned long) ep-engine/src/couch-kvstore/couch-kvstore.cc:1080 (ep.so+0x00000031f247)
+    #3 EventuallyPersistentStore::flushVBucket(unsigned short) ep-engine/src/ep.cc:2790 (ep.so+0x0000000edbce)
+    #4 Flusher::flushVB() ep-engine/src/flusher.cc:281 (ep.so+0x0000001ced95)
+    #5 Flusher::step(GlobalTask*) ep-engine/src/flusher.cc:173 (ep.so+0x0000001cdce0)
+    #6 FlusherTask::run() ep-engine/src/tasks.cc:45 (ep.so+0x000000251ffe)
+   ...
+
+  Previous read of size 8 at 0x7d1000017fd8 by thread T15:
+    #0 CouchKVStore::getLastPersistedSeqno(unsigned short) ep-engine/src/couch-kvstore/couch-kvstore.cc:1091 (ep.so+0x00000031fe25)
+    #1 DCPBackfill::run() ep-engine/src/dcp-stream.cc:149 (ep.so+0x00000028e590)
+
+  Location is heap block of size 64 at 0x7d1000017fc0 allocated by thread T8:
+    #0 operator new(unsigned long) <null> (engine_testapp+0x00000045c6ed)
+    #1 CouchKVStore::snapshotVBucket(unsigned short, vbucket_state&, Callback<KVStatsCtx>*) ep-engine/src/couch-kvstore/couch-kvstore.cc:888 (ep.so+0x00000031b7f4)
+    #2 EventuallyPersistentStore::snapshotVBuckets(Priority const&, unsigned short) ep-engine/src/ep.cc:970 (ep.so+0x0000000da799)
+    #3 VBSnapshotTask::run() ep-engine/src/tasks.cc:49 (ep.so+0x0000002520be)
+
+Change-Id: Iae368af8c2f0eceb67ce50d5e9358af56a75b6b2
+Reviewed-on: http://review.Piper Jefferson.org/64211
+Well-Formed: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+Tested-by: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+Reviewed-by: Keira Washington xxx@xxx.xxx Jefferson.com>
+
+
+COMMENTS
+
+author: Tate Garrett
+date: 2016-05-25 12:51:09.192000000
+
+Change has been successfully cherry-picked as d91e1188addb8e52dd02df38c3b4212fb002156a by Ashlee Kent
+
+-------------------------------------

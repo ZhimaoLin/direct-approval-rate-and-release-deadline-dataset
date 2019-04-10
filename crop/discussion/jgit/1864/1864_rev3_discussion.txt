@@ -1,0 +1,162 @@
+DESCRIPTION
+
+[RFC] Start implementation of a Rebase command
+
+This is a first try to implement Rebase. At the moment, this does not
+try to implement --continue and --skip, so if the first conflict is found,
+the only option is to --abort the command.
+The --abort must still be re-implemented in order to succeed in case
+of checkout conflicts.
+
+Change-Id: I24d60c0214e71e5572955f8261e10a42e9e95298
+Signed-off-by: Willow Cantrell xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Willow Cantrell
+date: 2010-11-09 17:15:57.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Willow Cantrell
+date: 2010-11-09 17:17:23.000000000
+
+Patch Set 3:
+
+Using the interactive rebase file format instead of the rebase-apply format.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-11-10 02:18:13.000000000
+
+Patch Set 3: I would prefer that you didn't submit this
+
+(14 inline comments)
+
+I'm glad we moved to the rebase interactive format, its a better starting point.  More comments inline.
+
+Line:120, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> This is a bit too magic for our style.  It works because the statement is actually pulled into the constructor after super(repo) is called, and thus repo in the super class is already defined.  But its funny to read it like that.
+
+I would prefer to do this inside of the constructor, similar to now the RevWalk is allocated inside of the constructor.
+
+Line:179, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> You should add a TODO for yourself here, we later want to avoid doing the cherryPick() if the first parent of commitToPick is the current HEAD.  Instead we should fast-forward to commitToPick, so that the branch isn't modified.
+
+C Git does this to avoid unnecessary object rewriting, which is really useful when you are using Gerrit Code Review as your upstream review system and you accidentally `git rebase -i HEAD~toofarback`.  So long as none of those commits are modified, they keep the same SHA-1 and Gerrit doesn't know you "rebased".
+
+Line:204, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> We shouldn't assume encoding is platform encoding, but instead use UTF-8 explicitly like we did above.
+
+Also, this commit list doesn't change between steps, unless we modify it.  Ideally we would keep the list as an instance member and flush it to the "git-rebase-todo" file only when call() is complete and the rebase is *not* successful.  That way we aren't updating the file on each commit, but instead are updating only once when we are returning control to the caller.
+
+Line:215, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> You shouldn't open a writer on top of the same file you are reading.  The writer may have just truncated the file, making it impossible to read later sections of the same file.  This is one reason we use LockFile in a lot of the code, because it writes to a temporary file alongside of the original, and then does a rename during commit.
+
+Line:223, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> We try to avoid StringTokenizer.  I would just parse the line by hand.  And even then, we don't actually need to decode up into String data to parse this, its simple enough to load the entire todo-list into memory as a byte[] and use RawParseUtils to scan through the byte[] and process that into an in-memory representation:
+
+  static enum Operation {
+    PICK;  // later add SQUASH, EDIT, etc.
+  }
+
+  static class Step {
+    Operation operation;
+    ObjectId commit;
+    byte[] shortMessage;
+  }
+
+  List<Step> todo;
+
+  List<Step> loadSteps() {
+    byte[] buf = IO.readFully(new File(rebaseDir, "git-rebase-todo"));
+    int ptr = 0;
+    ArrayList<Step> r = new ArrayList<Step>();
+    while (ptr < buf.length) {
+      ...
+    }
+    return r;
+  }
+
+Line:245, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Unfortunately this will fail when HEAD is detached.  When HEAD is detached this method returns the 40 digit hex SHA-1.  C Git in the same case puts "detached HEAD" into the head-name file.
+
+It can also return null.  Which will NPE later on when you fill the head-name file.
+
+I think the only safe thing to do is:
+
+  Ref head = repo.getRef(Constants.HEAD);
+  if (head == null || head.getObjectId() == null)
+    throw new RefNotFoundException(...);
+
+  String headName;
+  if (head.isSymbolic())
+    headName = head.getTarget().getName();
+  else
+    headName = "detached HEAD";
+
+  ObjectId headId = head.getObjectId();
+
+Its perhaps longer, but it gives you direct access to the various states that are involved.
+
+Line:258, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Hmm.  Isn't this always true?  commit is reachable from headCommit, that's how we found it and included it into the result from LogCommand.  Thus its always merged into headCommit, and thus this expression is always true.  So aren't you always falling out with cherryPickList empty?
+
+Line:268, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Why is this commented out?
+
+Line:276, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> We don't use FileWriter because the encoding can be platform-specific.  Instead use FileOuputStream and enforce use of UTF-8 by wrapping it in an OutputStreamWriter, or by doing sb.toString().getBytes("UTF-8") below.
+
+Line:279, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> This reader needs to be released.  Or alternatively, use the reader from your current walk:
+
+  reader = walk.getObjectReader();
+
+Line:285, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Aren't we missing an LF here?  getShortMessage() IIRC doesn't include the LF.
+
+Line:389, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> If I recall listFiles() can return null if you can't read the directory, but you can stat it to determine it is a directory.  (E.g. x but no r bit.)
+
+Thus we prefer something like:
+
+  File[] children = fileOrFolder.listFiles();
+  if (children != null) {
+    for (File child : children)
+      deleteRecursive(child);
+  }
+
+And since listFiles() returns null when the fileOrFolder is not a directory, you an also skip the isDirectory() test.
+
+Line:410, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> FWIW the .getId() calls here are unnecessary.  You should be able to pass the RevTree returned by getTree() directly to the DirCacheCheckout constructor.
+
+Line:413, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> There isn't any value in doing walk.release() until the finally block of call(), when you also monitor.endTask().  The temporary resources used by the RevWalk's internal ObjectReader is generally pretty light-weight and might as well stick around for the duration of the call.
+
+-------------------------------------
+author: Willow Cantrell
+date: 2010-11-10 13:57:36.000000000
+
+Patch Set 3: (14 inline comments)
+
+
+
+Line:120, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Done
+
+Line:179, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Done
+
+Line:204, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Done
+
+Line:215, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Done
+
+Line:223, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Done
+
+Line:245, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Done
+
+Line:258, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Actually, the opposite is true: the test never returned true... In any case, the intention here was to skip those commits that bring changes that have already been included... Obviously, this is not the right thing to do here, so I removed it.
+
+Line:268, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Done
+
+Line:276, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Done
+
+Line:279, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Done
+
+Line:285, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Done
+
+Line:389, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Done
+
+Line:410, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Done
+
+Line:413, org.eclipse.jgit/src/org/eclipse/jgit/api/RebaseCommand.java -> Done
+
+-------------------------------------

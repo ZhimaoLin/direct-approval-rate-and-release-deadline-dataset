@@ -1,0 +1,134 @@
+DESCRIPTION
+
+Add client-side Subscribe classes
+
+Adds the Subscribe classes to wrap local subscribed repositories,
+maintain subscription state, and output SubscribeCommands to
+Transport.openSubscribe.
+
+Change-Id: Ibe6bed0d4ab8837f5ba114deb8a7fd0b23aa2197
+
+
+COMMENTS
+
+author: Karlee Dorsey
+date: 2012-07-02 21:38:29.000000000
+
+Uploaded patch set 9.
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-07-04 20:47:10.000000000
+
+Patch Set 9:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2086/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-07-04 20:57:53.000000000
+
+Patch Set 9: Verified
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2086/ : SUCCESS
+
+-------------------------------------
+author: Santos Moore
+date: 2012-07-09 23:39:01.000000000
+
+Patch Set 9: I would prefer that you didn't submit this
+
+(13 inline comments)
+
+
+
+Line:132, org.eclipse.jgit/src/org/eclipse/jgit/transport/Subscriber.java -> I might make this a Set so removeAll is faster. Use LinkedHashSet to preserve the original ordering. (OTOH, the number of subscribe specs may typically be too small enough to worry about.)
+
+Line:138, org.eclipse.jgit/src/org/eclipse/jgit/transport/Subscriber.java -> Ditto maybe a Set
+
+Line:145, org.eclipse.jgit/src/org/eclipse/jgit/transport/Subscriber.java -> I don't think you're done with toRemove at this point. sr.setUpRefs() below doesn't know how to remove these on its own, AFAICT.
+
+Line:202, org.eclipse.jgit/src/org/eclipse/jgit/transport/Subscriber.java -> Is this the same thing that you call a "pack number" elsewhere? Should we synchronize this terminology?
+
+Line:64, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribeConnection.java -> This param at least needs javadoc. The keys are repository names, I'm assuming?
+
+Line:85, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribeCommand.java -> Add toString() for debugging
+
+Line:77, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribedRepository.java -> This was slightly confusing to me. I think the second sentence could be reworded to emphasize how this ref tree differs from the usual remote namespace. For example:
+Unlike remote ref names, pubsub refs can refer to branches, tags, or other refs. Thus, the ref name under the remote is prefixed with "/heads/".
+
+Line:115, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribedRepository.java -> This feels a bit unsafe (see also my comment on translateRef below), since there is a space of valid pubsub refs, namely anything not under heads, that has no remote counterpart.
+
+Line:164, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribedRepository.java -> I would feel more comfortable with this if you did something like throw an IllegalArgumentException if !ref.startsWith(oldPrefix)
+
+Line:176, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribedRepository.java -> This is ok for now, but I'm not sure we want to tie this permanently to a FileRepository.
+
+Line:194, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribedRepository.java -> IMHO this should include a descriptive reflog update, since this is a local repository that a user might be poking around in. cf. the output of "git reflog refs/remotes/origin/master" in a repo of your choice.
+
+Line:247, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribedRepository.java -> Collections.singleton
+
+Line:272, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribedRepository.java -> No braces
+
+-------------------------------------
+author: Santos Moore
+date: 2012-07-09 23:45:38.000000000
+
+Patch Set 9: (3 inline comments)
+
+
+
+Line:64, org.eclipse.jgit.test/tst/org/eclipse/jgit/transport/SubscribeTest.java -> Nit: unnecessary blank line.
+
+Line:160, org.eclipse.jgit.test/tst/org/eclipse/jgit/transport/SubscribeTest.java -> Use assertNotNull for these.
+
+Although, actually, I'd probably rather you write this as an assertion over db.getRefs("refs/pubsub/origin/").keySet():
+
+Set<String> expected = new HashSet<String>();
+...
+assertEquals(expected, db.getRefs("refs/pubsub/origin/").keySet());
+
+Line:171, org.eclipse.jgit.test/tst/org/eclipse/jgit/transport/SubscribeTest.java -> Assertions over the keySet
+
+-------------------------------------
+author: Karlee Dorsey
+date: 2012-07-10 21:21:54.000000000
+
+Patch Set 9: (16 inline comments)
+
+
+
+Line:132, org.eclipse.jgit/src/org/eclipse/jgit/transport/Subscriber.java -> Done
+
+Line:138, org.eclipse.jgit/src/org/eclipse/jgit/transport/Subscriber.java -> Done
+
+Line:145, org.eclipse.jgit/src/org/eclipse/jgit/transport/Subscriber.java -> PubSub refs were never deleted, but I've added logic to SubscribedRepository.setUpRefs() to delete any refs that no longer match.
+
+Line:202, org.eclipse.jgit/src/org/eclipse/jgit/transport/Subscriber.java -> Yes, this is the last pack number received. I'll change it to getLastPackNumber().
+
+Line:64, org.eclipse.jgit.test/tst/org/eclipse/jgit/transport/SubscribeTest.java -> Done
+
+Line:160, org.eclipse.jgit.test/tst/org/eclipse/jgit/transport/SubscribeTest.java -> This test repository has 13 tags, so asserting all of them got copied seems messy using an expected key set. How does checking for the total number of copied refs and notNull for a few specific refs sound?
+
+Line:171, org.eclipse.jgit.test/tst/org/eclipse/jgit/transport/SubscribeTest.java -> Same as above, 13 refs in this set. Checking for total expected number.
+
+Line:64, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribeConnection.java -> Done, yes keys are repository names.
+
+Line:85, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribeCommand.java -> Done
+
+Line:77, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribedRepository.java -> Done
+
+Line:115, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribedRepository.java -> This only translates the pubsub/origin/heads/ refs, so it doesn't allow trying to go pubsub/origin/tags -> remotes/origin/fail. I've added more javadoc to explain this restriction.
+
+Line:164, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribedRepository.java -> Done
+
+Line:176, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribedRepository.java -> I added a second constructor that allows passing an arbitrary repository.
+
+Line:194, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribedRepository.java -> Done
+
+Line:247, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribedRepository.java -> Done
+
+Line:272, org.eclipse.jgit/src/org/eclipse/jgit/transport/SubscribedRepository.java -> Done
+
+-------------------------------------

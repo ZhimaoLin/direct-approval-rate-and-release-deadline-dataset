@@ -1,0 +1,115 @@
+DESCRIPTION
+
+Bug 433746: dispose SearchField shell properly
+
+bug: when used with testing bot SearchField through exceptions
+extensively
+
+bot disposes parent shell of text control and it causes 
+the issue because SearchField keeps another invisible shell
+which is not get disposed, so later it tried to accesses controls which
+are being disposed already. 
+
+added dispose listener to get rid of invisible shell
+when parent control gets disposed
+
+since now shell is get disposed before SearchField itself if disposed we
+need to store shell size in dialog settings prior of disposing shell
+
+re-run tests - no exceptions anymore
+also run eclipse workLeon Ochoach and its shuts down correct too
+
+Change-Id: Ibf8f4c8cc109b5afb5b5af9990a244be4e5fd0c5
+Signed-off-by: Ishaan Salas xxx@xxx.xxx
+
+COMMENTS
+
+author: Julian Foster
+date: 2015-03-17 03:03:38.000000000
+
+Uploaded patch set 7.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-03-17 03:03:44.000000000
+
+Patch Set 7:
+
+Build Started https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/5059/
+
+-------------------------------------
+author: Julian Foster
+date: 2015-03-17 03:08:12.000000000
+
+Patch Set 7:
+
+Ok basically I added a junit that demonstrates what bot does.
+It closes all shells except the active eclipse shell.
+
+The text widget of SearchField some-how get reparented to "PartEngineRendering Limbo" shell. So this is not an active shell
+and when it get closed text is disposed but it leaves shell widget not disposed which has back references to text control.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-03-17 03:44:13.000000000
+
+Patch Set 7: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/5059/ : SUCCESS
+
+-------------------------------------
+author: Brock Pruitt
+date: 2015-03-17 12:52:16.000000000
+
+Patch Set 7:
+
+(3 comments)
+
+Line:28, tests/org.eclipse.ui.tests/Eclipse UI Tests/org/eclipse/ui/tests/quickaccess/ShellClosingTest.java -> The test needs an explanation.
+
+Line:32, tests/org.eclipse.ui.tests/Eclipse UI Tests/org/eclipse/ui/tests/quickaccess/ShellClosingTest.java -> Any exceptions inside the run method would not propagate to the test runner unless the test runs on the UI thread.
+
+Line:216, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/quickaccess/SearchField.java -> Have you tested that the size of the shell is preserved between sessions? If not, saving the size in shellClosed could be a solution.
+
+-------------------------------------
+author: Julian Foster
+date: 2015-03-17 23:33:32.000000000
+
+Patch Set 7:
+
+(3 comments)
+
+Line:28, tests/org.eclipse.ui.tests/Eclipse UI Tests/org/eclipse/ui/tests/quickaccess/ShellClosingTest.java -> Ok I will add my comments from the bug and maybe bug number
+
+Line:32, tests/org.eclipse.ui.tests/Eclipse UI Tests/org/eclipse/ui/tests/quickaccess/ShellClosingTest.java -> It does currently run on ui thread, no? All tests do.
+It does throw an exception when I don't have my fix. But I can add extra catching
+
+Line:216, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/quickaccess/SearchField.java -> Yes it is saved. I can maybe add a test for it too.
+shellClosed is not actually called in normal workflows, at least on linux I cannot make shell without title close (i.e. call close method). Some other magic kicks in and makes shell invisible without actual "closing" workflow.
+
+-------------------------------------
+author: Brock Pruitt
+date: 2015-03-18 10:05:38.000000000
+
+Patch Set 7:
+
+(1 comment)
+
+Line:32, tests/org.eclipse.ui.tests/Eclipse UI Tests/org/eclipse/ui/tests/quickaccess/ShellClosingTest.java -> Running tests on the UI thread is an option. It is on by default, but may be turned off. It's ok to rely on test being run on the UI tread, but then syncExec is not needed.
+
+-------------------------------------
+author: Julian Foster
+date: 2015-03-18 12:27:24.000000000
+
+Patch Set 7:
+
+I looked at it more and I am not sure I am doing right thing.
+I think now my original fix just to do catch was the right thing to do
+1) I am not sure what is the deal with not disposing the shell? maybe I will ask on dev list because it just seems weid
+2) What relationship suppose to be between this text field and shell? Is this really suppose to be disposed when text is disposed of we rely on something else (like parent shell) to dispose it?
+3) Is this even possible to dispose SearchField or its control programmatically? I.e. if people want to remove quickAccess from toolbar would they just dispose it?
+4) There is 3 calls to doClose method that make shell invisible, 2 of them have dispose guards (for shell and text) and last one does not. My original fix was to add those guards basically but it was not good for some reason...
+
+-------------------------------------

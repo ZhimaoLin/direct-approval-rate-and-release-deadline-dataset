@@ -1,0 +1,140 @@
+DESCRIPTION
+
+Merge Recursive strategy
+
+Extend ResolveMerger to recursively merge multiple bases
+for two-tip merge. Octopus not included
+
+Change-Id: I6292bb7bda55c0242a448a94956f2d6a94fddbaa
+
+
+COMMENTS
+
+author: Caleb Zhang
+date: 2012-10-22 04:34:30.000000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-10-22 04:34:36.000000000
+
+Patch Set 5:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2413/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-10-22 04:40:33.000000000
+
+Patch Set 5: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2413/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2012-10-23 09:16:02.000000000
+
+Patch Set 5: I would prefer that you didn't submit this
+
+(8 inline comments)
+
+
+
+Line:151, org.eclipse.jgit/src/org/eclipse/jgit/merge/RecursiveMerger.java -> You don't need callDepth and clean. I would remove these variable and later simply call "return mergeRecursive(0, ..."
+
+Line:161, org.eclipse.jgit/src/org/eclipse/jgit/merge/RecursiveMerger.java -> you'll forget the unlock the dircache if mergeRecursive exists with an IOException. I would use a try/finally block to make sure that things you locked are getting unlocked in the end. Like in ResolveMerger.mergeImpl().
+
+Line:350, org.eclipse.jgit/src/org/eclipse/jgit/merge/RecursiveMerger.java -> You don't need clean. I would remove this variable and in the end simply call "return mergeTrees(..."
+
+Line:352, org.eclipse.jgit/src/org/eclipse/jgit/merge/RecursiveMerger.java -> you don't need mergedCommonAncestors. Just remove this variable and their usages.
+
+Line:383, org.eclipse.jgit/src/org/eclipse/jgit/merge/RecursiveMerger.java -> Finally we come reviews on real coding :-)
+
+George, I don't understand your handling of the parameters h1, h2. They are method parameters and they are never changed in the method. So why do you have to save them here to saved_b1, saved_b2 and restore them later???
+
+I would simply remove the variables saved_b1, saved_b2 and all their usages.
+
+We really need tests now so we can ensure such statements are correct.
+
+Line:385, org.eclipse.jgit/src/org/eclipse/jgit/merge/RecursiveMerger.java -> Regarding your handling of callDepth. Instead of this
+
+  f(int callDepth) {
+    ...
+    callDepth++
+    f(callDepth)
+    ....
+    callDepth--
+  }
+
+I would use
+
+  f(int callDepth) {
+    ...
+    f(callDepth+1)
+    ....
+  }
+
+callDepth will be properly decremented when you return from f().
+
+Line:394, org.eclipse.jgit/src/org/eclipse/jgit/merge/RecursiveMerger.java -> Do we really have to clear the index? Why can't we just use the existing one. Or use a temporary index? Imagine in the end your recursive merge succeeds and finally we have to update only 5 files in a repo of 200000 files. Because you have thrown away the index (which for example stores the lastmodification times of each of the 200000 files) we don't know anymore which of the 200000 files is dirty. We have to read them again to populate a new index.
+
+Line:398, org.eclipse.jgit/src/org/eclipse/jgit/merge/RecursiveMerger.java -> I am asking myself whether we need a logic regarding protecting our working tree. If you call mergeRecursive(callDepth=0, ...) then you want that this merge will also update the working tree files with the merge result. But when you call mergeRecursive(callDepth>0, ...) then you are in some intermediate merge which is only done to create a good temporary tree which can serve as a merge base. In the end we maybe don't want to persist this tree. And what we definitely not want is that we update the working tree while creating the temporary tree. So, whenever we call mergeRecursive with callDepth>0 we should make sure that we don't persist anything to filesystem/objectdatabase.
+
+-------------------------------------
+author: Caleb Zhang
+date: 2012-10-23 19:20:39.000000000
+
+Patch Set 5: (8 inline comments)
+
+
+
+Line:151, org.eclipse.jgit/src/org/eclipse/jgit/merge/RecursiveMerger.java -> Done
+
+Line:161, org.eclipse.jgit/src/org/eclipse/jgit/merge/RecursiveMerger.java -> Done
+
+Line:350, org.eclipse.jgit/src/org/eclipse/jgit/merge/RecursiveMerger.java -> Done
+
+Line:352, org.eclipse.jgit/src/org/eclipse/jgit/merge/RecursiveMerger.java -> Done
+
+Line:383, org.eclipse.jgit/src/org/eclipse/jgit/merge/RecursiveMerger.java -> for testing. git-core does this, but with pointers so it is needed there, not here.
+
+Can I re-use ResolveMerger tests?
+
+Line:385, org.eclipse.jgit/src/org/eclipse/jgit/merge/RecursiveMerger.java -> Done
+
+Line:394, org.eclipse.jgit/src/org/eclipse/jgit/merge/RecursiveMerger.java -> no actually. Now using the refactored mergeTrees in ResolveMerger automatically calls cleanUp like the big boys (tm)
+
+Line:398, org.eclipse.jgit/src/org/eclipse/jgit/merge/RecursiveMerger.java -> see previous comment.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2012-10-25 16:00:47.000000000
+
+Patch Set 5: (1 inline comment)
+
+
+
+Line:383, org.eclipse.jgit/src/org/eclipse/jgit/merge/RecursiveMerger.java -> I proposed change 8372 which makes ResolveMergerTest beeing capable to run the tests agains multiple strategies. I would rebase your proposal now on top 8372. Then you can add to ResolveMergerTest a line 
+
+ xxx@xxx.xxx public static MergeStrategy recursive MergeStrategy.RECURSIVE;
+
+and we run all those tests against both strategies. 
+
+Additionally we need tests which tests the specifiic features of RecursiveMerger. I would create new class RecursiveMergerTest where you only create test which test your specifics. To create the new tests I would simply copy&paste  code fragments from RecursiveMergerTest.
+
+Make sure to test the edges: Multiple merge bases, no merge-bases at all, conflicts occur when producing the merge base.
+
+-------------------------------------
+author: Caleb Zhang
+date: 2012-11-03 17:56:22.000000000
+
+Patch Set 5: (1 inline comment)
+
+
+
+Line:383, org.eclipse.jgit/src/org/eclipse/jgit/merge/RecursiveMerger.java -> Like the new "Theory" test mechanism. Will be awhile before I can find the edge examples that you mention which should have been part of existing tests which result in expected failure. The only difference with Recursive would be that a non-conflicting multiple base would now resolve.
+
+-------------------------------------

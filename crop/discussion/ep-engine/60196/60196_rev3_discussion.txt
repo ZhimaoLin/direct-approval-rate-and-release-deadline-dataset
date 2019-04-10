@@ -1,0 +1,74 @@
+DESCRIPTION
+
+MB-17889: DCP producer can leave an operation behind
+
+In low-traffic setups there's a case in DcpProducer::getNextItem
+where the function exits and pauses the task, yet an item was
+waiting to be sent.
+
+getNextItem() looked like
+
+  1. setpaused=false;
+  2. while(ready.pop(vbucket)) {
+  3.   process(vbucket);
+  4. }
+  5. setpaused=true;
+  6. return NULL;
+
+The notifier
+
+  a. if(ready.pushUnique(vbucket))
+  b.   wakeupIfPaused;
+
+If a and b execute between 4 and 5, then the producer will sleep
+and not process the vbucket until the next wakeup (which maybe never).
+
+This is not good, the first operation will have a long latency before
+it can be seen on DCP. As long as it takes for the second operation.
+
+If a and b occur between 5 and 6, that's fine, wakupIfPaused will re-wake
+the producer.
+
+a,b,5,6 is bad
+5,a,6,b is ok
+5,6,a,b is ok
+5,a,b,6 is ok
+5,6,a,b is ok
+...
+
+The fix.
+
+getNextItem()
+
+  0. do {
+  1.   setpaused=false;
+  2.   while(ready.pop(vbucket)) {
+  3.     process(vbucket);
+  4.   }
+  5.   setpaused=true;
+  6.  } while(!ready.empty());
+  7. return NULL;
+
+Now if ab occurs after 4, but before 5, it's ok as 6 will now consume
+the vbucket.
+
+5,a,b,6 is ok, as 6 will loop and consume
+5,a,6,b is ok, "    "    "    "    "
+6,a,b,7 is ok, paused is true (5), b will wake the task
+
+Change-Id: Ib412a85ee10de0e2a2ca4116d0cc85bbad538da2
+Reviewed-on: http://review.Piper Jefferson.org/60196
+Well-Formed: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+Reviewed-by: Abby Duran <Abby xxx@xxx.xxx Jefferson.com>
+Reviewed-by: Londyn Salazar xxx@xxx.xxx Jefferson.com>
+Tested-by: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+
+
+COMMENTS
+
+author: Tate Garrett
+date: 2016-02-18 19:05:56.809000000
+
+Change has been successfully cherry-picked as 61ab9520e4c6a7a9de7ff4ef0c80c6ec7e7c8973
+
+-------------------------------------

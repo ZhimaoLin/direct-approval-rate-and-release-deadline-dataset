@@ -1,0 +1,77 @@
+DESCRIPTION
+
+JVMCBC-239: fix query parser processing split signature
+
+Motivation:
+-----------
+During QE testing of N1QL queries, some failure scenario could not
+recover. It was later determined that an IllegalStateException in the
+parser was blowing up the QE test engine.
+
+Analysis:
+---------
+At first it was thought that the IllegalStateException was thrown after
+a normal run of the parser and could be avoided if, when transitioning
+to the next state, we allow more data to come in instead of throwing ISE
+(unless this is the last chunk).
+
+This was slightly offsetting though, since we have unit tests in place
+that should have detected this specific splitting (after "signature":).
+
+Deeper analysis revealed that 3 issues existed, one of which prevented
+the splitAtEveryPosition test to detect the others:
+ - ByteBufJsonHelper.findNextCharNotPrefixedBy is bugged and will return
+   a value of -1 sometimes due to an overflow / error in search length
+ - the initial parsing phase won't completely and cleanly reset in the
+   case where early detection of "errors" is not possible
+ - parsing of the clientContextId is not resilient to a split just at
+   the end of said id (eg. no closing quote or no more bytes to skip)
+
+Modifications:
+--------------
+Fixed ByteBufJsonHelper.findNextCharNotPrefixedBy to correctly continue
+searching for non escaped values, by using the correct computed length.
+
+Fixed early parsing of query responses to cleanly reset the readerIndex
+when not enough bytes to check for "errors" section.
+
+Fixed early parsing to accommodate for a split just after the
+clientContextId (either no closing quote or no more bytes to skip after
+the quote).
+
+Added tests reproducing the context of discovery for these three issues.
+
+Result:
+-------
+Tests now more accurately cover real world issues and query parsing is
+more resilient.
+
+Change-Id: Ib832e8f7c8957049be803ff1fa252126dfddf601
+
+
+COMMENTS
+
+author: Estrella Humphrey
+date: 2015-09-02 07:51:13.870000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Estrella Humphrey
+date: 2015-09-02 07:51:43.660000000
+
+Patch Set 2: Verified+1
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2015-09-02 07:52:27.221000000
+
+Patch Set 2: Code-Review+2
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-09-02 07:53:01.252000000
+
+Change has been successfully cherry-picked as 80449de5d2ac8bfec340b81254ab430eae43d074
+
+-------------------------------------

@@ -1,0 +1,175 @@
+DESCRIPTION
+
+Performance fixes in DateRevQueue
+
+When a lot of commits are added to DateRevQueue, the
+sort-on-insertion approach is very heavy on CPU cycles.
+
+One approach to fix this was made by Santos Moore:
+https://git.eclipse.org/r/#/c/5491/
+
+But using Java's PriorityQueue seems to have brought some
+extra overhead, and the desired performance could not be
+reached.
+
+This fix takes another approach to the insertion problem,
+without changing the expected behaviour or bringing extra
+memory overhead:
+
+If we detect over 1000 commits in the DateRevQueue, a
+"seek-index" is rebuilt every 1000th added commit.
+
+The index keeps track of every 100th commit in the
+DateRevQueue. During insertions, it will be used for a
+preliminary scanning (binary search) of the queue, with
+the intention of helping add() find a good starting point
+to start walking from. After finding this starting point,
+add() will step commit-by-commit until the correct
+insertion place in the queue is found (today, the queue
+is expected to be sorted at all times).
+
+When applied to repositories with many refs, this approach
+has proven to bring huge performance gains and scales quite
+well.
+
+For instance, in a repository with close to 80000 refs,
+we could cut down the time a typical Gerrit replication
+of 1 commit would take (just a push from JGit's point of
+view) from 32sec down to 3.5sec.
+
+Below you see some typical times to add a specific amount
+of commits (with random commit times) to the DateRevQueue
+and the difference the preliminary seek-index makes:
+
+Commits | Index | No Index
+   1024     2ms        4ms
+   2048     5ms        4ms
+   4096     8ms       15ms
+   8192     9ms       69ms
+  16384    11ms      451ms
+  32768    41ms     3092ms
+  65536   130ms    15642ms
+ 131072   464ms    71960ms
+
+Only one extra reference is needed for every 100 inserted
+commits (and only when we see more than 1000 commits in
+the queue), so the memory overhead should be negligible.
+
+Various index-stepping values were tested, and 100 seemed to
+scale very well and be effective from start.
+
+In the future, it should probably be dynamic and based on
+the number of refs in the queue, but this should serve well
+as a starting point.
+
+Note: While other fundamentally different data structures may
+be more suitable, the DateRevQueue is extremely central to
+many of the Git core operations. This approach was chosen,
+since the effect of the patch is easy to predict in conjuction
+with the current implementation. A totally new data structure
+will make it harder to predict behaviour in many common and
+uncommon cases (in terms of breaking ties, memory usage, cost
+when using few elements, object creation/disposing overhead,
+etc).
+
+Change-Id: Ie7b99f40eacf6324bfb4716d82073adeda64d10f
+
+
+COMMENTS
+
+author: Shyanne Larsen
+date: 2013-02-21 17:02:07.000000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-02-21 17:02:13.000000000
+
+Patch Set 6:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2976/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-02-21 17:02:18.000000000
+
+Patch Set 6: Fails
+
+Build Failed 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2976/ : FAILURE
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2013-02-21 20:58:21.000000000
+
+Patch Set 6: I would prefer that you didn't submit this
+
+(6 inline comments)
+
+
+
+Line:99, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DateRevQueue.java -> low < high? When they are equal there is no point in running a binary search iteration. There is exactly one element to examine from index and the reassignment of q when the loop breaks will pick that single element.
+
+Line:100, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DateRevQueue.java -> mid = (low + high) >>> 1
+
+Line:101, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DateRevQueue.java -> Pull this into a local:
+
+  int t = index[mid].commit.commitTime;
+
+Line:106, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DateRevQueue.java -> When you break here there was already a known commitTime tie at mid and the incoming c. See below about breaking a tie.
+
+Line:114, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DateRevQueue.java -> This is now wrong. We can only update head if q == head. If the index did its magic above we can't use this block of the if because we aren't looking at the head node anymore.
+
+I wonder if your testing has been skewed because of this. Huge segments of the list may have been truncated away when an entry was found in the index.
+
+Line:117, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DateRevQueue.java -> Ties are last-in-first-out because of this condition.
+
+So when the binary search above finds a point where mid has the same time we should look at the prior index position (or head if mid=0) to start q. If the prior position also has the same time, we need to keep going backwards through the index until we find a node that is not the same time.
+
+-------------------------------------
+author: Shyanne Larsen
+date: 2013-02-21 22:23:48.000000000
+
+Patch Set 6: (3 inline comments)
+
+Thanks for the quick review.
+
+Line:100, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DateRevQueue.java -> I thought about bit shifting when I wrote the code, but I figured the compiler would absolutely do it for me. So to avoid any premature optimizations (especially when it also can hinder readability) I left it out.
+
+Line:114, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DateRevQueue.java -> > I wonder if your testing has been skewed because of this. Huge segments of the list may have been truncated away when an entry was found in the index.
+
+I'm not sure if you mean the tests in the commit message. Those numbers are from previous versions of this patch. In those patches this could not happen. E.g. "when > q.commit.commitTime" could only be true if q == head.
+
+I'll fix your comments and update with new numbers.
+
+Line:117, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DateRevQueue.java -> Thanks!
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2013-02-21 22:26:03.000000000
+
+Patch Set 6: (1 inline comment)
+
+
+
+Line:100, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DateRevQueue.java -> Actually, >>1 is the same as /2. >>>1 is not. The extra > means it does the right shift without sign extension. If the addition overflows and wraps >>> switches it back to a positive value rather than a negative value, so the later array index doesn't throw an exception.
+
+-------------------------------------
+author: Shyanne Larsen
+date: 2013-02-22 12:41:21.000000000
+
+Patch Set 6: (4 inline comments)
+
+Updated commit message with new test data.
+
+Line:99, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DateRevQueue.java -> If we do not allow the last round to readjust low, we may end up in a situation where both low & high is one step past the real entry point. I need to keep this one.
+
+Line:100, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DateRevQueue.java -> Done
+
+Line:101, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DateRevQueue.java -> Done
+
+Line:106, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/DateRevQueue.java -> Done
+
+-------------------------------------

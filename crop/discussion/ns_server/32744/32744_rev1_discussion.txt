@@ -1,0 +1,120 @@
+DESCRIPTION
+
+MB-9951: make xdcr working with new datatype field in metadata
+
+Today the rev field in #doc{} structure is expected to return
+a 16 bytes binary after SeqNo, e.g.
+
+{SeqNo, <<CASPart:64, Exp:32, Flg:32>>}
+
+after the new datatype field change, we expect two more bytes
+at the end, totally 18 bytes of metadata after SeqNo.
+
+{SeqNo, <<CASPart:64, Exp:32, Flg:32, _MetaVer:8, _DataType:8>>}
+
+Change-Id: Ie9c966e939b26062fd17402cb38050cfef2e467c
+
+
+COMMENTS
+
+author: Nathalie Landry
+date: 2014-01-22 23:03:31.466000000
+
+Patch Set 1:
+
+please note that it appears to indicate that get-meta might return bigger Ext field. But if so, then 2.2 and 2.5's xmem is  going to fail trying to decode that ext field.
+
+-------------------------------------
+author: Macie Morton
+date: 2014-01-22 23:37:16.036000000
+
+Patch Set 1:
+
+AFAIK, in 3.0, getMeta() protocol is unchanged, it still returns 24 bytes from remote cluster that can be matched with current code. 
+
+The new 26 bytes format is used to parse the metadata from UPR (or CouchDB) stream at source side only. 
+
+
+I would imagine there would be some networking code change to allow setWithMeta to encode the new 1 byte datatype byte. That is a different story.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2014-01-22 23:54:51.998000000
+
+Patch Set 1:
+
+Then how that applies to MB-9951 when no code in ns_server is consuming UPR today ?
+
+-------------------------------------
+author: Macie Morton
+date: 2014-01-23 00:02:03.829000000
+
+Patch Set 1:
+
+Due to datatype change in ep_engine, all XDCR failed because the metadata we read from CouchDB has changed from 24 to 26 bytes (rev field in #doc{}). Old code cannot parse it. 
+
+Merging datatype in ep-engine is a bit pre-mature IMHO. We are now cleaning the house.
+
+This commit is just to make XDCR working on docs read from CouchDB. Eventually XDCR will consume UPR stream, which will return 26 bytes too, so this commit should still work then.
+
+-------------------------------------
+author: Macie Morton
+date: 2014-01-23 00:04:23.005000000
+
+Patch Set 1:
+
+By 24 or 26, I include SeqNo. If not, that is 16 and 18 bytes respectively
+
+-------------------------------------
+author: Nathalie Landry
+date: 2014-01-23 00:12:26.882000000
+
+Patch Set 1:
+
+Interesting. I question the following:
+
+* placing data type in rev. rev is part of docinfo. And everything in rev is supposed to be either useful for conflict resolution or useful without having value. I fail to see how datatype is useful for that. And that has important performance implications most likely. Weird...
+
+* this commit refers to MB-9951 which is specifically about breakage. In general commits do not have to be 100% corresponding to tickets they refer to, and this commit is related to that issue. But clearly not fixing it. I.e. because this function is not used anywhere in "unpacking" of rev fields
+
+-------------------------------------
+author: Macie Morton
+date: 2014-01-23 00:36:28.766000000
+
+Patch Set 1:
+
+1. It is because ep_engine put these two bytes in metadata buffer in Couchstore and persist it, and as a result CouchDB read and put it into the rev field, that is why we see two bytes which is unrelated to conflict resolution. It is a design question, you may need to discuss with ep_engine folks.
+
+2. Integrate with UPR and consume new metadata format will be much more than this commit. For now XDCR should work with this commit.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2014-01-23 00:47:10.050000000
+
+Patch Set 1:
+
+>> 2. Integrate with UPR and consume new metadata format will be much more than this commit. For now XDCR should work with this commit.
+
+I'm seeing people making claims that xdcr works even without this commit. That just couchdb fix is sufficient.
+
+-------------------------------------
+author: Macie Morton
+date: 2014-01-23 00:51:57.288000000
+
+Patch Set 1:
+
+If you mean Volker commit here
+
+http://review.couchbase.org/#/c/32743/
+
+
+Yes, it will make XDCR "work" but it is just temp fix. You can see it completely discarded the two new bytes by trimming the rev, and return 16 as before.  This commit will not work if 
+
+1) XDCR consumes UPR
+2) it is incorrect to discard the datatype byte, we need to replicate this byte as part of setWithMeta to remote cluster, otherwise remote cluster does not know if it is compressed or not.
+
+Changing setWithMeta to include datatype byte will be a different commit. 
+
+Hopefully it makes sense to you.
+
+-------------------------------------

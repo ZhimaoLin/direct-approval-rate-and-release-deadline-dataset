@@ -1,0 +1,165 @@
+DESCRIPTION
+
+WIP: First attempt at adding support for DIR_NO_GITLINKS
+
+Bug: 436200
+Change-Id: I54379058a244e27e13a7e4a572f5f2170da452db
+Signed-off-by: Renee Levy xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Renee Levy
+date: 2015-08-13 14:11:07.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-08-13 14:11:13.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7008/
+
+-------------------------------------
+author: Renee Levy
+date: 2015-08-13 14:15:10.000000000
+
+Patch Set 2:
+
+Did an initial refactor to try to start seeing what the API would look like if it is implemented by pulling "WorkingTreeOptions" out of the config and then calling "setDirNoGitLinks" on it.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-08-13 14:20:24.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7008/ : SUCCESS
+
+-------------------------------------
+author: Renee Levy
+date: 2015-08-13 14:24:40.000000000
+
+Patch Set 2:
+
+(3 comments)
+
+Line:172, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/FileTreeIterator.java -> I need access to the WorkingTreeOptions here in order to check the flag, and I didn't see any way to get access to it other than to pass it into the constructor.
+
+It's not entirely clear to me whether or not this inner FileEntry class is considered "public API"; if so, this would probably be considered a breaking API change.  In that case, any suggestions on how to get access to the WorkingTreeOptions from here without breaking API?  Maybe I could add a second constructor for FileEntry that accepts this argument, but then I'm not sure what would be the correct behavior here if you used the original constructor signature.
+
+Line:173, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/FileTreeIterator.java -> Also, I realize that I haven't added in the rest of the logic to correlate with the index yet, as per our earlier discussions.  I'm still planning to do that, just want to make sure I get the API stuff right first.
+
+Line:59, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/WorkingTreeOptionsTest.java -> So is this is what the API is looking like.  This part seems fine as far as I'm concerned, as a caller.  However...
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-08-16 15:04:15.000000000
+
+Patch Set 2: Code-Review+2
+
+(6 comments)
+
+Line:235, org.eclipse.jgit/src/org/eclipse/jgit/lib/ConfigConstants.java -> Maybe we could have a different name. dirNoGitLinks should be reserved for the native git dirNoGitLinks semantic. The semantic in this proposal which only looks at WorkingTree should be named differently (e.g. dirForceNoGitlinks)
+
+Line:65, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/FileTreeIterator.java -> In the end we want native gits DIR_NO_GITLINK semantic. That would require (as discussed in the predecessor change https://git.eclipse.org/r/#/c/51405/) some logic to be in TreeWalk because we need access to WorkingTreeIterator AND DirCacheIterator.
+
+In this change you are suggesting a more simple way which only looks at FileTreeIterator. I fear if we change the API like we discussed up to know we would have to change it again when full fledged DIR_NO_GITLINK comes. And we would have to move responsibility for mode detection from FileTreeIterator to TreeWalk. Looks not so good.
+
+I wanted to suggest a callback mechanism and played with it until I saw that it looks very much like your FileModeStrategy in https://git.eclipse.org/r/#/c/51483. If we have that change in first then you could implement your first strategy in this change quite easily. And later on we could implement a different strategy with access to dircache and people could choose based on their use case what fits best.
+
+Therefore I suggest we bring  https://git.eclipse.org/r/#/c/51483 in first. Sorry for this back and forth.
+
+Line:181, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/FileTreeIterator.java -> please remove these commented lines
+
+Line:230, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/FileTreeIterator.java -> please remove this commented lines. We have git as version control system where all your older versions are available. No need to keep inactive code inside comments
+
+Line:99, org.eclipse.jgit.test/tst/org/eclipse/jgit/symlinks/SymlinksTest.java -> We shouldn't be forced to change this class. Better have a FileEntry constructor with old signature which falls back to the Default FileModeStrategy.
+
+Line:16, org.eclipse.jgit/src/org/eclipse/jgit/lib/DirectoryFlags.java -> please remove this file
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-08-16 15:04:27.000000000
+
+Patch Set 2: -Code-Review
+
+-------------------------------------
+author: Renee Levy
+date: 2015-08-17 05:37:20.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:65, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/FileTreeIterator.java -> Thanks again for the reply.
+
+I'm sorry if I didn't make it clear, but I completely agree with you about wanting the full "DIR_NO_GITLINK" semantic, and if that is the goal then I am hoping that we will be able to just close https://git.eclipse.org/r/#/c/51483 without merging it.
+
+I am not suggesting "a more simple way which only looks at FileTreeIterator"; I know that this branch does not implement the full semantics of DIR_NO_GITLINK *yet*, and that it has a lot of comments and mess in it that need cleanup.  My intent is to fix all of the messy code, javadocs, comments, etc. as well as adding full DIR_NO_GITLINK support in the way we discussed before, along with all of the tests that we discussed before.  Only at that point in time would I suggest merging the branch.
+
+However, I keep getting stuck on API issues that prevent me from completing the work and I don't want to invest too much time in the remaining cleanup and DIR_NO_GITLINKS work until I've verified with you that the proposed API will be satisfactory.
+
+What I am stuck on now is that I do not see any way to implement the full DIR_NO_GITLINKS functionality without changing the constructor signature for the FileEntry class, because it does not currently have any way to access the Config object for the repo.  I don't think I can build anymore of the real DIR_NO_GITLINKS functionality until I understand what would be an acceptable API change that would allow me to get access to the Config object from inside that class.
+
+I'm sorry for the confusion; I am not sure what is the best way to organize a conversation / question with you.  I imagine that it is hard to jump around through all of the Gerritt comments so I will copy and paste this comment into the bug report as well.  I would also be happy to chat on IRC any time if that would be easier.
+
+Thanks again.
+
+-------------------------------------
+author: Renee Levy
+date: 2015-08-17 05:45:59.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:65, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/FileTreeIterator.java -> Oh, gosh, I'm sorry, I missed the last paragraph of what you said above.
+
+So you're saying that you think it will be easier to build the full DIR_NO_GITLINKS support in this branch after merging a patch like the FileModeStrategy one.  I understand now.
+
+I will go back to that patch and work on it further.  I will still probably be interested in working on this one afterwards if you are interested in having it.  And again, please ignore the comments and javadoc mess, I would definitely fix them up before submitting a final patch for merge.
+
+Will try to get that other branch fixed up today or tomorrow.
+
+-------------------------------------
+author: Renee Levy
+date: 2015-08-27 10:24:00.000000000
+
+Patch Set 2:
+
+> Patch Set 2: -Code-Review
+
+Christian,
+
+Any thoughts on next steps for this?
+
+-------------------------------------
+author: Renee Levy
+date: 2015-08-27 10:24:53.000000000
+
+Patch Set 2:
+
+> > Patch Set 2: -Code-Review
+ > 
+ > Christian,
+ > 
+ > Any thoughts on next steps for this?
+
+Agh.  I meant to ask that question on the other change, not this one... https://git.eclipse.org/r/#/c/51483
+
+-------------------------------------
+author: Elise Key
+date: 2017-08-29 13:16:01.000000000
+
+Abandoned
+
+Abandoning after 1 year or more of inactivity.
+
+If this change is still needed, please restore it.
+
+-------------------------------------

@@ -1,0 +1,69 @@
+DESCRIPTION
+
+MB-19892: Ensure backfills are terminated when closing DcpProducer's streams
+
+There is a memory and FD leak if a DCP Producer is closed when
+backfills are still present - for example if the connection is
+disconnected while backfill is still running.
+
+The issue is that there is a circular reference between DcpProducer
+and its ActiveStreams (in the `streams` map). This means that while
+all /external/ references to DcpProducer are correctly reduced to
+zero, the refcount is held at 1 by any ActiveStream objects, and
+vice-versa.
+
+The effect is that the DcpProducer object is never deleted, and in
+turn we do not close open couchstore files the DCPBackfill tasks have
+open.
+
+Arguably the issue is that the circular reference exists; however the
+simplest way to fix this issue is to:
+
+1. Ensure that when all streams are closed
+   (DcpProducer::closeAllStreams) we destroy the DcpProducer's
+   backfill manager.
+
+2. Rely on ~BackfillManager to cancel and delete all backfills, and
+   also cancel the backfillManager task if still running. Note that
+   previously this destructor was never called as we never destroyed
+   the owning DcpProducer.
+
+One slight sublety is the fact that the BackfillManagerTask (which
+runs on a seperate background AUXIO thread) also needs to have a
+pointer to the backfill manager object, and we need to ensure that
+this task doesn't keep the backfill manager alive after the
+DcpProducer has reset() its pointer. We solve this by making
+BackfillManagerTask have a /weak/ pointer to the backfillmanager. For
+the duration of the run() method the weak_ptr is promoted to a
+shared_ptr, giving the task temporary shared ownership, but as soon as
+that method completes the (shared) ownership is dropped and the
+backfillManager can be deleted.
+
+The patch also adds a Unit test which opens a DCP producer, opens a
+stream and when deletes the bucket (with the stream still
+connected). This leaks memory (and a couchstore FD) without the fixes
+present here.
+
+Change-Id: I23750f1d1c53a56f6773970bd35fc64224165516
+Reviewed-on: http://review.Piper Jefferson.org/65021
+Well-Formed: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+Reviewed-by: Jim WNathalie Landryer <Shayna xxx@xxx.xxx Jefferson.com>
+Tested-by: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+
+
+COMMENTS
+
+author: Tate Garrett
+date: 2016-06-28 15:42:48.026000000
+
+Change could not be merged due to a path conflict.
+
+Please rebase the change locally and upload the rebased commit for review.
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-06-28 15:53:03.113000000
+
+Change has been successfully cherry-picked as e664a2cff600605100405a2a27c790a214e06a5c by Ashlee Kent
+
+-------------------------------------

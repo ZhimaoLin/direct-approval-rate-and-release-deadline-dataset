@@ -1,0 +1,168 @@
+DESCRIPTION
+
+Flush DfsInserter before creating another object
+
+DfsInserter expects every INSERT pack only contains one object, so
+before inserting another object, we need flush and finish the pack for
+previous object.
+
+Change-Id: I0f5e4fdade3afa3b25a2f83dfbb18f50562dc475
+Signed-off-by: Paloma Kennedy xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Paloma Kennedy
+date: 2017-06-17 00:44:59.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-06-17 00:45:04.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/10365/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-06-17 00:57:43.000000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/10365/ : FAILURE
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2017-06-17 01:40:11.000000000
+
+Patch Set 1: Code-Review-1
+
+(1 comment)
+
+Line:11, /COMMIT_MSG -> This is incorrect. An INSERT pack may contain multiple objects, and its essential that works for performance of Gerrit when running on a DFS system.
+
+-------------------------------------
+author: Santos Moore
+date: 2017-06-19 19:16:43.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:11, /COMMIT_MSG -> I came here to say the same thing :)
+
+-------------------------------------
+author: Paloma Kennedy
+date: 2017-06-19 19:26:38.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:11, /COMMIT_MSG -> The reason for this change is that PackParser cannot parse INSERT pack since
+it contains an incorrect object counts. It expects pack footer after indexing 1 object as it believed in the pack header.
+
+byte[] buf = packOut.hdrBuf;
+System.arraycopy(Constants.PACK_SIGNATURE, 0, buf, 0, 4);
+NB.encodeInt32(buf, 4, 2); // Always use pack version 2.
+NB.encodeInt32(buf, 8, 1); // Always assume 1 object.
+packOut.write(buf, 0, 12);
+
+-------------------------------------
+author: Santos Moore
+date: 2017-06-19 19:46:29.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:11, /COMMIT_MSG -> hdrBuf is a mutable byte array. DfsInserter.PackStream#beginObject is supposed to update it with the current object count before each insert.
+
+-------------------------------------
+author: Santos Moore
+date: 2017-06-19 19:48:59.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:11, /COMMIT_MSG -> Oh, I misread, I think it's reusing hdrBuf to write out the object header.
+
+I see why beginPack needs to write some object count even though it doesn't know the final number of objects. I'm just surprised this hasn't caused lots of exploding prior to now.
+
+But we really really need to support multi-object INSERT packs, I don't think that's negotiable.
+
+-------------------------------------
+author: Paloma Kennedy
+date: 2017-06-19 20:00:07.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:11, /COMMIT_MSG -> Understood. I am wondering if it is possible to get the expected number of objects from the caller and pass it in.
+
+I think PackParser didn't parse INSERT packs before. My new fsck code was trying to parse every packs, it failed for INSERT packs.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2017-06-20 05:15:44.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:11, /COMMIT_MSG -> INSERT and RECEIVE packs in DFS slightly violate the pack file format by setting an invalid object count in the header of the pack. You need to look at the DfsPackDescription to get a valid object count out-of-band.
+
+The issue is that during INSERT we have to store the header before the total number of objects is known. So we always produce a header with a count of 1.
+
+The issue during RECEIVE is we have to store the header before we know how many base objects we have to append to make a thin-pack non-thin by appending copies of delta bases to support deltas that appear in the pack. So we always store the count as the original count from the thin-pack sent by a pushing client.
+
+DFS actually ignores the count at read time, so this isn't an error to anything except a PackParser or an fsck tool. INSERT and RECEIVE packs are only (thus far) ever accessed by random access supported by the idx file, and the count in the pack header is not relevant.
+
+Normal git gets around these cases by going back and overwriting the header. But DFS has to assume it can't overwrite a prior part of the pack file, so we don't have that option. So DFS normally ignores the object count in the pack header and relies on an object count from the DfsPackDescription.
+
+Google's implementation of DfsPackDescription stores the accurate count in a side area, along with the list of packs that are part of the repository.
+
+-------------------------------------
+author: Santos Moore
+date: 2017-06-20 11:43:45.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:11, /COMMIT_MSG -> > Google's implementation of DfsPackDescription stores the accurate
+ > count in a side area, along with the list of packs that are part of
+ > the repository.
+
+It seems like any DFS implementation would have to take a similar approach. Would it be worth making the pack metadata part of the core DFS interface rather than a Google-specific extension?
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2017-06-20 14:56:27.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:11, /COMMIT_MSG -> DfsPackDescription does have a field to store the objectCount:
+https://eclipse.googlesource.com/jgit/jgit/+/master/org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsPackDescription.java#213
+
+I think its underdocumented that the implementation has to persist this in its own metadata somewhere.
+
+I'm somewhat loath to define a standard format to store the list of packs and their metadata. Using that format would require changing our internal format for example. It might make some of the properties of our storage less useful.
+
+However, we could define a "default" format in JGit, one that implementors of DFS can use if they don't have or need their own.
+
+-------------------------------------
+author: Paloma Kennedy
+date: 2017-06-21 04:31:50.000000000
+
+Abandoned
+
+-------------------------------------

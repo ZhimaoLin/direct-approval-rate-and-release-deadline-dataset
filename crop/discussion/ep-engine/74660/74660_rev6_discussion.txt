@@ -1,0 +1,148 @@
+DESCRIPTION
+
+[Ephemeral Bucket]: Allow updates on sequential storage (linkedlist).
+
+When an item in hashtable (in an Ephemeral vbucket) is updated, the
+updated item must be placed in the right position (at the end) in the
+sequential storage data structure, linkedlist.
+
+If there are no range reads (backfills) during an update we just update
+the hash table element and move the item to the end of the list. This is
+somewhat similar (hashtable part) to what happens in current ep vbuckets.
+
+However, in case of range reads (backfills), the behavior is different
+w.r.t existing ep vbuckets. The range reads are basically point-in-time
+snapshots and hence require the older (non updated) item to be there
+in the range of the read. But the hashtable wants to store only the most
+recent (updated) item. Hence, we mark the item as stale and transfer the
+ownership of the item to the linkedlist from hashtable and add a new
+item with the value of update in the hashtable and at the end of the list.
+
+We have the module tests at the linkedlist level. Module tests at the
+ephemeral vbucket level will follow soon in a future commit.
+
+Change-Id: Ibb710a23410a44109512232ddd1aca342347b1b0
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2017-03-07 07:22:29.412000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-03-07 07:41:01.679000000
+
+Patch Set 6: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/3232/ : FAILURE
+
+AddressSanitizer issue: 15 byte(s) leaked in 1 allocation(s). ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-addresssanitizer-master/3232/ )
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-addresssanitizer-master/3232/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/4406/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/3977/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/4631/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-03-07 14:09:29.749000000
+
+Patch Set 6: Code-Review-1
+
+(12 comments)
+
+Line:142, src/ephemeral_vb.h -> Can't we just use the existing implementation of toOrderedStoredValue()?
+
+Line:149, src/ephemeral_vb.cc -> Would be good for us to be definitive here. Suggest using explicit status codes from updateListElem - or given it only returns two codes currently (ENGINE_SUCCESS or ENGINE_TMPFAIL) just make it return a bool.
+
+Line:181, src/ephemeral_vb.cc -> If you return a bool you can remove this.
+
+(Think about ways to convert dynamic checks - such as an extra unhanded case statement here - to static checks - i.e. so there is only two possible return values from the function in question. That reduces the possibility of errors in code, and allows the compiler to check more things).
+
+Line:295, src/ephemeral_vb.cc -> This seems pretty pointless - why are we introducing an extra "wrapper" around StoredValue::toOrderedStoredValue()?
+
+Line:84, src/seqlist.h -> Please document this method.
+
+Line:119, src/seqlist.h -> These also need documenting.
+
+Line:176, src/linkedlist.h -> Please document this.
+
+Line:1932, src/vbucket.cc -> This is unused right? If so use std::ignore.
+
+Line:1994, src/vbucket.cc -> Same here, use std::ignore
+
+Line:1119, src/vbucket.h -> Needs updating.
+
+Line:348, tests/module_tests/basic_ll_test.cc -> Given the repetition of this, consider moving to the TearDown function of BasicLinkedListTest.
+
+Line:145, src/stored-value.h -> This is a bit vague. Try to be more specific - something like:
+
+ True if a newer version of the same key exists in the HashTable.
+ Only true for StoredValues which are no longer in the HashTable
+  (and only live in SequenceList).
+
+2) Ideally this should be added to OrderedStoredValue, as it's not applicable to normal StoredValues; but we do want to keep the bitfields packed. You could move the accessors to OrderedStoredValue (so it can only be called on those objects), but leave the member variable in the base class. It's not totally ideal but I think better than leaving methods in the base class which are not relevant.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-03-08 03:34:09.355000000
+
+Patch Set 6:
+
+(12 comments)
+
+Line:142, src/ephemeral_vb.h -> This helps logging the vbucket number on error
+
+Line:149, src/ephemeral_vb.cc -> Creating explicit code
+
+Line:181, src/ephemeral_vb.cc -> Done
+
+Line:295, src/ephemeral_vb.cc -> Because we are able to log the vbucket number in the error message
+
+Line:84, src/seqlist.h -> Done
+
+Line:119, src/seqlist.h -> Done
+
+Line:176, src/linkedlist.h -> Done
+
+Line:1932, src/vbucket.cc -> It is used. v is passed as a ref to ptr StoredValue*& v and is hence updated.
+
+Line:1994, src/vbucket.cc -> Done
+
+Line:1119, src/vbucket.h -> Done
+
+Line:348, tests/module_tests/basic_ll_test.cc -> Done in the previous commit only
+
+Line:145, src/stored-value.h -> 1. Done
+2. I had thought about this being in wrong place but did it for keeping the flag in the bit field. Just moving the accessor seems better than this
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-03-08 12:30:09.707000000
+
+MISMATCHED INLINE COMMENT
+Line:295, src/ephemeral_vb.cc -> Given you're just re-throwing the exception (bad_cast -> logic_error), and moreover we don't really think we'll ever hit this (it would be a code error), I'd say remove this function, and if necessary have the caller add the vbucket number when it catches the original bad_cast exception.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-03-08 22:08:55.526000000
+
+MISMATCHED INLINE COMMENT
+Line:295, src/ephemeral_vb.cc -> Ok
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-03-08 12:30:09.707000000
+
+MISMATCHED INLINE COMMENT
+Line:1932, src/vbucket.cc -> Ah yes - I misread.
+
+-------------------------------------

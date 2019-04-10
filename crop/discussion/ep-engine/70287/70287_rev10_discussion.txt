@@ -1,0 +1,203 @@
+DESCRIPTION
+
+[Ephemeral Buckets]: Add a class that stores ordered sequence of items in memory
+
+This commit adds an abstract base class 'SequenceList' that provides apis
+to store ordered sequence of items in memory.
+
+'BasicLinkedList' is a concrete class derived from 'SequenceList' that
+implements in-memory ordered seq of items storage in our multi-threaded,
+monotonically increasing seq model. 'BasicLinkedList' uses a boost intrusive
+doubly linked list. It is essentially a linked list of 'StoredValues'.
+
+'BasicLinkedList' works in tandem with already existing 'HashTable'
+to achieve O(1) writes/updates and O(1) reads. Range read is also
+implemented which is necessary for an in-memory DCP backfill. Range reads
+provide point-in-time snapshots which is essential for our incremental DCP.
+
+'BasicLinkedList' is NOT heavily multi-threaded. Writer threads and
+'cleanStaleItems' threads block each other. (Stale items are a consequence
+of point-in-time snapshots).
+
+Since 'HashTable' and 'SequenceList' mus work in tandem, some of the
+functionalities that occur in 'HashTable' during a write have been moved
+to 'VBucket' and a new class 'EphemeralVBucket' has been derived from
+'derived' to do things differently in an Ephemeral Bucket.
+
+Glimpse of how this would integrated with EPBucket (and an upcoming
+EphemeralBucket class) has been provided as well by modifying the
+set function.
+
+Finally a module test 'ephemeral_vb_test' has been added as a module test.
+
+Note: This is still not fully integrated with the kv-engine.
+
+Change-Id: I31bde3ea25509504fa8cc23a5506e7b14fa16bc8
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2016-11-29 08:02:30.791000000
+
+Uploaded patch set 10.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-29 08:02:38.399000000
+
+Patch Set 10:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/730/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-29 08:02:38.551000000
+
+Patch Set 10:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1565/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-29 08:02:38.689000000
+
+Patch Set 10:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1868/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-29 08:02:38.827000000
+
+Patch Set 10:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1953/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-29 08:22:24.095000000
+
+Patch Set 10: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/730/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1565/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1868/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1953/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-11-29 10:34:11.115000000
+
+Patch Set 10: Code-Review-1
+
+(14 comments)
+
+The testing needs some more work.
+
+Also - I'd consider splitting the patch sooner rather than later - one of the points of splitting is to aid review, and to allow you to put parts of the code in before others are ready. 
+
+If you just keep the patch in one chunk until all the reviewers are happy, it'll ultimately take longer to review, and be harder for them ;).
+
+Line:58, src/vbucket_ephe.cc -> Nit: initialiser list on new line (indented 4).
+
+Line:102, src/vbucket_ephe.cc -> Maybe include class name here (avoid ambiguity with the base class).
+
+Line:133, src/vbucket_ephe.cc -> This and updateStoredValue are similar - but they perform work in different orders (addNew adds to hash table and then updates CAS, updateStored updates CAS and then adds to hash table).
+
+If possible could you re-order them to make it easier to follow the two - or even better unify them were possible - for example the seqno generation code looks identical to me; that could be moved to a helper function.
+
+Line:180, src/vbucket_ephe.cc -> No guarantee you're holding the queue lock here - pass in a reference to it to ensure the caller is compliant.
+
+Line:85, tests/module_tests/ephemeral_vb_test.cc -> For sanity during testing you should probably split this into a separate statement, and ASSERT_NE(nullptr) on the result before dereferencing it.
+
+Line:121, tests/module_tests/ephemeral_vb_test.cc -> Should (eventually) run all these tests in both modes - see vbucket_test for how the test cases are instantiated twice.
+
+Line:134, tests/module_tests/ephemeral_vb_test.cc -> Shouldn't these three new items be WAS_CLEAN? I wouldn't have thought that these items should already exist before you set them?
+
+Line:193, tests/module_tests/ephemeral_vb_test.cc -> This is a large test - prefer to break tests into multiple simpler tests - much easier to identify what has broken when they fail. 
+
+To paraphrase:
+
+ "Tests should be as simple as possible, but no simpler."
+
+Line:202, tests/module_tests/ephemeral_vb_test.cc -> 3 is probably fine for a basic functional test, but think about the possible error cases (I think I outlined these in another comment) - things like:
+
+# Range read for zero items
+# range read for seqno greater than current high
+# Range read from a non-zero start
+# Range read for a start > end
+# Range read when where are only deleted items
+# Range read when where are only temporary items
+# Two range reads 
+
+And for the Set tests - check things like:
+
+# Set on items which don't exist
+# Set on deleted items
+# Deleting items which don't exist.
+# Larger number of items
+# Zero items
+
+Those are just off the top of my head - I'm sure you can think of more.
+
+Line:225, tests/module_tests/ephemeral_vb_test.cc -> This to me suggest our API should be improved, if users are Adrianna Holmesally responsible for freeing Items. Consider returning a std::deque of unique_ptr.
+
+Line:259, tests/module_tests/ephemeral_vb_test.cc -> Also check deletes.
+
+Line:96, src/stored-value.h -> Am I right in thinking that a StoredValue with isStale==true should never be inside the HashTable? If so, can we assert that when adding / removing / reading elements from the HashTable?
+
+Line:151, src/seqlist.cc -> Given you don't modify v, can be a const reference.
+
+Line:182, CMakeLists.txt -> Nit: I'd probably go for "ephemeral_vbucket.cc" (or some shortening - eph_vbucket.cc", ephemeral_vb.cc" - that way it matches the class name and will be easier for people to remember the filename.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2016-11-30 02:51:16.572000000
+
+Patch Set 10:
+
+(14 comments)
+
+Line:58, src/vbucket_ephe.cc -> Done
+
+Line:102, src/vbucket_ephe.cc -> Done
+
+Line:133, src/vbucket_ephe.cc -> I tried doing it, but the problem here is, a StoredValue is still very much tied to the HashTable. A stored value can be created only as an element in the hashtable.
+So, in addNewStoredValue(), we have to create a new StoredValue in HT first. In updateStoredValue() we go to Linkedlist where it is decided whether update should  be done on the current StoredValue or make current StoredValue stale and create a new StoredValue/
+
+Line:180, src/vbucket_ephe.cc -> Done
+
+Line:85, tests/module_tests/ephemeral_vb_test.cc -> Done
+
+Line:121, tests/module_tests/ephemeral_vb_test.cc -> There is no item_eviction_policy_t::VALUE_ONLY vs item_eviction_policy_t::FULL_EVICTION in an ephemeral bucket. But the the way things are cluttered around in our code, at ep, vb and other levels, somehow eviction policy is everywhere (mainly with the introduction of full eviction). 
+
+Ephemeral buckets would be close to item_eviction_policy_t::VALUE_ONLY because no key in HT implies key NOT_FOUND.
+
+Here I am using item_eviction_policy_t::VALUE_ONLY because getNumItems() demands a policy as param
+
+Line:134, tests/module_tests/ephemeral_vb_test.cc -> WAS_CLEAN, WAS_DIRTY are misnomers. They are just a return value from HT to ep.cc and imply what ep.cc should do next in the store command.
+
+Line:193, tests/module_tests/ephemeral_vb_test.cc -> Done
+
+Line:202, tests/module_tests/ephemeral_vb_test.cc -> More test cases added.
+Deletes, parallel Range Reads not yet ready with this commit.
+Will add those tests later on
+
+Line:225, tests/module_tests/ephemeral_vb_test.cc -> Done
+
+Line:259, tests/module_tests/ephemeral_vb_test.cc -> Deletes not yet tested in this commit.
+It will be next
+
+Line:96, src/stored-value.h -> Yes isStale==true is never inside HashTable
+
+Line:151, src/seqlist.cc -> Done
+
+Line:182, CMakeLists.txt -> Done
+
+-------------------------------------

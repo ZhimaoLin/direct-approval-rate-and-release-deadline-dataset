@@ -1,0 +1,143 @@
+DESCRIPTION
+
+Fix StashApply regarding handling of untracked files
+
+There was a bug regarding how JGit handled untracked files when applying
+a stash. Problem was that untracked files are applied by doing a merge
+of HEAD and untrackedFiles commit with a merge base of the stashed HEAD.
+That's wrong because the untrackedFiles commit has no parent and
+contains only the untracked files. Using stashed HEAD as merge base
+leads to unneccessary conflicts on files not event included in the
+untrackedFiles commit.
+
+Imagine this graph directly before you want to apply a stash which was
+based on 0. You want to apply the stash on current HEAD commit 5.
+
+  5 (HEAD,master)
+ /
+0---+
+ \   \
+  1---3 (WIP on master)
+     /
+    2 (untracked files on master)
+
+Imagine for a specific (tracked) file f
+- commit 0 contains X
+- HEAD contains Y
+- commit 2 (the untracked files) does not contain file f
+
+A merge of 2 and 5 with a merge base of 0 leads to a conflict. The 5
+commit wants to modify the file and the 2 commit wants to delete the
+file -> conflict.
+
+If no merge base is set then the semantic is correct.
+
+Thanks to Bow for finding this bug and providing the test case.
+
+Bug: 485467
+Also-by: Bow Ruggeri xxx@xxx.xxx
+Change-Id: I453fa6ec337f81b2a52c4f51f23044faeec409e6
+
+
+COMMENTS
+
+author: Zachary Orozco
+date: 2016-04-29 15:20:25.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-04-29 15:25:17.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/8293/
+
+-------------------------------------
+author: Zachary Orozco
+date: 2016-04-29 15:26:38.000000000
+
+Patch Set 1:
+
+Added Rüdiger as reviewer. I think he knows best about the "git stash -u" functionality in JGit
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-04-29 15:38:59.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/8293/ : SUCCESS
+
+-------------------------------------
+author: Brian Lynch
+date: 2016-05-02 08:35:15.000000000
+
+Patch Set 1:
+
+> Added Rüdiger as reviewer. I think he knows best about the "git
+ > stash -u" functionality in JGit
+
+Thanks for considering me to review the change. Your reasoning makes sense to me. When in doubt, I replay the scenario with native Git, but I guess you already did that.
+
+I find the test case difficult to read (see my comments there) and moreover misplaced. Wouldn't it be closer to the unit under test if it was rewritten to merely construct the history that results when pulling and placed in StashApplyCommandTest?
+
+-------------------------------------
+author: Brian Lynch
+date: 2016-05-02 08:46:42.000000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:194, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/PullCommandTest.java -> The first line that matters is writeToFile( ... ). If checking that there is nothing to update is really necessary it should be part of setUp().
+
+Line:214, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/PullCommandTest.java -> Isn't here an assertion missing that the untracked file is actually in the state it should be?
+
+-------------------------------------
+author: Zachary Orozco
+date: 2016-05-12 12:55:06.000000000
+
+Patch Set 1:
+
+(2 comments)
+
+> Thanks for considering me to review the change. Your reasoning
+ > makes sense to me. When in doubt, I replay the scenario with native
+ > Git, but I guess you already did that.
+yes, I did.
+
+ > I find the test case difficult to read (see my comments there) and
+ > moreover misplaced. Wouldn't it be closer to the unit under test if
+ > it was rewritten to merely construct the history that results when
+ > pulling and placed in StashApplyCommandTest?
+
+Right. If I would have written that test on my own it would be placed
+somewhere else. But in this case a user of JGit added his own test to
+PullCommandTest [1] where he replayed exactly the problem he was facing
+in real life. I like tests which replay real-world bugs. Therefore I
+wanted that test to in and copied it. And I was to lazy to add an
+additional low level unit test.
+
+[1] https://github.com/eclipse/jgit/pull/24/files
+
+Line:194, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/PullCommandTest.java -> Done
+
+Line:214, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/PullCommandTest.java -> Done
+
+-------------------------------------
+author: Zachary Orozco
+date: 2016-05-12 12:56:27.000000000
+
+Topic set to st
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-05-18 22:15:33.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

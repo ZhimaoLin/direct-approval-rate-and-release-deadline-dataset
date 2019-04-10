@@ -1,0 +1,103 @@
+DESCRIPTION
+
+Make BitmapIndexImpl.CompressedBitmap public
+
+PackWriterBitmapPreparer (which is in another package) is already well
+aware of the mapping between EWAHCompressedBitmaps and the
+higher-level CompressedBitmap objects of the BitmapIndexImpl API.
+Making the CompressedBitmap type public makes the translation more
+obvious and wouldn't break any abstractions that aren't already
+broken.  So expose it.
+
+This is all under org.eclipse.jgit.internal so there are no API
+stability guarantees --- we can change the API if internals change
+(for example if some day there are bitmaps spanning multiple packs).
+
+In particular this means the confusing toBitmap helper can be removed.
+
+Change-Id: Ifb2e8804a6d5ee46e82a76d276c4f8507eaa2a4c
+
+
+COMMENTS
+
+author: Eden Lin
+date: 2015-11-09 16:50:10.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-11-09 16:50:16.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7427/
+
+-------------------------------------
+author: Eden Lin
+date: 2015-11-09 16:50:38.000000000
+
+Patch Set 2:
+
+How about something like this?
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-11-09 16:59:36.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7427/ : SUCCESS
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2015-11-09 17:54:48.000000000
+
+Patch Set 2:
+
+(2 comments)
+
+Yes, I like this better.
+
+I didn't feel the previous API was adding a lot in terms of safely. EWAHCompressedBitmap is the implementation type for CompressedBitmap. CompressedBitmap is a Bitmap, which is an abstract representation of a vector of bits. It is what I'll call a "semantically ambiguous" type akin to a primitive type like int, in that Bitmap itself is used to represent the state of lots of different sets (the set of all commits reachable from reusable bitmaps in a previous pack, the set of all {tree,blob,commit,tag} objects reachable from a given commit, etc.)
+
+Any time you use a semantically ambiguous type you need to take a lot of care that the assignment is appropriate. Mismanaging units (celsius vs. fahrenheit, relative paths vs. absolute paths) is always a huge source of bugs. Oftentimes the best way to solve that is to introduce a new type (enum, Temperature type that embeds its units, Path type) but that isn't appropriate here.
+
+In this case we are extracting information about a reusable bitmap from the PackBitmapIndexRemapper object and building up a union of all of the reachable commits. The contract of PackBitmapIndexRemapper's getBitmap() and ofObjectType(bitmap, OBJ_COMMIT) guarantee that we are getting a bitmap that represents commits. The "writeBitmaps" parameter in the toBitmaps() call wasn't strengthening that guarantee.
+
+Line:393, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> s/commitBitmapIndex.//
+
+Line:320, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/BitmapIndexImpl.java -> "vector of bits"
+
+-------------------------------------
+author: Eden Lin
+date: 2015-11-09 18:23:17.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Thanks.
+
+Line:393, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> It's a non-static inner class. You can't construct a CompressedBitmap from an EWAHCompressedBitmap without a BitmapIndexImpl because it needs the packIndex to assign meaning to the bit positions.
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2015-11-09 19:21:57.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:393, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> You are right of course. We discussed this offline and making CompressedBitmap static with an additional explicit Bitmap ctor argument will clear up some confusion and make this read:
+reuse.or(new CompressedBitmap(commitBitmapIndex, bitmap));
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-11-09 22:55:18.000000000
+
+Change has been successfully merged into the git repository by Eden Lin
+
+-------------------------------------

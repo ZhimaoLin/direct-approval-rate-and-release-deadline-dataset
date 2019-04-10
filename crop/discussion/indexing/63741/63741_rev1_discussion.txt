@@ -1,0 +1,54 @@
+DESCRIPTION
+
+MB-19521 memdb/skiplist: Fix a bug in skiplist insert with concurrent delete
+
+A node is part of the skiplist when it is added to level-0.
+If a concurrent thread has an iterator, it can observe the node
+immediately after it is linked to level-0. The the application
+which observes the node can delete the node independently even
+before the insert API call for the node returns since it is already
+part of level-0. We assume that no other thread can see node.next[x]
+of the node being inserted until the insert call has returned. Hence,
+we update the node.next[x] links without any serialization.
+
+When a concurrent delete operation is invoked, it could set delete flag
+for all the levels of the node. At the same time, an insert proceeds
+and updates delete flags to false. This can lead to a condition where
+a softdeleted node has level-0 next pointer with delete flag marked and
+higher level next pointers with delete flag unmarked. This can cause to
+a condition where it will never be able to remove the node and hence
+findPath() can infinitely spin and causes application to hang.
+
+This issue could affect delete operation on memdb gc snapshots list and
+barrier session free list. The main storage operations are not affected
+since we serialize operations to same docid.
+
+Change-Id: I1aaaf7f5d05c991f7e9a97b444013af77e55f2da
+
+
+COMMENTS
+
+author: Kinsley Fox
+date: 2016-05-05 09:56:16.038000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Dominique Stanton
+date: 2016-05-05 16:57:17.654000000
+
+Patch Set 1: Code-Review+1
+
+-------------------------------------
+author: Kinsley Fox
+date: 2016-05-05 16:58:15.704000000
+
+Patch Set 1: Code-Review+2 Verified+1
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-05-05 16:58:18.081000000
+
+Change has been successfully merged into the git repository by Kinsley Fox
+
+-------------------------------------

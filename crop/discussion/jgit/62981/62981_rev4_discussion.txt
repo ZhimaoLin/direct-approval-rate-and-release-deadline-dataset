@@ -1,0 +1,143 @@
+DESCRIPTION
+
+DirCache: Do not create duplicate tree entries
+
+If a file (e.g.  "A") and a subtree file (e.g.  "A/foo.c") both appear
+in the DirCache this cache cannot be written out as a tree object. The
+"A" file and "A" subtree conflict with each other in the same tree and
+will fail fsck.
+
+Detect this condition during DirCacheBuilder and DirCacheEditor finish()
+so the application can be halted early before it updates a DirCache that
+might later write an invalid tree structure.
+
+Add a new test case for this.
+
+Change-Id: I95660787e88df336297949b383f4c5fda52e75f5
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2015-12-18 17:56:40.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-12-18 18:11:06.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:1182, org.eclipse.jgit.test/tst/org/eclipse/jgit/lib/DirCacheCheckoutTest.java -> This test was added in a406ebf4018f (change Ifc6c61592d9b54d26c66367163acdebea369145c). But is now broken by fixing a different bug. Which makes me wonder if this test was working as expected.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-12-18 18:26:10.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7757/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-12-18 18:34:31.000000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7757/ : SUCCESS
+
+-------------------------------------
+author: Eden Lin
+date: 2015-12-18 20:25:24.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:143, org.eclipse.jgit/src/org/eclipse/jgit/api/AddCommand.java -> This looks like an unrelated change. Is it needed? Could it happen in a separate commit?
+
+-------------------------------------
+author: Eden Lin
+date: 2015-12-18 20:29:04.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:143, org.eclipse.jgit/src/org/eclipse/jgit/api/AddCommand.java -> (by unrelated I don't actually mean unrelated --- I mean that it is not part of the change to the DirCache API that is the subject of the change.
+
+To avoid breaking out-of-tree callers, it is useful if this commit fixing the DirCache API doesn't touch any callers. That makes it easier to be confident that this won't require changes in all out-of-tree callers too.
+
+It's likely that the API change reveals problems in callers, which can be motivation for making additional commits before or after the API change.
+
+That also makes the fixes to callers easier to review, since they get their own commit message.)
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-12-18 22:34:14.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:143, org.eclipse.jgit/src/org/eclipse/jgit/api/AddCommand.java -> Split these caller changes to their own commits.
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-12-21 08:36:46.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:1182, org.eclipse.jgit.test/tst/org/eclipse/jgit/lib/DirCacheCheckoutTest.java -> Yes, it was working as expected. 
+
+See bug 474973 for the use case: if user changes entry type (e.g. from file to directory or from link to directory), and adds few files into that new directory, jgit fails to checkout that directory.
+
+CLI git has no issues in that case, it simply deletes the new directory structure if it is not added to the index.
+
+With the current patch the old bug re-appears:
+
+git init changeMode
+cd changeMode
+touch a
+git add a
+git commit -m "added file"
+rm a
+mkdir -p a/b
+touch a/b/text.txt
+git add a/b/text.txt
+git status
+On branch master
+Changes to be committed:
+renamed:    a -> a/b/text.txt
+git checkout HEAD a
+git status
+On branch master
+nothing to commit, working directory clean
+
+Now redo all the steps but replace "git checkout HEAD a" with "jgit checkout HEAD a" and observe unexpected error and wrong repository state afterwards:
+
+jgit checkout HEAD a
+fatal: a a/b/text.txt
+git status
+On branch master
+Changes to be committed:
+        renamed:    a -> a/b/text.txt
+Changes not staged for commit:
+        deleted:    a/b/text.txt
+Untracked files:
+        a
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-01-01 17:58:35.000000000
+
+Change has been successfully merged into the git repository by Yoselin Hanna
+
+-------------------------------------

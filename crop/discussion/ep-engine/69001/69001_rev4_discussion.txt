@@ -1,0 +1,163 @@
+DESCRIPTION
+
+MB-2009
+
+Change-Id: I0e86d57cb357256ed5d10632fa60c42f83ff18e3
+
+
+COMMENTS
+
+author: Kymani Ramirez
+date: 2016-10-21 16:33:45.346000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-21 16:33:53.418000000
+
+Patch Set 4:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/449/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-21 16:33:53.561000000
+
+Patch Set 4:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1322/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-21 16:33:53.699000000
+
+Patch Set 4:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1654/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-21 16:33:53.838000000
+
+Patch Set 4:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1553/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-21 16:38:36.956000000
+
+Patch Set 4: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/449/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1322/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1553/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1654/ : FAILURE
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-10-21 17:14:37.978000000
+
+Patch Set 4: Code-Review-1
+
+(10 comments)
+
+Line:82, src/ep_engine.h -> As per discussion, these are logically durations, not time_point.
+
+Line:799, src/ep.h -> void logQTime(TaskId taskType, ProcessClock::duration enqTime) {
+     stats.schedulingHisto[static_cast<int>(task type)].add(enqTime);
+ }
+
+Line:177, src/fakes/fake_executorpool.h -> Can simplify to:
+
+ ProcessClock::time_point min_waketime{std::chrono::duration_values::zero()};
+
+Line:160, src/executorthread.cc -> We have a bunch of constructs of this form. Might be worth adding a helper function(s) to your new process time.h along the lines of:
+
+ std::chrono::milliseconds to_ms_since_epoch(const ProcessClock::time_point& time);
+
+Line:67, src/executorthread.h -> I think the default constructor does exactly the same thing - initialises the to the value of the epoch - so you can simplify to:
+
+ taskStart(),
+
+(See: http://en.cppreference.com/w/cpp/chrono/time_point/time_point)
+
+Line:70, src/executorthread.h -> Nicer to put now in the initialiser list also.
+
+Line:71, src/executorthread.h -> You can use std::chrono::duration_values::max instead (again in the initialiser list):
+
+ waketime(std::chrono::duration_values::max)
+
+Line:114, src/executorthread.h -> As per the comments on platform, need to review these uses are choose either ProcessClock::duration or ProcessClock::time_point.
+
+Line:155, src/executorthread.h -> Already discussed, but for the record would be nice to wrap each in a struct to show the extent of the locking.
+
+Line:93, src/taskqueue.cc -> I don't think you need the duration_cast to nanoseconds here - you can just keep it as the higher-level `duration` (which can be compared, etc) and then pass that into wait_for (which IIRC should be the standard library one).
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-10-21 17:27:48.778000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:799, src/ep.h -> I just checked this, you need to tweak the declaration of the `schedulingHisto` in stats.h a little bit more to be a duration::rep:
+
+ Histogram<std::chrono::steady_clock::duration::rep> *taskRuntimeHisto;
+
+And then the function to:
+
+ void logQTime(TaskId taskType, ProcessClock::duration enqTime) {
+     auto ns_count = std::chrono::nanoseconds(enqTime).count();
+     stats.schedulingHisto[static_cast<int>(task type)].add(ns_count);
+ }
+
+-------------------------------------
+author: Kymani Ramirez
+date: 2016-10-24 15:51:58.194000000
+
+Patch Set 4:
+
+(10 comments)
+
+Line:82, src/ep_engine.h -> Fixed
+
+Line:799, src/ep.h -> Updated
+
+Line:177, src/fakes/fake_executorpool.h -> Using time_point(min)  - does not provide a zero option i.e.
+ProcessClock::time_point::min();
+
+Line:160, src/executorthread.cc -> Done
+
+Line:67, src/executorthread.h -> Done
+
+Line:70, src/executorthread.h -> Done
+
+Line:71, src/executorthread.h -> I tired std::chrono::duration_values:max and it returns
+error: 'duration_values' is not a class, namespace, or enumeration
+          waketime(std::chrono::duration_values::max()),
+
+The solution is for me to use ProcessClock::time_point::max()
+
+Line:114, src/executorthread.h -> Done
+
+Line:155, src/executorthread.h -> Will do in next but one revision (patch 6)
+
+Line:93, src/taskqueue.cc -> Done
+
+-------------------------------------
+author: Kymani Ramirez
+date: 2016-10-24 15:53:49.263000000
+
+Abandoned
+
+Changed the Change-Id to match the associated patch in platform.
+
+-------------------------------------

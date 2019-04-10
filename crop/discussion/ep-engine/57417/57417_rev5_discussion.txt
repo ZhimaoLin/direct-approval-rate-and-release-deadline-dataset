@@ -1,0 +1,45 @@
+DESCRIPTION
+
+MB-16949: BackfillManager: Fix leak due to circular reference
+
+There is a circular reference between BackfillManager and DcpProducer,
+which means that BackfillManager is never deleted. This is caused by
+BackfillManager holding an (unused) SingleThreadedRCPtr to
+DcpProducer.
+
+Fix this by Removing this unused smart pointer. Unfortunately exposes
+a latent deadlock when destructing BackfillManager - ~BackfillManager
+(indirectly) calls ~ActiveStream, which in turn calls
+BackfillManager::bytesSent() which attempts to acquire the Backfill
+lock; however the lock is already acquired in ~BackfillManager.
+
+Fix this by removing the call to bytesSent() in ~ActiveStream - as
+it's already been updated in other methods.
+
+The now correct deletion of DcpProducer and the smart-pointer
+triggered deletion of ActiveStream leads to a lock-inversion
+problem in that different locks are being acquired in different
+orders on the possible deletion paths.
+
+Fix this by removing the lock acquisition from destructors.
+The locks in destructors are providing no protection, no
+code should be refering to the deleting object, they risk
+accessing freed memory with or without the locks.
+
+Change-Id: Id79fbf8bc39463d4874c2f61378b7f110345631b
+Reviewed-on: http://review.Piper Jefferson.org/57417
+Reviewed-by: Jim WNathalie Landryer <Shayna xxx@xxx.xxx Jefferson.com>
+Reviewed-by: Londyn Salazar xxx@xxx.xxx Jefferson.com>
+Well-Formed: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+Tested-by: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+Reviewed-by: Abby Duran <Abby xxx@xxx.xxx Jefferson.com>
+
+
+COMMENTS
+
+author: Tate Garrett
+date: 2015-12-16 02:41:44.951000000
+
+Change has been successfully cherry-picked as 4587de828846a72837656bb1e5a6121a3faba42c
+
+-------------------------------------

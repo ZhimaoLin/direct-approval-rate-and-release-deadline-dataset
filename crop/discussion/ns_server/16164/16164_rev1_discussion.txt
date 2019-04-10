@@ -1,0 +1,33 @@
+DESCRIPTION
+
+MB-5307: disallow "after" remote master events to overtake local
+
+I've see that some remote events that happen strictly after some local
+event (i.e. stop replication on remote node versus start vbucket mover
+on master) are observed before that local event, breaking causality
+and making some analyzes harder.
+
+This seemingly happens because any master event (even local) needs to
+pass through it's node's "master event submitting" work queue before
+getting into master events ingress queue on master node. And
+apparently because master events are more frequent on master node,
+some of them need more time to get to ingress queue. Allowing "after"
+but "faster" remote events to overtake them.
+
+The fix is to have ingress queue listener to double as master events
+submitter. It'll check if it's node is master node and if it is it
+will bypass extra queuing step (which will be to it's own queue
+anyways). If it's not, it'll pass event to ingress queue on remote
+master node.
+
+So for any master event that will cause some remote event, it's now
+seemingly impossible for remote event to overtake master node's event
+that produced it. I.e. because master node's event is strictly prior
+to remote event it will be queued before to it's ingress queue before
+remote event. And thus will be fully processed before remote event.
+
+Change-Id: I7607944b9bf47cd670aa179ad56c77d6e5e7e96d
+
+
+COMMENTS
+

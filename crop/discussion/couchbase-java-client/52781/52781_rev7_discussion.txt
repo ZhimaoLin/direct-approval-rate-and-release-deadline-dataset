@@ -1,0 +1,75 @@
+DESCRIPTION
+
+JCBC-795: Named Prepared Statement support
+
+Motivation:
+-----------
+The query team introduced the possibility to name prepared statements.
+Instead of keeping the whole Query Plan, one can simply send the name
+which is a way lighter payload.
+If not given one in the "PREPARE..." statement, the server will generate
+a name and cache the plan as well.
+
+Additionally, to avoid livelock situations, one can also provide a
+fallback "statement" value that will get executed should the name not be
+found on the node.
+
+Modifications
+-------------
+This change gets rid of the QueryPlan class, replaced by PreparedPayload
+which only stores the name and the original statement (for future retry
+support).
+The fallback feature is used to re-prepare the original statement with
+the name if it is not found on the node. This also will be needed for
+automatic retry, and prevents a livelock situation in said retry (by
+ensuring that the nodes will all converge to a state where the statement
+is prepared and named similarly).
+
+AsyncQueryResult's info is now a stream of QueryMetrics directly in the
+constructor signature.
+
+Added a DigestUtils class that can encode a String in SHA1, used as the
+identifier for a given statement (low chances of collisions between two
+well-formed N1QL statements).
+
+Tests have been added and amended, but integration testing is not
+entirely possible while there's no mean of removing a prepared statement
+from the server's cache.
+
+Modified integration tests ClusterManagerTest (avoid dropping buckets
+that aren't related to the test) and QueryTest (use scanConsistency and
+wait at beginning of test to avoid a "index rollback" due to flush).
+
+Results
+-------
+All tests pass, prepared statements are referenced by name instead of
+sending the whole execution plan over the wire. They also provide the
+PREPARE statement as a fallback statement.
+
+Change-Id: Iae5d07aa91828501a0fd1c97983a293bf2568854
+
+
+COMMENTS
+
+author: Estrella Humphrey
+date: 2015-07-21 12:33:47.564000000
+
+Uploaded patch set 7.
+
+-------------------------------------
+author: Estrella Humphrey
+date: 2015-07-21 12:35:10.569000000
+
+Patch Set 7: Verified+1
+
+verified on build sherlock-3473
+http://latestbuilds.hq.couchbase.com/couchbase-server/sherlock/3473/
+(see MB-15777 on why more recent builds could be problematic)
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-07-22 09:29:28.368000000
+
+Change has been successfully cherry-picked as a9f22259c94dd19f7eaffadd5c979d75018fa80c
+
+-------------------------------------

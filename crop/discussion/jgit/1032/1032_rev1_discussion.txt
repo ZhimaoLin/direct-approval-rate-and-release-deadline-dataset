@@ -1,0 +1,60 @@
+DESCRIPTION
+
+Support large loose objects as streams
+
+Big loose objects can now be streamed if they are over the large
+object size threshold.  This prevents the JVM heap from exploding
+with a very large byte array to hold the slurped file, and then
+again with its uncompressed copy.
+
+We may have slightly slowed down the simple case for small
+loose objects, as the loader no longer slurps the entire thing
+and decompresses in memory.  To try and keep good performance
+for the very common small objects that are below 8 KiB in size,
+buffers are set to 8 KiB, causing the reader to slurp most of the
+file anyway.  However the data has to be copied at least once,
+from the BufferedInputStream into the InflaterInputStream.
+
+New unit tests are supplied to get nearly 100% code coverage on the
+unpacked code paths, for both standard and pack style loose objects.
+We tested a fair chunk of the code elsewhere, but these new tests
+are better isolated to the specific branches in the code path.
+
+Change-Id: I87b764ab1b84225e9b5619a2a55fd8eaa640e1fe
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Juliet Cantu
+date: 2010-07-06 22:58:33.000000000
+
+Patch Set 1:
+
+Breaks BlobStorageTest.testFailCorrupt2 in I09d0aafb3d15436e942acc4b722a63d35f58051a.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-07-06 23:42:16.000000000
+
+Patch Set 1:
+
+I suspect the issue is we don't check that the inflater consumed everything in the stream, which means we aren't checking the CRC that is embedded in the compressed data.  The test in question from EGit is chopping off only the last byte of the object file, which is part of the checksum but isn't necessary to inflate the content.
+
+I'll work up a fix for JGit and a test case for this particular issue.  We should always be checking that CRC at the end of the stream.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-07-07 00:30:56.000000000
+
+Patch Set 1:
+
+Fixed with test cases in I1c9642a82dbd76b69e607dceccf8b85dc869a3c1
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-07-27 16:11:43.000000000
+
+Change has been successfully pushed.
+
+-------------------------------------

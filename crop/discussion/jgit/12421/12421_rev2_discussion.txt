@@ -1,0 +1,137 @@
+DESCRIPTION
+
+Add a method to DfsOutputStream to read as an InputStream
+
+Change-Id: I0ec1f17a88bc14f22c10f9bc8d6f5b5118410e3a
+
+
+COMMENTS
+
+author: Santos Moore
+date: 2013-05-03 18:46:54.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-05-03 18:51:43.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3494/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-05-03 19:14:58.000000000
+
+Patch Set 2: Fails
+
+Build Failed 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3494/ : FAILURE
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-05-04 15:15:17.000000000
+
+Patch Set 2: No score
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3501/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-05-04 15:20:13.000000000
+
+Patch Set 2: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3501/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2013-05-05 16:07:45.000000000
+
+Patch Set 2: I would prefer that you didn't submit this
+
+(5 inline comments)
+
+
+
+Line:117, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsOutputStream.java -> You don't need this field, see below.
+
+Line:128, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsOutputStream.java -> I think it would be simpler to just allocate the ByteBuffer in the constructor. IIRC on a new buffer remaining() will be 0.
+
+Line:141, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsOutputStream.java -> off should be p here, and since len isn't adjusted during the loop this should be len - n.
+
+This sort of bug is often why I just modify the arguments even though this is against the JGit warning policy in Eclipse. Whoever enabled that warning in our project settings is a bit too paranoid and in many functions trying to follow it actively hurts the readability of the code.
+
+Line:150, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsOutputStream.java -> I think I would implement this method as:
+
+  public int read(byte[] b, int off, int len) throws IOException {
+    int cnt = 0;
+    while (0 < len) {
+      if (!buf.hasRemaining()) {
+        buf.rewind();
+        int nr = os.read(position, buf);
+        if (nr < 0)
+          break;
+        position += nr;
+        buf.flip();
+      }
+
+      int n = Math.min(len, buf.remaining());
+      buf.get(b, off, n);
+      off += n;
+      len -= n;
+      cnt += n;
+    }
+    if (cnt == 0 && len > 0)
+      throw new EOFException();
+    return cnt;
+  }
+
+Line:160, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsOutputStream.java -> The classical hack is to implement read() like this:
+
+  byte[] b = new byte[1];
+  int n = read(b);
+  return n == 1 ? b[0] & 0xff : -1;
+
+Its almost never used and this form is short and easy to read.
+
+-------------------------------------
+author: Santos Moore
+date: 2013-05-15 17:42:47.000000000
+
+MISMATCHED INLINE COMMENT
+Line:117, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsOutputStream.java -> From my reading of your comments below, this field is still needed, it can just be final.
+
+-------------------------------------
+author: Santos Moore
+date: 2013-05-15 17:42:47.000000000
+
+MISMATCHED INLINE COMMENT
+Line:128, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsOutputStream.java -> Done. (Doesn't start with remaining() == 0 but easy to fix.)
+
+-------------------------------------
+author: Santos Moore
+date: 2013-05-15 17:42:47.000000000
+
+MISMATCHED INLINE COMMENT
+Line:141, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsOutputStream.java -> Done
+
+-------------------------------------
+author: Santos Moore
+date: 2013-05-15 17:42:47.000000000
+
+MISMATCHED INLINE COMMENT
+Line:150, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsOutputStream.java -> Done, plus a couple of fixes.
+
+-------------------------------------
+author: Santos Moore
+date: 2013-05-15 17:42:47.000000000
+
+MISMATCHED INLINE COMMENT
+Line:160, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsOutputStream.java -> Done
+
+-------------------------------------

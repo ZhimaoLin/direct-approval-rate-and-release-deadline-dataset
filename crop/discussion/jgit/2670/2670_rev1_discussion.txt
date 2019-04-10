@@ -1,0 +1,90 @@
+DESCRIPTION
+
+RFC Use extendible hashing for ObjectIdSubclassMap
+
+***  NOTE: RFC because I have not performance tested this
+***  against real-world repositories, nor have I compared
+***  it to the prior implementation's performance.
+
+The map algorithm now used by ObjectSubclassIdMap is derived from
+R. Fagin's 1979 ACM paper titled "Extendible hashing fast access
+method for dynamic files".
+
+The primary motivation for this change is to improve object
+enumeration performance for RevWalk, ObjectWalk and PackWriter by
+avoiding full rewrites of the current object map whenever the map
+needs to be grown to store more objects.
+
+Using extendible hashing allows for individual blocks to be rehashed
+without needing to rehash the entire table.  This limits the amount of
+work done on any given insertion to be bounded to the size of one
+block (hard-coded at 64) rather than the size of the entire table
+(however many objects that were added thus far).
+
+This change also reduces the amount of garbage created during object
+enumeration.  Whenever a block splits, the old block is retained and
+used as one of the two new blocks on the next block split.  Thus on
+any given block split past the first, only 1 new block needs to be
+allocated, and the other is reused from the prior split.  Since no
+objects become unreachable during a split operation, there is no
+garbage created by the map.
+
+The top level directory uses BlockList, also to avoid creating garbage
+when the top level directory doubles in size.  It is more costly to
+travel through the 2 levels of array lookups in BlockList during a
+get() or add() operation, but BlockList hardly ever creates garbage if
+it is used as an append-only data structure.  The top level directory
+doesn't create garbage until approximately 256*1024*64/2 objects have
+been put into the ObjectIdSubclassMap, or 8,421,376 entries.  There
+aren't many current repositories with more than 8 million objects.
+
+Each internal Block is itself a mini-hashtable, using linear hashing
+like the older ObjectIdSubclassMap implementation.  Chain lengths are
+capped at 8, to ensure that get() and add() are truely constant time
+operations and cannot grow to long running times under high collision
+rates.  To avoid duplicating the work done by the top-level directory,
+internal Blocks use ObjectId.w3, which is the 8th byte in the network
+byte order of the raw ObjectId format.
+
+As SHA-1 has a reasonably uniform distribution, there should be few
+collisions within each internal Block.  On average, when a block
+splits, it should be splitting because the block is being used by only
+2 directory slots, and therefore all blocks should split at about the
+same time during object enumeration.  The implementation avoids doing
+a pre-emptive splitting of all existing internal Blocks because the
+object being added might be the last one; a pre-emptive split would
+double the memory usage of the entire map and the application doesn't
+need the additional storage space.
+
+Change-Id: I761116cbddb7607c2d92ee2e1bd8ca5f07a7ecc4
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2011-03-08 22:27:42.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/39/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-03-08 22:30:15.000000000
+
+Patch Set 1: Build Successful
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/39/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-03-08 22:45:42.000000000
+
+Patch Set 1: Abandoned
+
+This is significantly slower than our current implementation, even though it should produce less garbage. I'm exploring other alternatives, but this particular approach is dead.
+
+-------------------------------------

@@ -1,0 +1,106 @@
+DESCRIPTION
+
+CBD-120: stats collection within XDCR manager and replicator
+
+This change-set creates an ETS table in XDCR manager to store the
+replication stats from all single replicators. The stat is stored at
+level of per vbucket of each bucket, identified by XDocId and Vb id.
+Stats per bucket is aggreated from stats from all vbuckets and dumped
+in XDCR manager at a fixed interval, when the XDCR Vbucket replication
+manager is scheduled.
+
+Change-Id: I17ca544c1d599a40487b3d5ca82454bdf401db97
+
+
+COMMENTS
+
+author: Macie Morton
+date: 2012-07-05 23:44:29.566000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-07-06 01:21:55.409000000
+
+Patch Set 6: I would prefer that you didn't submit this
+
+read-modify-write is not atomic
+
+-------------------------------------
+author: Macie Morton
+date: 2012-07-06 01:32:48.116000000
+
+Patch Set 6:
+
+Updating STATS table happens at each replicator, not replicator_worker. 
+
+At any time, for any given row in this table with specific key (XDocId, Vb), there is only one process trying to update it. There is no conflict and updating ETS table is atomic.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-07-06 01:40:21.067000000
+
+Patch Set 6:
+
+ok, but why you're storing all pids in this table as well? And where's the code that cleans up this table from cancelled replications ?
+
+-------------------------------------
+author: Macie Morton
+date: 2012-07-06 01:44:26.258000000
+
+Patch Set 6:
+
+Storing all Pids (including canceled/failed replication) for each replicator is just for easier debug, and I do not want remove Pids for canceled replications.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-07-06 01:51:07.474000000
+
+Patch Set 6:
+
+your debugging code is going to leak memory. Can't agree with that
+
+-------------------------------------
+author: Macie Morton
+date: 2012-07-06 01:56:16.264000000
+
+Patch Set 6:
+
+What do you mean "it is going to leak memory"?   
+
+It would be more helpful if you could be more specific in review. 
+
+The list of Pids is just small column in ETS table and its lifetime is wont be longer than the table itself.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-07-06 02:03:10.212000000
+
+Patch Set 6:
+
+This table is going to live _forever_. Right?
+
+And thus it's going to keep accumulating "debug" info. Eating more and more memory.
+
+-------------------------------------
+author: Macie Morton
+date: 2012-07-06 04:49:19.433000000
+
+Patch Set 6:
+
+This is not memory-leaking, it is more "memory-budgeting", say, how much memory we want allocate to store these debug information.  Everything we store in the list is useful, not garbage, just like other XDCR tables. Strictly speaking, they are also unbounded (is there any limit on the number of buckets and vbuckets we can create?). 
+
+Given the tiny size of pid and the frequency new replicator process is scheduled.  I feel it should be a big problem.
+
+Anyway, I will limit the size of list to be 1024 and the oldest pid will be discarded if overflow, which seems highly unlikely to me.
+
+-------------------------------------
+author: Macie Morton
+date: 2012-07-06 04:50:23.078000000
+
+Patch Set 6:
+
+"should be a big problem" -> "should not be a big problem". Sorry for my poor English. :(
+
+-------------------------------------

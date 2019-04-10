@@ -1,0 +1,121 @@
+DESCRIPTION
+
+MB-17508 1/4 Add detailed range errors to configuration validation exceptions
+
+Change-Id: I96bc339161f8788d30efe9e359c0e88825ffcd0a
+
+
+COMMENTS
+
+author: Keira Washington
+date: 2016-01-22 10:37:12.995000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-01-22 10:37:25.606000000
+
+Patch Set 1:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2139/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-01-22 11:08:45.294000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1361/ : FAILURE
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2139/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-01-22 11:25:09.569000000
+
+Patch Set 1: Code-Review-1
+
+(10 comments)
+
+Line:169, src/configuration.cc -> I'd probably revert these two lines (here and elsewhere) - they don't have any semantic effect on the operation of this function, and just add false noise to the patch (i.e. someone can no longer look at `git blame` and see when these lines were last /really/ changed).
+
+Line:193, tests/module_tests/configuration_test.cc -> Probably more useful to test a fractional limit (i.e. -100.1) instead.
+
+Line:198, tests/module_tests/configuration_test.cc -> Ditto
+
+Line:228, tests/module_tests/configuration_test.cc -> As per previous comment, would be cleaner if you could fix up the trailing comma.
+
+Line:288, tests/module_tests/configuration_test.cc -> What's the significance of the 'u' prefix?
+
+File Comment: /COMMIT_MSG -> Probably worth expanding this, describing what this patch does and why. See http://chris.beams.io/posts/git-commit/ for some good examples.
+
+Line:312, src/configuration.h -> These still all throw (transitively) don't they?
+
+Line:113, src/configuration.h -> Now you're throwing an exception which encapsulates the error string in it's what(), I'd remove the LOG message here, and let the caller log the string if they desire.
+
+My rationale is that the caller should make the decision whether to LOG the message, or return upstream (e.g. over the network to a client).
+
+In the case of ep_engine's set_param() functions, you can simply add a single LOG(...) call there and remove all the individual instances in this set of functions.
+
+Line:302, src/configuration.h -> 1. We always use braces {} for all logical statements, even if they are single-line.
+
+2. You can use a C++11 range-based for loop:
+
+ for (const auto& it : acceptable) {
+     error += it + ",";
+ }
+
+(Strictly speaking you also only want to add the comma between elements, and only if there's >1 of them).
+
+Line:237, CMakeLists.txt -> Whitespace only change - please revert.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-01-22 11:29:06.840000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:237, src/configuration.h -> For new code at least we are trying to be consistent with our style of 'where to place the pointer / reference symbol' to be "attached" to the type, which is the more idiomatic C++ style - e.g.
+
+ const std::string& key
+
+-------------------------------------
+author: Keira Washington
+date: 2016-01-22 12:22:43.091000000
+
+Patch Set 1:
+
+(3 comments)
+
+Line:288, tests/module_tests/configuration_test.cc -> It was originally p for public but then I realised it would also be p for protected and private so I chose u from the second character.
+
+Line:312, src/configuration.h -> They definitely don't throw std:string's although I suppose I could just fix that.
+
+Line:113, src/configuration.h -> These ones are a special case in that they shouldn't strictly speaking be callable as the generated config enforces type safety on the validations.
+
+Question here would be whether to remove the logging altogether or start logging all calls in the child classes at the set_param level.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-01-22 13:23:53.157000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:312, src/configuration.h -> It's probably fine to just say they throw "an exception" on error. Given the validation (and consequent exception throwing) is part of these methods interfaces' we should document that.
+
+Line:113, src/configuration.h -> So in that case it's probably ok to leave the LOG messages here, however I suggest you revert the change from "Configuration Error" -> "Validation Error", given that indeed it would be a bug in the config engine if these ever got called.
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-01-25 17:21:28.131000000
+
+Change has been successfully cherry-picked as 591fa623a5d05b6ad54cc91fbc6d33771b2fc896
+
+-------------------------------------

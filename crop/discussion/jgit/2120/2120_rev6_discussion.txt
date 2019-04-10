@@ -1,0 +1,91 @@
+DESCRIPTION
+
+Merging Git notes
+
+Merging Git notes branches has several differences from merging "normal"
+branches. Although Git notes are initially stored as one flat tree the
+tree may fanout when the number of notes becomes too large for efficient
+access. In this case the first two hex digits of the note name will be
+used as a subdirectory name and the rest 38 hex digits as the file name
+under that directory. Similarly, when number of notes decreases a fanout
+tree may collapse back into a flat tree. The Git notes merge algorithm
+must take into account possibly different tree structures in different
+note branches and must properly match them against each other.
+
+Any conflict on a Git note is, by default, resolved by concatenating
+the two conflicting versions of the note. A delete-edit conflict is, by
+default, resolved by keeping the edit version.
+
+The note merge logic is pluggable and the caller may provide custom
+note merger that will perform different merging strategy.
+
+Additionally, it is possible to have non-note entries inside a notes
+tree. The merge algorithm must also take this fact into account and
+will try to merge such non-note entries. However, in case of any merge
+conflicts the merge operation will fail. Git notes merge algorithm is
+currently not trying to do content merge of non-note entries.
+
+Thanks to Yoselin Hanna for patiently answering my questions related to
+this topic, giving hints and providing code snippets.
+
+Change-Id: I3b2335c76c766fd7ea25752e54087f9b19d69c88
+Signed-off-by: Dillon Cross xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Dillon Cross
+date: 2011-01-04 14:58:06.000000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-01-04 19:17:45.000000000
+
+Patch Set 6: I would prefer that you didn't submit this
+
+(4 inline comments)
+
+I'm almost happy with this.  A couple of style nits, and two bugs that should be fixed, and then we can get PMC approval to merge it.
+
+Line:180, org.eclipse.jgit/src/org/eclipse/jgit/notes/NoteMapMerger.java -> Since we dropped the writeTree call, we probably don't need this local variable anymore and can instead just return the result of split().
+
+Line:229, org.eclipse.jgit/src/org/eclipse/jgit/notes/NoteMapMerger.java -> I'm not sure we want to do this.  By setting the source InMemoryBucket from either the ours or theirs side into the result, any modification made by the caller to the result NoteMap will also impact the input ours or theirs map.  (Or vice-versa, any later modification to ours/theirs impacts the result.)
+
+Did you add this because removing the writeTree() from asFanout() after the LeafBucket split() broke tests?  If so then I was wrong earlier, we would need the writeTree()... but only if we are reusing the bucket.  So maybe instead its more like:
+
+  if (child == null)
+    return;
+  if (child instanceof InMemoryNoteBucket)
+    b.setBucket(cell, ((InMemoryNoteBucket)child).writeTree(inserter));
+  else
+    b.setBucket(cell, child.getTreeId());
+
+Line:347, org.eclipse.jgit/src/org/eclipse/jgit/notes/NoteMapMerger.java -> We probably could make this method non-static, change "ins" to be the field "inserter" and then drop the 2nd parameter.
+
+Line:89, org.eclipse.jgit/src/org/eclipse/jgit/notes/NotesMergeConflictException.java -> Any of base, ours, theirs could be null if that NonNoteEntry doesn't exist... causing the conflict to NPE.
+
+You need something similar to noteOn here:
+
+  private static String name(NonNoteEntry e) {
+    return e != null ? e.name() : "";
+  }
+
+-------------------------------------
+author: Dillon Cross
+date: 2011-01-05 06:47:36.000000000
+
+Patch Set 6: (4 inline comments)
+
+
+
+Line:180, org.eclipse.jgit/src/org/eclipse/jgit/notes/NoteMapMerger.java -> Done
+
+Line:229, org.eclipse.jgit/src/org/eclipse/jgit/notes/NoteMapMerger.java -> Done
+
+Line:347, org.eclipse.jgit/src/org/eclipse/jgit/notes/NoteMapMerger.java -> Done
+
+Line:89, org.eclipse.jgit/src/org/eclipse/jgit/notes/NotesMergeConflictException.java -> Done
+
+-------------------------------------

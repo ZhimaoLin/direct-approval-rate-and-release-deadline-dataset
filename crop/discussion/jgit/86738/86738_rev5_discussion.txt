@@ -1,0 +1,89 @@
+DESCRIPTION
+
+Fix FileSnapshot.isModified
+
+FileSnapshot.isModified may have reported a file to be clean although it
+was actually dirty.
+
+Imagine you have a FileSnapshot on file f. lastmodified and lastread are
+both t0. Now time is t1 and you
+1) modify the file
+2) update the FileSnapshot of the file (lastModified=t1, lastRead=t1)
+3) modify the file again
+4) wait 3 seconds
+5) ask the Filesnapshot whether the file is dirty or not. It erroneously
+answered it's clean.
+
+Any file which has been modified longer than 2.5 seconds ago was
+reported to be clean. As the test shows that's not always correct.
+
+The real-world problem fixed by this change is the following:
+* A gerrit server using JGit to serve git repositories is processing
+fetch requests while simultaneously a native git garbage collection
+runs on the repo.
+* At time t1 native git writes temporary files in the pack folder
+setting the mtime of the pack folder to t1.
+* A fetch request causes JGit to search for new packfiles and JGit
+remembers this scan in a Filesnapshot on the packs folder. Since the gc
+is not finished JGit doesn't see any new packfiles.
+* The fetch is processed and the gc ends while the filesystem timer is
+still t1. GC writes a new packfile and deletes the old packfile.
+* 3 seconds later another request arrives. JGit does not yet know about
+the new packfile but is also not rescanning the pack folder because it
+cached that the last scan happened at time t1 and pack folder's mtime is
+also t1. Now JGit will not be able to resolve any object contained in
+this new pack. This behavior may be persistent if objects referenced by
+the ref/meta/config branch are affected so gerrit can't read permissions
+stored in the refs/meta/config branch anymore and will not allow any
+pushes anymore. The pack folder will not change its mtime and therefore
+no rescan will take place.
+
+Change-Id: I3efd0ccffeb97b01207dc3e7a6b85c6b06928fad
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+
+COMMENTS
+
+author: Douglas Trujillo
+date: 2016-12-13 10:29:45.000000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-12-13 10:29:51.000000000
+
+Patch Set 5:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/9531/
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2016-12-13 10:30:55.000000000
+
+Patch Set 5: Code-Review+2
+
+improved comments and commit message
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-12-13 10:38:19.000000000
+
+Patch Set 5: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/9531/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2016-12-13 10:43:12.000000000
+
+Patch Set 5: Code-Review+2
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-12-13 10:49:52.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

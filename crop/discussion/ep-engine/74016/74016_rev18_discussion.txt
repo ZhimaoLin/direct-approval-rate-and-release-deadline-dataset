@@ -1,0 +1,74 @@
+DESCRIPTION
+
+MB-22013: Port access scanner to PauseResume model
+
+ItemAccessVisitor currently visits all StoredValues in a hashtable
+bucket before releasing the lock and writing down to disk. This commit
+changes ItemAccessVisitor to a PauseResumeHashTableVisitor allows us to
+pause after some number of items in a hashtable bucket which frees up
+the corresponding lock for other tasks/operations. It also means that we
+write the information down to disk more often, reducing the memory
+overhead required.
+
+A new configuration option has been added specifying the maximum number
+of StoredValues to visit before pausing and writing to disk.
+
+Under conditions where the access scanner is running constantly we see
+some performance improvement in the benchmark below where we vary
+whether the access scanner is running and the number of bucket locks:
+
+Before:
+
+Benchmark                                                                Time           CPU Iterations
+------------------------------------------------------------------------------------------------------
+VariableLockEngineFixture/AccessScannerVaryLocks/0/2/real_time     4943391 ns    4926497 ns       1546   987.746k items/s Control
+VariableLockEngineFixture/AccessScannerVaryLocks/1/2/real_time    15269389 ns   19844707 ns        508   319.778k items/s AccessScanner
+VariableLockEngineFixture/AccessScannerVaryLocks/0/4/real_time     5036350 ns    5003381 ns       1000   969.514k items/s Control
+VariableLockEngineFixture/AccessScannerVaryLocks/1/4/real_time     9331856 ns   13775602 ns        830   523.241k items/s AccessScanner
+VariableLockEngineFixture/AccessScannerVaryLocks/0/8/real_time     4735279 ns    4728202 ns       1427   1031.16k items/s Control
+VariableLockEngineFixture/AccessScannerVaryLocks/1/8/real_time     7110348 ns   11142629 ns        991   686.719k items/s AccessScanner
+VariableLockEngineFixture/AccessScannerVaryLocks/0/16/real_time    4903232 ns    4877714 ns       1522   995.836k items/s Control
+VariableLockEngineFixture/AccessScannerVaryLocks/1/16/real_time    6432808 ns   10182113 ns       1090   759.048k items/s AccessScanner
+
+After:
+
+Maxmimum of 4 items read before pause.
+
+Benchmark                                                                Time           CPU Iterations
+------------------------------------------------------------------------------------------------------
+VariableLockEngineFixture/AccessScannerVaryLocks/0/2/real_time     5055313 ns    5001415 ns       1570   965.877k items/s Control
+VariableLockEngineFixture/AccessScannerVaryLocks/1/2/real_time    14088345 ns   19444552 ns        505   346.585k items/s AccessScanner
+VariableLockEngineFixture/AccessScannerVaryLocks/0/4/real_time     5024198 ns    4949986 ns       1541   971.859k items/s Control
+VariableLockEngineFixture/AccessScannerVaryLocks/1/4/real_time     7990343 ns   12428609 ns        893   611.089k items/s AccessScanner
+VariableLockEngineFixture/AccessScannerVaryLocks/0/8/real_time     4530561 ns    4529560 ns       1556   1077.75k items/s Control
+VariableLockEngineFixture/AccessScannerVaryLocks/1/8/real_time     6524912 ns   10331335 ns       1085   748.334k items/s AccessScanner
+VariableLockEngineFixture/AccessScannerVaryLocks/0/16/real_time    4650341 ns    4649359 ns       1311   1049.99k items/s Control
+VariableLockEngineFixture/AccessScannerVaryLocks/1/16/real_time    5809577 ns    9420888 ns       1200   840.476k items/s AccessScanner
+
+Change-Id: If258a2272b014ce73e0948aee5ba71940415a718
+
+
+COMMENTS
+
+author: Aaliyah Proctor
+date: 2017-03-03 13:59:53.442000000
+
+Uploaded patch set 18.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-03-03 14:28:56.685000000
+
+Patch Set 18: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/3092/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/4266/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/3835/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/4487/ : SUCCESS
+
+-------------------------------------

@@ -1,0 +1,147 @@
+DESCRIPTION
+
+JCBC-901: Introduce Authenticator for implicit credentials
+
+Motivation:
+-----------
+RFC 007 (couchbaselabs/sdk-rfcs#13) introduces the Authenticator
+interface to deal with credentials that are not provided explicitly on
+each authenticated method call but centralized in one place.
+
+Modifications:
+--------------
+Added the Authenticator interface and its first implementation based on
+login/password pairs, PasswordAuthenticator.
+
+Internally, Authenticator deals with Credential objects. The contexts in
+which Authenticator can provide credential are enumerated in the
+CredentialContext enum.
+
+The Authenticator is set on the Cluster, and is passed down to each
+newly opened Bucket's N1qlQueryExecutor.
+
+Generally the authenticator should be prepared and set before opening
+buckets, once. However, it can be changed later on via  the
+`Cluster#authenticate` method (which doesn't impact already opened
+buckets). If a reference is kept to it, it can also be mutated.
+
+The following Cluster methods make use of the Authenticator when no
+explicit credential is provided: clusterManager() and
+openBucket(String bucketName).
+
+At the bucket level, the Authenticator is used in N1qlQueryExecutor to
+add credentials to the N1qlParams when it contains more than one such
+credentials (or a unique one different from the bucket from which the
+executor was created).
+
+Results:
+--------
+Implicit credentials can be retrieved from a configurable Authenticator,
+which paves the way for further authentication modes support and cluster
+level authentication.
+
+Joins on protected buckets now work, provided their credentials have
+been set on the Cluster's Authenticator before opening the Bucket from
+which the join query will be executed.
+
+Change-Id: Ia58107462cbeb8b3b2b86402a8e5e11c2ee92c3e
+
+
+COMMENTS
+
+author: Estrella Humphrey
+date: 2016-08-24 16:54:57.801000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2016-08-25 09:44:06.318000000
+
+Patch Set 3: Code-Review-1
+
+(13 comments)
+
+Line:49, src/main/java/com/couchbase/client/java/auth/Authenticator.java -> wdyt about dropping the get prefix here too?
+
+Line:255, src/main/java/com/couchbase/client/java/CouchbaseCluster.java -> shouldn't both overloads with and without timeout forward as before to not break backwards compat on openBucket("travel-sample")?
+
+Line:349, src/main/java/com/couchbase/client/java/CouchbaseCluster.java -> maybe an error if cred == null similar to an async one?
+
+Line:77, src/main/java/com/couchbase/client/java/auth/Credential.java -> haha, nice!
+
+Line:224, src/main/java/com/couchbase/client/java/env/DefaultCouchbaseEnvironment.java -> unrelated?
+
+Line:162, src/main/java/com/couchbase/client/java/query/core/N1qlQueryExecutor.java -> would this method also set the credentials in the bucket case? I mean we always have the password auth set by default, but I guess no credentials in it right?
+
+
+that makes me thing: ... in the core-io, do we need to check if credentials are set in the payload and if so don't set the http auth header? wonder what the spec says
+
+Line:355, src/main/java/com/couchbase/client/java/CouchbaseAsyncCluster.java -> I think we need a fallback here for backwards compat.. so if the cred is null we do openBucket(bucketName, "");
+
+otherwise we break peoples apps that do openBucket("travel-sample"), right?
+
+Line:460, src/main/java/com/couchbase/client/java/CouchbaseAsyncCluster.java -> how does without credentials relate to the authenticator being null?
+
+Line:466, src/main/java/com/couchbase/client/java/CouchbaseAsyncCluster.java -> whitespace
+
+Line:470, src/main/java/com/couchbase/client/java/CouchbaseAsyncCluster.java -> whitespace
+
+Line:474, src/main/java/com/couchbase/client/java/CouchbaseAsyncCluster.java -> add an explicit failure here if cred == null? so people know woops I gotta set the authenticator
+
+Line:488, src/main/java/com/couchbase/client/java/CouchbaseAsyncCluster.java -> maybe check for non null?
+
+Line:39, /COMMIT_MSG -> do you think that makes sense? use CLUSTER_ creds at the bucket level? I wonder if we should only play that magic card really at the cluster level... for now users could set the creds as a workaround on their own since we now have the n1ql param setting for it?
+
+-------------------------------------
+author: Estrella Humphrey
+date: 2016-08-25 11:10:52.051000000
+
+Patch Set 3:
+
+(18 comments)
+
+Line:49, src/main/java/com/couchbase/client/java/auth/Authenticator.java -> mmh this is not a getter, it has parameters so it could be confusing... also this is an "internal" API... I'm not strongly against it, but slightly not in favor of it :p
+
+Line:255, src/main/java/com/couchbase/client/java/CouchbaseCluster.java -> it is important that sync openBucket all go through the sync openBucket(String, String, List) since it manages the cache of Buckets...
+will add same error handling than in async version to revert back to old empty password behavior if NO password can be found in Authenticator.
+
+Line:349, src/main/java/com/couchbase/client/java/CouchbaseCluster.java -> getSingleCredential will throw an AuthenticatorException in this case
+
+Line:144, src/integration/java/com/couchbase/client/java/SearchQueryTest.java -> will remove the explicit empty password
+
+Line:224, src/main/java/com/couchbase/client/java/env/DefaultCouchbaseEnvironment.java -> yep, will remove
+
+Line:100, src/main/java/com/couchbase/client/java/query/core/N1qlQueryExecutor.java -> I have removed the Authenticator from the N1qlQueryExecutor. Callers will have to set credentials explicitly on N1qlParams upstream.
+
+Line:162, src/main/java/com/couchbase/client/java/query/core/N1qlQueryExecutor.java -> don't know what the spec says, but empirically having both the auth header (with valid username/password) + the credentials in the payload works.
+
+Line:355, src/main/java/com/couchbase/client/java/CouchbaseAsyncCluster.java -> that's right. I added an exception and will only propagate an error if the Authenticator contains *more than 1* credentials for the context
+
+Line:460, src/main/java/com/couchbase/client/java/CouchbaseAsyncCluster.java -> reworded (and made a specific exception)
+
+Line:466, src/main/java/com/couchbase/client/java/CouchbaseAsyncCluster.java -> Done
+
+Line:470, src/main/java/com/couchbase/client/java/CouchbaseAsyncCluster.java -> Done
+
+Line:474, src/main/java/com/couchbase/client/java/CouchbaseAsyncCluster.java -> this is what getSingleCredential does ;)
+
+Line:488, src/main/java/com/couchbase/client/java/CouchbaseAsyncCluster.java -> should null be ignored, or considered as resetting to a default empty PasswordAuthenticator? (went with ignored + traced for now)
+
+Line:43, src/integration/java/com/couchbase/client/java/ConnectionTest.java -> will remove these explicit empty passwords as the code should now again default to that if no credential in authenticator
+
+Line:99, src/integration/java/com/couchbase/client/java/ConnectionTest.java -> that was a leftover of an unrelated changed, will remove
+
+Line:48, src/main/java/com/couchbase/client/java/AsyncBucket.java -> will revert that change from baseline (no other change in interface)
+
+Line:39, /COMMIT_MSG -> ok maybe it's too much dark magic... let's remove the Authenticator altogether from N1qlQueryExecutor then, and make it a requirement that the N1qlParams bear the credentials that one wishes to use.
+
+Line:50, src/main/java/com/couchbase/client/java/Bucket.java -> will revert this organize import change from baseline (no other change in file)
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-08-25 15:48:29.883000000
+
+Change has been successfully cherry-picked as fc3a487e693d5e6f218e2399f4d836d02670e8be by Estrella Humphrey
+
+-------------------------------------

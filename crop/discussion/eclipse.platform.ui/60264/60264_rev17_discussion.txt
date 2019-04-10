@@ -1,0 +1,204 @@
+DESCRIPTION
+
+Bug 482024 - ExpandableComposite layout issues
+
+Bug 368861 - ExpandableComposite failed to compute right wrapped client
+size 
+
+- removed all special cases in regards to guessing about wrapping on
+client controls and let control calculate its own size based on hints
+- fixed bug in SizeCache where it won't let control calculate size with
+given hint because it calculates wrong minimumWidth
+- refactored code that same calculations are used when calculating size
+and doing layout, otherwise its duplicated in two spots leading to some
+nasty issues
+- better heuristics when calculating proportions of text client and text
+label controls
+
+testing done:
+- run existing junits and wrote bunch more, 
+- current code coverage for ExpandableComposite is 72%
+- manual tested bunch of flag combinations
+- test running eclipse sdk and using PDE editors that use forms heavily 
+(plugin manifest and target definition editor) seems to be ok 
+(linux ubuntu and windows 8)
+
+Change-Id: I8fdeb70d39d3c762a297f476356257ee91ae666d
+Signed-off-by: Ishaan Salas xxx@xxx.xxx
+
+COMMENTS
+
+author: Brenden Conley
+date: 2016-01-22 23:28:39.000000000
+
+Patch Set 17:
+
+Build Started https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/8091/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-01-22 23:53:41.000000000
+
+Patch Set 17: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/8091/ : SUCCESS
+
+-------------------------------------
+author: Kelly Potter
+date: 2016-01-23 04:37:53.000000000
+
+Patch Set 17:
+
+(24 comments)
+
+Line:37, tests/org.eclipse.ui.tests.forms/forms/org/eclipse/ui/tests/forms/widgets/ExpandableCompositeTest.java -> Please add a test for a nested GridLayout containing a  fill-aligned wrapping text control. I suspect this may uncover interesting corner cases since GridLayout it will be a wrapping control that doesn't implement ILayoutExtension or have the SWT.WRAP.
+
+Line:43, tests/org.eclipse.ui.tests.forms/forms/org/eclipse/ui/tests/forms/widgets/ExpandableCompositeTest.java -> Add final. Rename to SHORT_TEXT.
+
+Line:44, tests/org.eclipse.ui.tests.forms/forms/org/eclipse/ui/tests/forms/widgets/ExpandableCompositeTest.java -> Add final. Rename to LONG_TEXT.
+
+Line:102, tests/org.eclipse.ui.tests.forms/forms/org/eclipse/ui/tests/forms/widgets/ExpandableCompositeTest.java -> Good change... but use applyTo() rather than create() when attaching to a control. Change it to:
+
+GridLayoutFactory.fillDefaults().applyTo(shell).
+
+Line:392, tests/org.eclipse.ui.tests.forms/forms/org/eclipse/ui/tests/forms/widgets/ExpandableCompositeTest.java -> Change to:
+
+GridDataFactory.fillDefaults().hint(500, SWT.DEFAULT).applyTo(ec);
+
+Line:451, tests/org.eclipse.ui.tests.forms/forms/org/eclipse/ui/tests/forms/widgets/ExpandableCompositeTest.java -> Use applyTo() rather than create()
+
+Line:453, tests/org.eclipse.ui.tests.forms/forms/org/eclipse/ui/tests/forms/widgets/ExpandableCompositeTest.java -> Avoid swtDefaults().
+
+use applyTo() rather than create().
+
+Line:461, tests/org.eclipse.ui.tests.forms/forms/org/eclipse/ui/tests/forms/widgets/ExpandableCompositeTest.java -> Avoid the use of swtDefaults(). fillDefaults() and explicit alignment makes the layout logic easier for others to read.
+
+applyTo() is preferred over create(...) when attaching to a control since it's easy to generate a ClassCastException if you mistype this and omit the ".create()". The applyTo version is also shorter.
+
+Change this to:
+
+GridDataFactory.fillDefaults().align(SWT.BEGINNING, SWT.CENTER).applyTo(l);
+
+Line:32, tests/org.eclipse.ui.tests.forms/forms/org/eclipse/ui/tests/forms/widgets/SizeCacheTest.java -> Please add a test for a nested GridLayout containing a  fill-aligned wrapping text control. I suspect this may uncover interesting corner cases since GridLayout it will be a wrapping control that doesn't implement ILayoutExtension or have the SWT.WRAP.
+
+Line:59, tests/org.eclipse.ui.tests.forms/forms/org/eclipse/ui/tests/forms/widgets/SizeCacheTest.java -> Change to:
+
+GridLayoutFactory.fillDefaults().applyTo(shell)
+
+Line:127, tests/org.eclipse.ui.tests.forms/forms/org/eclipse/ui/tests/forms/widgets/SizeCacheTest.java -> Change to:
+
+GridLayoutFactory.fillDefaults().applyTo(comp);
+
+Line:129, tests/org.eclipse.ui.tests.forms/forms/org/eclipse/ui/tests/forms/widgets/SizeCacheTest.java -> Avoid swtDefaults(). Always use fillDefaults().
+
+Use applyTo(...) instead of create(...)
+
+Line:135, tests/org.eclipse.ui.tests.forms/forms/org/eclipse/ui/tests/forms/widgets/SizeCacheTest.java -> Use applyTo(...) instead of create()
+
+Line:138, tests/org.eclipse.ui.tests.forms/forms/org/eclipse/ui/tests/forms/widgets/SizeCacheTest.java -> Use applyTo(...) instead of create().
+
+Use fillDefaults().align(SWT.BEGINNING, SWT.CENTER).applyTo(l) instead of swtDefaults(), that way others can see what alignment you're actually using.
+
+Line:153, tests/org.eclipse.ui.tests.forms/forms/org/eclipse/ui/tests/forms/widgets/SizeCacheTest.java -> I'm pretty sure it's SWT's computeSize method that lies about small control sizes - not SizeCache.
+
+Line:185, tests/org.eclipse.ui.tests.forms/forms/org/eclipse/ui/tests/forms/widgets/SizeCacheTest.java -> Please indicate the beginning and end of the block that should be changed to "testCacheSize(inner)"
+
+Line:189, bundles/org.eclipse.ui.forms/src/org/eclipse/ui/forms/widgets/SizeCache.java -> This entire block looks bogus to me. If control ever enters this block, what it accomplishes would be passing down a widthHint that is larger than what the parent requested... so any wrapping control is likely to return a height that is shorter than requested and the control will almost certainly become vertically truncated.
+
+I'd bet that this code exists to cover up a bug elsewhere in the Forms system. Most likely, there is one or more custom layouts that are not checking for ILayoutExtension, and this was inserted since it seemed to work in a lot of cases.
+
+Please either delete this block and fix the problems in the dependent layouts or add a TODO indicating that this is an incorrect method for applying a minimum size to a control and needs to be fixed.
+
+If you opt to keep this branch, I'd suggest narrowing the scope of the if statement further. It should probably only be applied to Composites that have a layout of type ILayoutExtension -- not all controls with the SWT.WRAP flag, which is what FormUtil.isWrapControl would include.
+
+Line:191, bundles/org.eclipse.ui.forms/src/org/eclipse/ui/forms/widgets/SizeCache.java -> Please replace FormUtil.getWidthHint() with the single line "return wHint". Once you do that, there will be no remaining callers of FormUtil.isWrapControl and it should be deleted.
+
+Line:287, bundles/org.eclipse.ui.forms/src/org/eclipse/ui/forms/widgets/ExpandableComposite.java -> This algorithm requires - at worst - 3 computeSize calls on each of the text label and text client. This is bad because SizeCache can only reliably cache 2 calls per layout pass. 3 guarantees a cache miss.
+
+You could implement the same layout much more efficiently and with less code using only 2 computeSize calls like this:
+
+First compute the default size (SWT.DEFAULT, SWT.DEFAULT) of both the text client and text label. Add their widths to determine if you have to split the available space between them and use the default size to figure out how much horizontal space each gets.
+
+I believe this equation should give you a nice-looking split:
+
+leftSizeBeforeSplit = Math.min(twidth, leftDefaultSize.x);
+rightSizeBeforeSplit = Math.min(twidth, rightDefaultSize.x);
+
+leftSizeAfterSplit = twidth * leftSizeBeforeSplit / (leftSizeBeforeSplit + rightSizeBeforeSplit);
+rightSizeAfterSplit = twidth - leftSizeAfterSplit;
+
+Then you can use leftSizeAfterSplit and rightSizeAfterSplit as your width hints and get the final size of the controls with one additional call to computeSize each.
+
+Line:302, bundles/org.eclipse.ui.forms/src/org/eclipse/ui/forms/widgets/ExpandableComposite.java -> Nice
+
+Line:384, bundles/org.eclipse.ui.forms/src/org/eclipse/ui/forms/widgets/ExpandableComposite.java -> Relying on tcsize.x == width is an unreliable test for grow alignment since SizeCache is supposed to return hints verbatim if they're not SWT.DEFAULT.
+
+Also, computeSize(SWT.DEFAULT, SWT.DEFAULT) is likely to be much more efficient than computeSize(width, SWT.DEFAULT) since it will almost certainly get a cache hit... so reverse the order of these conditions.
+
+The standard idiom for non-fill-alignment is this:
+
+tcsize = textClientCache.computeSize(SWT.DEFAULT, SWT.DEFAULT);
+if (width != SWT.DEFAULT && tcsize.x > width) {
+  tcsize = textClientCache.computeSize(width, SWT.DEFAULT);
+}
+
+It will return a size which is no wider than "width", and which has a wrapped height appropriate for the returned width, which is - I think - what you wanted here.
+
+You may have to remove the bogus branch from SizeCache before this idiom works correctly, though.
+
+Line:408, bundles/org.eclipse.ui.forms/src/org/eclipse/ui/forms/widgets/ExpandableComposite.java -> Use the standard idiom for non-fill aligment described above.
+
+Line:457, bundles/org.eclipse.ui.forms/src/org/eclipse/ui/forms/widgets/ExpandableComposite.java -> Again, this algorithm requires 3 computeSize calls per layout pass. You can do it in 2 as described above.
+
+Line:490, bundles/org.eclipse.ui.forms/src/org/eclipse/ui/forms/widgets/ExpandableComposite.java -> This is a good change, but it would be good everywhere. Also delete all other calls to FormUtil.getWidthHint and replace them with the first argument as you've done here. Then delete FormUtil.getWidthHint.
+
+-------------------------------------
+author: Kelly Potter
+date: 2016-01-23 05:06:01.000000000
+
+Patch Set 17:
+
+(1 comment)
+
+Line:408, bundles/org.eclipse.ui.forms/src/org/eclipse/ui/forms/widgets/ExpandableComposite.java -> ...or... even better, rewrite this bit of the patch using the faster algorithm I described on line 287.
+
+-------------------------------------
+author: Julian Foster
+date: 2016-01-26 01:36:28.000000000
+
+Patch Set 17:
+
+(3 comments)
+
+Line:32, tests/org.eclipse.ui.tests.forms/forms/org/eclipse/ui/tests/forms/widgets/SizeCacheTest.java -> There already, that is testFillComp() (using createFillComp())
+
+Yes I specifically discover the problem that most people use GridLayout and it can perfectly wrap controls without being isWrapControl by definition of form utils
+
+Line:153, tests/org.eclipse.ui.tests.forms/forms/org/eclipse/ui/tests/forms/widgets/SizeCacheTest.java -> SizeCache line 430:
+	Point minWidth = controlComputeSize(FormUtil.getWidthHint(5, control), SWT.DEFAULT);
+
+By lying I mean it will always return 5 even actual size is 3
+
+Line:191, bundles/org.eclipse.ui.forms/src/org/eclipse/ui/forms/widgets/SizeCache.java -> Lets not do it now. It used in another 6 places and removing it may have some unknown consequences because I don't have tests for the widgets it affects... We can open another bug to clean it up later.
+
+-------------------------------------
+author: Kelly Potter
+date: 2016-01-26 15:40:26.000000000
+
+Patch Set 17:
+
+(1 comment)
+
+Line:191, bundles/org.eclipse.ui.forms/src/org/eclipse/ui/forms/widgets/SizeCache.java -> I think it's more likely to fix those widgets than it is to break them -- I believe FormUtil.getWidthHint() was intended as an optimization, and it's unlikely (but not impossible) that any widget was relying on receiving the incorrect width hint.
+
+...but I also don't mind if this is done in a follow-up change.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2017-05-04 20:04:27.000000000
+
+Change has been successfully merged into the git repository by Kelly Potter
+
+-------------------------------------

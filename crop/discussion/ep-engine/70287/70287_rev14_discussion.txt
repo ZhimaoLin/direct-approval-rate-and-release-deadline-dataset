@@ -1,0 +1,149 @@
+DESCRIPTION
+
+[Ephemeral Buckets]: Add a class that stores ordered sequence of items in memory
+
+This commit adds an abstract base class 'SequenceList' that provides apis
+to store ordered sequence of items in memory.
+
+'BasicLinkedList' is a concrete class derived from 'SequenceList' that
+implements in-memory ordered seq of items stored in our multi-threaded,
+monotonically increasing seq model. 'BasicLinkedList' uses a boost intrusive
+doubly linked list. It is essentially a linked list of 'StoredValues'.
+
+'BasicLinkedList' works in tandem with already existing 'HashTable'
+to achieve O(1) writes/updates and O(1) reads. Range read is also
+implemented which is necessary for an in-memory DCP backfill. Range reads
+provide point-in-time snapshots which is essential for our incremental DCP.
+
+'BasicLinkedList' is NOT heavily multi-threaded. Writer threads and
+'cleanStaleItems' threads block each other. (Stale items are a consequence
+of point-in-time snapshots).
+
+This code is integrated with EPBucket for set() and is yet to be
+integrated for the ephemeralBucket.
+
+Finally a module test 'ephemeral_vb_test' has been added as a module test.
+
+Note: This is still not fully integrated with the kv-engine.
+
+Change-Id: I31bde3ea25509504fa8cc23a5506e7b14fa16bc8
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2016-11-30 08:18:53.915000000
+
+Uploaded patch set 14.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-30 08:19:03.292000000
+
+Patch Set 14:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1898/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-30 08:19:03.461000000
+
+Patch Set 14:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/754/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-30 08:19:03.628000000
+
+Patch Set 14:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1980/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-30 08:23:48.755000000
+
+Patch Set 14:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1588/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-30 08:46:33.455000000
+
+Patch Set 14: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1898/ : FAILURE
+
+Timeout of a CTest test 30/30 Test #23: ep-engine_full_eviction_dcp ...........} ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/1898/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1980/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/754/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1588/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-11-30 18:37:34.467000000
+
+Patch Set 14: Code-Review-1
+
+(15 comments)
+
+Mostly looking good - I confess that I didn't look at seqlist.cc / seqlist.h in minute detail yet - ran out of time.
+
+Line:34, src/seqlist.h -> We should certainly use a consistent type.
+
+Line:122, src/seqlist.h -> Nice to document the other arguments. Also - if `v` isn't const, then I assume it can be updated - in which case how does it related to the return  value?
+
+Line:144, src/seqlist.h -> Can use SeqRange class for this
+
+Line:274, src/seqlist.h -> I assume this is a cache of the underlying items in the list - can you not instead use boost::intrusive::list::size() and simplify the code?
+
+File Comment: tests/module_tests/ephemeral_vb_test.cc -> Test improvements look good. Suggest you check your code coverage (see https://github.com/Piper Jefferson/tlm/blob/master/cmake/Modules/CouchbaseCodeCoverage.cmake if you've not used it before) to verify the coverage of your new SequenceList.
+
+(Ideally I want to have this part of commit-validation, but it's not totally wired up yet).
+
+Line:109, src/ephemeral_vb.cc -> Related to our conversation - if the EphemeralVBucket class is putting items into the checkpoint, then for consistency then the normal VBucket should also do the same - that should solve your problem of each behind differently in EPBucket.
+
+Line:139, src/ephemeral_vb.cc -> I think I made an earlier comment about extracting this into a common function (as updateStoredValue also calls it). Was there a reason we can't do that (I might have missed your response).
+
+Line:40, src/ephemeral_vb.h -> Can this be null? If not change to reference.
+
+Line:43, src/ephemeral_vb.h -> Nit: You could consider using your new Range class for these two arguments.
+
+Line:44, src/ephemeral_vb.h -> Can this be null? If not, change to a reference.
+
+Line:54, src/ephemeral_vb.h -> Is this virtual? If so, add an `override` specifier to inform the reader. If not, then I'm surprised this class needs a public method and the base class VBucket doesn't...
+
+Line:59, src/ephemeral_vb.h -> Probably worth documenting the return values.
+
+Line:63, src/ephemeral_vb.h -> Again, you can use Range here.
+
+Line:67, src/ephemeral_vb.h -> Might be worth elaborating what "clean" and "stale" means in this context.
+
+Line:70, src/ephemeral_vb.h -> beginning
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-12-02 11:11:03.713000000
+
+Patch Set 14: Code-Review-1
+
+(1 comment)
+
+Line:101, src/seqlist.h -> This class (and the others defined here) really could benefit from a standalone unit test suite like hash_table_test.cc etc...
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-12-02 13:42:38.729000000
+
+Patch Set 14: -Verified
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1941/ (4/4)
+
+-------------------------------------

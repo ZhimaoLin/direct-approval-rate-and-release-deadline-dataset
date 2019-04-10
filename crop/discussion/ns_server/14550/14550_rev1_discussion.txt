@@ -1,0 +1,108 @@
+DESCRIPTION
+
+implemented master events keeping & streaming facility.MB-5018
+
+In order to observe & verify cluster-wide operations we need some way
+to get notified when something notable happens.
+
+We now have this.
+
+By doing GET for /diag/masterEvents on master node you'll get back infinite stream of
+json events. There will be one line per json event with lines
+separated by '\n'.
+
+Events streamed are:
+
+* node became master
+  xxx@xxx.xxx
+
+* ebucketmigrator started
+  xxx@xxx.xxx
+
+* ebucketmigrator died
+  {"type":"ebucketmigratorTerminate","ts":"1333576047.859331","reason":"shutdown","pid":"<13014.432.0>"}
+
+* vbucket state changed by ns_server
+  {"vbucket":"0","type":"vbucketStateChange","ts":"1333576042.549572","state":"active","host":"10.17.2.163:12000","bucket":"default"}
+
+* bucket created
+  {"type":"createBucket","ts":"1333582750.502623","bucketType":"memcached","bucket":"mcd","params":{"sasl_password":"","ram_quota":"104857600","auth_type":"sasl"}}
+
+* bucket deleted
+  {"type":"deleteBucket","ts":"1333582734.895535","bucket":"mcd"}
+
+* rebalance started
+  {"type":"rebalanceStart","ts":"1333576051.72607","pid":"<0.533.0>","keepNodes":["10.17.2.163:12000","10.17.2.163:12002","10.17.2.163:12004"],"ejectNodes":[],"failedNodes":[]}
+
+* rebalance completed/failed/stopped
+  {"type":"rebalanceEnd","ts":"1333582913.797543","reason":"normal","pid":"<0.782.0>"}
+
+* vbucket map or fast-forward map changed (with event per vbucket
+  changed)
+  {"type":"resetFastForwardMap","ts":"1333576047.79036","bucket":"default"}
+  or
+  {"vbucket":"43","type":"updateMap","ts":"1333576047.814047","bucket":"default","chainBefore":["10.17.2.163:12002","10.17.2.163:12004"],"chainAfter":["10.17.2.163:12002",""]}
+  or
+  {"vbucket":"36","type":"updateFastForwardMap","ts":"1333576052.76132","bucket":"default","chainBefore":[],"chainAfter":["10.17.2.163:12000","10.17.2.163:12002"]}
+
+* vbucket mover spawned
+  xxx@xxx.xxx
+
+* vbucket move completed
+  {"vbucket":"43","type":"vbucketMoveDone","ts":"1333576052.926554","bucket":"default"}
+
+* node failed over
+  {"type":"failover","ts":"1333576047.785782","host":"10.17.2.163:12004"}
+
+* tap name deregister
+  xxx@xxx.xxx
+
+Here's common types of fields:
+
+* type - type of event
+
+* ts - event timestamp as seconds since Unix epoch
+
+* host - memcached host/port for node
+
+* node - erlang atom of node
+
+* vbucket - vbucket number
+
+* bucket - bucket name (note for ebucketmigrator events bucket is
+  usually undefined and real bucket name is username)
+
+* pid - pid of process
+
+Implementation approach is to have gen_event (registered locally under
+master_activity_events_ingress) on all nodes and have note_XXX calls
+do notify to this process on master nodes. We expect in most cases
+it'll be local notify calls. In order to mitigate any basd
+side-effects of discovering who is current master and doing this
+potentially remote sends, each note_XXX is actually queuing this work
+to per-node work queue service (named master_activity_events_srv).
+
+On master_activity_events_ingress there are only one listener that's
+adding timestamps to all events and forwards them to another local
+gen_event server. This one is our main one and is locally registered
+as master_activity_events.
+
+Additionally there's simple events archiver process that keeps last 4k
+events and events streaming function
+(master_activity_events:stream_events/2) which will invoke passed
+callback for all recently archived events and all future events. This
+function normally doesn't return.
+
+Change-Id: Ic85da9e306bbe1620e0b58b9901f3bf2a4da03d3
+
+
+COMMENTS
+
+author: Nathalie Landry
+date: 2012-04-05 04:34:16.547000000
+
+Patch Set 1: Verified
+
+
+
+-------------------------------------

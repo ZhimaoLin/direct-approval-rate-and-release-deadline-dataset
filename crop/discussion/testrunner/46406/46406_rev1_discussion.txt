@@ -1,0 +1,144 @@
+DESCRIPTION
+
+Add the basic test case for service installation
+
+Change-Id: Ia8311af4f4b16e2c79cb0eafb8857b1e58323cb5
+
+
+COMMENTS
+
+author: Donavan Ayala
+date: 2015-02-05 06:29:00.077000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-02-05 06:29:05.239000000
+
+Patch Set 1:
+
+Build Started http://factory.couchbase.com/job/testrunner-Jasmin Rangel-sherlock/4067/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-02-05 06:51:37.515000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+http://factory.couchbase.com/job/testrunner-Jasmin Rangel-sherlock/4067/ : SUCCESS
+
+-------------------------------------
+author: Esperanza Cherry
+date: 2015-02-05 08:18:21.365000000
+
+Patch Set 1: Code-Review-2
+
+(15 comments)
+
+Line:6, conf/sg/sginstalltests.conf -> please unomment tests
+
+Line:28, pytests/sg/sginstalltests.py -> now the test doesn't install SG at all. it will fall on the first run if SG is already installed on vm.
+
+Line:14, pytests/sg/sg_base.py -> what about 1.1.0?
+
+Line:101, pytests/sg/sg_base.py -> better to put this log before actually calling this cmd
+
+Line:102, pytests/sg/sg_base.py -> I think you don't need to "mkdir /opt", this is  a system folder and you should download _temp file into /rmp folder
+
+Line:106, pytests/sg/sg_base.py -> not sure that is a good createria. it's better to verify that SG binary file exists but not sh script for services.
+
+Line:107, pytests/sg/sg_base.py -> simpler: "return exist"
+
+Line:119, pytests/sg/sg_base.py -> maybe rename liek:
+is_sync_gateway_service_installed
+
+Line:126, pytests/sg/sg_base.py -> what are you doing with cmd then?
+
+Line:154, pytests/sg/sg_base.py -> you never use path variable, and loc param
+
+Line:155, pytests/sg/sg_base.py -> currently we support Python2.6, and the following statement produces error
+
+ValueError: zero length field name in format
+
+Line:160, pytests/sg/sg_base.py -> the same, but i think we don't need to have separate functions for such verifications. 1 line in tests should be enough:
+self.assertTrue(shell.file_exists('/home/sync_gateway/', 'sync_gateway.json'))
+
+Line:166, pytests/sg/sg_base.py -> the same
+
+Line:176, pytests/sg/sg_base.py -> oh no! you will remove all installed application under /opt folder! you can even broke vms after it. deleting all logs under /root/*.log is not good approach. do sg logs have any template in naming?
+
+Line:178, pytests/sg/sg_base.py -> it's better to fail test if SG is still running
+
+-------------------------------------
+author: Donavan Ayala
+date: 2015-02-05 18:05:56.169000000
+
+Patch Set 1:
+
+(14 comments)
+
+Line:6, conf/sg/sginstalltests.conf -> Those are test cases not done yet.   Want to review with the basic test case first.
+
+Line:28, pytests/sg/sginstalltests.py -> I designed each test case to run independently, with clean up up front.
+
+Line:14, pytests/sg/sg_base.py -> This is temp holder.   Actually the new build does not go to s3 anymore.    This will need to be changed when the final location of build is settled.
+
+Line:101, pytests/sg/sg_base.py -> This is actually the log at the beginning of the action "install_gateway".   It got push down because the logic to determine "cmd" has to be done first.
+
+Line:102, pytests/sg/sg_base.py -> However, on ubruntu, I got this weird error for /opt not there.  That is why I added it.   I put it in /opt so it can be cleaned up earlier, and easier for debugging.
+
+Line:106, pytests/sg/sg_base.py -> Either one is good and we only need one.    Since I am thinking from service point of view, that is why I check the service script file
+
+Line:107, pytests/sg/sg_base.py -> Changed to 
+        if exist:
+            return True
+        else:
+            self.log.info('FATAL: installed file not found - /opt/couchbase-sync-gateway/service/sync_gateway_service_install.sh')
+            return False
+
+Line:119, pytests/sg/sg_base.py -> Renamed two subroutines is_sync_gateway_process_running and is_sync_gateway_service_running
+
+Line:126, pytests/sg/sg_base.py -> It is used 4 lines later, line 136 
+ output, error = shell.execute_command_raw(cmd)
+
+Line:154, pytests/sg/sg_base.py -> Changed to:
+        path = '/home/{}/'.format(loc)
+        exist = shell.file_exists(path, 'logs')
+
+Line:160, pytests/sg/sg_base.py -> See above, need the function because those data, log and config files can be at diff location.
+
+Line:166, pytests/sg/sg_base.py -> See above.
+
+Line:176, pytests/sg/sg_base.py -> I did not consider running this test case with others.   You have the point, I will remove selectivle.
+
+Line:178, pytests/sg/sg_base.py -> This is service_clean specifiically
+
+-------------------------------------
+author: Esperanza Cherry
+date: 2015-02-05 18:27:06.972000000
+
+Patch Set 1:
+
+(8 comments)
+
+Line:6, conf/sg/sginstalltests.conf -> okay, let's leave so. but they worked before)
+
+Line:14, pytests/sg/sg_base.py -> I see, 
+I just added it to not forget that we should be supporting all subsequent versions
+
+Line:102, pytests/sg/sg_base.py -> I think it should be a bug then(/opt :- This directory is reserved for all the software and add-on packages that are not part of the default installation). so if it's a clean vm without /opt folder then sg installation should be able to create it. it will be interesting to check the behavior for CB installation
+
+Line:106, pytests/sg/sg_base.py -> but your method is install_gateway and no no mention of service
+
+Line:107, pytests/sg/sg_base.py -> self.log.error then
+
+Line:126, pytests/sg/sg_base.py -> I see, sorry
+
+Line:160, pytests/sg/sg_base.py -> you can verify location of any file with one command self.assertTrue(shell.file_exists(PATH_TO_FILE)) from any test. and you don't need many funcs with the same functionality but different hardcoded params
+
+Line:178, pytests/sg/sg_base.py -> doesn't matter. service_clean should clean as expected, otherwise the func should be failed. you can use try/except block in the tests if the result doesn't matter
+
+-------------------------------------

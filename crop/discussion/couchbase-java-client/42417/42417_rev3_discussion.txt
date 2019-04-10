@@ -1,0 +1,66 @@
+DESCRIPTION
+
+JCBC-606: Release buffers in transcoders + tests
+
+Motivation
+----------
+After some leaks were reported by Netty, it was determined that in the
+various transcoders, ByteBuf were inconsistently released. Most of them
+take the ByteBuf and convert it in another format (eg JSON) and don't
+access the buffer after that, which is a good candidate point for the
+release of the buffer.
+
+Additionally, even when the transcoder released the buffer on success
+it was not released before throwing a TranscodingException.
+
+We would gain from a standard "automatic" way of releasing the buffer
+in both success or error in decoding. But transcoders that produce an
+output which still holds the buffer (eg BinaryTranscoder) should not
+release it.
+
+Modifications
+-------------
+The AbstractTranscoder now releases the buffer in case of both success
+and error, provided the corresponding "shouldAutoreleaseOnXXX" methods
+return true (which is the default).
+
+BinaryTranscoder has shouldAutoreleaseOnDecode return false, whereas it
+has shouldAutoreleaseOnError return true, allowing BinaryDocument to
+keep hold of the ByteBuf down the line.
+
+Corresponding tests have been put in place. They test both success and
+error in decode operation. BinaryTest checks that the success case
+doesn't release the buffer.
+
+On JsonTranscoder, a specific static method converts ByteBuf to Json.
+This method doesn't release the buffer, and has been documented and
+tested to reflect that this is on purpose.
+
+Result
+------
+By default, any implementation of AbstractTranscoder will release its
+content buffer after decode operation, either successful or in error.
+
+BinaryTranscoder doesn't release buffers on decode success but does on
+decode error.
+
+All transcoder tests pass, and check the coherence of the buffer refCnt
+reference count after decode operation for the type of transcoder.
+
+Note that something should be done to inform the user that it is his
+responsibility to manually release the buffer of a BinaryDocument.
+
+Change-Id: I1f62a832fc67eab78b4a12d4f8af371b3c89ab17
+Reviewed-on: http://review.couchbase.org/42417
+Tested-by: Estrella Humphrey xxx@xxx.xxx
+Reviewed-by: Natasha Sullivan xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Natasha Sullivan
+date: 2014-10-27 16:28:11.910000000
+
+Change has been successfully cherry-picked as 44a530d6f1ef85166d03a85c01c404e8d3ac93aa
+
+-------------------------------------

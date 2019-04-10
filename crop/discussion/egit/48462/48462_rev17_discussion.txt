@@ -1,0 +1,114 @@
+DESCRIPTION
+
+Workaround to enable linking multiple resources to HistoryView
+
+When given a selection the GenericHistoryView only considers the first
+element and adapts it to an IResource before passing it on as input. To
+work around this behavior the GitHistoryPage now tracks the current
+selection itself and uses it as input if preferable.
+
+This does not work for 'Show In' behavior.
+
+Bug: 392948
+Signed-off-by: Ronin Harrell xxx@xxx.xxx
+Signed-off-by: Karter Mora xxx@xxx.xxx
+Signed-off-by: Maleah Marks xxx@xxx.xxx
+Signed-off-by: Corbin Edwards xxx@xxx.xxx
+Signed-off-by: Maren Gonzales xxx@xxx.xxx
+Signed-off-by: Denise Bennett xxx@xxx.xxx
+Change-Id: Idd3f2434881085d90a547f825fb20ba8895b7e79
+
+COMMENTS
+
+author: Denise Bennett
+date: 2017-05-04 14:52:17.000000000
+
+Uploaded patch set 17.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-05-04 14:52:23.000000000
+
+Patch Set 17:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/9771/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-05-04 15:16:06.000000000
+
+Patch Set 17: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/9771/ : SUCCESS
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-05-05 08:57:04.000000000
+
+Patch Set 17:
+
+(2 comments)
+
+Works now. Some minor nitpicks.
+
+However: did you notice that bug 392948 in EGit depends on bug 392949 in platform.team? In Team, there's also bug 406894 (which is the "Show In" problem), and bug 372959 (and its duplicate 388195). Plus there's another bug (not reported yet): the history view does not update when the selection changes in an MultiPageEditorPart. (For instance, switch between MANIFEST.MF and plugin.xml in a PDE editor: history will always show the history of plugin.xml.) That's because GenericHistoryView.editorActivated() doesn't account for multi-page editors. Even if we fixed that in the new GitSelectionTracker, it wouldn't work since we'd get MANIFEST.MF from it all right, but the GenericHistoryView will call GitHistoryPage.setInput() with plugin.xml, and since those don't overlap, we'll keep using plugin.xml.
+
+Given that we
+
+* have to build quite some infrastructure to track part activations and selections ourselves,
+* run into the "Show In" problem (bug 406894), and
+* should fix that MultiPageEditorPart problem,
+
+how about fixing GenericHistoryView in platform.team instead of adding work-arounds in EGit?
+
+The current change looks good and I like the factoring out of the tracking into a separate class. I'm OK with including it, given that we cannot deal with the "Show In" and the MultipageEditorPart problems locally. But really it's the GenericHistoryView that needs fixing. If and when it ever gets fixed, we might need to add a version check to do our own tracking only on platforms where we still have that broken GenericHistoryView.
+
+Line:2, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/history/GitHistorySelectionTracker.java -> 2017
+
+Line:113, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/history/GitHistorySelectionTracker.java -> This debug/test output should be removed :-)
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-05-05 09:31:58.000000000
+
+Patch Set 17:
+
+> Plus there's another bug (not reported yet)
+
+Now reported as bug 516230.
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-05-05 09:35:38.000000000
+
+Patch Set 17:
+
+(1 comment)
+
+Line:126, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/history/GitHistorySelectionTracker.java -> In SelectionUtils, we use getResource...
+
+-------------------------------------
+author: Denise Bennett
+date: 2017-05-05 11:26:20.000000000
+
+Patch Set 17:
+
+(3 comments)
+
+Hi Thomas,
+
+Thanks again for you really fast feedback. You are right, I think the most promising solution would be to add support for multi-selection directly in Team. My only concern is that they seem to have chosen deliberately to restrict themselves to single selection and I am not sure why. So, I hope they would pass a change that introduces multi-selection. Thank you also for pointing me in the direction of the already existing bugs. Although most seem to have been around for a long time, they seem to pile up and it would definitely make sense to adapt the GenericHistoryView.
+
+Regarding this change, I incorporated your minor fixes and also added support for the multi-page scenario in the selection tracker by implementing of the IPageChangeListener interface. Implementations of the IPartListener2 interface (like the selection tracker) are automatically also notified about page changes when they implement this interface. Currently, this selection is not used since we only retrieve the selection from the tracker when we are triggered by the GenericHistoryView and this is currently not happening for multi-page editors. We could react to this change ourselves in the GitHistoryPage by supporting listeners in the selection tracker, but maybe this is better for another change, if we need it. Nevertheless, I think it makes sense to include it in the tracker for now to track the selections as we would expect it. Depending on how the fix in the Team will look like, we should definitely think also about the version tracking you were mentioning. 
+
+If you disagree that the implementation of the multi-page support should be in this change, I will remove it.
+
+Line:2, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/history/GitHistorySelectionTracker.java -> Done
+
+Line:113, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/history/GitHistorySelectionTracker.java -> Argh, thanks for noticing! ;-)
+
+Line:126, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/history/GitHistorySelectionTracker.java -> Done
+
+-------------------------------------

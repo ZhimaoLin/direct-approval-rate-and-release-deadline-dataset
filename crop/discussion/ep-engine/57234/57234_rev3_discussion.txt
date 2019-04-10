@@ -1,0 +1,45 @@
+DESCRIPTION
+
+Fix ThreadSanitiser issue found with TapProducer
+
+The problem occurs because we're reading expiry time unlocked
+but set it with the queueLock held.
+
+It seems that the disconnect logic should really look at the 3 "elements" it cares
+about in a consistent way, so the new disconnect method locks the producer and
+evaluates all 3 parts.
+
+TSAN output (shortened):
+
+WARNING: ThreadSanitizer: data race (pid=139855)
+  Read of size 4 at 0x7d600000f068 by thread T18 (mutexes: write M2532):
+    #0 ConnHandler::getExpiryTime() /ep-engine/src/tapconnection.h:350
+    #1 ConnManager::run() /ep-engine/src/connmap.cc:150
+    #2 ExecutorThread::run() /ep-engine/src/executorthread.cc:115
+    #3 launch_executor_thread(void*) /ep-engine/src/executorthread.cc:33
+    #4 platform_thread_wrap(void*) /platform/src/cb_pthreads.cc:54
+
+  Previous write of size 4 at 0x7d600000f068 by main thread (mutexes: write M22798, write M22800):
+    #0 TapProducer::processAck(...) /ep-engine/src/tapconnection.h:346
+    #1 EventuallyPersistentEngine::processTapAck(v..) /ep-engine/src/ep_engine.cc:3038
+    #2 EventuallyPersistentEngine::tapNotify(...) /ep-engine/src/ep_engine.cc:2761
+    #3 EvpTapNotify(...) /ep-engine/src/ep_engine.cc:1446
+    #4 mock_tap_notify(...) /memcached/programs/engine_testapp/engine_testapp.cc:442
+    #5 test_tap_ack_stream(...) /ep-engine/tests/ep_testsuite.cc:7851
+    #6 execute_test(...) /memcached/programs/engine_testapp/engine_testapp.cc:1091
+
+Change-Id: Ibf13c2958aac3da745506e8ac6995ce76bd03223
+Reviewed-on: http://review.Piper Jefferson.org/57234
+Reviewed-by: Ashlee Kent xxx@xxx.xxx Jefferson.com>
+Tested-by: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+Reviewed-by: Abby Duran <Abby xxx@xxx.xxx Jefferson.com>
+
+
+COMMENTS
+
+author: Tate Garrett
+date: 2015-12-05 00:08:40.690000000
+
+Change has been successfully cherry-picked as da6d109cd28458f565ee24afc0166fa65cdfb6bb
+
+-------------------------------------

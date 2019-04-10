@@ -1,0 +1,60 @@
+DESCRIPTION
+
+MB-17766: Incorrect ordering during ActiveStream's takeover-send phase
+
+A race between the step() and ActiveStreamCheckpointProcessorTask
+can cause mutations to be queued into the readyQ after the
+setVBucketState(active) message.
+
+Here's the scenario in chronology:
+1. ActiveStream::setVBucketStateAckRecieved()
+2. transitionState(takeoverSend) => schedules ActiveStreamCheckpointProcessorTask
+3. manageConnections() notifies memcached about specific conn (max idle time: 5s)
+4. ActiveStreamCheckpointProcessorTask runs, gets all Items For Cursor
+5. step() -> takeoverSendPhase() -> readyQ is empty
+    => nextCheckpointItem() return false, as getNumItemsForCursor returns 0
+    => setVbucketState(active) added to readyQ
+6. ActiveStreamCheckpointProcessorTask continues, adds mutations acquired into readyQ
+    -> Note the mutations were acquired in step 4
+
+On the new master, the vbucket is promoted to active state and then more
+mutations are received from the old master. If there were front end ops
+at this time, there could be an inconsistency in highSeqno or in worst
+cases crashes in checkpoint manager due to highSeqno not belonging in
+the designated range.
+
+The fix here would be to acquire streamMutex for the length of
+nextCheckpointItemTask() which is run by ActiveStreamCheckpointProcessorTask,
+so that no such incorrect ordering of DCP messages takes place.
+
+Change-Id: I68d2fea97694d179769a40dac2d557641961f47f
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2016-02-05 00:21:16.847000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-05 00:21:21.382000000
+
+Patch Set 1:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1576/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-05 00:30:15.928000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1576/ : SUCCESS
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2352/ : SUCCESS
+
+-------------------------------------

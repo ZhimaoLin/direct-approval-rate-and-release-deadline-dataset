@@ -1,0 +1,67 @@
+DESCRIPTION
+
+MB-24055: Reduce HashTable::defaultNumBuckets from 1531 to 3
+
+The variable HashTable::defaultNumBuckets configures the number of
+HashTable slots to use by default; assuming ns_server doesn't specify
+a value in the bucket config. This was previously 1531. Given we
+normally have 1024 vBuckets, this creates 1.51M slots in all the
+HashTables (assuming no value from ns_server).
+
+For small buckets this adds a lot of unnecessary overhead -
+particulary comparing Ephemeral to memcache buckets, where their empty
+size (single node) is:
+
+    Bucket       RSS (KB)
+    <none>       40096
+    memcache     40260
+    Ephemeral    87504
+
+This first needs to be changed in ns_server (see linked patch) so it
+no longer specifies the default (previously 3079); however once that
+is done we still need to reduce the ep_engine default.
+
+This patch reduces it down to the minimum of 3. Note that's still 3072
+slots by default per bucket; and:
+
+a) This doesn't limit how many Docuements can be stored, on Hash
+   collision we simply use internal chaining.
+
+b) The HashTableResizer task runs periodically to select the the
+   'optimum' size, so we'll quickly adjust to larger sizes.
+
+Change-Id: I94ce68cf3fbc2dfe70690fe8b18fc0dbada0848d
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2017-04-24 15:17:03.387000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-04-24 16:01:52.618000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4728/ : FAILURE
+
+Failure of a CTest test  8/26 Test #10: ep_testsuite.ephemeral ................... ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-addresssanitizer-master/4728/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/5950/ : FAILURE
+
+Failure of a CTest test  8/26 Test #10: ep_testsuite.ephemeral ................... ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/5950/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6201/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/16.04-ep-engine-addresssanitizer-master/7/ : FAILURE
+
+Failure of a CTest test  8/26 Test #10: ep_testsuite.ephemeral ................... ( http://cv.jenkins.Piper Jefferson.com//job/16.04-ep-engine-addresssanitizer-master/7/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5430/ : SUCCESS
+
+-------------------------------------

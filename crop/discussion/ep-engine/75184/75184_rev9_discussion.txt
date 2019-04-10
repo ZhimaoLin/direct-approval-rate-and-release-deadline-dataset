@@ -1,0 +1,135 @@
+DESCRIPTION
+
+Ephemeral: Do DCP backfill from ordered in-memory data structure (list)
+
+This commits implements a class that does backfill from in-memory
+ordered data strucuture (list) and informs the DCP stream of the
+backfill progress.
+
+It calls a synchronous vBucket API to read items in the sequential
+order from the in-memory ordered data strucuture and calls the DCP
+stream for disk snapshot, backfill items and backfill completion.
+
+This commit runs a DCP stream level module test to check if the
+backfill happens correctly.
+
+DCP functional tests for ephemeral buckets are not enabled in this
+commit because they rely on certain stats and operations related
+to persistence. Plan is to decouple these persistence dependencies
+and enable them in a separate commit
+
+Change-Id: Ia199602f96e62d44bd3f92fec7f8c9ad26a4dc83
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2017-03-17 07:09:49.169000000
+
+Uploaded patch set 9.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-03-17 07:27:26.090000000
+
+Patch Set 9: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/3644/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/4832/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/4390/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/5061/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-03-17 11:38:48.486000000
+
+Patch Set 9: Code-Review-1
+
+(7 comments)
+
+Line:41, src/dcp/backfill.h -> I don't think this should be possible now, given the type of `s` is active_stream_t.
+
+Line:22, src/ephemeral_vb.h -> Not keen on the header pollution here. Given createDCPBackfill is not exactly a hot function (and involves calling a constructor), just move the implementation of it to the .cc and remove these.
+
+Line:53, tests/module_tests/evp_engine_test.cc -> See how I handled this in http://review.Piper Jefferson.org/#/c/75141/5/tests/module_tests/item_pager_test.cc (line 45).
+
+Line:35, src/dcp/backfill_memory.cc -> What about if the state flips to pending? Should be also cancel the backfill?
+
+(I was also thinking about replica, and if that should be permitted, but I think we allow streaming from replicas (e.g. for views?)
+
+Line:53, src/dcp/backfill_memory.cc -> I would think so!
+
+Line:752, src/item.h -> For consistency should probably name this UniqueItemPtr (similar to other unique_ptr<> type aliases).
+
+Line:90, src/linked_list.cc -> Given you're returning an empty vector, it's probably more explicit to just write:
+
+ return {ENGINE_ERANGE, {}};
+
+That way the reader doesn't need any additional context - they can see from that line the vector is empty (instead of having to scan up at the previous lines and see if items ever had anything added to it).
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-03-17 16:57:40.653000000
+
+Patch Set 9:
+
+(7 comments)
+
+Line:41, src/dcp/backfill.h -> Done
+
+Line:22, src/ephemeral_vb.h -> Even if I move the implementation to .cc I get the error of incomplete type
+
+Line:53, tests/module_tests/evp_engine_test.cc -> Done
+
+Line:35, src/dcp/backfill_memory.cc -> Ideally on any state change, the streams and hence corresponding backfills must be closed. But might not be happening today. If it is happening then backfill mgr should take care of it.
+
+So, I think handling the state flips is out of scope of this commit.
+I can raise a ticket to investigate this later.
+
+And, regarding the replica state, yes we need to stream from replica state for views. And for pending state, as I understand we should stop backfilling.
+
+We should in general investigate how we handle change of vb states during backfill
+
+Line:53, src/dcp/backfill_memory.cc -> Currently, it is assumed that disk backfill is successful always. That is, if backfill fails we just hang. 
+So I think this needs a bit of investigation on how to handle backfill failures and hence I think out of scope of this commit.
+
+Line:752, src/item.h -> Done
+
+Line:90, src/linked_list.cc -> I had that before. But with std::unique_ptr compiler throws an error if I use {}:
+call to implicitly-deleted copy constructor of 'std::__1::unique_ptr<Item,
+      std::__1::default_delete<Item> >'
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-03-17 17:23:31.150000000
+
+MISMATCHED INLINE COMMENT
+Line:22, src/ephemeral_vb.h -> I don't see why - you've only added a prototype for inMemoryBackfill here which only needs item.h for the definition of ownedItem.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-03-17 17:39:00.788000000
+
+MISMATCHED INLINE COMMENT
+Line:22, src/ephemeral_vb.h -> Defining it as an inline here only.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-03-17 17:39:00.788000000
+
+MISMATCHED INLINE COMMENT
+Line:90, src/linked_list.cc -> ok, i was trying with {}
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-03-17 17:23:31.150000000
+
+MISMATCHED INLINE COMMENT
+Line:90, src/linked_list.cc -> I got it working here: https://godbolt.org/g/Bpb7FR
+
+-------------------------------------

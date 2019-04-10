@@ -1,0 +1,204 @@
+DESCRIPTION
+
+Bug 8519 - keystroke macros recording and playing capability
+
+Change-Id: I3f548fc00d82a847a2591c06ff6387fa23204a76
+Signed-off-by: Sienna Tate xxx@xxx.xxx
+
+COMMENTS
+
+author: Sienna Tate
+date: 2017-02-02 16:05:16.000000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-02-02 16:05:23.000000000
+
+Patch Set 5:
+
+Build Started https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/11881/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-02-02 16:34:37.000000000
+
+Patch Set 5: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/11881/ : SUCCESS
+
+-------------------------------------
+author: Teagan Marsh
+date: 2017-02-13 15:54:51.000000000
+
+Patch Set 5:
+
+(31 comments)
+
+I've been focusing more on the end-developer side, to get the interceptor and the editor expectations nailed down, rather than looking at the implementation.
+
+Line:15, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/IMacroPlaybackContext.java -> What sort of things do you anticipate going here?
+
+Line:38, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/internal/ComposableMacro.java -> why not just use an ArrayList then?
+
+Line:89, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/internal/ComposableMacro.java -> This seems like it might be worth separating out into a persisting class
+
+Line:4, bundles/org.eclipse.e4.core.macros/OSGI-INF/l10n/bundle.properties -> "Describe" doesn't seem to capture the purpose.
+
+Line:66, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/EMacroContext.java -> Is it really useful to toggle this without knowing the current state? Perhaps this should be made explicit (e.g., stopRecording(), stopPlayback())? What happens if there is no recording or playback in progress? Does it start recording? Playing back the previous macro?
+
+Line:75, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/EMacroContext.java -> EMacroContext, which is passed to macro-context listeners, doesn't seem the right place for this.
+
+Line:84, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/EMacroContext.java -> Adding listeners here seems odd too.
+
+Line:38, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/IMacroCommand.java -> This format seems inflexible. That can be an advantage, but given that you think storing in JavaScript form is an advantage, it may be worth coming up with a different representation here from the get-go.
+
+Line:5, bundles/org.eclipse.e4.core.macros/plugin.xml -> This almost seems like a lifecycle listener.
+
+Line:52, bundles/org.eclipse.e4.core.macros/schema/macroListeners.exsd -> Typically called "class"
+
+Line:55, bundles/org.eclipse.e4.core.macros/schema/macroListeners.exsd -> This needs to be more informative. What purpose does this serve, why would I want to implement or provide such a listener.
+
+Line:58, bundles/org.eclipse.e4.core.macros/schema/macroListeners.exsd -> This class doesn't exist? IMacroContextListener?
+
+Line:23, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/IMacroCommandCreator.java -> This is better called a factory. See IPersistableElement, IMemento, IElementFactory for existing language that's used for persisting and recovering elements.
+
+Line:45, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/internal/IMacro.java -> This seems odd to have on the IMacro instance.
+
+Line:24, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/README.md -> Can you reword this?  I find it unclear.  It implies that _everything to be done_ is necessary on entering macro mode.  Whereas I think you really mean _when in macro mode, the editors should track what actions are done so they can be subsequently replayed_. Right?
+
+Line:42, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/README.md -> I find this hard to understand as it's mixing macro recording and playback, implying they're the same. These would seem to be distinct modes that may need to be handled separately.
+
+It sounds like many editors may not need to do anything to support macros if they just use Eclipse Commands.  But if they do their own key handling or some other kind of UI binding, then they need to map the user's UI gestures into some the macro's command representation and stash them.
+
+You also need to document what is required of replay.
+
+Line:50, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/README.md -> This isn't a helpful example as (1) it's generic and (2) some of the key details (the on* methods) are not actually shown.  You can either document it here (better), or perhaps provide an example in the /examples.
+
+Line:59, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/README.md -> The Eclipse Platform doesn't use the 'on' prefix.
+
+Line:69, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/README.md -> left -> exit
+
+Line:93, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/README.md -> How do we reconcile this if the action is triggered via an Eclipse Command?  Or must the editor *always* provide a macro — the commands are never automatically recorded.
+
+Line:8, bundles/org.eclipse.e4.ui.bindings/src/org/eclipse/e4/ui/bindings/keys/IKeyBindingDispatcherInterceptor.java -> This isn't for users (i.e., humans).  Perhaps something more like:
+
+> Interface for an contribution to the KeyBindingDispatcher for listening and handling command dispatch.
+> <p>
+> This interface is provisional and not yet considered API.
+xxx@xxx.xxx
+xxx@xxx.xxx
+
+Line:12, bundles/org.eclipse.e4.ui.bindings/src/org/eclipse/e4/ui/bindings/keys/IKeyBindingDispatcherInterceptor.java -> I suggest renaming this to IKeyBindingInterceptor.
+
+Line:14, bundles/org.eclipse.e4.ui.bindings/src/org/eclipse/e4/ui/bindings/keys/IKeyBindingDispatcherInterceptor.java -> Maybe just 'executeCommand' or 'handleCommand'?  The perfect match is extraneous — it's an internal detail to the KeyBindingDispatcher.
+
+This should have some javadoc.  Something like:
+> Called when a keybinding has been successfully matched to a command, which should be dispatched.  The interceptor may handle the dispatch.
+
+Line:19, bundles/org.eclipse.e4.ui.bindings/src/org/eclipse/e4/ui/bindings/keys/IKeyBindingDispatcherInterceptor.java -> if this interceptor will handle the dispatching of this command.
+
+Line:37, bundles/org.eclipse.e4.ui.bindings/src/org/eclipse/e4/ui/bindings/keys/IKeyBindingDispatcherInterceptor.java -> Should use same naming convention as IExecutionListener.
+
+I wonder if this shouldn't just extend IExecutionListener?
+
+Line:61, bundles/org.eclipse.e4.ui.bindings/src/org/eclipse/e4/ui/bindings/keys/KeyBindingDispatcher.java -> o -> of
+.. -> .
+
+Line:539, bundles/org.eclipse.e4.ui.bindings/src/org/eclipse/e4/ui/bindings/keys/KeyBindingDispatcher.java -> Why does this return false?
+
+Line:19, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/internal/IComposableMacro.java -> I can't say I see any value to this interface.
+
+Line:9, bundles/org.eclipse.e4.core.macros/schema/macroCommandCreators.exsd -> So this seems more like a factory?  Given the name, I expected it to be something that interpreted some UI gesture into a macro (i.e., created the macro). And it's responsible for restoring a macro from a persisted form?
+
+Line:59, bundles/org.eclipse.e4.core.macros/schema/macroCommandCreators.exsd -> Typically we don't repeat information, so this should just be "commandId". But maybe this would be better as "macroId" or "macroType"?
+
+Line:70, bundles/org.eclipse.e4.core.macros/schema/macroCommandCreators.exsd -> And this would just be "class".
+
+-------------------------------------
+author: Sienna Tate
+date: 2017-02-13 21:23:51.000000000
+
+Patch Set 5:
+
+(28 comments)
+
+> (31 comments)
+ > 
+ > I've been focusing more on the end-developer side, to get the
+ > interceptor and the editor expectations nailed down, rather than
+ > looking at the implementation.
+
+Thank you for the review Brian, I've updated things based on your comments.
+
+Line:15, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/IMacroPlaybackContext.java -> Well, I thought about maybe adding logging through the context, providing an API to store/gather info during a playback or passing information related to the scope in which the macro is being played back...
+
+In test cases it was useful to pass a known context to the macro commands to add information on what was played back.
+
+Line:38, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/internal/ComposableMacro.java -> Well, I tend to try to use LinkedList when it's just add/iterate given that they always have O(1) behavior for those, while that's not the case for ArrayLists when they're growing up (although it may be irrelevant for small lists).
+
+Line:89, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/internal/ComposableMacro.java -> Well, I'd rather keep this here if you're Ok with it (separating would imply making more things public -- also this is all internal API, so, if it's really needed it can be separated afterwards).
+
+Line:4, bundles/org.eclipse.e4.core.macros/OSGI-INF/l10n/bundle.properties -> Done
+
+(Changed for:
+Register class to recreate a macro command which has been previously recorded through the macro record/playback engine)
+
+Line:66, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/EMacroContext.java -> Well, it's the toggling only of the record (you can't really stop a playback -- and you can currently only start it by playbackLastMacro()), and you can know the current state by the isRecording() to decide if you want to toggle it -- that's exactly the use case in the UI.
+
+Added more comments make it clearer.
+
+Line:75, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/EMacroContext.java -> Agreed, removed parameter.
+
+Line:84, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/EMacroContext.java -> The main reason is that for existing instances it's much handier adding them directly programatically than having to go from some global-context extension point to the local implementation (for instance, it's easier to make an editor hear changes on the macro context than to use an extension point which will have to collect all editors, keep track of new editors, etc to make the same thing).
+
+Line:38, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/IMacroCommand.java -> Humm... I don't know, for me creating a map of strings to be persisted and reconstructed later on seems pretty flexible and easy to get right, but I'm open to suggestions if you feel there's a better format.
+
+Line:5, bundles/org.eclipse.e4.core.macros/plugin.xml -> Done
+
+-- Changed it to macroContextListener (as it's directly related to being a listener for the IMacroContext and I think that "macro context listener" should give a reasonable idea on its purpose).
+
+Line:52, bundles/org.eclipse.e4.core.macros/schema/macroListeners.exsd -> Done
+
+Line:55, bundles/org.eclipse.e4.core.macros/schema/macroListeners.exsd -> Done -- added more info.
+
+Line:58, bundles/org.eclipse.e4.core.macros/schema/macroListeners.exsd -> Done -- Should be IMacroContextListener (seems like the rename didn't get it).
+
+Line:23, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/IMacroCommandCreator.java -> Changed to IMacroCommandFactory.
+
+Line:45, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/internal/IMacro.java -> Well, it's responsible for actually getting the macro commands and recreating them, from the disk later on (so, I don't really see a better way for doing that).
+
+Line:24, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/README.md -> Agreed (reworded as you suggested).
+
+Line:42, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/README.md -> Improved docs based on your suggestions.
+
+Line:50, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/README.md -> Gave an example with more information.
+
+Line:59, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/README.md -> Done (in example and actual code).
+
+Line:8, bundles/org.eclipse.e4.ui.bindings/src/org/eclipse/e4/ui/bindings/keys/IKeyBindingDispatcherInterceptor.java -> Done
+
+Line:12, bundles/org.eclipse.e4.ui.bindings/src/org/eclipse/e4/ui/bindings/keys/IKeyBindingDispatcherInterceptor.java -> Done
+
+Line:14, bundles/org.eclipse.e4.ui.bindings/src/org/eclipse/e4/ui/bindings/keys/IKeyBindingDispatcherInterceptor.java -> Done
+
+Line:19, bundles/org.eclipse.e4.ui.bindings/src/org/eclipse/e4/ui/bindings/keys/IKeyBindingDispatcherInterceptor.java -> Done
+
+Line:37, bundles/org.eclipse.e4.ui.bindings/src/org/eclipse/e4/ui/bindings/keys/IKeyBindingDispatcherInterceptor.java -> Changed for postExecuteCommand. Regarding extending IExecutionListener, I think it doesn't really have what's needed (i.e.: it actually needs a ParameterizedCommand to serialize(), just the command id is not enough).
+
+Line:61, bundles/org.eclipse.e4.ui.bindings/src/org/eclipse/e4/ui/bindings/keys/KeyBindingDispatcher.java -> Done
+
+Line:19, bundles/org.eclipse.e4.core.macros/src/org/eclipse/e4/core/macros/internal/IComposableMacro.java -> Agreed, removed interface and just using the concrete API internally.
+
+Line:9, bundles/org.eclipse.e4.core.macros/schema/macroCommandCreators.exsd -> Yes, exactly (it's a factory used to restore the macro from its persisted form)...
+
+Given that you were confused, I renamed it to macroCommandFactory (and renamed other related places such as IMacroCommandCreator -> IMacroCommandFactory).
+
+Line:59, bundles/org.eclipse.e4.core.macros/schema/macroCommandCreators.exsd -> Done -- changed to commandId.
+
+Line:70, bundles/org.eclipse.e4.core.macros/schema/macroCommandCreators.exsd -> Done
+
+-------------------------------------

@@ -1,0 +1,95 @@
+DESCRIPTION
+
+RFC: Add graft support
+
+Grafts replace parent during history walking. Instead of using the
+parents encoded in the commit, replacement are looked up in the
+.git/info/grafts file.
+
+The format of the grafts file is very simple. It consists of zero
+or more lines of SHA-1's separated by spaces. The first SHA-1 is
+a commit id and the rest is the new parents. 
+
+By default grafts are followed for RevWalk.
+
+The parents that were reached using grafts are marked as such, ...think
+
+Change-Id: Ia3b23f8d500a660b2fab99122015df7bcba8adcc
+Signed-off-by: Juliet Cantu xxx@xxx.xxx
+
+COMMENTS
+
+author: Juliet Cantu
+date: 2011-01-24 20:46:54.000000000
+
+Patch Set 1:
+
+What is till missing and I want to do with this is to color commits/relationships so a simplified graph can show that a certain commit relationship is via a graft, even when neither the parent, not child directly touche by the graft is visible.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2011-01-24 20:56:39.000000000
+
+Patch Set 1:
+
+Coloring commits is not enough. The graft is a relationship
+and not a commit, i.e. in this case C can be reached from A via the normal relationships, as well as via a graft- 
+
+HEAD: A---B---C-(grafted)--D
+       \                  /
+        X----------------Y
+
+Granted, this is an exotic case.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-01-24 20:58:16.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(11 inline comments)
+
+We should also consider the refs/replace/ namespace at the same time.  Its the "new way" of doing grafts... :-\
+
+Line:165, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/RevWalk.java -> Ouch.  Do we really need to burn a reserved bit flag on something that is so uncommon?
+
+Line:225, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/RevWalk.java -> Why does this variant of the constructor disable grafts, while another enables them?  This will result in a lot of confusion in the current code because some code uses this constructor just to reuse an existing reader between different related objects.
+
+I know the problem is you don't have the graft data available in this context.  But its still scary that the behavior of RevWalk differs based on the type of object we used to create it, and the Javadoc doesn't reflect this.
+
+Line:58, org.eclipse.jgit/src/org/eclipse/jgit/lib/GraftsDatabase.java -> These should be ObjectId because the mapping shouldn't be mutable.
+
+Line:1264, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> Grafts in alternates don't apply.
+
+Line:1268, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> Should be ObjectId, as the mapping cannot be mutable.
+
+Line:403, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/FileRepository.java -> Style-nit: Put this all on one line:
+
+  xxx@xxx.xxx the grafts file, from info/grafts */
+
+Line:65, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/FileGraftsDataBase.java -> Should be ObjectId so its immutable.
+
+Line:87, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/FileGraftsDataBase.java -> grafts should be volatile, and use a volatile safe pattern here:
+
+  static State {
+    final FileSnapshot snapshot;
+    final Map... grafts;
+  }
+  private volatile State state;
+
+  State s = state;
+  if (s.isOutdated()) {
+    s = loadGrafts();
+    state = s;
+  }
+  return s.grafts;
+
+Line:15, /COMMIT_MSG -> Style-nit: Trailing whitespace.
+
+Line:17, /COMMIT_MSG -> PackWriter should disable this, shouldn't it?  IIRC pack-objects in C Git doesn't honor grafts when it creates the pack file.
+
+Line:157, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/RevCommit.java -> Because the number of grafts is low, I always thought we would implement grafts in RevWalk by just having the RevWalk's graft enable method lookup each of the RevCommits named as keys in the graft file, and assign their parents outright to the looked up RevCommit parents.
+
+That way during traversal we aren't incurring this hit to look to see if each individual commit is part of the grafts file, its already been computed.  And actually that is part of the reason why we have this "if (parents == null)" test in parseCanonical.  We don't want to replace parents that have already been computed for us, even if they are currently different from what is in the real content we loaded.
+
+-------------------------------------

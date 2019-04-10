@@ -1,0 +1,129 @@
+DESCRIPTION
+
+Clean up orphan files in GC
+
+An orphan file is either a bitmap or an idx file in pack folder,
+and its corresponding pack file is missing.
+
+Change-Id: I3c4cb1f7aa99dd7b398bdb8d513f528d7761edff
+Signed-off-by: Marie Cobb xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Marie Cobb
+date: 2017-01-24 15:42:35.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-01-25 22:39:58.000000000
+
+Patch Set 2: Code-Review-1
+
+(4 comments)
+
+Line:665, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> I suggest to use a DirectoryStream with a filter instead, see https://docs.oracle.com/javase/tutorial/essential/io/dirs.html
+
+also instead of File we could use Path
+
+Line:85, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/file/GcOrphanFilesTest.java -> style nit: remove unnecessary blank line
+
+Line:99, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/file/GcOrphanFilesTest.java -> style nit: remove unnecessary blank line
+
+Line:114, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/file/GcOrphanFilesTest.java -> style nit: remove unnecessary blank line
+
+-------------------------------------
+author: Zachary Orozco
+date: 2017-01-26 13:56:25.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:665, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> I think your change works. Great.
+
+But there are optimisations I would suggest. If you have the array files in hand you have already all information in hand to detect orphans. No need to do again the expensive filesystem calls (the .exists() calls) in the isOrphan method.
+
+I would:
+- I would use the DirectoryStream with a filter for  .pack,.index,.bitmap files as Matthias suggested
+- I would sort the stream to ensure packs come directly before corresponding bitmap/index files. Then it is easy to detect orphan index,bitmap files (if they don't follow directly a corresponding .pack file)
+
+-------------------------------------
+author: Marie Cobb
+date: 2017-01-26 22:11:33.000000000
+
+Patch Set 2:
+
+(5 comments)
+
+Line:665, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> I met problems when trying to achieve point 2 here.
+Suppose we have an ordered stream.
+I do not know how to access to other items in stream when looping.
+
+For now, no io operations after listing, except deletion.
+
+Line:665, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> Done
+
+Line:85, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/file/GcOrphanFilesTest.java -> Done
+
+Line:99, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/file/GcOrphanFilesTest.java -> Done
+
+Line:114, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/file/GcOrphanFilesTest.java -> Done
+
+-------------------------------------
+author: Zachary Orozco
+date: 2017-01-27 15:41:29.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:665, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> I would have simply remembered the last seen pack file in a new variable and would have checked each bitmap/index whether they correspond to the packfile. If not they are orphans. We would get rid of the exists() filesystem calls which you do after listing.
+
+Like in:
+  Path packDir = Paths.get(repo.getObjectsDirectory().getAbsolutePath(),
+      "pack"); //$NON-NLS-1$
+  String base = null;
+  
+  String[] list = packDir.toFile().list((file, name) -> {
+    return (name.endsWith("." + PackExt.PACK.getExtension())
+        || name.endsWith("." + PackExt.BITMAP_INDEX.getExtension())
+        || name.endsWith("." + PackExt.INDEX.getExtension()));
+  });
+  Arrays.sort(list);
+  for (int i = list.length - 1; i >= 0; i--) {
+    if (list[i].endsWith(PackExt.PACK.getExtension())) {
+      base = list[i].substring(0, list[i].lastIndexOf('.'));
+    } else {
+      if (base == null || !list[i].startsWith(base)) {
+        try {
+          Files.delete(
+            new File(packDir.toFile(), list[i]).toPath());
+        } catch (IOException e) {
+          LOG.error(e.getMessage(), e);
+        }
+      }
+    }
+  }
+
+-------------------------------------
+author: Marie Cobb
+date: 2017-01-28 04:29:23.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:665, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> Done
+
+It is indeed a very succinct FilenameFilter API (which I did not know before) to get file names as a string list, although it is DirectoryStream.Filter suggested by Matthias. Many thanks for your implementation.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2017-01-30 15:36:02.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

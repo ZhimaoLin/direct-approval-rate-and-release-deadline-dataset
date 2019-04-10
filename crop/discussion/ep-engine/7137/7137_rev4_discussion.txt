@@ -1,0 +1,46 @@
+DESCRIPTION
+
+Ensure events are unregistered when shutting down the engine.
+
+If we teardown and deallocate a connection while the object is still
+registered with libevent, an event could fire and pass our invalid
+object to our method where we just kind of stomp on memory and do
+really dumb stuff.
+
+It's not *entirely* clear that this happened since I can't figure out
+how to make it happen myself, but the evidence of this having occurred
+is substantial and circumstantial.
+
+Change-Id: I5302b9055d73395efceda1d243252aa792fb40a7
+
+
+COMMENTS
+
+author: Noah Dean
+date: 2011-06-23 05:39:23.540000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Asher Vang
+date: 2011-06-23 06:08:06.373000000
+
+Patch Set 4: (1 inline comment)
+
+
+
+Line:388, mc-kvstore/mc-engine.cc -> this should be ev_flags.... and yes. If you look in update event ev_flags would be set to EV_READ (and possibly EV_WRITE), _before_ we do event_add (and we abort if it fails). In resetConnection (called if read / write fails or reach EOF) we call event_del() before setting it to 0..
+
+I'm not sure if this callback can happen as you describe, because we've just joined the thread that is running the event loop before you're doing the event del.. If you change flags here we could try this code anyway. We should probably delete the base as well here?
+
+-------------------------------------
+author: Noah Dean
+date: 2011-06-23 06:20:57.513000000
+
+Patch Set 4:
+
+Hmm... Well there are two exits from main.  Perhaps we should just have an RAII destructor clean all this stuff up.
+
+The thing I saw in the core was an obviously invalid object trying to delete an event and another seeming like it was shutting down (it was in event_base_loopbreak from notifyHandler).  This was quite suspicious.  Any other ideas what could get us here?
+
+-------------------------------------

@@ -1,0 +1,50 @@
+DESCRIPTION
+
+Added support for whitespace ignoring
+
+JGit did not have support for skipping whitespace when comparing
+lines in RawText objects. I added a subclass of RawText that skips
+whitespace in its equals and hashCode methods. I used a subclass
+rather than adding functionality into RawText so that performance
+would not be impacted by extra logic.
+
+This class only supports ignoring all whitespace. Others will follow
+that allow other forms of whitespace ignoring.
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-06-25 00:22:52.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(7 inline comments)
+
+
+
+Line:1, org.eclipse.jgit/src/org/eclipse/jgit/util/RawCharUtil.java -> Please include the standard JGit copyright header on all new files.
+
+Line:8, org.eclipse.jgit/src/org/eclipse/jgit/util/RawCharUtil.java -> Style-nit:  We don't xxx@xxx.xxx tags in JGit.
+
+Line:52, org.eclipse.jgit/src/org/eclipse/jgit/diff/RawTextIgnoreAllWhitespace.java -> Style-nit: xxx@xxx.xxx tags.
+
+Line:76, org.eclipse.jgit/src/org/eclipse/jgit/diff/RawTextIgnoreAllWhitespace.java -> Style-nit:  In JGit we don't put curly braces around single line statements.
+
+Line:94, org.eclipse.jgit/src/org/eclipse/jgit/diff/RawTextIgnoreAllWhitespace.java -> Performance-nit:  Pull a.content[as] and b.content[bs] into local variables within the body of the while loop so we only evaluate the array index once per position.
+
+Basically, the compiler can't prove that a.content[as] wasn't modified between the two reads of it, so it'll have to read it again.  Since array bounds have to be checked at runtime, we have to recheck as against the array length.  The JIT _might_ be able to avoid the array bound check   Pulling into a local proves to the compiler it can cache the value safely.
+
+Line:102, org.eclipse.jgit/src/org/eclipse/jgit/diff/RawTextIgnoreAllWhitespace.java -> I think your entire logic would be simplified if you could write a method such as:
+
+  static int trimTrailingWhitespace(int ptr, byte[] raw)
+
+and use that to correct ae and be above before you even start the main compare while loop.  Then when the compare is done, you don't need to worry about checking for tailing space on the end.
+
+Its not very common to have trailing spaces on the end of lines.  Prefiltering the line to trim it off will be mostly a no-op, or at most, one CR in a CRLF file, so very trivial.  Even if we break out on the first non-space character compare, its probably not a huge hit that we prefiltered ae,be at the start.
+
+Likewise, you can simplify the code with a trimLeadingWhitespace method that prefilters as,bs before the main while loop starts.  Then you know you are looking at a non-whitespace character at the start of the while loop, and only need to skip over whitespace characters after the first non-whitespace.  Which, that code should share a lot of similarity with trimLeadingWhitespace.  Possibly making my performance-nit above not very desirable to implement.
+
+Line:120, org.eclipse.jgit/src/org/eclipse/jgit/diff/RawTextIgnoreAllWhitespace.java -> Performance-nit: Same nit as above, pull raw[ptr] into a local variable so its not evaluated twice.
+
+-------------------------------------

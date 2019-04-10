@@ -1,0 +1,150 @@
+DESCRIPTION
+
+CBQE-1467 : Regression Test for MB-6895
+
+Change-Id: I26d04a82d84455f2be21ca922e8f62f6e0403d55
+
+
+COMMENTS
+
+author: Hugo Blankenship
+date: 2014-02-17 13:53:11.814000000
+
+Patch Set 1:
+
+Build Started http://factory.couchbase.com/job/testrunner-Jasmin Rangel-master/499/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2014-02-17 14:18:01.562000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+http://factory.couchbase.com/job/testrunner-Jasmin Rangel-master/499/ : SUCCESS
+
+-------------------------------------
+author: Trevor Santana
+date: 2014-02-17 14:27:27.030000000
+
+Patch Set 1: Code-Review-2
+
+per my understanding this code doesn't check that it have to check.
+I understand it like:
+1- there are 1 ddoc with 1(or more) valid views and 1(or more) views with invalid map fn
+2 - we query valid views - we see all expected docs
+3 - we query view with invalid map fn - it returns an error in query, we catch it. If there is no exception we fail the test
+
+-------------------------------------
+author: Maliyah Fischer
+date: 2014-02-18 10:28:53.331000000
+
+Patch Set 1:
+
+Trevor Santana,
+
+So lets say you have a view with map function:
+
+function (doc, meta) {
+  emit(doc.foo.bar, null)
+}
+
+And you 1000 docs of type1
+{ "foo": { "bar": 1 } }
+
+and 1 doc of type2
+{ "foo": 1 }
+
+During indexing phase, the 1000 docs of type1 will get indexed and the single type2 document will not get indexed and get logged in the couch log file as having been skipped.
+
+When you do a query against the view, you will get 1000 rows. Do you mean this view query should return an error without any results or should give the resultset and additional error mentioning what all docs were skipped in the "indexing" phase?
+
+Please note the existing "error" part of the resultset, which view queries return, consist of the errors of "querying phase" and not of the "indexing phase". This is a separate improvement that can be done.
+
+But the original issue which MB-6895 addressed, is not about "invalid" map function per se. The map function is valid but if it generates runtime error ("during indexing phase and not query phase"), the other map functions were not run for that document. Now a document is evaluated for all the views in a design document during "indexing phase".
+
+-------------------------------------
+author: Trevor Santana
+date: 2014-02-18 10:36:08.382000000
+
+Patch Set 1:
+
+as per Filipe it have to return error even if we see error during indexing phase
+
+-------------------------------------
+author: Maliyah Fischer
+date: 2014-02-18 11:26:25.839000000
+
+Patch Set 1:
+
+Can you give an example of such error? Maybe the "_stats reduce function" error mentioned here or are you referring to something else?
+http://hub.internal.couchbase.com/confluence/display/QA/Debugging+view+engine+issues+and+reporting+them#Debuggingviewengineissuesandreportingthem-section3
+
+The above section mentions a scenario which fails your index build. 
+
+I think we have 2 scenarios:
+1. Index build failure - which means views can't return any result. 
+
+2. Index build succeeds with some errors -  I think it makes sense to return the results to the user in this case rather than error out the query.
+Additionally the "errors" section can provide the errors. But right now, I don't think such a facility is there. Have you come across a scenario where this happens?
+
+-------------------------------------
+author: Trevor Santana
+date: 2014-02-18 11:55:18.789000000
+
+Patch Set 1:
+
+per my understanding, as of a user, If something is wrong, I want to see an error. It doesn't matter for me if it is an index error or query error.
+
+-------------------------------------
+author: Maliyah Fischer
+date: 2014-02-18 12:25:52.404000000
+
+Patch Set 1:
+
+From what I understand, this behaviour of view engine has always been there.
+(not returning errors regarding documents skipped during indexing).
+
+MB-6895 didn't try to address that. What it fixes is a separate issue. We need to file a MB ticket and see what dev think about the implementation/behaviour feasibility.
+
+-------------------------------------
+author: Trevor Santana
+date: 2014-02-19 07:45:02.953000000
+
+Patch Set 1:
+
+From email thread (Moises Brennan and Filipe):
+> Here when we query view test1 run time error is being generated and gets
+> logged in the mapreduce_errors log file (present in
+> /opt/couchbase/var/lib/couchbase/logs) and query results displayed is
+>
+> {"total_rows":0,"rows":[
+> ]
+> }
+>
+> Thus here we would like to confirm that whether this is expected behaviour
+> or we should expect an error to be displayed for the user too while
+> querying, as in this case no error is getting displayed to user that there
+> is some error in map function. Please suggest
+No, it is not supposed.
+Try 2.5.0 or any previous release. 3.0/master is currently broken when
+using the full stack (couchdb standalone has unit tests for that and
+they pass). There's a couple jira tickets open for 3.0 where under
+several cases view results are empty.
+
+-------------------------------------
+author: Trevor Santana
+date: 2014-02-20 14:01:51.357000000
+
+Patch Set 1: -Code-Review
+
+-------------------------------------
+author: Moises Brennan
+date: 2014-12-22 07:11:11.968000000
+
+Abandoned
+
+http://review.couchbase.org/#/c/44570/1
+
+-------------------------------------

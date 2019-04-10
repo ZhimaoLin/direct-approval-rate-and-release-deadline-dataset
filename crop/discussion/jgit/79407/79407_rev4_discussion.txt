@@ -1,0 +1,102 @@
+DESCRIPTION
+
+Use FS#lastModified instead of File#lastModified
+
+This fixes the tests failed in JDK8.
+
+FS uses java.nio API to get file attributes. The timestamps obtained
+from that API are more precise than the ones from
+java.io.File#lastModified() since Java8.
+
+This difference accidentally makes JGit detect newly added files as
+smudged. Use the precised timestamp to avoid this false positive.
+
+WorkingTreeIterator needs a temporary hack because of this timestamp
+preciseness. It reuses idBuffer in DirCacheEntry if the metadata is
+matched. The problem here is that the metadata comparison of GIT_LINK
+(submodules) is incorrect in many cases, and therefore the idBuffer
+reuse is not valid. FileTreeIterator uses file timestamps as
+lastModified metadata. For submodules, the timestamp of the submodule
+directory is meaningless. It won't indicate the changes in submodule
+repository refs. This was caught by
+CommitCommandTest#commitSubmoduleUpdate when FileSnapshot started using
+the precise timestamp. The reason that this was not problem before was
+that the index entries were almost always detected as smudged during the
+test, and WorkingTreeIterator didn't reuse the idBuffer.
+
+Temporarily disable the idBuffer reuse for submodules.
+
+Bug: 500058
+Change-Id: I9e587583c85cb6efa7562ad6c5f26577869a2e7c
+Signed-off-by: Sandra Garrison xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Sandra Garrison
+date: 2016-08-23 21:39:38.000000000
+
+Uploaded patch set 4: Commit message was updated.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-08-23 21:39:44.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/9014/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-08-23 21:51:37.000000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/9014/ : SUCCESS
+
+-------------------------------------
+author: Sandra Garrison
+date: 2016-08-24 01:16:17.000000000
+
+Patch Set 4:
+
+I cannot reproduce the test failures in my machine. But I saw the same failure before (and now it's gone somehow). I'll use another machine to see if I can reproduce them.
+
+-------------------------------------
+author: Jayvion Booth
+date: 2016-08-24 06:34:42.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:266, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> Christian, this reminds me about https://git.eclipse.org/r/78060/ and https://git.eclipse.org/r/78586/, which are still pending. This and other patches are doing similar things in different places in WorkingTreeIterator. Shouldn't we came up with the combined version?
+
+-------------------------------------
+author: Jayvion Booth
+date: 2016-08-24 06:49:14.000000000
+
+Patch Set 4:
+
+Great work! This time I see only one remaining fail on Java 8 and no fails on Java 7:
+
+org.junit.experimental.theories.internal.ParameterizedAssertionError: testDirtySubmoduleWorktreeUntracked("UNTRACKED" <from allModes[2]>)
+	at org.junit.experimental.theories.Theories$TheoryAnchor.reportParameterizedError(Theories.java:288)
+
+Caused by: java.lang.AssertionError: diff should be false with mode=UNTRACKED
+	at org.junit.Assert.fail(Assert.java:88)
+	at org.junit.Assert.assertTrue(Assert.java:41)
+	at org.junit.Assert.assertFalse(Assert.java:64)
+	at org.eclipse.jgit.lib.IndexDiffSubmoduleTest.testDirtySubmoduleWorktreeUntracked(IndexDiffSubmoduleTest.java:207)
+
+I will try to rebase your patch on top of https://git.eclipse.org/r/#/c/78586/ and see if this would solve the remaining issue and probably makes your workaround for WirkingTreeIterator not needed.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-08-24 15:22:19.000000000
+
+Change has been successfully merged into the git repository by Yoselin Hanna
+
+-------------------------------------

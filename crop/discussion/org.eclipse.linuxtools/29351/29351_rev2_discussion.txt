@@ -1,0 +1,205 @@
+DESCRIPTION
+
+TMF: Add support of XML xy charts
+
+Change-Id: Ib4f2715d621aa51d1935d1a3486a2a33a9b575bd
+Signed-off-by: Aryana Jones xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Annalise Jimenez
+date: 2014-07-07 20:21:44.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-07-07 20:21:51.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/7631/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-07-07 20:56:34.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/7631/ : SUCCESS
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-07-09 20:34:34.000000000
+
+Patch Set 2: Code-Review-1
+
+(23 comments)
+
+Looks quite interesting! Haven't tried it yet, but some initial comments.
+
+File Comment: lttng/org.eclipse.linuxtools.tmf.analysis.xml.core.tests/test_xml_files/test_invalid/invalid_xyview_multipleentry -> This file should end in .xml, no?
+
+Line:76, lttng/org.eclipse.linuxtools.tmf.analysis.xml.ui/src/org/eclipse/linuxtools/internal/tmf/analysis/xml/ui/views/xychart/XmlXYView.java -> do you really need this as a class method? It's only called from the IPropertyChangeListener in the constructor. Either:
+* Move it to inside the IPropertyChangeListener
+* Inline it (it's only called from one place)
+
+Line:78, lttng/org.eclipse.linuxtools.tmf.analysis.xml.ui/src/org/eclipse/linuxtools/internal/tmf/analysis/xml/ui/views/xychart/XmlXYView.java -> are you guaranteed this will only be called after the fChartViewer is assigned? Could getChartViewer() return null? (aww, unannotated code ;) )
+
+Line:62, lttng/org.eclipse.linuxtools.tmf.analysis.xml.ui/src/org/eclipse/linuxtools/internal/tmf/analysis/xml/ui/views/xychart/XmlXYViewer.java -> meh, not a big fan of mixing <> and []... but SWTChart's setSeries method takes double [] arrays, soooo yeah
+
+Line:64, lttng/org.eclipse.linuxtools.tmf.analysis.xml.ui/src/org/eclipse/linuxtools/internal/tmf/analysis/xml/ui/views/xychart/XmlXYViewer.java -> If your key is numeric (Integer, Long, etc.), it's usually faster to use a TreeMap than a HashMap. Also, it has the advantage of being sorted, so you will iterate in the order of the keys.
+
+Any reason why HashMap is being used here?
+
+Line:72, lttng/org.eclipse.linuxtools.tmf.analysis.xml.ui/src/org/eclipse/linuxtools/internal/tmf/analysis/xml/ui/views/xychart/XmlXYViewer.java -> add empty line after
+
+Line:83, lttng/org.eclipse.linuxtools.tmf.analysis.xml.ui/src/org/eclipse/linuxtools/internal/tmf/analysis/xml/ui/views/xychart/XmlXYViewer.java -> xxx@xxx.xxx String...
+
+Line:94, lttng/org.eclipse.linuxtools.tmf.analysis.xml.ui/src/org/eclipse/linuxtools/internal/tmf/analysis/xml/ui/views/xychart/XmlXYViewer.java -> xxx@xxx.xxx Iterable...
+
+EMPTY_SET is never null though, how about supresswarning instead?
+
+Line:98, lttng/org.eclipse.linuxtools.tmf.analysis.xml.ui/src/org/eclipse/linuxtools/internal/tmf/analysis/xml/ui/views/xychart/XmlXYViewer.java -> I made some modifications to this part (*rewrites everything*):
+
+        private static final Pattern WILDCARD_PATTERN = Pattern.compile("\\*");
+
+        public List<Integer> getQuarks() {
+            /* Get the list of quarks to process with this path */
+            String[] paths = fPath.split(SPLIT_STRING);
+           xxx@xxx.xxx
+           xxx@xxx.xxx List<Integer> quarks = Collections.singletonList(IXmlStateSystemContainer.ROOT_QUARK);
+
+            try {
+                for (String path : paths) {
+                    List<Integer> subQuarks = new LinkedList<>();
+                    /* Replace * by .* to have a regex string */
+                    String name = WILDCARD_PATTERN.matcher(path).replaceAll(".*");
+                    for (int relativeQuark : quarks) {
+                        subQuarks.addAll(fStateSystem.getSubAttributes(relativeQuark, false, name));
+                    }
+                    quarks = subQuarks;
+                }
+            } catch (AttributeNotFoundException e) {
+                /*
+                 * We get all attributes from the state system itself, this
+                 * should not happen.
+                 */
+                throw new IllegalStateException();
+            }
+            return quarks;
+        }
+
+
+* If you use a regex many times, it's faster to compile it beforehand.
+* You can use .addAll(Collection) to add all elements of one Collection into another.
+* Moved the 'try' outside of the for loops. AFAIU, you should never hit the exception in normal behavior. try has a slight performance impact, if possible it's better to not do it every loop.
+
+Line:126, lttng/org.eclipse.linuxtools.tmf.analysis.xml.ui/src/org/eclipse/linuxtools/internal/tmf/analysis/xml/ui/views/xychart/XmlXYViewer.java -> move to above
+
+Line:158, lttng/org.eclipse.linuxtools.tmf.analysis.xml.ui/src/org/eclipse/linuxtools/internal/tmf/analysis/xml/ui/views/xychart/XmlXYViewer.java -> do you need the 'complete' variable? How about
+
+  while (!ss.waitUntilBuilt(BUILD_UPDATE_TIMEOUT) && ... ) {
+
+Line:175, lttng/org.eclipse.linuxtools.tmf.analysis.xml.ui/src/org/eclipse/linuxtools/internal/tmf/analysis/xml/ui/views/xychart/XmlXYViewer.java -> you could do instead
+
+  if (seriesName == null) {
+    continue;
+  }
+
+and save one indentation level for the rest
+
+Line:181, lttng/org.eclipse.linuxtools.tmf.analysis.xml.ui/src/org/eclipse/linuxtools/internal/tmf/analysis/xml/ui/views/xychart/XmlXYViewer.java -> why do you need to .trim() here? Why not just not save any whitespace in the attribute names?
+
+Line:187, lttng/org.eclipse.linuxtools.tmf.analysis.xml.ui/src/org/eclipse/linuxtools/internal/tmf/analysis/xml/ui/views/xychart/XmlXYViewer.java -> add a comment inside here, what does this case represent?
+
+Line:270, lttng/org.eclipse.linuxtools.tmf.analysis.xml.ui/src/org/eclipse/linuxtools/internal/tmf/analysis/xml/ui/views/xychart/XmlXYViewer.java -> this should be moved to the interface, eventually...
+
+Line:319, lttng/org.eclipse.linuxtools.tmf.analysis.xml.ui/src/org/eclipse/linuxtools/internal/tmf/analysis/xml/ui/views/xychart/XmlXYViewer.java -> * Why is super.reinitialize() not public?
+* If you want super.reinitialize() protected, this class could "open it up" instead of defining a new method:
+
+ xxx@xxx.xxx
+  public void reinitialize() {
+    super.reinitialize();
+  }
+
+Line:28, lttng/org.eclipse.linuxtools.tmf.analysis.xml.ui/src/org/eclipse/linuxtools/internal/tmf/analysis/xml/ui/TmfXmlUiStrings.java -> fields in an interface are necessarily "public static final", so no need to put any of these keywords. Probably not worth updating this now, but for the future..
+
+Line:34, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/module/xmlView.xsd -> tab
+
+Line:37, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/module/xmlView.xsd -> XY
+
+state system analyses
+
+Line:41, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/module/xmlView.xsd -> analyses (there can be more than one right?)
+
+Line:103, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/module/xmlView.xsd -> tab
+
+Line:106, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/module/xmlView.xsd -> Defines a path to an entry
+
+XY view
+
+Line:12, lttng/org.eclipse.linuxtools.tmf.analysis.xml.ui/src/org/eclipse/linuxtools/internal/tmf/analysis/xml/ui/views/xychart/package-info.java -> add empty line after copyright header
+
+you could put the "package..." part on a separate line.
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2014-07-11 16:31:30.000000000
+
+Patch Set 2:
+
+(4 comments)
+
+Some replies to comments
+
+Line:64, lttng/org.eclipse.linuxtools.tmf.analysis.xml.ui/src/org/eclipse/linuxtools/internal/tmf/analysis/xml/ui/views/xychart/XmlXYViewer.java -> > If your key is numeric (Integer, Long, etc.), it's usually faster to use a TreeMap than a HashMap
+
+Any benchmark to proove your say? A quick google search showed me nothing wrt to this, it rather re-inforced my idea to use HashMap. Beside, the sort order is not important
+
+Line:158, lttng/org.eclipse.linuxtools.tmf.analysis.xml.ui/src/org/eclipse/linuxtools/internal/tmf/analysis/xml/ui/views/xychart/XmlXYViewer.java -> Because I need it at false the first time to enter that loop. The way you do it, if the state system is already built, you never get in the loop, we'd need to boolean for the first run anyway.
+
+Line:319, lttng/org.eclipse.linuxtools.tmf.analysis.xml.ui/src/org/eclipse/linuxtools/internal/tmf/analysis/xml/ui/views/xychart/XmlXYViewer.java -> Because one might eventually want to do something else than just reinitialize when the view is updated. This captures more what happened and the call to reinitialize is the behavior that the viewer decides to implement when the view info is updated.
+
+Line:106, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/module/xmlView.xsd -> No, 'entries' is good, the path typically leads to many entries. (eg. CPUs/*)
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-07-11 22:44:50.000000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:64, lttng/org.eclipse.linuxtools.tmf.analysis.xml.ui/src/org/eclipse/linuxtools/internal/tmf/analysis/xml/ui/views/xychart/XmlXYViewer.java -> Hmm, I can't find the original post/article I'm remembering, but it mentioned that if:
+* you use Integer/Long keys AND
+* you insert less than ~1000 entries in your map
+
+in this case a TreeMap would perform faster than a Hashmap. Since here we're talking about series on a graph, I think we're definitely in the "less than 1000 entries" case.
+
+Of course Google return a bunch of answers by "experts" saying "urrr HashMap is O(1), Hashmap faster!!1". But if you think about it, the constant cost of Hashmap is hashing the key + doing the lookup (and that's ignoring hash collisions). Whereas a TreeMap does integer comparisons until it reaches the bottom of the tree, in a log(n) way. You have to go through all the bits to do the hash, while you don't necessarily have to when doing comparisons. So it's believable that for low values of n, "O(1) + constant" to be bigger than "O(log n) + slightly smaller constant".
+
+Anyhow, it'd be interesting to actually benchmark it. Even though it would probably vary by JVM version, hardware, etc.
+
+Line:158, lttng/org.eclipse.linuxtools.tmf.analysis.xml.ui/src/org/eclipse/linuxtools/internal/tmf/analysis/xml/ui/views/xychart/XmlXYViewer.java -> > The way you do it, if the state system is already built, you never get in the loop
+
+Oh, that's true, lol. Perhaps you could do a do/while() and put the condition at the end. That's a clear way of saying "I want to enter this loop at least once", but if it doesn't give you enough flexibility, you could keep it this way.
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2014-07-14 20:26:14.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+d'oh, they stayed as draft because I "reviewed" patchset 4 :p
+
+Line:64, lttng/org.eclipse.linuxtools.tmf.analysis.xml.ui/src/org/eclipse/linuxtools/internal/tmf/analysis/xml/ui/views/xychart/XmlXYViewer.java -> Well... it depends on the Integer/Long implementation. They may cache the hash result after first calculation, in which case, the constant cost of hashing becomes 1 after first time. 
+
+While the TreeMap needs to rebalance from time to time, so really, unless there is a clear benchmark showing the advantage, I see no clear reason why change the HashMap to TreeMap ;-)
+
+-------------------------------------

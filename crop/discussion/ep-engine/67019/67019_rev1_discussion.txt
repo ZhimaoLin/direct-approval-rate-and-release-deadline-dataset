@@ -1,0 +1,91 @@
+DESCRIPTION
+
+MB-20649: Fix lock inversion between Processor and front-end
+
+Processor via PassiveStream::processBufferedMessage has a lock-inversion
+for setVbucketState messages.
+
+The Processor obtains bufMutex then connManager
+Frontend path is reversed, connManger then bufMutex
+
+An existing test-case is reused in buffered only mode to trigger
+the inversion.
+
+However in addressing the lock-inversion by reducing the
+scope of the bufMutex, we introduce further problems which
+need addressing by use of shared_ptr for the DcpResponse objects
+as they can be deleted by the frontend whilst the Processor task
+is working on the object.
+
+Change-Id: Ifde01a570f1fc16f8f5d61328c3a44f39246785c
+
+
+COMMENTS
+
+author: Jim WNathalie Landryer
+date: 2016-08-24 08:10:21.907000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-08-24 08:10:28.636000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1100/ (1/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-08-24 08:10:28.782000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/935/ (2/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-08-24 08:10:28.911000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1191/ (3/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-08-24 08:22:18.535000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/935/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1191/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1100/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-08-24 09:06:34.688000000
+
+Patch Set 1: Code-Review-1
+
+(3 comments)
+
+Line:1477, src/dcp/stream.cc -> Nit: For smart pointers they have their own `operator bool()` so you don't need to explicitly compare to null (also the `operator bool` can be faster as it doesn't have to materialise a raw pointer).
+
+Line:1861, src/dcp/stream.cc -> As discussed, can you just read the two members under the lock (and not the snprintfs).
+
+Line:1916, src/dcp/stream.cc -> Now you have smart pointers I think you can simplify this to:
+
+ std::queue<std::shared_ptr<DcpResponse>> empty;
+ std::swap(buffer.messages, empty );
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-08-25 07:55:36.758000000
+
+Change has been successfully cherry-picked as d2e80d958f2e902b4b763930cb9073920c721194 by Ashlee Kent
+
+-------------------------------------

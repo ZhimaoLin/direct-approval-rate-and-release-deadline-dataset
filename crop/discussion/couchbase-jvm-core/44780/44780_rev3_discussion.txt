@@ -1,0 +1,109 @@
+DESCRIPTION
+
+JVMCBC-105: parse dp4 responses in QueryHandler
+
+Motivation
+----------
+Between DP4 and DP3, response format was modified and enriched.
+
+Modifications
+-------------
+Added new parsing steps for the new possible response sections :
+ - signature
+ - results (instead of resultset, still an array of json objects)
+ - warnings (array of error objects)
+
+ Modified initial parsing and GenericQueryReponse to include streams of
+ errors (instead of putting them in info), an observable for the status
+ that can only come once all rows have been processed and for IDs (with
+ a requestId and a clientContextId).
+
+ Modified parsing of existing steps to accomodate changes:
+  - resultset is now "results"
+  - info section is now "metrics", with a fixed schema (named fields,
+  not a generic structure)
+  - errors can be multiple (same format as warnings)
+
+ Modified test data to reflect changes in response format, modified
+ and added tests.
+
+ Note: clients (the java SDK) should be updated to take these changes
+ into account:
+  - ResponseStatus is not definite (there still could be execution
+  errors, one has to also look at queryStatus())
+  - errors (and warnings) could be multiple, and are fed into errors()
+  - info() now contains a single element with named metric fields
+
+Result
+------
+QueryHandler now can parse DP4 responses. Tests pass.
+
+Change-Id: Ia38e7db2676ec2c0319412219ee4fe92b2ef17df
+
+
+COMMENTS
+
+author: Estrella Humphrey
+date: 2014-12-31 11:29:18.187000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Estrella Humphrey
+date: 2014-12-31 11:34:43.033000000
+
+Patch Set 3: Verified+1
+
+patch set 2 includes a rebase of master, sorry about the potential confusion... 
+
+Patch set 2 real modifications are in QueryHandler (magic number removal).
+
+Patch set 3 modifications are renaming of json files, reflected also in QueryHandlerTest.
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2014-12-31 14:48:22.185000000
+
+Patch Set 3:
+
+(7 comments)
+
+Line:110, src/main/java/com/couchbase/client/core/endpoint/query/QueryHandler.java -> let's use AsyncSubjects where we know only one thing will be ever onNext'ed
+
+Line:195, src/main/java/com/couchbase/client/core/endpoint/query/QueryHandler.java -> if the method has such a generic name, I vote for passing in the bytebuf.. because the method name does not give you a clue on what is called.
+
+so either change the name or make it explicit what gets passed in?
+
+Line:237, src/main/java/com/couchbase/client/core/endpoint/query/QueryHandler.java -> can you skipBytes here bytesBefore() + 1 to avoid calling it twice?
+
+Line:342, src/main/java/com/couchbase/client/core/endpoint/query/QueryHandler.java -> can you trace in one msg?
+
+Line:348, src/main/java/com/couchbase/client/core/endpoint/query/QueryHandler.java -> also on this method its not clear on  what you are finding.. I'd advocate for making it static and passing in the ByteBuf you're operating on?
+
+Line:351, src/main/java/com/couchbase/client/core/endpoint/query/QueryHandler.java -> I think a faster way to do this is with a ByteBufProcessor.. this avoids checking for boundaries IIRC. Just an optimization though, if you want to tackle it.
+
+Line:369, src/main/java/com/couchbase/client/core/endpoint/query/QueryHandler.java -> is it skipped? if so, maybe change the method name expliticlty.
+
+-------------------------------------
+author: Estrella Humphrey
+date: 2014-12-31 15:13:36.588000000
+
+Patch Set 3:
+
+(7 comments)
+
+Line:110, src/main/java/com/couchbase/client/core/endpoint/query/QueryHandler.java -> done in patch set 5
+
+Line:195, src/main/java/com/couchbase/client/core/endpoint/query/QueryHandler.java -> changed the name, wanted to make it a shorthand for always searching for a char in the responseContent. also added javadoc. see patch set 6
+
+Line:237, src/main/java/com/couchbase/client/core/endpoint/query/QueryHandler.java -> well I want to find the second following quote. skip(1) skips the 1st one, then bytesBefore finds the 2nd one...
+
+Line:342, src/main/java/com/couchbase/client/core/endpoint/query/QueryHandler.java -> Done
+
+Line:348, src/main/java/com/couchbase/client/core/endpoint/query/QueryHandler.java -> Done
+
+Line:351, src/main/java/com/couchbase/client/core/endpoint/query/QueryHandler.java -> added TODO (for now this was just an extraction of reused code)
+
+Line:369, src/main/java/com/couchbase/client/core/endpoint/query/QueryHandler.java -> Done
+
+-------------------------------------

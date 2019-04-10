@@ -1,0 +1,141 @@
+DESCRIPTION
+
+MB-14374: Properly find the latest rollback point
+
+If we have received a full snapshot on disk then we want to use the
+snapshot end sequence number, but if we are in the middle of a
+snapshot then we want to use the snapshot start sequence number. We
+can figure out what to use by checking the last sequence number
+persisted.
+
+Change-Id: I4feeea862628d7c516138e4491aab83b8b05e56a
+
+
+COMMENTS
+
+author: Kenny Maynard
+date: 2015-04-09 21:24:18.674000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-04-09 21:24:22.355000000
+
+Patch Set 1:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-sherlock/135/
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-04-10 00:50:51.858000000
+
+Patch Set 1: Code-Review+2
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-04-10 00:51:49.254000000
+
+Patch Set 1: -Code-Review
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-04-10 01:01:27.769000000
+
+Patch Set 1: Code-Review+2
+
+-------------------------------------
+author: Abby Duran
+date: 2015-04-10 01:22:02.029000000
+
+Patch Set 1: Code-Review-1
+
+(1 comment)
+
+Line:1156, src/ep.cc -> In flushVBucket, I saw that we set  a persisted seq number in vbucket map without locking the above vbucket snapshot lock. Are you sure that there won't be any racing issues here?
+
+In addition, what if vbMap.getPersistenceSeqno(vbid) > range.end? Do we still need to create the failover entry using range.start?
+
+-------------------------------------
+author: Abby Duran
+date: 2015-04-10 01:24:01.347000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:1155, src/ep.cc -> I also saw that vb->setPersistedSnapshot(range.start, range.end) is invoked right before calling a commit operation. Is this correct? The overall logic in flushVBucket and this function is not clear to me.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-04-10 01:41:20.144000000
+
+Patch Set 1: -Code-Review
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-04-10 14:16:20.229000000
+
+Patch Set 1: Code-Review-1 Verified+1
+
+Build Unstable 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-sherlock/135/ : UNSTABLE
+
+-------------------------------------
+author: Kenny Maynard
+date: 2015-04-10 17:01:27.122000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:1155, src/ep.cc -> I don't think this would cause any issues, but it depends on how you look at things. Let's tNathalie Landry about this after the 2PM meeting.
+
+Line:1156, src/ep.cc -> The persisted sequence number can never be higher than the snapshot end.
+
+-------------------------------------
+author: Abby Duran
+date: 2015-04-10 17:14:45.707000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:1155, src/ep.cc -> I don't think it is reasonable that it depends on how you look at the code. The code looks confusing. I'm not sure why we have such a logic in updating the persisted snapshot info.
+
+Line:1156, src/ep.cc -> Then, why do we need to maintain a separate persisted sequence number per vbucket? Can we simply use the end seq num of the persisted snapshot?
+
+-------------------------------------
+author: Kenny Maynard
+date: 2015-04-10 17:19:23.781000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:1155, src/ep.cc -> I agree the code is confusing and that's one of the things I want to discuss. And what I mean is that by it "depends on how you look at things" is that it depends on how accurate you want to be. I'm not sure that perfect accuracy matters in this case.
+
+Line:1156, src/ep.cc -> No. The snapshot end sequence number can be higher than the persistence sequence number. The following must always be true.
+
+snap start <= persisted sequence number <= snap end
+
+-------------------------------------
+author: Abby Duran
+date: 2015-04-10 17:28:59.361000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:1155, src/ep.cc -> I'm not sure if i understand it correctly, and don't understand why the accuracy doesn't matter in this case? Then, why do we need this fix?
+
+Line:1156, src/ep.cc -> Then, we should not call it as 'persisted snapshot start / end'. It causes some confusions and makes it difficult understand the code.
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-04-10 19:32:16.891000000
+
+Change has been successfully cherry-picked as 8dc32bb30e6fb248c24115aebfa2d7146d747fa6
+
+-------------------------------------

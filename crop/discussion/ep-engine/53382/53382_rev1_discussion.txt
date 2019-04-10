@@ -1,0 +1,134 @@
+DESCRIPTION
+
+MB-15740: Lock maxActiveSnoozingBackfills when updating it due to config change
+
+updateMaxActiveSnoozingBackfills() is called when value of max_data_size is
+changed. Need to lock when updating maxActiveSnoozingBackfills in the function.
+
+Change-Id: Ied793eb86fd24fba9cf3a3a12ea09d21a61d825f
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2015-07-18 01:49:01.567000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-07-18 01:49:08.473000000
+
+Patch Set 1:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-sherlock/270/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-07-18 02:01:36.474000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-sherlock/270/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-07-18 15:46:57.256000000
+
+Patch Set 1:
+
+For reference can you quote the ThreadSanitizer error report in the commit message and/or the MB?
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2015-07-18 21:19:24.928000000
+
+Patch Set 1:
+
+Running [0000/0001]: test dcp consumer flow control buffer size (couchstore)...Couldn't find allocator hooks for accurate memory tracking
+==================
+WARNING: ThreadSanitizer: data race (pid=17692)
+  Write of size 2 at 0x7d840001dcc4 by main thread (mutexes: write M18097):
+    #0 DcpConnMap::updateMaxActiveSnoozingBackfills(unsigned long) /home/Piper Jefferson/ep-engine/src/connmap.cc:1212 (ep.so+0x0000000402ee)
+    #1 StatsValueChangeListener::sizeValueChanged(std::string const&, unsigned long) /home/Piper Jefferson/ep-engine/src/ep.cc:59 (ep.so+0x0000000a1d0b)
+    #2 Configuration::setParameter(std::string const&, unsigned long) /home/Piper Jefferson/ep-engine/src/configuration.cc:185 (ep.so+0x00000017e065)
+    #3 Configuration::setMaxSize(unsigned long const&) /home/Piper Jefferson/build/ep-engine/src/generated_configuration.cc:291 (ep.so+0x00000018adb8)
+    #4 setFlushParam(EventuallyPersistentEngine*, char const*, char const*, char const**, unsigned long*) /home/Piper Jefferson/ep-engine/src/ep_engine.cc:415 (ep.so+0x0000000c730b)
+    #5 EvpUnknownCommand(engine_interface*, void const*, protocol_binary_request_header*, bool (*)(void const*, unsigned short, void const*, unsigned char, void const*, unsigned int, unsigned char, unsigned short, unsigned long, void const*)) /home/Piper Jefferson/ep-engine/src/ep_engine.cc:1374 (ep.so+0x0000000a3348)
+    #6 mock_unknown_command(engine_interface*, void const*, protocol_binary_request_header*, bool (*)(void const*, unsigned short, void const*, unsigned char, void const*, unsigned int, unsigned char, unsigned short, unsigned long, void const*)) /home/Piper Jefferson/memcached/programs/engine_testapp/engine_testapp.cc:380 (engine_testapp+0x0000000bab19)
+    #7 set_param(engine_interface*, engine_interface_v1*, protocol_binary_engine_param_t, char const*, char const*) /home/Piper Jefferson/ep-engine/tests/ep_test_apis.cc:590 (ep_testsuite.so+0x00000009d697)
+    #8 test_dcp_consumer_flow_control_buf_sz(engine_interface*, engine_interface_v1*) /home/Piper Jefferson/ep-engine/tests/ep_testsuite.cc:3634 (ep_testsuite.so+0x0000000697c9)
+    #9 execute_test(test, char const*, char const*) /home/Piper Jefferson/memcached/programs/engine_testapp/engine_testapp.cc:1090 (engine_testapp+0x0000000b9444)
+    #10 __libc_start_main <null>:0 (libc.so.6+0x000000021ec4)
+
+  Previous read of size 2 at 0x7d840001dcc4 by thread T7:
+    #0 DcpConnMap::getMaxActiveSnoozingBackfills() const /home/Piper Jefferson/ep-engine/src/connmap.h:474 (ep.so+0x0000000af7b5)
+    #1 EventuallyPersistentEngine::getStats(void const*, char const*, int, void (*)(char const*, unsigned short, char const*, unsigned int, void const*)) /home/Piper Jefferson/ep-engine/src/ep_engine.cc:4481 (ep.so+0x0000000b34f5)
+    #2 EventuallyPersistentStore::snapshotStats() /home/Piper Jefferson/ep-engine/src/ep.cc:1647 (ep.so+0x00000007f5e6)
+    #3 StatSnap::run() /home/Piper Jefferson/ep-engine/src/tasks.cc:96 (ep.so+0x000000121db6)
+    #4 ExecutorThread::run() /home/Piper Jefferson/ep-engine/src/executorthread.cc:124 (ep.so+0x0000000e47c5)
+    #5 launch_executor_thread(void*) /home/Piper Jefferson/ep-engine/src/executorthread.cc:34 (ep.so+0x0000000e4279)
+    #6 platform_thread_wrap /home/Piper Jefferson/platform/src/cb_pthreads.c:23 (libplatform.so.0.1.0+0x0000000038a1)
+
+  Location is heap block of size 4304 at 0x7d840001cc00 allocated by main thread:
+    #0 operator new(unsigned long) <null>:0 (engine_testapp+0x00000005087d)
+    #1 EventuallyPersistentEngine::initialize(char const*) /home/Piper Jefferson/ep-engine/src/ep_engine.cc:2100 (ep.so+0x0000000a526d)
+    #2 EvpInitialize(engine_interface*, char const*) /home/Piper Jefferson/ep-engine/src/ep_engine.cc:133 (ep.so+0x0000000a2d68)
+    #3 init_engine_instance /home/Piper Jefferson/memcached/utilities/engine_loader.c:159 (libmcd_util.so.1.0.0+0x000000004efb)
+    #4 create_bucket(bool, char const*) /home/Piper Jefferson/memcached/programs/engine_testapp/engine_testapp.cc:980 (engine_testapp+0x0000000b9e1c)
+    #5 execute_test(test, char const*, char const*) /home/Piper Jefferson/memcached/programs/engine_testapp/engine_testapp.cc:1083 (engine_testapp+0x0000000b93b3)
+    #6 __libc_start_main <null>:0 (libc.so.6+0x000000021ec4)
+
+  Mutex M18097 (0x7d2c0000ae38) created at:
+    #0 pthread_mutex_init <null>:0 (engine_testapp+0x000000054f90)
+    #1 cb_mutex_initialize /home/Piper Jefferson/platform/src/cb_pthreads.c:105 (libplatform.so.0.1.0+0x000000003997)
+    #2 create_mock_cookie /home/Piper Jefferson/memcached/programs/engine_testapp/mock_server.c:451 (engine_testapp+0x0000000bd68c)
+    #3 mock_unknown_command(engine_interface*, void const*, protocol_binary_request_header*, bool (*)(void const*, unsigned short, void const*, unsigned char, void const*, unsigned int, unsigned char, unsigned short, unsigned long, void const*)) /home/Piper Jefferson/memcached/programs/engine_testapp/engine_testapp.cc:374 (engine_testapp+0x0000000baaa6)
+    #4 set_param(engine_interface*, engine_interface_v1*, protocol_binary_engine_param_t, char const*, char const*) /home/Piper Jefferson/ep-engine/tests/ep_test_apis.cc:590 (ep_testsuite.so+0x00000009d697)
+    #5 test_dcp_consumer_flow_control_buf_sz(engine_interface*, engine_interface_v1*) /home/Piper Jefferson/ep-engine/tests/ep_testsuite.cc:3634 (ep_testsuite.so+0x0000000697c9)
+    #6 execute_test(test, char const*, char const*) /home/Piper Jefferson/memcached/programs/engine_testapp/engine_testapp.cc:1090 (engine_testapp+0x0000000b9444)
+    #7 __libc_start_main <null>:0 (libc.so.6+0x000000021ec4)
+
+  Thread T7 'mc:writer_6' (tid=17701, running) created by main thread at:
+    #0 pthread_create <null>:0 (engine_testapp+0x000000053b81)
+    #1 cb_create_named_thread /home/Piper Jefferson/platform/src/cb_pthreads.c:68 (libplatform.so.0.1.0+0x00000000381c)
+    #2 ExecutorThread::start() /home/Piper Jefferson/ep-engine/src/executorthread.cc:54 (ep.so+0x0000000e3b8d)
+    #3 ExecutorPool::_startWorkers() /home/Piper Jefferson/ep-engine/src/executorpool.cc:481 (ep.so+0x0000000dce26)
+    #4 ExecutorPool::_registerTaskable(Taskable*) /home/Piper Jefferson/ep-engine/src/executorpool.cc:445 (ep.so+0x0000000dc2ef)
+    #5 ExecutorPool::registerTaskable(Taskable*) /home/Piper Jefferson/ep-engine/src/executorpool.cc:450 (ep.so+0x0000000dedee)
+    #6 EventuallyPersistentStore /home/Piper Jefferson/ep-engine/src/ep.cc:297 (ep.so+0x00000006f09d)
+    #7 EventuallyPersistentEngine::initialize(char const*) /home/Piper Jefferson/ep-engine/src/ep_engine.cc:2109 (ep.so+0x0000000a5375)
+    #8 EvpInitialize(engine_interface*, char const*) /home/Piper Jefferson/ep-engine/src/ep_engine.cc:133 (ep.so+0x0000000a2d68)
+    #9 init_engine_instance /home/Piper Jefferson/memcached/utilities/engine_loader.c:159 (libmcd_util.so.1.0.0+0x000000004efb)
+    #10 create_bucket(bool, char const*) /home/Piper Jefferson/memcached/programs/engine_testapp/engine_testapp.cc:980 (engine_testapp+0x0000000b9e1c)
+    #11 execute_test(test, char const*, char const*) /home/Piper Jefferson/memcached/programs/engine_testapp/engine_testapp.cc:1083 (engine_testapp+0x0000000b93b3)
+    #12 __libc_start_main <null>:0 (libc.so.6+0x000000021ec4)
+
+SUMMARY: ThreadSanitizer: data race /home/Piper Jefferson/ep-engine/src/connmap.cc:1212 DcpConnMap::updateMaxActiveSnoozingBackfills(unsigned long)
+
+
+The above thread sanitizer warning was for data race between updateMaxActiveSnoozingBackfills() and getMaxActiveSnoozingBackfills() which is used only for stats as of now. Will fix this race in MASTER by using atomic variable with relaxed memory ordering. 
+
+Upon further code analysis, I found a race between updateMaxActiveSnoozingBackfills() and canAddBackfillToActiveQ()  on the class member maxActiveSnoozingBackfills. This should be fixed for SHERLOCK. For some reason, thread sanitizer did not flag this data race.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-07-20 08:45:46.764000000
+
+Patch Set 1: Code-Review+1
+
+-------------------------------------
+author: Abby Duran
+date: 2015-07-20 16:36:47.256000000
+
+Patch Set 1: Code-Review+2
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-07-20 16:36:49.239000000
+
+Change has been successfully cherry-picked as 5b6f1ef16288b488be2df117e7bc10460e420a24
+
+-------------------------------------

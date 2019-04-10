@@ -1,0 +1,149 @@
+DESCRIPTION
+
+Shallow fetch: avoid sending unneeded blobs
+
+When doing an incremental fetch from JGit, "have" commits are marked
+as "uninteresting". In a non-shallow fetch, when the RevWalk hits an
+"uninteresting" commit it marks the commit's corresponding tree as
+uninteresting. That has the effect of dropping those trees and all the
+trees and blobs they reference out of the thin pack returned to the
+client.
+
+However, shallow fetches use a DepthWalk to limit the RevWalk, which
+nearly always causes the RevWalk to terminate before encountering the
+"have" commits. As a result the pack created for the incremental fetch
+never encounters "uninteresting" tree objects and thus includes
+duplicate objects that it knows the client already has.
+
+Change-Id: I7b1f7c3b0d83e04d34cd2fa676f1ad4fec904c05
+Signed-off-by: Ariel Sawyer xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Ariel Sawyer
+date: 2016-08-03 17:38:13.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-08-03 17:38:21.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/8849/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-08-03 17:52:10.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/8849/ : SUCCESS
+
+-------------------------------------
+author: Eden Lin
+date: 2016-08-03 21:10:16.000000000
+
+Patch Set 2: Code-Review+1
+
+(3 comments)
+
+Line:566, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/file/PackWriterTest.java -> Why are these needed?
+
+Line:1657, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriter.java -> I don't understand this comment. Is it related to this change?
+
+Line:1711, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriter.java -> Can this be null? What does it mean if it is null?
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2016-08-04 01:19:13.000000000
+
+Patch Set 2:
+
+(3 comments)
+
+Line:566, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/file/PackWriterTest.java -> The RevCommit objects are not fully initialized. In these tests, the tree objects are not all initialized so calling RevCommit.getTree().getId() causes an NPE.
+
+It might be good to push down this parseHeaders() into the TestRepository.create() function, but I'd rather leave that in a separate cleanup pass.
+
+Line:1657, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriter.java -> This is where the state set by RevWalk.assumeShallow() is retrieved. We need to retrieve that state rather than recreating the RevCommit objects in order for shallow fetches of parent commits to not get lost.
+
+Changed "flags" to "state".
+
+Line:1711, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriter.java -> This is defensive programming to avoid an NPE. IIRC Ketch can have a commit with no tree object. We shouldn't see that here but I erred on the side of caution. I saw another place in the JGit code with a check like this so maybe it is also possible to have a commit with no tree object outside of Ketch?
+
+-------------------------------------
+author: Eden Lin
+date: 2016-08-04 19:21:02.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:1657, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriter.java -> It still says flags.
+
+Is the purpose of this comment to warn people against creating a new RevWalk? In a single RevWalk I don't know of any way to recreate a RevCommit --- any methods that produce a RevCommit reuse an existing one if available.
+
+Or is the purpose of this comment to explain some confusing line in the code below? Please forgive my denseness.
+
+-------------------------------------
+author: Eden Lin
+date: 2016-08-04 19:22:47.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:566, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/file/PackWriterTest.java -> Ah, that makes sense. So if this were done for c1, c2, c4, and c5 but not c3, it would still work (I'm not suggesting doing that, just clarifying).
+
+-------------------------------------
+author: Eden Lin
+date: 2016-08-04 19:30:09.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:1711, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriter.java -> I don't think it's possible to have a commit without a tree. It is possible to have an unparsed RevCommit, in which case I am not sure whether getTree will return null.
+
+I'd rather this throw an exception when t == null. Otherwise it's too easy to silently lose this improvement with some other code change.
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2016-08-04 21:11:46.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:566, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/file/PackWriterTest.java -> Other methods in this test call parseHeaders() on every BranchBuilder-created RevCommit, and I thought that was the pattern to follow. I tested which RevCommits are not fully initialized, and when you are adding multiple commits to the same BranchBuilder it is only the last one (c5) that needs to be parsed.
+
+That said, the Eclipse project setup is set to report unused variables as errors so if I remove the parseHeaders(c3) there is an error. One workaround that is to remove the "RevCommit c3 = " above, which looks awkward.  Another is to make the RecCommits class members, which I do in https://git.eclipse.org/r/#/c/78398. So my plan is to  just remove the parseHeaders() calls for all but c5 in that patch.
+
+I'll also need to update the commit message in the initial patch in this set, since it experienced a Hudson test flake failure. *sigh*
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-08-05 00:26:53.000000000
+
+Change has been successfully merged into the git repository by Eden Lin
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2016-08-05 00:27:58.000000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:1657, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriter.java -> It is the assumeShallow state that is important to retrieve.
+
+I added a comment her because I didn't understand the role it played in maintaining any previous state set up by the RevWalk. I guess my question to you is, prior to my attempt to comment this loop, what did you understand it to do? Based on your answer we can either drop or adapt the comment.
+
+Line:1711, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriter.java -> Done
+
+-------------------------------------

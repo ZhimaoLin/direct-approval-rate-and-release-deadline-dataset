@@ -1,0 +1,96 @@
+DESCRIPTION
+
+Speed up ObjectWalk by 6235 objects/sec
+
+The "Counting objects" phase of packing is the most time consuming
+part for any server providing access to Git repositories. Scanning
+through the entire project history, including every revision of
+every tree that has ever existed is expensive and takes an incredible
+amount of CPU time.
+
+Inline the tree parsing logic, unroll a number of loops, and setup
+to better handle the common case of seeing another occurrence of
+an object that was already marked SEEN.
+
+This change boosts the "Counting objects" phase when JGit is acting
+as a server and is packing the linux-2.6 repository for its client.
+Compared to CGit on the same hardware, a JGit daemon server is now
+21883 objects/sec faster:
+
+CGit:
+  Counted 2058062 objects in 38981 ms at 52796.54 objects/sec
+  Counted 2058062 objects in 38920 ms at 52879.29 objects/sec
+  Counted 2058062 objects in 39059 ms at 52691.11 objects/sec
+
+JGit (before):
+  Counted 2058062 objects in 31529 ms at 65275.21 objects/sec
+  Counted 2058062 objects in 30359 ms at 67790.84 objects/sec
+  Counted 2058062 objects in 30033 ms at 68526.69 objects/sec
+
+JGit (this commit):
+  Counted 2058062 objects in 28726 ms at 71644.57 objects/sec
+  Counted 2058062 objects in 27652 ms at 74427.24 objects/sec
+  Counted 2058062 objects in 27528 ms at 74762.50 objects/sec
+
+Above the first run was a "cold server". For JGit the JVM had just
+started up with `jgit daemon`, and for CGit we hadn't touched the
+repository "recently" (but it was certainly in kernel buffer cache).
+The second and third runs were against the running JGit JVM, allowing
+timing tests to better reflect the benefits of JGit's pack and index
+caching, as well as any optimizations the JIT may have performed.
+
+The timings are fair.  CGit is opening, checking and mmap'ing both
+the pack and index during the timer.  JGit is opening, checking
+and malloc+read'ing the pack and index data into its Java heap
+during the timer. Both processes are walking the same graph space,
+and are computing the "path hash" necessary to sort objects in the
+object table for delta compression.  Since this commit only impacts
+the "Counting objects" phase, delta compression was obviously not
+included in the timings and JGit may still be performing delta
+compression slower than CGit, resulting in an overall slower server
+experience for clients.
+
+Change-Id: Ieb184bfaed8475d6960a494b1f3c870e0382164a
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2011-08-14 00:14:15.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-08-14 00:14:46.000000000
+
+Patch Set 2: Looks good to me, approved; Build Successful; IP review completed
+
+
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-08-14 00:14:47.000000000
+
+Change has been successfully merged into the git repository.
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-08-14 00:17:41.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/702/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-08-14 00:21:02.000000000
+
+Patch Set 2:
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/702/ : SUCCESS
+
+-------------------------------------

@@ -1,0 +1,194 @@
+DESCRIPTION
+
+TMF: Introduce a framework to hook trace analysis modules/plugins
+
+* Add a new extension point to define trace analysis modules.
+* Add new interface IAnalysisModule and abstract class
+  TmfAbstractAnalysisModule to implement the analysis itself.
+* TmfAnalysisManager is the main class to obtain which analysis are available
+  to a trace.
+* IAnalysisOutput interface describe the different outputs the analysis can
+  provide.  Objects of classes implementing this interface can register to an
+  analysis module.
+* The IAnalysisParameterProvider allows other parts of the system to set an
+  analysis' parameters.
+* Analysis are executed as Eclipse jobs.
+* On the UI side, analysis and their provided outputs (if any) are now children
+  of the trace and can be directly opened.
+* Unit tests in tmf.core and tmf.ui provide stub analysis.
+
+Change-Id: Ie0d0fa9b726555b6416829c1c49e44301297d11b
+Signed-off-by: Aryana Jones xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Annalise Jimenez
+date: 2013-10-18 17:57:50.000000000
+
+Uploaded patch set 16.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-10-18 17:57:56.000000000
+
+Patch Set 16:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/3719/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-10-18 18:30:30.000000000
+
+Patch Set 16: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/3719/ : SUCCESS
+
+-------------------------------------
+author: Luciana Barry
+date: 2013-10-23 18:24:58.000000000
+
+Patch Set 16: Code-Review-1
+
+(9 comments)
+
+I would like to have a solution for the following use case:
+
+- A trace is opened
+- TmfTrace.executeAnalysis() is called
+- A new IAnalysisModule instance is created
+- IAnalysisModule.setTrace() is called but the analysis does not execute yet
+- The module is not scheduled because it is not 'automatic'
+- Now how do you trigger execution of this non-automatic module?
+
+In the constructor of the analysis module you can call registerOutput() with a new instance of an analysis output. You would have to pass the instance of the analysis module to the analysis output constructor so that it could find back the module and schedule or execute it when the output is double-clicked.
+
+But it is a fake instance of the module (without trace) that is used in the project view model and that has its child analysis output. Then there is the real (new) instance of the module (that also has its own separate instances of the analysis output), that module instance is created and owned by the trace.
+
+So it seems that when we double-click the output we access the fake analysis module. There shouldn't be this doubling of analysis modules and outputs. Would it be possible for the model to only contain the analysis helpers which wouldn't need to own an instance of the module, but only provide one when it is needed?
+
+Line:172, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/IAnalysisModule.java -> Just an observation: the analysis id is defined by the 'id' attribute of the module element in the extension point (plugin.xml). But when this method gets overridden to provide its own list of executable modules, the analysis id of each executable module is defined by the implementation code, and the analysis id of the parent module is irrelevant.
+
+Line:212, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/TmfAnalysisModuleHelper.java -> Seems like this is no longer used?
+
+Line:248, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/ITmfTrace.java -> Please describe what is the key (String) of the map
+
+Line:251, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/ITmfTrace.java -> Why do we need this restriction from the interface? I can understand if the implementation does it to protect one of its field variables, but that's its problem.
+
+Line:27, lttng/org.eclipse.linuxtools.tmf.core.tests/stubs/org/eclipse/linuxtools/tmf/tests/stubs/analysis/TestCtfAnalysis.java -> The Test analysis ctf module should not apply to non-test CTF traces.
+
+Line:56, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfAnalysisElement.java -> This should be renamed to refreshOutputs.
+
+Line:166, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfAnalysisElement.java -> Heads up: do we want to support analysis for experiment types in the future? This will prevent it. Same issue in getHelpMessage().
+
+Line:347, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/TmfTrace.java -> Unnecessary check, the get() below will return null
+
+Line:68, lttng/org.eclipse.linuxtools.tmf.ui.tests/widgetStubs/org/eclipse/linuxtools/tmf/ui/tests/stubs/analysis/TestAnalysisUi.java -> The Test analysis in UI module should not apply to non-test traces.
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2013-10-23 19:56:51.000000000
+
+Patch Set 16:
+
+(2 comments)
+
+Some answers to your comments.
+
+Also for the fake analysis thing, I'll see what I can do, maybe rework the helper so instead of a wrapper around the analysis module, it is just a class to save the module's "configuration" (class, name, id, parameters, etc).  The module itself, once instantiated could actually use the helper for that configuration information (to avoid having to rewrite it).
+
+This way, instead of the helper containing the analysis, the analysis would contain its helper (or rather analysisInfo class)
+
+Line:27, lttng/org.eclipse.linuxtools.tmf.core.tests/stubs/org/eclipse/linuxtools/tmf/tests/stubs/analysis/TestCtfAnalysis.java -> Then that would mean adding a ctf test stub trace type for CTF test traces?  It is not possible to know a CTF trace is a test CTF trace
+
+Line:166, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/project/model/TmfAnalysisElement.java -> I have a patch ready for experiment analysis when this and experiment types are in :D  But for now, I just want to support traces (it's less trouble)
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2013-10-24 17:32:43.000000000
+
+Patch Set 16:
+
+Patrick, I've been doing some prototyping and really, the only way to have the list of available analysis is to have an instance of the analysis module (fake as long as the trace is not opened).
+
+The solution to this problem is to show analysis only for opened traces, which was the intention: to review the project explorer to show the available analysis of an opened trace.  This is not trivial.  And I was planning to do this before Christmas vacations anyway.
+
+Do you really want it to be implemented now, or would the actual way be acceptable for now? (and patches for analysis depending on this one can start coming in)
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-10-25 20:38:12.000000000
+
+Patch Set 16:
+
+> Do you really want it to be implemented now, or would the actual way be
+> acceptable for now? (and patches for analysis depending on this one can
+> start coming in)
+
+As long as those follow-up patches don't depend on the functionality we're planning to change, it should be fine. This has been waiting in the grinder for a while, it's really due for getting in ;)
+
+-------------------------------------
+author: Luciana Barry
+date: 2013-10-25 20:44:26.000000000
+
+Patch Set 16:
+
+Just thinking out loud here... prototyping in my head, you can tell me if this is possible to do:
+
+Is the reason that you need module instances because you need to find out all the possible child 'executable modules' of the plug-in-defined modules to populate the tree?
+
+Then I would submit that these executable modules should be hidden to the user. They are just inner workings of a module when it is actually executed.
+
+So would it be OK to only show plug-in-defined modules in the tree. The objects associated with the project model analysis element could be analysis helpers instead of analysis modules.
+
+The helpers could have a state (disabled / requested / executing / completed). Automatic analysis would start in 'requested' state. Non-automatic analysis would start in 'disabled' state.
+
+When you open a trace, when it gets to executeAnalysis(), it would only create module instances for those analysis that have their helper in state 'requested'. At that time, if there needs to be child 'executable modules', they can be instantiated and executed.
+
+When you double-click on a non-automatic analysis, it would just change the helper state from 'disabled' to 'requested', then open the trace. When the trace reaches executeAnalyis(), now it would execute that analysis.
+
+If the trace was already opened you would only need to find a way to trigger executeAnalysis(). That should skip those analysis that are already 'executing' or 'completed'.
+
+When the analysis is complete, you would need to find the original analysis helper (in case it was a child 'executable module') and then register the output(s) on it. This would trigger a project model refresh to make the output(s) appear in the tree.
+
+Double-clicking on an output element would call requestOutput(), which would show the result, ie. open a view, or a result file in an editor, etc.
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-10-25 20:57:31.000000000
+
+Patch Set 16:
+
+(3 comments)
+
+Line:34, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/TmfAnalysisModuleHelper.java -> add empty line before the comment
+
+Line:38, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/TmfAnalysisModuleHelper.java -> initialize it to null (yes it's the same anyway, but it makes it more obvious that it is not set at the constructor and can be null).
+
+Line:251, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/ITmfTrace.java -> We have a similar wording in getStateSystems(). I agree it's weird to specify this in the interface... but it does tell callers what they can(not) do with the map.
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2013-10-28 14:02:33.000000000
+
+Patch Set 16:
+
+Ok so you had me thinking over the weekend ;-)
+
+There is something wrong in the design if I need a module instance only for the case where I need to get the executable modules (that are the actual modules, not the parent) from a module that is actually... not a module (use case: XML modules).
+
+So here's what I'll do:
+
+There is no more "executable module".  A module IS executable, and no need to have a instance not linked to a trace anymore.  I'll have the helper create the module from the plugin configuration element when requested for a trace.  I'll also need to add a "tracetype" element to the extension point, so that the helper can know if its analysis applies to a given trace (that was the other reason I needed an analysis module instance).
+
+Then (in a later patch, it's not necessary right now), I'll add a module source, of which a plugin's CE is but one, xml would be another.  They would each have their associated helpers to create the module from that source.
+
+Helpers with state is an interesting idea.  That would allow to show a status on the UI as well.  Sounds like a good way to tell the trace it needs to execute an analysis instead of setting the trace name.
+
+As for the outputs, I'll stick with the easiest for now: register to the helper, open the view and call the analysis result.  A little in-person discussion would be necessary to make sense of exactly what should be done with the UI.  Once the first concepts are in anyway!
+
+Working on next patchset!
+
+-------------------------------------

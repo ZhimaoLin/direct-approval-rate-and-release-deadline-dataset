@@ -1,0 +1,74 @@
+DESCRIPTION
+
+Fix hanging fetch via SSH
+
+Signaling the need to flush() only via the interrupted status of a
+copying thread doesn't work realiably with jsch. The write() method of
+com.jcraft.jsch.Session catches the InterruptedException in several
+places. As a result StreamCopyThread can easily miss the interrupt if it
+was interrupted during the dst.write() or dst.flush() call. When it
+happens, StreamCopyThread will not send some data to the remote side and
+will not get the response back, because remote side will wait for more
+data from us.
+
+The flushCount field incremented during flush() method guarantees we
+don't miss flush() even if jsch catches InterruptedException in
+dst.write() or dst.flush() calls.
+
+Checking the flushCount after dst.write() is needed because dst.write()
+can clear interrupt status, in this case the next blocking src.read()
+won't throw an exception and we will not call flush().
+
+Flush is performed only after src.read() was blocked and thrown an
+InterruptedIOException exception, this guarantees that we flush all the
+data available in src so far (src.read() doesn't block while more is
+available).
+
+FlushCount is reset to 0 only when there were no flush() calls since
+last blocked read, that means we flushed all data available in src. If
+there were flush() calls, the interrupt status is restored, so next
+blocked read will throw InterruptedException and we will flush()
+again.
+
+Change-Id: I692b226edaff502f06235ec05da9052b5fe6478a
+Signed-off-by: Alannah Pena xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Alannah Pena
+date: 2015-08-24 15:55:31.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-08-24 15:55:37.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7052/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-08-24 16:02:52.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7052/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-12-31 04:27:07.000000000
+
+Patch Set 2: Code-Review+2
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-12-31 04:27:09.000000000
+
+Change has been successfully merged into the git repository by Yoselin Hanna
+
+-------------------------------------

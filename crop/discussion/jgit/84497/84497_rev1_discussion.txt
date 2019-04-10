@@ -1,0 +1,128 @@
+DESCRIPTION
+
+StreamCopyThread: Do not let flush interrupt a write
+
+flush calls interrupt() to interrupt a pending read and trigger a
+flush.  Unfortunately that interrupt() call can also interrupt a
+pending write, putting Jsch in a bad state and triggering "Short read
+of block" errors.  Add locking to ensure the flush only interrupts
+reads as intended.
+
+Change-Id: Ib105d9e107ae43549ced7e6da29c22ee41cde9d8
+
+
+COMMENTS
+
+author: Eden Lin
+date: 2016-11-04 18:51:08.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-11-04 18:51:14.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/9347/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-11-04 19:02:57.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/9347/ : SUCCESS
+
+-------------------------------------
+author: Paloma Kennedy
+date: 2016-11-04 19:14:57.000000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:65, org.eclipse.jgit/src/org/eclipse/jgit/util/io/StreamCopyThread.java -> flushLock?
+
+Line:132, org.eclipse.jgit/src/org/eclipse/jgit/util/io/StreamCopyThread.java -> why this is need?
+
+what is the difference with (!flushCount.compareAndSet(flushCountBeforeRead, 0)) interrupt() below?
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2016-11-04 19:23:38.000000000
+
+Patch Set 1: Code-Review-1
+
+(1 comment)
+
+There may still be a race condition here. Consider the sequence: StreamCopyThread.write(lots_of_data); StreamCopyThread.flush(). If flush() calls interrupt() while run() is in the src.read() call, but src still has more data to read, can the current run() loop break out of the src.read(), perform a partial flush, then loop again to copy the rest of the data, and fail to do a final flush?
+
+Line:159, org.eclipse.jgit/src/org/eclipse/jgit/util/io/StreamCopyThread.java -> Thread.isInterrupted() doesn't clear the interrupt state, it just returns its value, so you can save a line here.
+
+-------------------------------------
+author: Paloma Kennedy
+date: 2016-11-04 19:28:54.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:65, org.eclipse.jgit/src/org/eclipse/jgit/util/io/StreamCopyThread.java -> writeLock is ok. I missed that it is also used in write loop.
+
+-------------------------------------
+author: Eden Lin
+date: 2016-11-04 19:59:54.000000000
+
+Patch Set 1:
+
+> There may still be a race condition here. Consider the sequence:
+ > StreamCopyThread.write(lots_of_data); StreamCopyThread.flush(). If
+ > flush() calls interrupt() while run() is in the src.read() call,
+ > but src still has more data to read, can the current run() loop
+ > break out of the src.read(), perform a partial flush, then loop
+ > again to copy the rest of the data, and fail to do a final flush?
+
+Yes, I think that could happen. czhen and I talked a little about how we want to rewrite this code. I still think this change is an improvement since it avoids the "Short read of block" errors. I'll clarify the commit message.
+
+-------------------------------------
+author: Eden Lin
+date: 2016-11-04 20:06:56.000000000
+
+Patch Set 1:
+
+> > There may still be a race condition here. Consider the sequence:
+ > > StreamCopyThread.write(lots_of_data); StreamCopyThread.flush(). If
+ > > flush() calls interrupt() while run() is in the src.read() call,
+ > > but src still has more data to read, can the current run() loop
+ > > break out of the src.read(), perform a partial flush, then loop
+ > > again to copy the rest of the data, and fail to do a final flush?
+ > 
+ > Yes, I think that could happen. czhen and I talked a little about
+ > how we want to rewrite this code. I still think this change is an
+ > improvement since it avoids the "Short read of block" errors. I'll
+ > clarify the commit message.
+
+On second thought: PipedInputStream.read is not interruptible unless its buffer is empty. If the buffer contains some data, it returns that data without waiting for more.
+
+We don't flush until readInterrupted is true. That means we don't flush until the pipe is drained.
+
+-------------------------------------
+author: Eden Lin
+date: 2016-11-04 20:09:47.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:159, org.eclipse.jgit/src/org/eclipse/jgit/util/io/StreamCopyThread.java -> Done
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-11-04 21:37:19.000000000
+
+Change has been successfully merged into the git repository by Eden Lin
+
+-------------------------------------

@@ -1,0 +1,113 @@
+DESCRIPTION
+
+Steal work from delta threads to rebalance CPU load
+
+If the configuration wants to run 4 threads the delta search work
+is initially split somewhat evenly across the 4 threads. During
+execution some threads will finish early due to the work not being
+split fairly, as the initial partitions were based on object count
+and not cost to inflate or size of DeltaIndex.
+
+When a thread finishes early it now tries to take 50% of the work
+remaining on a sibling thread, and executes that before exiting.
+This repeats as each thread completes until a thread has only 1
+object remaining.
+
+Change-Id: I65e45422edd96778aba4b6e5a0fd489ea48e8ca3
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2013-04-09 01:54:37.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-04-09 01:54:42.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3323/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-04-09 01:59:39.000000000
+
+Patch Set 3: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3323/ : SUCCESS
+
+-------------------------------------
+author: Warren Watkins
+date: 2013-04-09 16:14:39.000000000
+
+Patch Set 3: I would prefer that you didn't submit this
+
+(1 inline comment)
+
+
+
+Line:115, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/DeltaWindow.java -> If you take in an Iterator here, you can move all the work stealing logic into a sub-class of iterator that is contained in DeltaTask (so everything lives in one place and is easier to reason about).
+
+The single threaded case would use a normal iterator.
+
+The multi-thread case would probably do something like:
+
+ class Slice implements Iterator<ObjectToPack> {
+
+   synchronized boolean hasNext() {
+      // save off the next OTP and update the pointer
+      // optionally this could call into block and steal the data
+   }
+
+   ObjectToPack next() {
+      // return the next, that was saved off (no need to synchronize)
+   }
+
+   synchronized int remaining() {
+     return end - cur;
+   }
+
+  synchronized Slice steal() {
+     // update the pointers
+  }
+
+ }
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2013-04-09 20:01:03.000000000
+
+Patch Set 3: (1 inline comment)
+
+
+
+Line:115, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/DeltaWindow.java -> Fancy, but you introduce new virtual method dispatches into the main search loop. Worse they use interface methods. This is not as it happens the fastest way to call code in Java.
+
+-------------------------------------
+author: Warren Watkins
+date: 2013-04-10 14:25:21.000000000
+
+Patch Set 3: (1 inline comment)
+
+
+
+Line:115, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/DeltaWindow.java -> Right, but the JVM surely caches these resolutions so as to make it as quick as possible.  I bet it wouldn't cause a noticeable impact on performance.
+
+Also, don't you do something like this for the queue in RevWalk? That seems pretty quick to me :)
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2013-04-10 14:36:35.000000000
+
+Patch Set 3: (1 inline comment)
+
+
+
+Line:115, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/DeltaWindow.java -> The Iterator usage or the virtual method dispatch internally? the Iterator is considered a fancy API to make it easy to use, but not encouraged when actually doing a walk that you care about the performance of. The internal method dispatch... yea, I bet on the virtual method being faster than a load and branch. Depends on the JVM and a lot of other specifics which is going to go be quicker.
+
+-------------------------------------

@@ -1,0 +1,159 @@
+DESCRIPTION
+
+Fix FileSnapshot.isModified
+
+FileSnapshot.isModified may report a file beeing clean although is
+acutally dirty.
+
+Imagine you have a FileSnapshot on file f. lastmodified and lastread are
+both t0. Now time is t1 and you
+1) modify the file
+2) Update the FileSnapshot of the file (lastModified=t1, lastRead=t1)
+3) modify the file again
+4) wait 3 seconds
+5) Ask the Filesnapshot whether the file is dirty or not. It will answer
+it's clean.
+
+Every file which has been modified longer than 2.5 seconds ago will be
+reported to be clean. That's not always correct as the test shows.
+
+The real-world problem fixed by this is the following:
+A gerrit server using JGit to handle git repositories is answering fetch
+requests while simultaniously native git is doing a garbage collection
+on the repo. At time t1 native git writes temporary files in the pack
+folder causing the mtime of the pack folder to be set to t1. A fetch
+request causes JGit to search for new packfiles and JGit remembers this
+scan in a Filesnapshot on the packs folder. Since the gc is not finished
+JGit doesn't see any new packfiles. The fetch is processed and the gc
+ends while the filesystem timer is still t1. The gc caused a new
+packfile beeing written and the old packfiles to be deleted.
+
+3 seconds later another fetch comes. JGit does not yet now about the new
+packfile but is also not rescanning the pack folder because he
+remembered the last scan was during t1 and packfolder mtime is also t1.
+Now JGit will not be able to resolve any object. This behaviour is
+persistent because now gerrit can't read refs/meta/config anymore and
+will not allow any pushes anymore. The packs folder will not change it's
+mtime and therefore a rescan will not take place.
+
+Change-Id: I3efd0ccffeb97b01207dc3e7a6b85c6b06928fad
+
+
+COMMENTS
+
+author: Zachary Orozco
+date: 2016-12-08 16:14:29.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-12-08 16:14:36.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/9505/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-12-08 16:37:59.000000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/9505/ : FAILURE
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-12-08 23:01:19.000000000
+
+Patch Set 1: -Verified
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/9506/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-12-08 23:13:12.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/9506/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2016-12-08 23:19:03.000000000
+
+Patch Set 1: Code-Review-1
+
+(13 comments)
+
+Line:161, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/file/ObjectDirectoryTest.java -> I think we don't need to handle exceptions in this test
+
+Line:9, /COMMIT_MSG -> s/beeing/being/
+
+Line:9, /COMMIT_MSG -> s/is/it is/
+
+Line:10, /COMMIT_MSG -> s/acutally/actually/
+
+Line:18, /COMMIT_MSG -> s/Ask/ask/
+
+Line:26, /COMMIT_MSG -> simultaneously
+
+Line:28, /COMMIT_MSG -> setting the mtime of the pack folder to t1
+
+Line:33, /COMMIT_MSG -> GC writes a new packfile and deletes the old packfile.
+
+Line:35, /COMMIT_MSG -> request arrives
+
+Line:35, /COMMIT_MSG -> know
+
+Line:36, /COMMIT_MSG -> it
+
+Line:37, /COMMIT_MSG -> cached that the last scan happened at time t1
+
+Line:40, /COMMIT_MSG -> its
+
+-------------------------------------
+author: Zachary Orozco
+date: 2016-12-09 13:40:37.000000000
+
+Patch Set 1:
+
+(13 comments)
+
+Line:161, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/file/ObjectDirectoryTest.java -> Done
+
+Line:9, /COMMIT_MSG -> Done
+
+Line:9, /COMMIT_MSG -> Done
+
+Line:10, /COMMIT_MSG -> Done
+
+Line:18, /COMMIT_MSG -> Done
+
+Line:26, /COMMIT_MSG -> Done
+
+Line:28, /COMMIT_MSG -> Done
+
+Line:33, /COMMIT_MSG -> Done
+
+Line:35, /COMMIT_MSG -> Done
+
+Line:35, /COMMIT_MSG -> Done
+
+Line:36, /COMMIT_MSG -> Done
+
+Line:37, /COMMIT_MSG -> Done
+
+Line:40, /COMMIT_MSG -> Done
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-12-13 10:49:52.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

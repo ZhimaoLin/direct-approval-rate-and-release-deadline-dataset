@@ -1,0 +1,38 @@
+DESCRIPTION
+
+Fix race condition in TaskQueue shutdown
+
+There is a bug in the use of ExecutorThread.state when sleeping a
+TaskQueue - TaskQueue::_doSleep() doesn't atomically transition the
+state from RUNNING -> SLEEPING. This can cause a deadlock when
+shutting down a ExecutorThread:
+
+    Thread A:                           Thread B:
+    --------------------------------    ------------------------------
+    if (t.state == RUNNING) {  // true
+                                        t.state = SHUTDOWN
+        t.state = SLEEPING              cb_join_thread(Thread A)
+                                        // wait forever
+    ...
+    if (t.state == SHUTDOWN) { // FALSE
+      exit(0) // NEVER REACHED
+    }
+
+Fix by changing ExecutorThread.state to be an AtomicValue, and use
+compare-and-exchange to move from RUNNING -> SLEEPING (and SLEEPING ->
+RUNNING).
+
+Change-Id: I9fab90a83978ae2aa6a0dcdd3b079a1c2f369402
+Reviewed-on: http://review.Piper Jefferson.org/43134
+Reviewed-by: Abby Duran <Abby xxx@xxx.xxx Jefferson.com>
+Tested-by: Abby Duran <Abby xxx@xxx.xxx Jefferson.com>
+
+
+COMMENTS
+
+author: Abby Duran
+date: 2014-11-12 20:40:57.762000000
+
+Change has been successfully cherry-picked as 2bfb51a19c5cb752b27d3e8b1cd0be6005fd384c
+
+-------------------------------------

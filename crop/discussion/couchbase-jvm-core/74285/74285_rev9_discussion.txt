@@ -1,0 +1,144 @@
+DESCRIPTION
+
+JVMCBC-392 Integrate yasjl as optional
+
+Motivation
+----------
+Use a generic json parser for streaming query response
+
+Changes
+-------
+Adds yasjl parser as part of utils. QueryHandler v2 uses yasjl parser
+to parse query responses. The default handler is Query Handler while v2 can
+be enabled by setting system property com.couchbase.enableYasjlResponseParser
+to true. Extended tests from QueryHandlerTest.
+
+Results
+-------
+Generic json parser can be used to parse query responses.
+
+Change-Id: I784ea901d258646b6edf40db7a3564bbb8f52cf5
+
+
+COMMENTS
+
+author: Marques Ellis
+date: 2017-02-28 23:19:57.604000000
+
+Patch Set 9: Patch Set 8 was rebased
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2017-03-01 08:03:40.755000000
+
+Patch Set 9: Code-Review-1
+
+(23 comments)
+
+wowza! this is super great stuff! I tried to be thorough on this review, please let me know if there is anything that needs further clarification :)
+
+I'd love to get this into 1.4.3
+
+Line:74, src/main/java/com/couchbase/client/core/endpoint/query/QueryHandlerV2.java -> can be final?
+
+Line:193, src/main/java/com/couchbase/client/core/endpoint/query/QueryHandlerV2.java -> do you want to release the response content before finish decoding? I could see a potential problem if the endpoint is transient (since it would be closed right away).. maybe not really an issue but probably more correct
+
+Line:199, src/main/java/com/couchbase/client/core/endpoint/query/QueryHandlerV2.java -> same here maybe?
+
+Line:49, src/main/java/com/couchbase/client/core/endpoint/query/QueryEndpoint.java -> maybe just use Boolean.parseBoolean (since this also handles equalsIgnoreCase)
+
+Line:53, src/main/java/com/couchbase/client/core/utils/yasjl/JsonPointerTree.java -> should this be an exception instead too like on line 43?
+
+Line:41, src/main/java/com/couchbase/client/core/endpoint/query/parser/YasjlQueryResponseParser.java -> what I'm missing a bit is good TRACE level logging for the callbacks & sections, since this is quite new this will help us debug issues :)
+
+Line:55, src/main/java/com/couchbase/client/core/endpoint/query/parser/YasjlQueryResponseParser.java -> Do you think it might be possible to construct the JSON pointers in the constructor? since the observables itself change anyway (the objects they operate on) and it would help us reduce garbage for every request since we can reuse the callbacks
+
+Line:69, src/main/java/com/couchbase/client/core/endpoint/query/parser/YasjlQueryResponseParser.java -> it's probably just a nitpick, but I wonder if its not more clean to create all the subjects outside of the callback during init/reinit so that this section is separate.. this would also help to be more resilient if the query engine decides to get rid of sending the requestID for some reason
+
+Line:84, src/main/java/com/couchbase/client/core/endpoint/query/parser/YasjlQueryResponseParser.java -> I think I missed the part where the observable is fed with the context id?
+
+Line:125, src/main/java/com/couchbase/client/core/endpoint/query/parser/YasjlQueryResponseParser.java -> is the response ever set back to null after the first response is processed?
+
+Line:72, src/main/java/com/couchbase/client/core/utils/yasjl/ByteBufJsonParser.java -> would it be possible to init that tree and/or stack stuff also in the constructor and reuse it across parsing cycles? just wondering if we can save some allocs on structures that might not be that stateful.
+
+Line:139, src/main/java/com/couchbase/client/core/utils/yasjl/ByteBufJsonParser.java -> why  is it needed here to create new json pointers (empty) or wrap the old ones?
+
+Line:185, src/main/java/com/couchbase/client/core/utils/yasjl/ByteBufJsonParser.java -> can you put a message in all those IllegalStateExceptions please? will make it easier to debug
+
+Line:351, src/main/java/com/couchbase/client/core/utils/yasjl/ByteBufJsonParser.java -> are we still doing the copy() here instead of slicing to save memory? or is this a follow up thing (or am I getting it wrong) -> referring to all the .copy() calls around that area I guess on setCurrentValue
+
+Line:35, src/main/java/com/couchbase/client/core/utils/yasjl/JsonObjectByteBufProcessor.java -> maybe remove this line and after this.stProcessor =...  call reset() ?
+
+Line:35, src/main/java/com/couchbase/client/core/endpoint/query/parser/AbstractQueryResponseParser.java -> see comment on interface
+
+Line:106, src/main/java/com/couchbase/client/core/endpoint/query/parser/AbstractQueryResponseParser.java -> hmm I think nulling out is a good idea, but I wonder if we shouldn't complete the observables earlier (in the callbacks when we know they are done) so people lets say waiting for X don't have to wait for the whole thing to complete before getting to the end.. 
+
+maybe we can leave this in here just to make sure all of them are completed but also do completion in the callbacks.. I'm not 100% sure but I think double onCompleted calls are harmless.
+
+Line:28, src/main/java/com/couchbase/client/core/endpoint/query/parser/QueryResponseParser.java -> since we leave the original one unchanged, do we still need this interface & the "abstract" abstraction? we only have one impl right now, right?
+
+Line:24, src/main/java/com/couchbase/client/core/utils/yasjl/JsonStringByteBufProcessor.java -> can you add a couple lines to document how this works w/ escaping or even better add some unit tests? I don't really understand if this is supposed to process a full string or only cares about " and \\ parts. Thanks :)
+
+Line:36, src/main/java/com/couchbase/client/core/utils/yasjl/JsonStringByteBufProcessor.java -> nit: just call reset() ?
+
+Line:80, src/main/java/com/couchbase/client/core/utils/yasjl/JsonPointer.java -> you might want to throw an exception in the else block here (invalid state?)
+
+Line:35, src/main/java/com/couchbase/client/core/utils/yasjl/JsonParserUtils.java -> maybe add a note what BOM is
+
+Line:61, src/main/java/com/couchbase/client/core/utils/yasjl/JsonParserUtils.java -> can't this be just public?
+
+-------------------------------------
+author: Marques Ellis
+date: 2017-03-01 16:49:50.269000000
+
+Patch Set 9:
+
+(22 comments)
+
+Thanks for the thorough review!
+
+Line:74, src/main/java/com/couchbase/client/core/endpoint/query/QueryHandlerV2.java -> yes
+
+Line:193, src/main/java/com/couchbase/client/core/endpoint/query/QueryHandlerV2.java -> ok will fix
+
+Line:199, src/main/java/com/couchbase/client/core/endpoint/query/QueryHandlerV2.java -> okay
+
+Line:49, src/main/java/com/couchbase/client/core/endpoint/query/QueryEndpoint.java -> sure
+
+Line:53, src/main/java/com/couchbase/client/core/utils/yasjl/JsonPointerTree.java -> hmm it is more like fail silently. I can make it an exception.
+
+Line:41, src/main/java/com/couchbase/client/core/endpoint/query/parser/YasjlQueryResponseParser.java -> Thanks for noticing that, I'll add.
+
+Line:55, src/main/java/com/couchbase/client/core/endpoint/query/parser/YasjlQueryResponseParser.java -> I cant see why not. I can change it.
+
+Line:69, src/main/java/com/couchbase/client/core/endpoint/query/parser/YasjlQueryResponseParser.java -> yes, will move
+
+Line:84, src/main/java/com/couchbase/client/core/endpoint/query/parser/YasjlQueryResponseParser.java -> It is fed here #createResponse
+
+Line:125, src/main/java/com/couchbase/client/core/endpoint/query/parser/YasjlQueryResponseParser.java -> The reason for the check is, we don't know which starts streaming first so create response, only if it is not yet created.
+
+Line:72, src/main/java/com/couchbase/client/core/utils/yasjl/ByteBufJsonParser.java -> yes sure
+
+Line:139, src/main/java/com/couchbase/client/core/utils/yasjl/ByteBufJsonParser.java -> yes it is needed as the json pointer ref tokens can be changed(mostly added). It is important that each has its own copy.
+
+Line:185, src/main/java/com/couchbase/client/core/utils/yasjl/ByteBufJsonParser.java -> okay, sure
+
+Line:351, src/main/java/com/couchbase/client/core/utils/yasjl/ByteBufJsonParser.java -> yes we are doing the copy now, as decrementing ref count would happen in java client which uses the buffer and it is not aware which response parser created it.
+
+Line:35, src/main/java/com/couchbase/client/core/utils/yasjl/JsonObjectByteBufProcessor.java -> okay
+
+Line:106, src/main/java/com/couchbase/client/core/endpoint/query/parser/AbstractQueryResponseParser.java -> Maybe yes, do we stream results->errors->results? I can close on status/metrics else.
+
+Line:28, src/main/java/com/couchbase/client/core/endpoint/query/parser/QueryResponseParser.java -> Yes, will change
+
+Line:24, src/main/java/com/couchbase/client/core/utils/yasjl/JsonStringByteBufProcessor.java -> it doesn't care basically it allows everything until it hits " or \, remember it doesn't validate json. I can add an unit test here, but mostly tested here https://github.com/Marques Ellis/yasjl/blob/master/src/test/java/com/github/subalakr/yasjl/SimpleParserTest.java
+
+Line:36, src/main/java/com/couchbase/client/core/utils/yasjl/JsonStringByteBufProcessor.java -> okay
+
+Line:80, src/main/java/com/couchbase/client/core/utils/yasjl/JsonPointer.java -> yes
+
+Line:35, src/main/java/com/couchbase/client/core/utils/yasjl/JsonParserUtils.java -> okay
+
+Line:61, src/main/java/com/couchbase/client/core/utils/yasjl/JsonParserUtils.java -> yes
+
+-------------------------------------

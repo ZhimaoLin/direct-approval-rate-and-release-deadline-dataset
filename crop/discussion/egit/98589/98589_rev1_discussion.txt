@@ -1,0 +1,103 @@
+DESCRIPTION
+
+WIP bug 510945 - Provide option to copy file names from staging view to
+clipboard
+
+Change-Id: I75b490aa5219236d5a645ad122184a4a6b29492a
+Signed-off-by: Regan Klein xxx@xxx.xxx
+
+COMMENTS
+
+author: Regan Klein
+date: 2017-06-03 20:43:34.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-06-03 20:43:40.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/9898/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-06-03 21:08:27.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/9898/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-06-18 22:23:50.000000000
+
+Patch Set 1: Code-Review-1
+
+(2 comments)
+
+Line:653, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/staging/StagingView.java -> declare this class private static
+
+Line:677, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/staging/StagingView.java -> getFile() yields null if
+* project containing the file is not imported into Eclipse
+* StagingEntry is a file deletion
+* file is not located in an imported Eclipse project (e.g. pom.xml in jgit repository)
+
+use getPath() instead, this always yields the path of the staging entry
+
+get the repository from the staging entry and get its worktree to construct the absolute file path
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-06-19 05:36:05.000000000
+
+Patch Set 1: Code-Review-1
+
+(6 comments)
+
+Line:664, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/staging/StagingView.java -> What is the advantage of this Optional over just returning the string and testing for null here?
+
+Line:674, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/staging/StagingView.java -> This exists only since JFace 3.11; it will not work on Luna. Use getSelection() and cast to IStructuredSelection.
+
+Line:675, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/staging/StagingView.java -> On a multi-selection, we should put all paths, each on its own line, into the clipboard. That's what the history view does.
+
+Line:676, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/staging/StagingView.java -> What about folders?
+
+Line:683, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/staging/StagingView.java -> Not needed if you use ActionUtils; see below.
+
+Line:2102, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/staging/StagingView.java -> Uhhh... take a look at ActionUtils and its uses.
+
+Basically, this should be as simple as
+
+  IAction copyAction = ActonUtils.createGlobalAction(ActionFactory.COPY, () -> {
+    /* Implement copying to clipboard here */
+  });
+
+  ActionUtils.setGlobalActions(viewer.getControl(), Collection.singleton(copyAction), getSite().getService(IHandlerService.class));
+
+and then also add the copyAction to the context menu of both viewers.
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-06-19 06:33:32.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:2102, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/staging/StagingView.java -> Or, since we probably want to use our own text,
+
+  IAction copyAction = new Action("Copy path") {
+   xxx@xxx.xxx
+    public void run() {
+      /* Implement copying to clipboard here */
+    }
+  }
+  copyAction.setActionDefinitionId(IWorkbenchCommandConstants.EDIT_COPY)
+  
+  ActionUtils.setGlobalActions(viewer.getControl(), getSite().getService(IHandlerService.class), copyAction);
+
+-------------------------------------

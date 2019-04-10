@@ -1,0 +1,84 @@
+DESCRIPTION
+
+Address data race identified in TOUCH command
+
+Recent changes introduced this data race: a466ace5
+Fix: Let go of the stored value lock (as part of queueDirty)
+after converting the storedValue object to an item object.
+
+10:50:53 WARNING: ThreadSanitizer: data race (pid=111994)
+10:50:53   Read of size 1 at 0x7d1000004af4 by main thread (mutexes: write M20076, read M15175):
+10:50:53     #0 StoredValue::toItem(bool, unsigned short) const /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/stored-value.cc:754 (ep.so+0x00000011c1d7)
+10:50:53     #1 EventuallyPersistentStore::getAndUpdateTtl(std::string const&, unsigned short, void const*, long) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/ep.cc:2464 (ep.so+0x0000000985be)
+10:50:53     #2 EventuallyPersistentEngine::touch(void const*, protocol_binary_request_header*, bool (*)(void const*, unsigned short, void const*, unsigned char, void const*, unsigned int, unsigned char, unsigned short, unsigned long, void const*)) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/ep_engine.cc:4938 (ep.so+0x0000000cd151)
+10:50:53     #3 processUnknownCommand(EventuallyPersistentEngine*, void const*, protocol_binary_request_header*, bool (*)(void const*, unsigned short, void const*, unsigned char, void const*, unsigned int, unsigned char, unsigned short, unsigned long, void const*)) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/ep_engine.cc:1166 (ep.so+0x0000000d6864)
+10:50:53     #4 EvpUnknownCommand(engine_interface*, void const*, protocol_binary_request_header*, bool (*)(void const*, unsigned short, void const*, unsigned char, void const*, unsigned int, unsigned char, unsigned short, unsigned long, void const*)) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/ep_engine.cc:1365 (ep.so+0x0000000b70f8)
+10:50:53     #5 mock_unknown_command(engine_interface*, void const*, protocol_binary_request_header*, bool (*)(void const*, unsigned short, void const*, unsigned char, void const*, unsigned int, unsigned char, unsigned short, unsigned long, void const*)) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/memcached/programs/engine_testapp/engine_testapp.cc:382 (engine_testapp+0x0000004ce149)
+10:50:53     #6 touch(engine_interface*, engine_interface_v1*, char const*, unsigned short, unsigned int) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/tests/ep_test_apis.cc:872 (ep_testsuite.so+0x000000072284)
+10:50:53     #7 test_vbucket_compact(engine_interface*, engine_interface_v1*) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/tests/ep_testsuite.cc:1306 (ep_testsuite.so+0x00000004453c)
+10:50:53     #8 execute_test(test, char const*, char const*) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/memcached/programs/engine_testapp/engine_testapp.cc:1131 (engine_testapp+0x0000004cc600)
+10:50:53     #9 __libc_start_main /build/buildd/eglibc-2.15/csu/libc-start.c:226 (libc.so.6+0x00000002176c)
+10:50:53
+10:50:53   Previous write of size 1 at 0x7d1000004af4 by thread T11 (mutexes: write M15713, write M19262):
+10:50:53     #0 PersistenceCallback::callback(std::pair<int, bool>&) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/stored-value.h:462 (ep.so+0x0000000adf4a)
+10:50:53     #1 CouchKVStore::commitCallback(std::vector<CouchRequest*, std::allocator<CouchRequest*> >&, KVStatsCtx&, couchstore_error_t) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/couch-kvstore/couch-kvstore.cc:1947 (ep.so+0x000000179431)
+10:50:53     #2 _ZN12CouchKVStore17commit2couchstoreEP8CallbackIJ10KVStatsCtxEE /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/couch-kvstore/couch-kvstore.cc:1761 (ep.so+0x000000170e73)
+10:50:53     #3 _ZN12CouchKVStore6commitEP8CallbackIJ10KVStatsCtxEE /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/couch-kvstore/couch-kvstore.cc:1007 (ep.so+0x000000170aa1)
+10:50:53     #4 EventuallyPersistentStore::commit(unsigned short) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/ep.cc:3483 (ep.so+0x00000009e916)
+10:50:53     #5 EventuallyPersistentStore::flushVBucket(unsigned short) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/ep.cc:3431 (ep.so+0x00000009d874)
+10:50:53     #6 Flusher::flushVB() /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/flusher.cc:293 (ep.so+0x0000000feece)
+10:50:53     #7 Flusher::step(GlobalTask*) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/flusher.cc:183 (ep.so+0x0000000fd595)
+10:50:53     #8 FlusherTask::run() /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/tasks.cc:65 (ep.so+0x000000138ae2)
+10:50:53     #9 ExecutorThread::run() /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/executorthread.cc:115 (ep.so+0x0000000f8af6)
+10:50:53     #10 launch_executor_thread(void*) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/executorthread.cc:33 (ep.so+0x0000000f86a5)
+10:50:53     #11 platform_thread_wrap(void*) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/platform/src/cb_pthreads.cc:54 (libplatform.so.0.1.0+0x00000000551b)
+
+Change-Id: I3eaa43f4d5238d04500bb779b0a2ea785c68ed0d
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2016-02-03 17:12:21.655000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-03 17:12:29.966000000
+
+Patch Set 2:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1565/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-03 17:24:17.912000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1565/ : SUCCESS
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2343/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-02-03 17:43:12.725000000
+
+Patch Set 2: Code-Review+2
+
+-------------------------------------
+author: Abby Duran
+date: 2016-02-03 18:07:57.718000000
+
+Patch Set 2: Code-Review+2
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-02-03 18:07:59.150000000
+
+Change has been successfully cherry-picked as 24fd606f10e4e54c8ca427fd309d69214dd0c2fd
+
+-------------------------------------

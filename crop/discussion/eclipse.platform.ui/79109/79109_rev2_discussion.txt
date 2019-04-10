@@ -1,0 +1,111 @@
+DESCRIPTION
+
+Bug 496747 - [Project Explorer] Fix path comparison
+
+The comparison was erroneous and led to unexpected ordering. This fixes
+the path comparison by using a segment-to-segment comparison rather than
+a plain toString one (which fails at properly understanding the meaning
+of a slash in path)
+
+Bug: 496747
+Signed-off-by: Isis Velasquez xxx@xxx.xxx
+Signed-off-by: Mina Hurleyiddle xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2016-08-23 07:00:42.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/10154/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-08-23 07:20:38.000000000
+
+Patch Set 2: Code-Review-1
+
+Build Unstable 
+
+https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/10154/ : UNSTABLE
+
+-------------------------------------
+author: Jayvion Booth
+date: 2016-08-23 11:28:21.000000000
+
+Patch Set 2: Code-Review-1
+
+(2 comments)
+
+I don't think that compare is correct and it seem also to be not as performant as it should be.
+
+Line:38, bundles/org.eclipse.ui.navigator.resources/src/org/eclipse/ui/internal/navigator/resources/nested/PathComparator.java -> On Windows, C:\\tmp is same as c:\\tmp, but device part is different.
+
+Line:54, bundles/org.eclipse.ui.navigator.resources/src/org/eclipse/ui/internal/navigator/resources/nested/PathComparator.java -> Why should we iterate over segments for paths with different length if we could check it first and return false?
+
+-------------------------------------
+author: Isis Velasquez
+date: 2016-08-23 15:24:50.000000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:38, bundles/org.eclipse.ui.navigator.resources/src/org/eclipse/ui/internal/navigator/resources/nested/PathComparator.java -> What comparison would you suggest then?
+
+Line:54, bundles/org.eclipse.ui.navigator.resources/src/org/eclipse/ui/internal/navigator/resources/nested/PathComparator.java -> Here we're returning an integer (compareTo, not equals)
+
+-------------------------------------
+author: Jayvion Booth
+date: 2016-08-23 18:02:39.000000000
+
+Patch Set 2:
+
+(3 comments)
+
+Line:38, bundles/org.eclipse.ui.navigator.resources/src/org/eclipse/ui/internal/navigator/resources/nested/PathComparator.java -> I would first avoid repeating invocations of argX.getDevice() and create local variables device1 and device 2. Then at this point I would say if(res != 0 && !device1.equalsIgnoreCase(device2)) rerurn res;
+
+Line:54, bundles/org.eclipse.ui.navigator.resources/src/org/eclipse/ui/internal/navigator/resources/nested/PathComparator.java -> because if the path segments count is different it does not make sense to iterate over them and compute difference based on some individual segments inside - the shorter path should be smaller independently of its last segment, which can be bigger. Worst case is the comparison would say
+a/bbbb/c > a/b
+and 
+a/b/c < a/bbbb
+
+So first we should check length and only if it is same compare individual segments.
+
+Line:60, bundles/org.eclipse.ui.navigator.resources/src/org/eclipse/ui/internal/navigator/resources/nested/PathComparator.java -> BTW it is considered bad practice for comparators to return values different from 1, 0 and -1.
+
+-------------------------------------
+author: Isis Velasquez
+date: 2016-08-24 07:54:08.000000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:54, bundles/org.eclipse.ui.navigator.resources/src/org/eclipse/ui/internal/navigator/resources/nested/PathComparator.java -> what we need is to have a/b < a/b/c < a/c < a/c/b, that's an important invariant of the algorithm to compute the "parency" tree.
+
+Line:60, bundles/org.eclipse.ui.navigator.resources/src/org/eclipse/ui/internal/navigator/resources/nested/PathComparator.java -> Ok. That's the first time I'm told this. I'll read on this topic.
+
+-------------------------------------
+author: Jayvion Booth
+date: 2016-08-24 08:50:39.000000000
+
+Patch Set 2:
+
+(3 comments)
+
+Line:26, bundles/org.eclipse.ui.navigator.resources/src/org/eclipse/ui/internal/navigator/resources/nested/PathComparator.java -> why do we use equals here? It would be enough to check for identity via == and avoid cost for full path compare in equals().
+
+Line:54, bundles/org.eclipse.ui.navigator.resources/src/org/eclipse/ui/internal/navigator/resources/nested/PathComparator.java -> A-ha, I see.
+
+Line:60, bundles/org.eclipse.ui.navigator.resources/src/org/eclipse/ui/internal/navigator/resources/nested/PathComparator.java -> It is not necessarily a *problem*, but some clients might attempt to compare results with "-1" or "1", which will for sure fail with arbitrary return values.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-10-06 06:41:27.000000000
+
+Change has been successfully merged into the git repository by Isis Velasquez
+
+-------------------------------------

@@ -1,0 +1,140 @@
+DESCRIPTION
+
+Use heap based stack for PackFile deltas
+
+Instead of using the current thread's stack to recurse through the
+delta chain, use a linked list that is stored in the heap.  This
+permits the any thread to load a deep delta chain without running out
+of thread stack space.
+
+Despite needing to allocate a stack entry object for each delta
+visited along the chain being loaded, the object allocation count is
+kept the same as in the prior version by removing the transient
+ObjectLoaders from the intermediate objects accessed in the chain.
+Instead the byte[] for the raw data is passed, and null is used as a
+magic value to signal isLarge() and enter the large object code path.
+
+Like the old version, this implementation minimizes the amount of
+memory that must be live at once.  The current delta instruction
+sequence, the base it applies onto, and the result are the only live
+data arrays.  As each level is processed, the prior base is discarded
+and replaced with the new result.
+
+Each Delta frame on the stack is slightly larger than the standard
+ObjectLoader.SmallObject type that was used before, however the Delta
+instances should be smaller than the old method stack frames, so total
+memory usage should actually be lower with this new implementation.
+
+Change-Id: I6faca2a440020309658ca23fbec4c95aa637051c
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2011-01-03 10:21:56.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-01-03 10:38:42.000000000
+
+Patch Set 4: Looks good to me, but someone else must approve; IP review completed
+
+(4 inline comments)
+
+Hmmph, maybe patch set 4 is final.  :-)
+
+Line:617, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/PackFile.java -> I hate the fact that load() is now 140 lines of code, its too long to read in a single screen without scrolling, but I can't find a clean way to break the search loop away from the delta application loop while also avoiding an unnecessary ObjectLoader allocation once the base is found.  I'd rather take the slightly longer method over the additional object allocation.
+
+Line:623, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/PackFile.java -> Its unfortunate we have to initialize type at all.  The code flow should ensure this value is overwritten before it is ever read.
+
+Line:643, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/PackFile.java -> I realized not long after I pushed the prior version that I can simplify some of the conditions around whole objects, and reduce a few unnecessary compares as we move out of the whole object case into applying the delta chain to produce the result.  Hence, patch set 4.
+
+Line:712, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/PackFile.java -> Eclipse 3.6.1's JDT thinks "delta" can be null even though its impossible here, so clearly the code flow isn't the simplest.  But it is faster than the prior iterations.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2011-01-05 23:00:13.000000000
+
+Patch Set 4: (3 inline comments)
+
+
+
+Line:282, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/PackFile.java -> A small comment on this logic might enlighten, since you are
+not just ignoring the exception,
+
+Line:726, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/PackFile.java -> Comment the reason for this inline
+
+Line:738, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/PackFile.java -> Comment the reason for this inline
+
+-------------------------------------
+author: Kendrick Carrillo
+date: 2011-01-05 23:39:37.000000000
+
+Patch Set 4: (2 inline comments)
+
+
+
+Line:617, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/PackFile.java -> I've upload a patch set which ties to decrease the size of the load() method (mostly by breaking it into smaller methods), and removes a couple of lines I think are unnecessary.
+
+Line:726, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/PackFile.java -> As we're about to leave method scope, it can't be necessary to set the method-scoped variable 'data' to null
+
+-------------------------------------
+author: Kendrick Carrillo
+date: 2011-01-05 23:50:27.000000000
+
+Patch Set 4: (1 inline comment)
+
+
+
+Line:734, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/PackFile.java -> It's possible to avoid a couple of lines of boilerplate around declaring the byte[] array 'result' - compare with the equivalent code in patch set 5, where it just uses the BinaryDelta.apply(data, cmds) method, and has the same effect regarding the OOM check
+
+-------------------------------------
+author: Juliet Cantu
+date: 2011-01-06 06:40:43.000000000
+
+Patch Set 4: (1 inline comment)
+
+
+
+Line:726, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/PackFile.java -> Ideally the compiler will figure that out and effectively remove the local variables, but I think they typically retain data until delta.large() returns, which may cause more memory to be used.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-01-06 17:28:35.000000000
+
+Patch Set 4: (2 inline comments)
+
+
+
+Line:726, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/PackFile.java -> What Robin said.  If decompress returns null, we caught an OutOfMemoryError above.  That means the allocation for the array failed.  But we need to do another allocation (hopefully smaller!) to create the large delta object loader.  data (our base object) is however allocated and held by a local variable.
+
+The Java standard doesn't define what happens here.  An implementation may leave the data variable live until after the delta.large() call returns its value.  That means the GC can't reclaim that space.  But its dead.  Explicitly nulling it out helps to ensure its really dead.
+
+If the compiler can deduce that the variable is dead and discard the local from the live set, it should also be able to deduce that the assignment to null is unnecessary, and drop that instruction.  So this shouldn't hurt a smart compiler, and helps a simpler one.
+
+Line:734, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/PackFile.java -> I didn't want to use BinaryDelta.apply(data,cmds) here because I didn't want an OOM caused by a failed allocation for an IllegalArgumentException inside of BinaryDelta.apply() to be trapped and treated the same as an OOM caused by trying to allocate a byte array that is too large for our current heap.
+
+Catching OOM is usually considered to be VERY BAD.  If your heap is really out of memory, your whole VM is about to fall over for most Java applications.  I know that's true for Eclipse.  :-)
+
+Thus I've been very careful to only trap OOM on a very small number of byte array allocations, where the size of the array might be larger than the maximum heap, and that will trigger an OOM, but its not really an OutOfMemoryError, because there is still plenty of heap to go around.  E.g. consider the case of streamFileThreshold being set to 2047m, an object of 640m in size, and a max heap of 256m.  Even if I have 200m free in the heap, I cannot allocate that 640m object as a byte array, and the resulting OOM from that alloc isn't really an OOM.  The heap is still fine.
+
+But an OOM when we are about to throw IllegalArgumentException, well, that's really bad.  If we cannot perform the allocation for an exception that we want to throw up the stack, we're toast.  Our heap is already out of space and there's no way we're going to be able to recover.  We shouldn't be trapping that exception.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-01-06 17:48:33.000000000
+
+Patch Set 4: (3 inline comments)
+
+I'm about to upload ps 6, which is ps 4 with Robin's comments addressed.
+
+Line:282, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/PackFile.java -> Done
+
+Line:726, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/PackFile.java -> Done
+
+Line:738, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/PackFile.java -> Done
+
+-------------------------------------

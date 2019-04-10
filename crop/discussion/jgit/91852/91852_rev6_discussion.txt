@@ -1,0 +1,150 @@
+DESCRIPTION
+
+SHA-1: collision detection support
+
+Update SHA1 class to include a Java port of sha1dc[1]'s ubc_check,
+which can detect the attack pattern used by the authors of
+SHAttered[2] and run SHA-1 for additional rounds, making the hash
+harder to predict.
+
+Given the shattered example files that have the same SHA-1, this
+modified implementation can identify there is risk of collision given
+only one file in the pair, and returns a different hash:
+
+  $ bin/sha1dcsum shattered-1.pdf
+  16e96b70000dd1e7c85b8368ee197754400e58ec *coll* shattered-1.pdf
+
+  $ jgit ...
+  [main] WARN org.eclipse.jgit.util.sha1.SHA1 - possible SHA-1 collision; safeHash 16e96b70000dd1e7c85b8368ee197754400e58ec
+  16e96b70000dd1e7c85b8368ee197754400e58ec shattered-1.pdf
+
+  $ bin/sha1dcsum shattered-2.pdf
+  e1761773e6a35916d99f891b77663e6405313587 *coll* shattered-2.pdf
+
+  $ jgit ...
+  [main] WARN org.eclipse.jgit.util.sha1.SHA1 - possible SHA-1 collision; safeHash e1761773e6a35916d99f891b77663e6405313587
+  e1761773e6a35916d99f891b77663e6405313587 shattered-2.pdf
+
+When JGit detects probability of a collision, SHA1 now warns on the
+logger, reporting either the original hash (when safeHash is off), or
+the hardened safe hash (when safeHash is on).
+
+When safeHash is off and a collision is detected, SHA1 now throws
+Sha1CollisionException with a message explaining a collision is
+likely.  Transport client code already wraps the exception inside of
+TransportException, and ReceivePack will report an unpack error with
+the message text.  This allows the risk to be surfaced to the user,
+while the operation is aborted.
+
+From the paper[3] by Marc Stevens, the probability of a false positive
+identification of a collision is about 14 * 2^(-160), sufficiently low
+enough for any detected collision to likely be a real collision.
+
+git-core[4] may adopt sha1dc before the system migrates to an entirely
+new hash function.  This commit enables JGit to remain compatible with
+that move to sha1dc, and help protect users by warning if similar
+attacks as SHAttered are identified.
+
+Performance declined about 8% (detection off), now:
+
+  MessageDigest        238.41 MiB/s
+  MessageDigest        244.52 MiB/s
+  MessageDigest        244.06 MiB/s
+  MessageDigest        242.58 MiB/s
+
+  SHA1                 216.77 MiB/s (was ~240.83 MiB/s)
+  SHA1                 220.98 MiB/s
+  SHA1                 221.76 MiB/s
+  SHA1                 221.34 MiB/s
+
+This decline in throughput is attributed to the step loop unrolling in
+compress(), which was necessary to easily fit the UbcCheck logic into
+the hash function.  Using helper functions s1-s4 reduces the code
+explosion, providing acceptable throughput.
+
+With detection enabled (default):
+
+  SHA1 detectCollision 180.12 MiB/s
+  SHA1 detectCollision 181.59 MiB/s
+  SHA1 detectCollision 181.64 MiB/s
+  SHA1 detectCollision 182.24 MiB/s
+
+  sha1dc (native C)   ~206.28 MiB/s
+  sha1dc (native C)   ~204.47 MiB/s
+  sha1dc (native C)   ~203.74 MiB/s
+
+Average time across 100,000 calls to hash 4100 bytes (such as a commit
+or tree) for the various algorithms available to JGit also shows SHA1
+is slower than MessageDigest, but by an acceptable margin:
+
+  MessageDigest        17 usec
+  SHA1                 18 usec
+  SHA1 detectCollision 22 usec
+
+Time to index-pack for git.git (217982 objects, 69 MiB) has increased:
+
+  MessageDigest   SHA1 w/ detectCollision
+  -------------   -----------------------
+         20.12s   25.25s
+         19.87s   25.48s
+         20.04s   25.26s
+
+    avg  20.01s   25.33s    +26%
+
+Being implemented in Java with these additional safety checks is
+clearly a penalty, but throughput is still acceptable given the
+increased security against object name collisions.
+
+[1] https://github.com/cr-marcstevens/sha1collisiondetection
+[2] https://shattered.it/
+[3] https://marc-stevens.nl/research/papers/C13-S.pdf
+[4] xxx@xxx.xxx
+
+Change-Id: I9fe4c6d8fc5e5a661af72cd3246c9e67b1b9fee6
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2017-02-26 22:40:06.000000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-02-26 22:40:14.000000000
+
+Patch Set 6:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/9896/
+
+-------------------------------------
+author: Eden Lin
+date: 2017-02-26 22:41:54.000000000
+
+Patch Set 6:
+
+> > An error occurred while creating a CQ for this patchset. Please
+ > > create login to the projects portal and create a CQ manually.
+ > 
+ > Booo. Okay, I'll try that.
+
+Filed as https://dev.eclipse.org/ipzilla/show_bug.cgi?id=12785
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-02-26 22:51:24.000000000
+
+Patch Set 6: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/9896/ : SUCCESS
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2017-03-02 18:26:45.000000000
+
+Change has been successfully merged into the git repository by Eden Lin
+
+-------------------------------------

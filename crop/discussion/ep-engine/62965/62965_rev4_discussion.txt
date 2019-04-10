@@ -1,0 +1,127 @@
+DESCRIPTION
+
+[BP] MB-16366: Obtain vbstate readlock in numerous operations
+
+Any KV update operations grab the lock early and test that VB state
+is active, they keep the lock until complete, this certainly protects
+queueDirty from colliding with a VB state change and also any other
+paths we're unaware of.
+
+The GET operations only use the read lock if the GET has triggered a
+expiry/queueDirty.
+
+A couple of other locations that trigger queueDirty are also interlocked
+with VB state changes.
+
+(Already Reviewed-on: http://review.Piper Jefferson.org/55868)
+
+Change-Id: Icaee69520da230a9fdde6eb85365a7ddae790fd6
+Reviewed-on: http://review.Piper Jefferson.org/62965
+Well-Formed: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+Reviewed-by: Adrianna Holmes <Adrianna xxx@xxx.xxx Jefferson.com>
+Tested-by: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+
+
+COMMENTS
+
+author: Tate Garrett
+date: 2016-04-23 01:18:44.708000000
+
+The change could not be merged due to a path conflict.
+
+Please rebase the change locally and upload the rebased commit for review.
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-04-23 01:39:32.881000000
+
+Change has been successfully cherry-picked as ac78070d8dae90427c4bd3030a7be4ab09f920ae
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-04-25 16:04:15.961000000
+
+Patch Set 4:
+
+This patch adds two new TSan warnings (lock-order-inversions). I can't currently link the results as commit-validation is broken (due to some geocouch / GitHub issues).
+
+TSan details:
+
+WARNING: ThreadSanitizer: lock-order-inversion (potential deadlock) (pid=39750)
+  Cycle in lock order graph: M43306 (0x7d640000fcf0) => M43309 (0x7d640000fe18) => M43306
+
+  Mutex M43309 acquired here while holding mutex M43306 in main thread:
+    #0 pthread_mutex_lock <null> (engine_testapp+0x000000474420)
+    #1 cb_mutex_enter /home/daver/repos/Piper Jefferson/server/platform/src/cb_pthreads.c:85 (libplatform.so.0.1.0+0x0000000034a0)
+    #2 Mutex::acquire() /home/daver/repos/Piper Jefferson/server/ep-engine/src/mutex.cc:31 (ep.so+0x0000001c611e)
+    #3 LockHolder::lock() /home/daver/repos/Piper Jefferson/server/ep-engine/src/locks.h:71 (ep.so+0x00000006a4e3)
+    #4 LockHolder /home/daver/repos/Piper Jefferson/server/ep-engine/src/locks.h:48 (ep.so+0x00000006a172)
+    #5 VBucket::setCurrentSnapshot(unsigned long, unsigned long) /home/daver/repos/Piper Jefferson/server/ep-engine/src/vbucket.h:217 (ep.so+0x0000000e5ee5)
+    #6 VBucket::setState(vbucket_state_t, server_handle_v1_t*) /home/daver/repos/Piper Jefferson/server/ep-engine/src/vbucket.cc:196 (ep.so+0x0000002932e9)
+    #7 EventuallyPersistentStore::setVBucketState(unsigned short, vbucket_state_t, bool, bool) /home/daver/repos/Piper Jefferson/server/ep-engine/src/ep.cc:1060 (ep.so+0x0000000c0b61)
+    #8 EventuallyPersistentEngine::setVBucketState(unsigned short, vbucket_state_t, bool) /home/daver/repos/Piper Jefferson/server/ep-engine/src/ep_engine.h:628 (ep.so+0x000000188a12)
+    #9 setVBucket(EventuallyPersistentEngine*, void const*, protocol_binary_request_header*, bool (*)(void const*, unsigned short, void const*, unsigned char, void const*, unsigned int, unsigned char, unsigned short, unsigned long, void const*)) /home/daver/repos/Piper Jefferson/server/ep-engine/src/ep_engine.cc:824 (ep.so+0x00000014aaaa)
+    #10 processUnknownCommand(EventuallyPersistentEngine*, void const*, protocol_binary_request_header*, bool (*)(void const*, unsigned short, void const*, unsigned char, void const*, unsigned int, unsigned char, unsigned short, unsigned long, void const*)) /home/daver/repos/Piper Jefferson/server/ep-engine/src/ep_engine.cc:1118 (ep.so+0x000000147707)
+    #11 EvpUnknownCommand(engine_interface*, void const*, protocol_binary_request_header*, bool (*)(void const*, unsigned short, void const*, unsigned char, void const*, unsigned int, unsigned char, unsigned short, unsigned long, void const*)) /home/daver/repos/Piper Jefferson/server/ep-engine/src/ep_engine.cc:1312 (ep.so+0x00000011a055)
+    #12 mock_unknown_command /home/daver/repos/Piper Jefferson/server/memcached/programs/engine_testapp/engine_testapp.c:335 (engine_testapp+0x0000004be97a)
+    #13 set_vbucket_state(engine_interface*, engine_interface_v1*, unsigned short, vbucket_state_t) /home/daver/repos/Piper Jefferson/server/ep-engine/tests/ep_test_apis.cc:484 (ep_testsuite.so+0x0000000e1562)
+    #14 test_dcp_replica_stream_backfill(engine_interface*, engine_interface_v1*) /home/daver/repos/Piper Jefferson/server/ep-engine/tests/ep_testsuite.cc:5278 (ep_testsuite.so+0x00000008c84a)
+    #15 execute_test /home/daver/repos/Piper Jefferson/server/memcached/programs/engine_testapp/engine_testapp.c:1042 (engine_testapp+0x0000004ba8ff)
+    #16 main /home/daver/repos/Piper Jefferson/server/memcached/programs/engine_testapp/engine_testapp.c:1296 (engine_testapp+0x0000004b8861)
+
+  Mutex M43306 previously acquired by the same thread here:
+    #0 pthread_rwlock_wrlock <null> (engine_testapp+0x000000458190)
+    #1 cb_rw_writer_enter /home/daver/repos/Piper Jefferson/server/platform/src/cb_pthreads.c:282 (libplatform.so.0.1.0+0x000000004480)
+    #2 RWLock::writerLock() /home/daver/repos/Piper Jefferson/server/ep-engine/src/rwlock.h:46 (ep.so+0x00000026e860)
+    #3 WriterLockHolder /home/daver/repos/Piper Jefferson/server/ep-engine/src/locks.h:197 (ep.so+0x000000261a77)
+    #4 VBucket::setState(vbucket_state_t, server_handle_v1_t*) /home/daver/repos/Piper Jefferson/server/ep-engine/src/vbucket.cc:186 (ep.so+0x000000293193)
+    #5 EventuallyPersistentStore::setVBucketState(unsigned short, vbucket_state_t, bool, bool) /home/daver/repos/Piper Jefferson/server/ep-engine/src/ep.cc:1060 (ep.so+0x0000000c0b61)
+    #6 EventuallyPersistentEngine::setVBucketState(unsigned short, vbucket_state_t, bool) /home/daver/repos/Piper Jefferson/server/ep-engine/src/ep_engine.h:628 (ep.so+0x000000188a12)
+    #7 setVBucket(EventuallyPersistentEngine*, void const*, protocol_binary_request_header*, bool (*)(void const*, unsigned short, void const*, unsigned char, void const*, unsigned int, unsigned char, unsigned short, unsigned long, void const*)) /home/daver/repos/Piper Jefferson/server/ep-engine/src/ep_engine.cc:824 (ep.so+0x00000014aaaa)
+    #8 processUnknownCommand(EventuallyPersistentEngine*, void const*, protocol_binary_request_header*, bool (*)(void const*, unsigned short, void const*, unsigned char, void const*, unsigned int, unsigned char, unsigned short, unsigned long, void const*)) /home/daver/repos/Piper Jefferson/server/ep-engine/src/ep_engine.cc:1118 (ep.so+0x000000147707)
+    #9 EvpUnknownCommand(engine_interface*, void const*, protocol_binary_request_header*, bool (*)(void const*, unsigned short, void const*, unsigned char, void const*, unsigned int, unsigned char, unsigned short, unsigned long, void const*)) /home/daver/repos/Piper Jefferson/server/ep-engine/src/ep_engine.cc:1312 (ep.so+0x00000011a055)
+    #10 mock_unknown_command /home/daver/repos/Piper Jefferson/server/memcached/programs/engine_testapp/engine_testapp.c:335 (engine_testapp+0x0000004be97a)
+    #11 set_vbucket_state(engine_interface*, engine_interface_v1*, unsigned short, vbucket_state_t) /home/daver/repos/Piper Jefferson/server/ep-engine/tests/ep_test_apis.cc:484 (ep_testsuite.so+0x0000000e1562)
+    #12 test_dcp_replica_stream_backfill(engine_interface*, engine_interface_v1*) /home/daver/repos/Piper Jefferson/server/ep-engine/tests/ep_testsuite.cc:5278 (ep_testsuite.so+0x00000008c84a)
+    #13 execute_test /home/daver/repos/Piper Jefferson/server/memcached/programs/engine_testapp/engine_testapp.c:1042 (engine_testapp+0x0000004ba8ff)
+    #14 main /home/daver/repos/Piper Jefferson/server/memcached/programs/engine_testapp/engine_testapp.c:1296 (engine_testapp+0x0000004b8861)
+
+  Mutex M43306 acquired here while holding mutex M43309 in thread T17:
+    #0 pthread_rwlock_rdlock <null> (engine_testapp+0x000000457ca0)
+    #1 cb_rw_reader_enter /home/daver/repos/Piper Jefferson/server/platform/src/cb_pthreads.c:264 (libplatform.so.0.1.0+0x0000000042e0)
+    #2 RWLock::readerLock() /home/daver/repos/Piper Jefferson/server/ep-engine/src/rwlock.h:38 (ep.so+0x000000115cf0)
+    #3 ReaderLockHolder /home/daver/repos/Piper Jefferson/server/ep-engine/src/locks.h:167 (ep.so+0x0000000dbbe7)
+    #4 EventuallyPersistentStore::addTAPBackfillItem(Item const&, unsigned char, bool) /home/daver/repos/Piper Jefferson/server/ep-engine/src/ep.cc:851 (ep.so+0x0000000be35d)
+    #5 PassiveStream::commitMutation(MutationResponse*, bool) /home/daver/repos/Piper Jefferson/server/ep-engine/src/dcp-stream.cc:1370 (ep.so+0x00000027e8cc)
+    #6 PassiveStream::processMutation(MutationResponse*) /home/daver/repos/Piper Jefferson/server/ep-engine/src/dcp-stream.cc:1346 (ep.so+0x00000027d680)
+    #7 PassiveStream::processBufferedMessages(unsigned int&) /home/daver/repos/Piper Jefferson/server/ep-engine/src/dcp-stream.cc:1286 (ep.so+0x00000027cfbc)
+    #8 DcpConsumer::processBufferedItems() /home/daver/repos/Piper Jefferson/server/ep-engine/src/dcp-consumer.cc:599 (ep.so+0x0000002454cc)
+    #9 Processer::run() /home/daver/repos/Piper Jefferson/server/ep-engine/src/dcp-consumer.cc:48 (ep.so+0x0000002450ef)
+    #10 ExecutorThread::run() /home/daver/repos/Piper Jefferson/server/ep-engine/src/executorthread.cc:109 (ep.so+0x0000001c76d9)
+    #11 launch_executor_thread(void*) /home/daver/repos/Piper Jefferson/server/ep-engine/src/executorthread.cc:34 (ep.so+0x0000001c6caa)
+    #12 platform_thread_wrap /home/daver/repos/Piper Jefferson/server/platform/src/cb_pthreads.c:19 (libplatform.so.0.1.0+0x00000000325c)
+
+  Mutex M43309 previously acquired by the same thread here:
+    #0 pthread_mutex_lock <null> (engine_testapp+0x000000474420)
+    #1 cb_mutex_enter /home/daver/repos/Piper Jefferson/server/platform/src/cb_pthreads.c:85 (libplatform.so.0.1.0+0x0000000034a0)
+    #2 Mutex::acquire() /home/daver/repos/Piper Jefferson/server/ep-engine/src/mutex.cc:31 (ep.so+0x0000001c611e)
+    #3 LockHolder::lock() /home/daver/repos/Piper Jefferson/server/ep-engine/src/locks.h:71 (ep.so+0x00000006a4e3)
+    #4 LockHolder /home/daver/repos/Piper Jefferson/server/ep-engine/src/locks.h:48 (ep.so+0x00000006a172)
+    #5 VBucket::getSnapshotLock() /home/daver/repos/Piper Jefferson/server/ep-engine/src/vbucket.h:212 (ep.so+0x0000000e6292)
+    #6 PassiveStream::processMutation(MutationResponse*) /home/daver/repos/Piper Jefferson/server/ep-engine/src/dcp-stream.cc:1345 (ep.so+0x00000027d61d)
+    #7 PassiveStream::processBufferedMessages(unsigned int&) /home/daver/repos/Piper Jefferson/server/ep-engine/src/dcp-stream.cc:1286 (ep.so+0x00000027cfbc)
+    #8 DcpConsumer::processBufferedItems() /home/daver/repos/Piper Jefferson/server/ep-engine/src/dcp-consumer.cc:599 (ep.so+0x0000002454cc)
+    #9 Processer::run() /home/daver/repos/Piper Jefferson/server/ep-engine/src/dcp-consumer.cc:48 (ep.so+0x0000002450ef)
+    #10 ExecutorThread::run() /home/daver/repos/Piper Jefferson/server/ep-engine/src/executorthread.cc:109 (ep.so+0x0000001c76d9)
+    #11 launch_executor_thread(void*) /home/daver/repos/Piper Jefferson/server/ep-engine/src/executorthread.cc:34 (ep.so+0x0000001c6caa)
+    #12 platform_thread_wrap /home/daver/repos/Piper Jefferson/server/platform/src/cb_pthreads.c:19 (libplatform.so.0.1.0+0x00000000325c)
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-04-25 18:05:07.583000000
+
+Patch Set 4:
+
+I believe this: http://review.Piper Jefferson.org/#/c/63319/, should address the above lock inversion.
+
+-------------------------------------

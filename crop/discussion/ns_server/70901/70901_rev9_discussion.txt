@@ -1,0 +1,204 @@
+DESCRIPTION
+
+MB-21884: Add REST API support to create ephemeral buckets.
+
+The following are the changes done:
+[1] The 'bucketType' parameter now accepts a new value called
+    'ephemeral'. This is allowed only in spock clusters.
+[2] Internally, it'll be stored as 'membase' type in the bucket
+    config and additional parameter called 'storage_mode' gets
+    stored in the bucket config. The 'storage_mode' parameter
+    stores either 'couchstore' or 'ephemeral' as values.
+[3] The bucket filtering APIs, get_bucket_names_of_type and
+    node_bucket_names_of_type, have been updated to take in
+    storage_mode as a parameter.
+[4] The bucket config string has been updated to pass this
+    info down to the ep-engine. The 'couchstore' and
+    'ephemeral' values get mapped to 'persistent' and
+    'ephemeral' respectively.
+[5] The length of the update bucket message to orchestrator
+    can be different in mixed mode. Handle it accordingly.
+
+Change-Id: I58b4132a6d694ab5d7d65638e67c71653a16bffe
+
+
+COMMENTS
+
+author: Noe Perry
+date: 2017-02-08 01:50:46.461000000
+
+Uploaded patch set 9.
+
+-------------------------------------
+author: Noe Perry
+date: 2017-02-08 01:51:37.984000000
+
+Patch Set 9: Verified+1
+
+Fixed the following:
+
+[1] Artem pointed a problem in "storage_mode" handling for memcached buckets.
+[2] While discussing with Artem, figured that an update bucket message to orchestrator can vary depending upon where the request was generated.
+
+-------------------------------------
+author: Philip Lara
+date: 2017-02-08 21:14:05.896000000
+
+Patch Set 9:
+
+(1 comment)
+
+Line:391, src/ns_orchestrator.erl -> I don't see why you need do_update_bucket function.
+
+You can do:
+handle_sync_event({update_bucket, memcached, BucketName, UpdatedProps},
+                 StateName, State) ->
+    handle_sync_event({update_bucket, memcached, undefined, BucketName,
+                      UpdatedProps}, StateName, State);
+
+-------------------------------------
+author: Noe Perry
+date: 2017-02-08 21:52:21.220000000
+
+Patch Set 9:
+
+(1 comment)
+
+Line:391, src/ns_orchestrator.erl -> The reason I added do_update_bucket function is to avoid handling the "update_bucket" event while in "rebalancing" state twice (once for older msg and once for new msg). With do_update_bucket I could pattern match both old & new messages based on "rebalancing" state name once.
+
+-------------------------------------
+author: Philip Lara
+date: 2017-02-08 22:06:50.604000000
+
+Patch Set 9:
+
+(1 comment)
+
+Line:391, src/ns_orchestrator.erl -> handle_sync_event({update_bucket, memcached, BucketName, UpdatedProps},
+                  From, StateName, State) ->
+    handle_sync_event({update_bucket, memcached, undefined, BucketName, UpdatedProps},
+                      From, StateName, State);
+handle_sync_event({update_bucket, membase, BucketName, UpdatedProps},
+                  From, StateName, State) ->
+    handle_sync_event({update_bucket, membase, couchstore, BucketName, UpdatedProps},
+                      From, StateName, State);
+handle_sync_event(_Msg, _From, rebalancing, State) ->
+    {reply, rebalance_running, rebalancing, State};
+handle_sync_event({update_bucket, BucketType, StorageMode, BucketName, UpdatedProps},
+                  _From, StateName, State) ->
+    Reply = ns_bucket:update_bucket_props(BucketType, StorageMode,
+                                          BucketName, UpdatedProps),
+    case Reply of
+        ok ->
+            %% request Harley Martinitor run to fix map if the replica # has changed
+            request_Harley Martinitor_run({bucket, BucketName});
+        _ -> ok
+    end,
+    {reply, Reply, StateName, State};
+
+-------------------------------------
+author: Philip Lara
+date: 2017-02-08 22:09:28.158000000
+
+Patch Set 9:
+
+(1 comment)
+
+Line:391, src/ns_orchestrator.erl -> obviously:
+handle_sync_event({update_bucket, _BucketType, _BucketName, _UpdatedProps}, _From, rebalancing, State) ->
+    {reply, rebalance_running, rebalancing, State};
+
+-------------------------------------
+author: Philip Lara
+date: 2017-02-08 22:12:54.328000000
+
+Patch Set 9:
+
+(1 comment)
+
+Line:391, src/ns_orchestrator.erl -> I should never write code to comments. Here's the correct one:
+
+handle_sync_event({update_bucket, memcached, BucketName, UpdatedProps},
+                  From, StateName, State) ->
+    handle_sync_event({update_bucket, memcached, undefined, BucketName, UpdatedProps},
+                      From, StateName, State);
+handle_sync_event({update_bucket, membase, BucketName, UpdatedProps},
+                  From, StateName, State) ->
+    handle_sync_event({update_bucket, membase, couchstore, BucketName, UpdatedProps},
+                      From, StateName, State);
+handle_sync_event({update_bucket, _, _, _, _}, _From, rebalancing, State) ->
+    {reply, rebalance_running, rebalancing, State};
+handle_sync_event({update_bucket, BucketType, StorageMode, BucketName, UpdatedProps},
+                  _From, StateName, State) ->
+    Reply = ns_bucket:update_bucket_props(BucketType, StorageMode,
+                                          BucketName, UpdatedProps),
+    case Reply of
+        ok ->
+            %% request Harley Martinitor run to fix map if the replica # has changed
+            request_Harley Martinitor_run({bucket, BucketName});
+        _ -> ok
+    end,
+    {reply, Reply, StateName, State};
+
+-------------------------------------
+author: Noe Perry
+date: 2017-02-08 22:34:51.729000000
+
+Patch Set 9:
+
+(1 comment)
+
+Line:391, src/ns_orchestrator.erl -> Yes, I took care of it. Will put out the new change after running my tests.
+
+-------------------------------------
+author: Philip Lara
+date: 2017-02-08 22:43:51.490000000
+
+Patch Set 9:
+
+(1 comment)
+
+Line:220, src/ns_bucket.erl -> index_stats_collector does this:
+Self ! {buckets, ns_bucket:get_bucket_names_of_type(membase, BucketConfigs)};
+
+It won't be handled correctly.
+I suggest to get rid of get_bucket_names_of_type/1
+
+And define the other 2 functions as:
+get_bucket_names_of_type(Type, Mode)
+get_bucket_names_of_type(Type, Mode, BucketConfigs)
+
+Defaulting Mode id confusing. Let it be always specifies explicitly.
+
+-------------------------------------
+author: Philip Lara
+date: 2017-02-08 22:46:48.565000000
+
+Patch Set 9:
+
+(1 comment)
+
+Line:832, src/ns_bucket.erl -> same suggestion as with get_bucket_names_of_type
+defaulting Mode is confusing
+
+-------------------------------------
+author: Noe Perry
+date: 2017-02-08 22:56:56.125000000
+
+Patch Set 9:
+
+(1 comment)
+
+Line:220, src/ns_bucket.erl -> That was the intent of the 2nd patch (http://review.couchbase.org/#/c/72979) I had put out. To pass the mode explicitly.
+
+But if you are suggesting to remove get_bucket_names_of_type/1 then I'll have to merge these 2 commits.
+
+-------------------------------------
+author: Philip Lara
+date: 2017-02-08 23:08:18.132000000
+
+Patch Set 9:
+
+You can merge or leave them separate, but the problem with index_stats_collector has to be fixed.
+
+-------------------------------------

@@ -1,0 +1,141 @@
+DESCRIPTION
+
+FileTreeIterator optionally performs CRLF to LF conversion for text files.
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-07-27 17:49:36.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(14 inline comments)
+
+
+
+Line:2, org.eclipse.jgit/src/org/eclipse/jgit/util/io/EolCanonicalizingInputStream.java -> I doubt Google wrote this in 2009.  :-)
+
+Line:58, org.eclipse.jgit/src/org/eclipse/jgit/util/io/EolCanonicalizingInputStream.java -> Style-nit: Instance members should be lowercase.
+
+Line:73, org.eclipse.jgit/src/org/eclipse/jgit/util/io/EolCanonicalizingInputStream.java -> Style-nit: We avoid { on if/for/while/etc. when there is only one statement in the body.
+
+Line:83, org.eclipse.jgit/src/org/eclipse/jgit/util/io/EolCanonicalizingInputStream.java -> The easier way to implement this method is usually:
+
+  public int read() throws IOException {
+    byte[] b = new byte[1];
+    int r = read(b);
+    return r == 1 ? b[0] & 0xff : -1;
+  }
+
+Most callers these days do bulk IO thorugh read(byte[], int, int) and bypass the single byte read.  Thus this method is usually never used.  And JVMs these days are pretty good at cleaning up locally allocated short-term garbage like that single byte byte array so its not the end of the world that we allocate for the read.
+
+Line:88, org.eclipse.jgit/src/org/eclipse/jgit/util/io/EolCanonicalizingInputStream.java -> This comment is pointless.  This is true universally across the board and is why almost every part of JGit uses the read(byte[], int, int) variant whenever possible.  And often times even tries to avoid the InputStream and just work on the object as a complete byte[] (e.g. ObjectLoader's getCachedBytes method).
+
+Line:98, org.eclipse.jgit/src/org/eclipse/jgit/util/io/EolCanonicalizingInputStream.java -> Instead of reading only the amount that will fit in the caller's buffer, just fill your entire own local buffer.  At worst you need 1 byte of lookahead.  So at worst when you find a '\r' and the local buffer is empty you only need to slide the '\r' to the beginning of the local buffer, fill the rest, and continue your scan.
+
+I think that makes your main loop for read look something like this:
+
+  private final byte[] buf = new byte[8192];
+  private final InputStream in;
+  private int cnt;
+  private int ptr;
+
+  public int read(byte[] bs, int off, int len) throws IOException {
+    if (len == 0)
+      return 0;
+
+    final int startOff = off;
+    final int end = off + len;
+
+    while (off < end) {
+      if (ptr == cnt) {
+        cnt = in.read(buf, 0, buf.length);
+        if (cnt < 1)
+          break;
+        ptr = 0;
+      }
+
+      byte b = buf[ptr++];
+      if (b != '\r') {
+        bs[off++] = b;
+        continue;
+      }
+
+      if (ptr == cnt) {
+        cnt = in.read(buf, 1, buf.length - 1);
+        if (cnt <= 0) {
+          bs[off++] = '\r';
+          break;
+        }
+        buf[0] = '\r';
+        ptr = 1;
+      }
+
+      if (buf[ptr] == '\n') {
+        bs[off++] = '\n';
+        ptr++;
+      } else
+        bs[off++] = '\r';
+    }
+
+    return startOff == off ? -1 : off - startOff;
+  }
+
+Line:131, org.eclipse.jgit/src/org/eclipse/jgit/util/io/EolCanonicalizingInputStream.java -> There is no need to call super.close() on InputStream.  It is a no-op method.  Instead you just need to do is.close();
+
+Line:2, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/io/EolCanonicalizingInputStreamTest.java -> Again, I doubt the Google copyright.
+
+Line:133, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> We're going to need a whole lot more options than just autocrlf flag.  Eventually we would also need the complete clean filter configuration so we can run clean filters when computing an ObjectId from the work tree.
+
+We probably should create a WorkTreeOptions class in this same package, and make this boolean a final package level member that the WorkingTreeIterator can reach into and inspect.  Then later we can add things like the clean filters to WorkTreeOptions and have them easily carry into the child iterators.
+
+Line:257, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> Style-nit: We cuddle else onto the line with the closing }
+
+Line:262, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> I'd prefer not to negate this.  Above you used the true side to mean "we are doing EOL conversion" so to be consistent we should do the same thing here.
+
+Line:266, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> Ouch.  We are scanning through EOL conversion files 3x per computation.  Most of them are going to be source code files, which are typically small texts under 64 KiB.  For these we probably should just allocate a byte[] buffer, slurp the entire file into the buffer, and work with the buffer instead of reading the file 3x into the JVM.  Its actually probably worth it to special case for these smaller text files.
+
+Line:249, org.eclipse.jgit/src/org/eclipse/jgit/diff/RawText.java -> Please document that the stream may not be fully read, will be left at an unknown position after consuming an unknown number of bytes, and the caller needs to close it when done.
+
+Because the stream cannot be easily reset back to the beginning the caller should know that.  Or we need to document with a public constant the amount the stream needs to mark() before calling us if they want to reset.
+
+Line:255, org.eclipse.jgit/src/org/eclipse/jgit/diff/RawText.java -> This can return a short read.  We should use a loop to try and get the full buffer length or EOF before we enter into the isBinary logic.
+
+-------------------------------------
+author: Saniya Hill
+date: 2010-07-29 14:25:37.000000000
+
+Patch Set 1: (14 inline comments)
+
+
+
+Line:2, org.eclipse.jgit/src/org/eclipse/jgit/util/io/EolCanonicalizingInputStream.java -> Done
+
+Line:58, org.eclipse.jgit/src/org/eclipse/jgit/util/io/EolCanonicalizingInputStream.java -> Done
+
+Line:73, org.eclipse.jgit/src/org/eclipse/jgit/util/io/EolCanonicalizingInputStream.java -> Done
+
+Line:83, org.eclipse.jgit/src/org/eclipse/jgit/util/io/EolCanonicalizingInputStream.java -> Done
+
+Line:88, org.eclipse.jgit/src/org/eclipse/jgit/util/io/EolCanonicalizingInputStream.java -> Done
+
+Line:98, org.eclipse.jgit/src/org/eclipse/jgit/util/io/EolCanonicalizingInputStream.java -> Phew! That took me a while to understand; anyway I've implemented it almost as suggested here.
+
+Line:131, org.eclipse.jgit/src/org/eclipse/jgit/util/io/EolCanonicalizingInputStream.java -> Done
+
+Line:2, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/io/EolCanonicalizingInputStreamTest.java -> Done
+
+Line:133, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> I've called it WorkingTreeOptions for closer similarity with WorkingTreeIterator.
+
+Line:257, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> Done
+
+Line:262, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> Done
+
+Line:266, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> Done
+
+Line:249, org.eclipse.jgit/src/org/eclipse/jgit/diff/RawText.java -> Done
+
+Line:255, org.eclipse.jgit/src/org/eclipse/jgit/diff/RawText.java -> Done
+
+-------------------------------------

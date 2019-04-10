@@ -1,0 +1,136 @@
+DESCRIPTION
+
+Gracefully ignore linked resources.
+
+A project may contain resources that are not located within the
+project's directory in the local file system. These resources are
+referred to as linked resources.
+This patch adds a few checks to gracefully ignore them in a few
+functional cases: iterator, handlers, actions, etc.
+
+Bug: 333338
+Change-Id: I5005ed46cdfab47fc6913dbd46fc1291b2ac79ab
+Signed-off-by: Hamza Perez xxx@xxx.xxx
+
+COMMENTS
+
+author: Kade Schaefer
+date: 2012-11-29 21:04:52.000000000
+
+Uploaded patch set 9.
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-11-29 21:04:57.000000000
+
+Patch Set 9:
+
+Build Started https://hudson.eclipse.org/sandbox/job/egit.gerrit/3729/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-11-29 21:23:51.000000000
+
+Patch Set 9: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/egit.gerrit/3729/ : SUCCESS
+
+-------------------------------------
+author: Kade Schaefer
+date: 2012-11-29 21:42:48.000000000
+
+Patch Set 9: (3 inline comments)
+
+With EGit 2.2 approaching it would be nice to move this forward.
+
+However there are important points to discuss.
+
+In earlier version of this change most action handlers included a check to make sure no linked resources were selected. Recently I've come to realize this may not be desirable as such, and that what really needs to be checked is whether the selected items all point to the same repository. The latest patch set reflects that decision.
+
+The recent change from Danika Greer (https://git.eclipse.org/r/#/c/7564/) already underline the fact that egit can operate on resources that may not be part of a project in the workspace. A classic example is the main pom.xml of the EGit project which is at the repository root but not within any project. One can use the repository view to access such files and operate on them. Another way would be to create a linked resource pointing to PROJECT_LOC/../pom.xml (entered as PARENT-1-PROJECT_LOC/pom.xml when creating the linked resource). The latter method is nice because it's a quicker shortcut: one can operate on the file directly from the explorer instead of having to search for the repository view.
+
+Earlier version of the patch would have prevented such possibility. In the latest patch set action handlers now test selectionMapsToSingleRepository() instead of selectionContainsLinkedResources(). That's the basic idea for most handlers. There are however two handlers that currently work on multiple repositories:
+org.eclipse.egit.ui.internal.actions.AddTo/RemoveFromIndexActionHandler.isEnabled() {
+		return getProjectsInRepositoryOfSelectedResources().length > 0;
+}
+Both add and remove from index handlers can work on a selection that spans multiple repos. However looking at how the underlying operations are implemented, only org.eclipse.egit.core.op.AddToIndexOperation actually supports multiple repos. The counterpart org.eclipse.egit.core.op.RemoveFromIndexOperation operates on one repo only, given in its constructor.
+There is another discrepancy between these two actions/operations: the add uses GitScopeUtil.getRelatedChanges() to include related model elements while the remove doesn't.
+So here are questions that need answers:
+Q1-Should AddToIndex operate on multiple repositories, as it does currently?
+Q2-Should RemoveFromIndex operate on multiple repositories as well (it doesn't at present, the corresponding operation will also need to be changed)?
+Q3-Should RemoveFromIndex also include related model elements (it doesn't at present, unlike Add)?
+
+Also, while checking all these actions/operations/handlers in search for places where we should handle linked resources properly, I tried to understand how their execution is guarded. For handlers, the function isEnabled() prevents users from triggering an action when the selected resources are not adequate. In the case of org.eclipse.egit.ui.internal.actions.RepositoryAction, which is just a wrapper around a RepositoryActionHandler, the function isEnabled() calls handler.isEnabled(). However execute() and run() are guarded by shouldRunAction(), which by default returns true, and which needs to be overriden by subclasses.
+Actually only one subclass overrides this function:
+org.eclipse.egit.ui.internal.actions.RebaseAction.shouldRunAction() {
+		Repository repo = getRepository(); // Renamed to getSelectionRepository() in my patch
+		return !isInRebasingState(repo);
+	}
+The corresponding action handler guard looks like this:
+org.eclipse.egit.ui.internal.actions.RebaseActionHandler.isEnabled() {
+		Repository repo = getRepository(); // Renamed to getSelectionRepository() in my patch
+		return repo != null && isLocalBranchCheckedout(repo);
+	}
+Q4-Shouldn't the above two function be the same, ie check the same things?
+More generally:
+Q5-Do we have situations where the handler/action/operation is executed without isEnabled() guarding the execution?
+Q6-If so shouldn't we also perform the check just before execution? More precisely could we have the handler's execute perform the same check as in isEnabled(), or if there's a corresponding org.eclipse.egit.core.op.IEGitOperation, have it perform the same check?
+
+Finally, beyond actions/operations/handlers, there are other cases below that need to be considered. Feel free to comment and add other cases that you think need special attention with regards to linked resources.
+
+org.eclipse.egit.core.ContainerTreeIterator,
+org.eclipse.egit.core.IteratorService,
+org.eclipse.egit.core.internal.indexdiff.GitResourceDeltaVisitor:
+Linked resources are now ignored by these classes in order to keep them as close as possible to the file system which is the only thing jgit treewalk knows about.
+
+org.eclipse.egit.core.project.RepositoryFinder: Linked resources are now ignored by deault, but there's an optional boolean to specify otherwise. This is used when sharing a project not yet connected to EGit provider, in which case the search for a repository to connect to should not traverse linked resources.
+
+org.eclipse.egit.core.synchronize.GitResourceVariantTreeSubscriber: from what I understand this is used in comparison and merging, so now it ignores linked resources because the actual filesystem tree is what needs to be handled.
+
+org.eclipse.egit.ui.internal.operations.GitScopeUtil: No change there because it's used by ActionHandlers which already decide whether to ignore or not linked resources, so no need to filter twice.
+
+org.eclipse.egit.ui.internal.decorators.GitLightweightDecorator: No change, the linked resources check was already there, but it only avoided decorating linked resources that pointed to a resource outside the project's repository. If a linked resource points to a resource within the same repository, it gets decorated. In fact only the > gets visible when a tracked resource has changed, the arrow indicating a linked resource seems to take precedence over other decorations.
+
+Comments welcomed.
+
+Line:42, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/actions/RemoveFromIndexActionHandler.java -> Should RemoveFromIndex also include related model elements (it doesn't at present, unlike Add)?
+
+Line:42, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/actions/RemoveFromIndexActionHandler.java -> Should RemoveFromIndex operate on multiple repositories as well (it doesn't at present, the corresponding operation would also need to be changed)?
+
+Line:30, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/actions/RebaseActionHandler.java -> Shouldn't this be the same as org.eclipse.egit.ui.internal.actions.RebaseAction.shouldRunAction(), which also tests that the repository is not in a rebasing state?
+
+-------------------------------------
+author: Danika Greer
+date: 2012-12-01 22:16:40.000000000
+
+Patch Set 9:
+
+There was an internal server error when submitting the comments, but they seem to be there, see RepositoryActionHandler.
+
+Also see the other comments in my reply to your mail on egit-dev.
+
+-------------------------------------
+author: Sebastian Porter
+date: 2012-12-03 07:30:37.000000000
+
+Patch Set 9: I would prefer that you didn't submit this
+
+I didn't look at all the changes in detail but there are quite a lot of them hence I would prefer not to submit this just 2 weeks before we ship 2.2. So, the -1 is only for the upcoming 2.2 and not a general one.
+
+-------------------------------------
+author: Danika Greer
+date: 2012-12-01 22:14:56.000000000
+
+MISMATCHED INLINE COMMENT
+Line:228, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/actions/RepositoryActionHandler.java -> Why is this renamed? It makes the change look bigger (and harder to review) than it actually is because nearly all subclasses have to be changed. Could we do the renaming in a separate change which only does the rename?
+
+-------------------------------------
+author: Danika Greer
+date: 2012-12-01 22:14:56.000000000
+
+MISMATCHED INLINE COMMENT
+Line:551, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/actions/RepositoryActionHandler.java -> Could you move these changes to a separate change? It's a good change, but it does not have anything to do with linked resources and we could submit that part right away if it was in a change of its own.
+
+-------------------------------------

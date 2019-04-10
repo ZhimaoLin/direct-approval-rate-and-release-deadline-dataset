@@ -1,0 +1,83 @@
+DESCRIPTION
+
+Add builder-style API to jgit and Commit & Log cmd
+
+Added a new package org.eclipse.jgit.api and a builder-style API for
+jgit. Added also the first implementation for two git commands: Commit
+and Log.
+
+This API is intendet to be used by external components when
+functionalities of the standard git commands are required. It will also
+help to ease writing JGit tests.
+
+For internal usages this API may often not be optimal because the git
+commands are doing much more than required or they expect parameters of
+an unappropriate type.
+
+Change-Id: I71ac4839ab9d2f848307eba9252090c586b4146b
+Signed-off-by: Zachary Orozco xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Zachary Orozco
+date: 2010-04-28 15:03:43.000000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-04-28 16:55:56.000000000
+
+Patch Set 5: I would prefer that you didn't submit this; No score
+
+We're getting there...  :-)
+
+Line:90, org.eclipse.jgit/src/org/eclipse/jgit/api/Git.java -> If our setters in commands are going to fail-fast about single-execution, we should fail-fast here too about a null pointer being passed in for Repository.  NPE right away in the constructor rather than deferred:
+
+  Git git = new Git(null);
+  git.commit().setMessage("Test").call()
+
+We should NPE on the first line of that, not the second.
+
+Line:150, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> I like the idea of not marking it executed until its successful.
+
+Line:152, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> Its not just LOCK_FAILURE.  There's also REJECTED, which means someone else committed to the branch between when we read it above, and now when we try to update it.
+
+But I think that's it, all of the other states are internal exceptions.
+
+Line:158, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> We probably should include the status here.  Its nice to know NO_CHANGE (should be nearly impossible) from IO_EXCEPTION when a user reports a problem.  These are different errors that we'd suggest looking at different things for.
+
+Line:65, org.eclipse.jgit/src/org/eclipse/jgit/api/GitCommand.java -> Shouldn't this be final?
+
+Line:71, org.eclipse.jgit/src/org/eclipse/jgit/api/GitCommand.java -> Are we ever going to use this for something other than "already executed"?  I can't see how we would want to.  So I wonder if this shouldn't be named more explicitly than just "state".  Perhaps call it "called", but invert the value, so it defaults to false, and checkState() requires it to be false, and setCalled() can be called to set it to true?
+
+Line:48, org.eclipse.jgit/src/org/eclipse/jgit/api/ConcurrentRefUpdateException.java -> Since we know exactly what reference was the problem, and what the underlying RefUpdate.Result was at the time we create this exception, should we expose those as fields so the caller can inspect the failure if they care to know?  And if they don't then they can just rely on the message string.
+
+Or maybe exposing that is too much information.  I don't really know.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-04-28 20:50:30.000000000
+
+Patch Set 5:
+
+minor changes - just incoroporating some of your comments.
+
+Line:90, org.eclipse.jgit/src/org/eclipse/jgit/api/Git.java -> Done
+
+Line:150, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> yes, I also. That's what I am trying to do here - mark it just before the return.
+
+Line:152, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> Done
+
+Line:158, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> Done
+
+Line:65, org.eclipse.jgit/src/org/eclipse/jgit/api/GitCommand.java -> Done
+
+Line:71, org.eclipse.jgit/src/org/eclipse/jgit/api/GitCommand.java -> This property had in his small history half a dozen names (always a bad sign, right?). "invoked", "invocationAllowed" .... But finally I decided to be very generic and don't tie myself here to invocation counting. Two reasons: With this naming I can describe the functionality of this class without making assumptions about the subclasses. I know that every subclass must have a call method but I don't know how many other methods exists. Some of them may call checkState(), some not (e.g. getter methods in the subclasses).
+
+Another reason: maybe, someday, we'll have other situations detected in subclasses which make the command "uncallable". I would like to be open to this.
+
+Line:48, org.eclipse.jgit/src/org/eclipse/jgit/api/ConcurrentRefUpdateException.java -> I was also not sure and thought that this exception would be used later in other situations also. But you are right: for all situations I can think of where I can throw this exception I will have the Ref and a returncode from RefUpdate.update() in hand. And this is info is usefull for the call. So I added these properties.
+
+-------------------------------------

@@ -1,0 +1,40 @@
+DESCRIPTION
+
+MB-23714: Make VBucketPtr deletion schedule the delete of the VBucket
+
+Using the std::shared_ptr Deleter this patch hooks into the deletion
+of the VBucket so that a specific AUXIO (for persistent buckets) or a
+NONIO (for ephemeral buckets) task performs the removal of VBucket
+resources. This to ensure that no front-end thread runs the removal of
+memory and more specifically the deletion of the disk data.
+
+The aim of this commit is also to ensure there's no "race" between a
+background task deleting the VB disk file when the VB has itself been
+recreated. This is achieved now by having the creation of a VB to
+increment the revision of the file and ensuring a delete can only
+delete the older revision of the VB.
+
+This has a few subtle changes, as only compaction or creation are
+moving the revision forward, no code paths move the revision back.
+
+1. A flush of the bucket which calls KVStore::reset would previously
+return all vbuckets to a revision of 1. Again to ensure a delete task
+cannot delete a "live" file, the flush doesn't reset the revision
+number. So a flush of the bucket will result in deleted data, but
+with x.couch.4 etc...
+
+2. A delete of an individual vbucket has the same change. Previously
+after a delete, the revision was reset to 1. This is no longer the
+case and after the delete completes the revision is left unchanged.
+
+Change-Id: I40d2f5fd658d9f8dd28a671028544831518a90d0
+
+
+COMMENTS
+
+author: Jim WNathalie Landryer
+date: 2017-04-26 10:40:18.297000000
+
+Uploaded patch set 8.
+
+-------------------------------------

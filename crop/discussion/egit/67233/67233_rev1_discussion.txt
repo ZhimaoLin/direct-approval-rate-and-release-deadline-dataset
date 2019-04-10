@@ -1,0 +1,179 @@
+DESCRIPTION
+
+Added support for nested Git repositories in project
+
+The fixes are going to support nested repositories in one project and
+the submodule fixes are "only" related to this, because they are nested
+repos too. I've not planned to fix submodules first, but we are
+investigating to use them later.
+
+For adding nested Git repos we use "links", so the sub-repos are not
+located in the "projects root git repo" directly, they are only linked
+there. Additionally we use "worktree add" and i've updated JGit to
+proposed solution (see #477475) and have small fix in EGit too
+(https://git.eclipse.org/r/67223).
+
+My changes are work-in-progress, TODOs:
+- automatic tests (have tested it with some manually created repos and
+eclipse projects)
+  - for submodules
+  - nested repos
+- the nested repos are detected during project import only, so during
+refresh etc. mapping is not updated
+- Submodule-Walk does not fit to RepositoryMapping concept as i
+understand --> remove / replace with other compatible solution
+
+Bug: 446344
+Bug: 401556
+Bug: 411742
+Change-Id: Ie9aa6bd9df812c515e9f4967e1fb06c17e7cf636
+Signed-off-by: Genevieve Hudson xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Genevieve Hudson
+date: 2016-02-24 12:43:30.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-02-24 12:43:36.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/8181/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-02-24 12:49:01.000000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/8181/ : FAILURE
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-02-24 13:59:09.000000000
+
+Patch Set 1:
+
+(3 comments)
+
+Line:118, org.eclipse.egit.core/src/org/eclipse/egit/core/op/ConnectProviderOperation.java -> I had tried that, too, but it didn't work reliably for me with submodules in subfolders. The reason is that that ProjectUtil does an asynchronous refresh on a newly imported project, and that may at this time not yet have run (or not progressed deep enough), and thus the RepositoryFinder will not find all repos in all folders.
+
+Doing a synchronous refresh in ProjectUtil is probably not a good idea; I'm afraid it might lead to an unresponsive UI when a large project or many projects are imported.
+
+In change 67186, submodules are picked up by in GitProjectData through the resource change events triggered by the refresh here on line 143.
+
+Line:436, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/decorators/GitLightweightDecorator.java -> Heh :-) I have exactly this as a yet unpublished change, too.
+
+Line:362, org.eclipse.egit.core/src/org/eclipse/egit/core/project/RepositoryMapping.java -> This iterates over all projects in the workspace. This already was found to be very expensive (cf. bug 486857). Moreover, in this change it iterates over all projects and all their mappings. We can't do that for any IResource; that'll kill performance and UI responsiveness if you have a substantial number of projects.
+
+Improving the performance of getMapping(IPath) is a separate issue, but we should avoid using it whenever possible.
+
+That's the nice thing about the way GitProjectData was prepared: finding a RepositoryMapping from a (non-linked) IResource just requires a short traversal up the logical container hierarchy.
+
+Maybe we should instead investigate ways to remove the isLinked() restriction (like you did), but still be able to use the container hierarchy traversal.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-02-24 14:02:22.000000000
+
+Patch Set 1: -Verified
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/8184/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-02-24 14:08:01.000000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/8184/ : FAILURE
+
+-------------------------------------
+author: Genevieve Hudson
+date: 2016-02-24 15:51:50.000000000
+
+Patch Set 1:
+
+Thanks, 
+from reading the bug "https://bugs.eclipse.org/bugs/show_bug.cgi?id=486857" and "https://git.eclipse.org/r/65510" now i understand that i'm not alone with my thoughts about the GitProjectData and nested (nested linked repos or submodules). The performance issues may accour in my patches, because it's like big puzzle for me, no idea how it was intended to work in EGit with multiple repositories or nested ones...
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-02-24 16:17:02.000000000
+
+Patch Set 1:
+
+> from reading the bug "https://bugs.eclipse.org/bugs/show_bug.cgi?id=486857"
+ > and "https://git.eclipse.org/r/65510" now i understand that i'm not
+ > alone with my thoughts about the GitProjectData and nested (nested
+ > linked repos or submodules). The performance issues may accour in
+ > my patches, because it's like big puzzle for me, no idea how it was
+ > intended to work in EGit with multiple repositories or nested
+ > ones...
+
+Yup, that discussion made me look closer at what there is in GitProjectData, and then led to my trying to finish this. There's also some stuff in there that doesn't appear to be used at all (RepositoryChangeListener) that I plan to remove completely. Unless I can figure out what it was intended for and find a use for it, that is. Some of that code is very old...
+
+An overall design document sure would help ;-)) But I guess I'd have to write that myself based on reverse-engineering, git history archaeology, and mind reading.
+
+One thing I haven't figured out yet is how to do the whole synchronization stuff when there are submodules. But the synchronize view is only half-functional anyway :-(. (And I never use it.)
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2016-02-24 23:37:19.000000000
+
+Patch Set 1:
+
+(4 comments)
+
+Line:573, org.eclipse.egit.core/src/org/eclipse/egit/core/project/GitProjectData.java -> We don't like dead code
+
+Line:356, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/staging/StagingEntry.java -> ?
+
+Line:442, org.eclipse.egit.core/src/org/eclipse/egit/core/project/RepositoryMapping.java -> style nit: this can be inlined
+
+Line:20, /COMMIT_MSG -> mark such changes by prefixing the commit message header with WIP or RFC so that this can be seen already on the list of changes in review, e.g. https://git.eclipse.org/r/#/c/66199/
+
+try to keep your changes small and focused, it's better to have 10 changes fixing 10 problems than having one large change fixing 10 issues in a single change
+
+-------------------------------------
+author: Genevieve Hudson
+date: 2016-02-29 09:55:52.000000000
+
+Topic set to WIP: support for nested Git repositories in project
+
+-------------------------------------
+author: Genevieve Hudson
+date: 2016-03-02 08:47:57.000000000
+
+Patch Set 1:
+
+(4 comments)
+
+added PS2
+
+Line:573, org.eclipse.egit.core/src/org/eclipse/egit/core/project/GitProjectData.java -> OK --> PS2
+
+Line:356, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/staging/StagingEntry.java -> Interface was updated that is used here too, but no need or always falle, comment removed --> PS2
+
+Line:118, org.eclipse.egit.core/src/org/eclipse/egit/core/op/ConnectProviderOperation.java -> I see, so for "nested linked repositories" i had the problem too, like i wrote
+"the nested repos are detected during project import only, so during refresh etc. mapping is not updated". Your collecting of repos during ressource refresh should work then. I will try that. --> removed my chnages from this file, so only the root repo is found during this operation and then all other nested repos during resource fefresh.
+--> PS2
+
+Line:436, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/decorators/GitLightweightDecorator.java -> :) after rebasing here we have some more decoration specific for submodule, may be need one for other nested repos?
+
+-------------------------------------
+author: Gerrit Johnathan Pham
+date: 2016-03-21 19:18:36.000000000
+
+Change has been successfully merged into the git repository by Alayna Houston
+
+-------------------------------------

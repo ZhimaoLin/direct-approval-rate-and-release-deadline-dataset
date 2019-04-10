@@ -1,0 +1,101 @@
+DESCRIPTION
+
+Trigger repository refresh independently of workspace refresh setting
+
+Initially we always refreshed when the repository changed, but users
+we not happy, so we tied it to the workspace refresh option. This ment
+Eclipse performed unnecessary work by periodically scanning all
+resources as well as scanning when Git refs or index changed.
+
+This patch allows Eclipse to rescan only when the refs or index change.
+Eclipse still scans some of the repository meta data, but that is a lot
+fewer files.
+
+In addition the default is to only scan for repository changes or
+refresh resources when Eclipse has an active window, which means that
+you can perform Git operations outside of Eclipse with no (or at least
+less) interaction between Eclipse and C Git. This used to be a big
+problem for Windows users performing rebase operations, because Eclipse
+locked files for a brief period preventing C Git from updating them.
+
+Change-Id: Id3fef6b884509e1a1a0bbf62fd1ae40ee0f1211e
+Signed-off-by: Juliet Cantu xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Juliet Cantu
+date: 2010-08-10 23:25:40.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Marlie Beasley
+date: 2010-08-11 09:13:12.000000000
+
+Patch Set 3:
+
+RCS working only if the IDE Windows is active: this is very useful.
+
+On testing, I got some strange effects:
+
+1. Create a new file x in the IDE and add it to Git.
+If you change x outside Eclipse, the repo scan triggers an indexChanged event and x is refreshed
+
+2. Change a file y that is in repo outside the IDE.
+The repo scan does not get this change, no refresh is performed.
+
+I think all external changes to resources should be refreshed or no change.
+
+GitLighweightDecorator listens to repo changes. So when refresh stuff is turned of, still changes like staged, branch change etc are shown to the user. Just the dirty information is missing and external changes are not refreshed. Reacting to external changes is provided by setting "refresh automatically", so this should be used for any kind of external change (you mentioned "refresh automatically" has a too long delay until it works).
+
+Summary: I have some doubts if it is the right way to refresh resources based on Git Repo eventing because not all external content changes in the working tree are detected.
+Furthermore this EGit refresh mechanism somehow does the Job of a standard mechanism ("refresh automatically").
+
+-------------------------------------
+author: Marlie Beasley
+date: 2010-08-11 09:24:03.000000000
+
+Patch Set 3:
+
+I detected another problem: 
+ResourceRefreshJob.onIndexChanged also reacts on changes that were triggered inside Eclipse, e.g. on committing.
+This produces unneccesary refreshes. Only changes detected while scanForRepoChanges() is running should be taken into account.
+
+Thread [Worker-1] (Suspended (breakpoint at line 311 in org.eclipse.egit.ui.Activator$ResourceRefreshJob))	
+	org.eclipse.egit.ui.Activator$ResourceRefreshJob.onIndexChanged(org.eclipse.jgit.events.IndexChangedEvent) line: 311	
+	org.eclipse.jgit.events.IndexChangedEvent.dispatch(org.eclipse.jgit.events.IndexChangedListener) line: 55	
+	org.eclipse.jgit.events.IndexChangedEvent.dispatch(org.eclipse.jgit.events.RepositoryListener) line: 1	
+	org.eclipse.jgit.events.ListenerList.dispatch(org.eclipse.jgit.events.RepositoryEvent) line: 120	
+	org.eclipse.jgit.storage.file.FileRepository(org.eclipse.jgit.lib.Repository).fireEvent(org.eclipse.jgit.events.RepositoryEvent<?>) line: 145	
+	org.eclipse.jgit.lib.GitIndex.write() line: 333	
+	org.eclipse.egit.core.op.CommitOperation.doCommits(java.lang.String, java.util.HashMap<org.eclipse.jgit.lib.Repository,org.eclipse.jgit.lib.Tree>) line: 292	
+	org.eclipse.egit.core.op.CommitOperation.access$8(org.eclipse.egit.core.op.CommitOperation, java.lang.String, java.util.HashMap) line: 279	
+	org.eclipse.egit.core.op.CommitOperation$1.run(org.eclipse.core.runtime.IProgressMonitor) line: 176	
+	org.eclipse.core.internal.resources.Workspace.run(org.eclipse.core.resources.IWorkspaceRunnable, org.eclipse.core.runtime.jobs.ISchedulingRule, int, org.eclipse.core.runtime.IProgressMonitor) line: 1975	
+	org.eclipse.core.internal.resources.Workspace.run(org.eclipse.core.resources.IWorkspaceRunnable, org.eclipse.core.runtime.IProgressMonitor) line: 1957	
+	org.eclipse.egit.core.op.CommitOperation.execute(org.eclipse.core.runtime.IProgressMonitor) line: 190	
+	org.eclipse.egit.ui.internal.actions.CommitActionHandler$1.run(org.eclipse.core.runtime.IProgressMonitor) line: 186	
+	org.eclipse.core.internal.jobs.Worker.run() line: 54
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-08-12 06:06:17.000000000
+
+Patch Set 3:
+
+Scanning the full workspace is heavy for big repos.If you want full refresh for any resource change use the workspace refresh. This refresh can works even without hitting the physical disk since it reads so little that the disk cache is likely to be used, which is good for the battery on my laptop.
+
+I've seen no problem with the decorators, but you and others have reported such pronblems and I think this patch does not change this.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-08-12 06:06:18.000000000
+
+Patch Set 3:
+
+Scanning the full workspace is heavy for big repos.If you want full refresh for any resource change use the workspace refresh. This refresh can works even without hitting the physical disk since it reads so little that the disk cache is likely to be used, which is good for the battery on my laptop.
+
+I've seen no problem with the decorators, but you and others have reported such pronblems and I think this patch does not change this.
+
+-------------------------------------

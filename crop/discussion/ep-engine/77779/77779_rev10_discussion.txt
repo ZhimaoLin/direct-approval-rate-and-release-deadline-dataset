@@ -1,0 +1,79 @@
+DESCRIPTION
+
+MB-24246: update highestDedupedSeqno when an existing value is changed
+
+Without this, rangeReads are allowed to stop "too early" - potentially
+missing out on items that have been updated, i.e.,
+
+^ = HDDS (HighestDedupedSeqno)
+
+ A₁   B₂   C₃            Initial items
+[A₁   B₂   C₃]           rangeRead 1-3
+[A₁   B₂   C₃]  B'₄       Update B
+ A₁   B₂   C₃   B'₄       RR ends
+[A₁   B₂   C₃]  B'₄       new rangeRead, still consistent
+ A₁   B₂   C₃   B'₄       RR ends
+ A₁        C₃   B'₄       purger removes stale B
+!A₁        C₃!  B'₄       RR 1-3 could be requested, but would be
+inconsistent. The HDDS serves to extend the end of a rangeRead to the
+most recently deduped item, in this case B' replaced an older B.
+
+Currently, this updates the HDDS too soon in the case of a stale item,
+forcing the rangeRead to include the new version immediately even though
+the stale item is still present and would still allow a valid range.
+This is to be improved in a coming patch, in which the TombstonePurger
+will update the HDDS when removing the stale item.
+
+Change-Id: If6c57a86bab56ccc007b0fe17c9229218bb0c2c7
+
+
+COMMENTS
+
+author: Jace Townsend
+date: 2017-05-10 09:59:59.964000000
+
+Uploaded patch set 10: Commit message was updated.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-05-10 10:39:07.640000000
+
+Patch Set 10: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5608/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6417/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4914/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/159/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-05-10 13:09:04.870000000
+
+Patch Set 10: Code-Review-1
+
+(3 comments)
+
+Line:91, tests/module_tests/basic_ll_test.cc -> I don't believe you should need the dynamic cast anymore.
+
+Line:116, tests/module_tests/basic_ll_test.cc -> ditto
+
+Line:332, src/linked_list.cc -> As previous comment, please revert this to using std::mutex.
+
+-------------------------------------
+author: Jace Townsend
+date: 2017-05-10 13:17:40.252000000
+
+Patch Set 10:
+
+(2 comments)
+
+Line:91, tests/module_tests/basic_ll_test.cc -> Huh - missed these entirely - fixed.
+
+Line:332, src/linked_list.cc -> Done
+
+-------------------------------------

@@ -1,0 +1,140 @@
+DESCRIPTION
+
+tmf: Ensure order of trace updated and trace range updated signals
+
+When the trace index already exists and doesn't need to be build
+from scratch the signal TmfTraceUpdatedSignal is sent once in the
+method buildIndex() of the TmfCheckpointIndexer. However, buildIndex()
+is called from the signal handler of class TmfTrace for the
+signal TmfTraceRangeUpdatedSignal. That causes that signal
+TmfTraceUpdatedSignal is sent before TmfTraceRangeUpdatedSignal
+is processed by all other signal handlers. This causes problems
+for example in the Histogram view where the trace end time is not
+set correctly because this wrong order of signal handling.
+
+This patch fixes that problem by wrapping the sending of signal
+TmfTraceUpdatedSignal in a TmfEventRequest which is only dispatched
+by the TmfEventProvider (=TmfTrace) after the first signal
+(TmfTraceRangeUpdatedSignal) is processed by all signal handlers.
+
+Change-Id: I96dfdb4cc678722ff5b48a8881c67f5a8c11ff36
+Signed-off-by: Ricky Reeves <Meredith xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Kaeden Tapia
+date: 2014-01-02 23:59:27.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-01-03 01:13:28.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4890/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-01-03 01:55:20.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4890/ : SUCCESS
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2014-01-03 14:57:43.000000000
+
+Patch Set 2: Code-Review-1
+
+(2 comments)
+
+I'm not sure about this, I'd like some more explanation. Also, do the SWT chart patches need to depend on this?
+
+Line:226, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/checkpoint/TmfCheckpointIndexer.java -> Are you a 100% sure that by using an event request, all other handlers will have time to execute before? Or do you just hope that because it's in another thread it will be delayed just enough? (I don't know exactly what thread is responsible for what, so it really is a question here ;-)
+
+Also, it sounds a bit patchy: you don't NEED an event request, you just use it to avoid signal interlace, but it is queued, it opens the trace, gets an event, etc. I don't feel it's a clean solution. Maybe add a FIXME next to it?
+
+Line:235, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/checkpoint/TmfCheckpointIndexer.java -> Here you could call the signalNewTimeRange() method, like the other event request
+
+-------------------------------------
+author: Ricky Reeves
+date: 2014-01-03 16:01:46.000000000
+
+Patch Set 2:
+
+(2 comments)
+
+> Also, do the SWT chart patches need to depend on this
+
+Yes, because the drag with middle mouse will have a problem when using the trace end time.
+
+(see also inline comments for more explanation)
+
+Line:226, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/checkpoint/TmfCheckpointIndexer.java -> I'm 100% sure that all signal handlers are executed before the event requests is send. This ensured by the startSynch and endSynch signals used when broadcasting signals. The request is only send after endSynch.
+
+Without the persistent index the TmfTraceUpdatedSignal is sent by the indexing request (see updateTraceStatus() method). 
+
+So, with the new solution the TmfTraceUpdatedSignal is always sent in a request, regardless if the index is build from scratch or if it exists already on disk.
+
+Line:235, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/checkpoint/TmfCheckpointIndexer.java -> No I can't because I need a different source (TmfCheckpointIndexer.this).
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2014-01-03 16:33:40.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Yes I noticed while working with the line chart ;-)
+Just one more little question, and I'll approve this.
+
+Line:226, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/checkpoint/TmfCheckpointIndexer.java -> ok, that's good.
+
+But what if there is already an event request running for this very long trace (say some analysis already running), this simple 1 event request will wait for quite a while before broadcasting the event... Unless we know that this happens at the very beginning of the trace life process, before any analysis execution, so this request will be the first one called on the trace anyway. Or one of the recent event request patches solves this.
+
+-------------------------------------
+author: Ricky Reeves
+date: 2014-01-03 16:52:49.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+See inline comment
+
+Line:226, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/checkpoint/TmfCheckpointIndexer.java -> This request will be coalesced with others (e.g. event cache) and the whole coalesced request has to complete, that's true. Right now this doesn't take long.
+
+Initially, I thought to send the request in the handle data of the single event that is read. But I changed it to the handleCompleted() because I thought it's cleaner and there would be less questions :-)
+
+Do you think it would be better to send it in handle data and avoid having to wait for the whole coalesced request? If yes, are you ok if I change it after the SWT patches to avoid having to re-build all the sub-sequent patches on gerrit?
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2014-01-03 17:43:54.000000000
+
+Patch Set 2: Verified+1 Code-Review+1 IP-Clean+1
+
+(1 comment)
+
+Ok, fair enough. We should keep this in mind and make tests with big traces and various use cases, but it does solve the problem of end time zooming, so this can wait after the xy charts are in.
+
+Line:226, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/trace/indexer/checkpoint/TmfCheckpointIndexer.java -> Actually, that was not the purpose of my question, but that's right, if it has to wait along for the other coalesced requests' completion, then depending on the size of the trace (you never know what the request can really be), indeed it would be better to put it in the handleData()... Having the index saved on disk should save time and we don't want to postpone anything here.
+
+But shouldn't the request in a coalesced request be completed as each one is really completed? What if request A is finished and coalesced request C is cancelled with request B still running?
+
+Anyway, my worry was that if a long request is already running when this one is queued, then it would need to wait for that one to finish before being run and that would also delay the broadcast.
+
+-------------------------------------
+author: Ricky Reeves
+date: 2014-01-03 18:31:11.000000000
+
+Patch Set 2: Code-Review+2
+
+-------------------------------------

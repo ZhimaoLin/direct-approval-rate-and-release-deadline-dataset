@@ -1,0 +1,126 @@
+DESCRIPTION
+
+CBQE-436: Backport view merge couchdb js tests to testrunner
+
+Change-Id: Iaaa7818aee391c5a81c7c8d7f70b7e84049b4d55
+
+
+COMMENTS
+
+author: Trevor Santana
+date: 2012-08-06 22:25:57.639000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Porter Oconnor
+date: 2012-08-07 11:06:27.192000000
+
+Patch Set 3:
+
+This makes me very happy :)
+I had a quick look overall and it looks good. It's a very good starting point, so that I later can add some tests I have in mind.
+
+I tried this locally, and 2 tests fail:
+
+1) viewmergetests.ViewMergingTests.test_non_empty_view
+
+Didn't debug it. But only fails sometimes, not always.
+
+
+2) viewmergetests.ViewMergingTests.test_keys
+
+The failure here is because it thinks last key should be 21, but it's actually 39. In single CouchDB context this would be true, as 39 comes before 21 in the keys parameter. But for Couchbase, due to view merging which sorts results, it's not the case (and it's irrelevant for the case where "keys" is given).
+I printed the results in the test (print "RESULTS: %s" % json.dumps(results, indent=4)), here's the output:  https://friendpaste.com/6UcBraylon ArnoldSZIlxZMLRXxHbOQOK
+
+
+I also notice that at the end, the test doesn't exit (he never get the shell back, having to Ctrl+C to return to it), which can be a problem for jenkins and similar jobs.
+
+Overall, seems very good to me.
+Once those issues are addressed, from my side, it's ready to go.
+
+-------------------------------------
+author: Porter Oconnor
+date: 2012-08-07 11:27:40.970000000
+
+Patch Set 3:
+
+Here's the intermittent failure for viewmergetests.ViewMergingTests.test_non_empty_view:
+
+https://friendpaste.com/1R2Aq2tWxJs5lmBTK7FCKW
+
+My guess is that documents didn't get yet persisted to disk when the query is run. Adding a sleep of 3 or 5 seconds at the end of populate_alternated/populate_sequenced seems to fix it for me locally.
+
+In verify results function, we should also check if the "errors" array field exists, if it does, just print it's JSON format (beautified, json.dumps(results["errors"], indent=4)) to stderr, it helps debug things.
+
+-------------------------------------
+author: Porter Oconnor
+date: 2012-08-07 11:43:21.545000000
+
+Patch Set 3:
+
+Forget my previous comment about the case with ?keys=[...] sorting the output by key. It's not true, and technically it isn't possible without buffering all the partial results from all nodes (a big no). Keys can come in any order for that specific case.
+
+The javascript test actually ends up succeeding, but that's only because there are 4 databases ("vbuckets"), and not 64:
+
+https://github.com/couchbase/couchdb/blob/master/share/www/script/test/view_merging.js#L807
+
+We need to check all expected keys are in the rows received from the server, and not rely on their order for this case (or just sort the received response before verifying it's correctly sorted).
+
+In CouchDB (single node queries always), the returned rows match the order of the "keys" parameter (rows are not sorted by their key). But for a merging scenario, this is not possible without the buffering (a no-no since result sets can be huge and are impossible to know in advance how big they are).
+
+-------------------------------------
+author: Ayla Reynolds
+date: 2012-08-07 14:23:29.341000000
+
+Patch Set 3: I would prefer that you didn't submit this
+
+(11 inline comments)
+
+Some minor coding comments, see inline comments.
+
+Line:41, pytests/viewmergetests.py -> This whole comment block can be removed, it's no longer valid.
+
+Line:55, pytests/viewmergetests.py -> Remove this comment or change it to:
+
+    # clean up will only performed on the last run
+
+Line:66, pytests/viewmergetests.py -> Rename it to `test_nonexisting_views`.
+
+Line:72, pytests/viewmergetests.py -> You can use `assertRaises()` for testing if the exception was thrown.
+
+Line:76, pytests/viewmergetests.py -> Remove this log message, this was just for debugging purpose.
+
+Line:80, pytests/viewmergetests.py -> Shouldn't it return some docs?
+
+Line:145, pytests/viewmergetests.py -> `startkey` is valid JSON, you can use json.loads(params['startkey']) to parse the value.
+
+Line:153, pytests/viewmergetests.py -> Same as for `startkey`.
+
+Line:251, pytests/viewmergetests.py -> At the end of `populate_alternated()` we should make sure the data was persisted with `RebalanceHelper.wait_for_persistence(self.master, self.bucket, 0)'
+
+Line:267, pytests/viewmergetests.py -> At the end of `populate_sequenced()` we should make sure the data was persisted with `RebalanceHelper.wait_for_persistence(self.master, self.bucket, 0)'
+
+Line:316, pytests/viewmergetests.py -> `merged_query()` is never called with the bucket parameter. Hence I would just hard-code it and pass `self.default_bucket_name` directly into `self.rest.query_view()`. Now `bucket` can be removed.
+
+This makes the calls to `merged_query()` easier, as you can pass in the view name as first argument, without the need of `view_name=xxx`.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2012-08-07 17:47:33.422000000
+
+Patch Set 3:
+
+Build Started http://qa.hq.northscale.net/job/testrunner-Jasmin Rangel-master/2235/ 
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2012-08-07 18:05:47.757000000
+
+Patch Set 3: Verified
+
+Build Successful 
+
+http://qa.hq.northscale.net/job/testrunner-Jasmin Rangel-master/2235/ : SUCCESS
+
+-------------------------------------

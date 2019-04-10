@@ -1,0 +1,111 @@
+DESCRIPTION
+
+JCBC-421: Rewriting the Query internals for better performance.
+
+This changeset is a complete rewrite of the Query object internals while
+keeping the external API completely identical. Under the covers, it now
+uses a String array instead of an HashMap to provide faster looping and
+better cache friendlyness.
+
+Also, values are now encoded and quoted (if needed at all) during set-time
+and not when the query string is created. This gives even better performance
+when most of the Query objects are cached and just fields changed on the fly.
+
+It also uses a custom compiled regex to identify JSON objects and does not rely
+on the slower spymemcached "isJSONObject" anymore. Further, some of the tests
+have been clarified to be more compliant with the JSON spec (with respect to
+number formatting).
+
+In JMH benchmark tests, performance was 100% better or more compared to the
+old implementation. The performance difference is even higher when more params
+are set on the Query object.
+
+Change-Id: I73e9157093d5f0ea82b72d424548d1bc34afd5b5
+
+
+COMMENTS
+
+author: Natasha Sullivan
+date: 2014-03-03 12:01:13.380000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2014-03-03 14:35:14.621000000
+
+Patch Set 2: Verified+1
+
+-------------------------------------
+author: Andreas Short
+date: 2014-03-04 07:17:24.642000000
+
+Patch Set 2: Code-Review-2
+
+(3 comments)
+
+I don't think the test changes are correct.  In particular, in views a key could be an actual float, not a string.
+
+Line:32, src/test/java/com/couchbase/client/protocol/views/QueryTest.java -> revenge of the IDE
+
+Line:178, src/test/java/com/couchbase/client/protocol/views/QueryTest.java -> This is changing behavior, right?  a float is a valid thing to set to, including key.
+
+Line:116, src/test/java/com/couchbase/client/protocol/views/QueryTest.java -> Why changing the order of these?
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2014-03-04 08:05:29.333000000
+
+Patch Set 2:
+
+(4 comments)
+
+see my comments.
+
+Line:32, src/test/java/com/couchbase/client/protocol/views/QueryTest.java -> no! see on the left this time I fixed it properly ;)
+
+Line:178, src/test/java/com/couchbase/client/protocol/views/QueryTest.java -> these changes were added by tug IIRC, but the problem with it is that the "," sign is actually not a valid JSON number, so the previous behavior has been incorrect if you ask me and since its not a proper number it is now a string.
+
+Line:186, src/test/java/com/couchbase/client/protocol/views/QueryTest.java -> same here, you need a leading decimal according to the json spec
+
+Line:116, src/test/java/com/couchbase/client/protocol/views/QueryTest.java -> because previously the stuff was stored in a hashmap and returned in any order.. I'm now using the array and therefore the output order has changed, but that shouldnt change much..
+
+in the docblocks we also discourage using group and group_level together anyway because its not well defined and will be prohibited by the server in 3.0
+
+-------------------------------------
+author: Andreas Short
+date: 2014-03-04 08:15:43.087000000
+
+Patch Set 2: Code-Review-1
+
+(4 comments)
+
+Line:525, src/main/java/com/couchbase/client/protocol/views/Query.java -> typo here.  Probably should be all?
+
+Line:178, src/test/java/com/couchbase/client/protocol/views/QueryTest.java -> Okay, but we'll want to be sure to release note this really well since it's changing behavior.  I'll be honest that this one worries me a bit because it's arguably a bug, but could break existing apps.
+
+Can you check with git blame who wrote the change and reviewed it to be sure we're moving the right direction?
+
+Line:186, src/test/java/com/couchbase/client/protocol/views/QueryTest.java -> It has a leading decimal.  You mean a leading 0?
+
+Line:116, src/test/java/com/couchbase/client/protocol/views/QueryTest.java -> Okay, if you're certain of that.
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2014-03-04 08:21:51.507000000
+
+Patch Set 2:
+
+(4 comments)
+
+Line:525, src/main/java/com/couchbase/client/protocol/views/Query.java -> good catch
+
+Line:178, src/test/java/com/couchbase/client/protocol/views/QueryTest.java -> I'm pretty sure I reviewed it (;D), but I'll do..
+
+what I need to do is maybe just try to run stuff like this and see what happens on the server side.
+
+Line:186, src/test/java/com/couchbase/client/protocol/views/QueryTest.java -> something before the "0" yup
+
+Line:116, src/test/java/com/couchbase/client/protocol/views/QueryTest.java -> but I think I'll change the order back, you are right. My argument still holds with 3.0 and all, but since each overrides each other I'm certain someone depends on the order here.
+
+-------------------------------------

@@ -1,0 +1,82 @@
+DESCRIPTION
+
+Fix hanging fetch via SSH
+
+Signaling the need to flush() only via the interrupted status of a
+copying thread doesn't work realiably with jsch. The write() method of
+com.jcraft.jsch.Session catches the InterruptedException in several
+places. As a result StreamCopyThread can easily miss the interrupt if it
+was interrupted during the dst.write() call. When it happens,
+StreamCopyThread will not send some data to the remote side and will not
+get the response back, because remote side will wait for more data from
+us.
+
+Change-Id: I692b226edaff502f06235ec05da9052b5fe6478a
+Signed-off-by: Alannah Pena xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Alannah Pena
+date: 2015-08-21 16:02:31.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-08-21 16:02:37.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7046/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-08-21 16:10:12.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7046/ : SUCCESS
+
+-------------------------------------
+author: Lillian Burnett
+date: 2015-08-22 02:07:54.000000000
+
+Patch Set 1: Code-Review+1
+
+To me this looks like it would work-around the underlying flaw sensibly enough to behave mostly the same. The only exception being if some other thread directly interrupts this one (without calling the flush() method), then a flush does not happen. I suspect this wasn't desired behaviour in the first case, but it's still a change.
+
+However I'm confused by why the original design bothers to stack flush() requests in the first place? So if you piled-up 2+ flush requests while the thread was busy, these would get played-out between transfer chunks. To me the design should be a simple flag-set upon flush() request and flag-clear when the flush is actioned in the run() method.
+
+-------------------------------------
+author: Bryanna Douglas
+date: 2015-08-24 05:43:45.000000000
+
+Patch Set 1: Code-Review+1
+
+-------------------------------------
+author: Alannah Pena
+date: 2015-08-24 13:03:36.000000000
+
+Patch Set 1: Code-Review-1
+
+> However I'm confused by why the original design bothers to stack
+ > flush() requests in the first place? So if you piled-up 2+ flush
+ > requests while the thread was busy, these would get played-out
+ > between transfer chunks. To me the design should be a simple
+ > flag-set upon flush() request and flag-clear when the flush is
+ > actioned in the run() method.
+
+In the original design counting flushed is indeed seems to be redundant: interruptCounter was never larger than 1. 
+
+I've just realized that the proposed change is flawed: if client write something and call flush() while the StreamCopyThread is calling dst.write() then we will do flush() on next iteration before reading anything from src, so some data can still be not flushed..
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-12-31 04:27:09.000000000
+
+Change has been successfully merged into the git repository by Yoselin Hanna
+
+-------------------------------------

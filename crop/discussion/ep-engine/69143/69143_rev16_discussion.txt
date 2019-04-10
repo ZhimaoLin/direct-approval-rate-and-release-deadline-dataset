@@ -1,0 +1,179 @@
+DESCRIPTION
+
+MB-20079: Use std::chrono::steady_clock (ProcessClock)
+
+Change task scheduling to use ProcessClock which is not
+affected by changes to wall clock time.
+
+Change-Id: I0559336d7542aff01a05b39472aa722cf0e82326
+
+
+COMMENTS
+
+author: Kymani Ramirez
+date: 2016-11-04 14:24:49.506000000
+
+Uploaded patch set 16.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-04 14:24:55.858000000
+
+Patch Set 16:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1721/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-04 14:24:56.009000000
+
+Patch Set 16:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1619/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-04 14:24:56.149000000
+
+Patch Set 16:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/518/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-04 14:24:56.279000000
+
+Patch Set 16:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1374/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-04 14:54:53.250000000
+
+Patch Set 16: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1721/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/518/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1374/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1619/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-04 14:55:56.152000000
+
+Patch Set 16: -Verified
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1722/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-04 15:23:24.255000000
+
+Patch Set 16: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1722/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/518/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1374/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1619/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-11-04 15:24:51.642000000
+
+Patch Set 16: Code-Review-1
+
+(9 comments)
+
+Apologies for the wild goose chase on the lock acquiring - thinking more I think we need to drop that and make the scheduling not need to acquire locks - see below.
+
+Line:251, src/globaltask.h -> Looking at this it's pretty complex. You can probably simplify it (have two std::mutex ptrs - first and second - and then assign to them the addresses of the correct mutex based on address, then lock and return the result) - but I'm worried about the cost of acquiring / releasing two mutexes here. 
+
+IIRC Jim found this code pretty hot when we have many tasks being scheduled.
+I'm thinking we change the DueDate to be ns_since_epoch for the given clock (std::chrono::duration? std::chrono::duration::ns or whatever).
+
+Line:674, src/ep.h -> I believe the previous code passed this in as microseconds (note the divide by 1000 in the call site in executor thread). We should keep this consistent. Can you also check logRunTime below)?
+
+Line:62, src/executorthread.h -> Maybe add a brief comment describing this class?
+
+Line:65, src/executorthread.h -> copy-constructor should take a const reference.
+
+Line:69, src/executorthread.h -> Strange indentation.
+
+Line:72, src/executorthread.h -> Don't need `void` in an empty function prototype (it's a C-ism).
+
+Line:157, src/executorthread.h -> Not needed.
+
+Line:165, src/executorthread.h -> Same
+
+Line:182, src/executorthread.h -> given you're changing this, could you expand the comment to explain what this variable is?
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-04 15:32:57.757000000
+
+Patch Set 16: -Verified
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1724/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-04 15:48:50.859000000
+
+Patch Set 16: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/518/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1374/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1619/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1724/ : SUCCESS
+
+-------------------------------------
+author: Kymani Ramirez
+date: 2016-11-07 13:36:45.495000000
+
+Patch Set 16:
+
+(9 comments)
+
+Line:251, src/globaltask.h -> time_since_epoch returns a duration (which is a class) and so I cannot mark as atomic.
+Therefore I've changed to use:
+
+std::chrono::duration_cast<std::chrono::
+                nanoseconds>(newTime.time_since_epoch()).count()
+
+which I can assign to an uint64_t - and hence make atomic.
+
+Line:674, src/ep.h -> Yes - your are correct, so have changed to microseconds.
+I checked logRuntime - and that is also microseconds, so have changed accordingly.
+
+Line:62, src/executorthread.h -> Done
+
+Line:65, src/executorthread.h -> changed.
+Also for consistency changed the setTimePoint function to take a const reference time_point.
+
+Line:69, src/executorthread.h -> fixed
+
+Line:72, src/executorthread.h -> removed
+
+Line:157, src/executorthread.h -> removed
+
+Line:165, src/executorthread.h -> removed
+
+Line:182, src/executorthread.h -> Done
+
+-------------------------------------

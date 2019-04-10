@@ -1,0 +1,361 @@
+DESCRIPTION
+
+Ketch: Basic replication system
+
+Change-Id: Ib378dab068961fc7de624cd96030266660b64fb4
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2016-01-15 06:48:01.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-01-15 07:11:18.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7880/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-01-15 07:23:11.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7880/ : SUCCESS
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2016-01-18 07:46:22.000000000
+
+Patch Set 3: Code-Review-1
+
+(63 comments)
+
+Line:53, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/LeaderSnapshot.java -> nits: "A snapshot", and end with a period.
+
+Line:70, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchLeader.java -> nit: s/Leader/A leader/
+
+Line:88, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchLeader.java -> This is a great explanation, thanks. 
+
+I had expected that Leader objects could come and go but that Replica objects might be long lived. The choice made here, where the Replica objects are owned by the Leader and only live for the Leader's term makes sense in minimizing the resource footprint when you want to support millions of repositories that receive infrequent write traffic.
+
+However, it has the following implications for the overall architecture: Ketch should aim to minimize the number new leader elections and/or ensure that creation of Leader and Replica objects it relatively inexpensive. Since Leader election involves a network round trip to establish a new term, so long as object creation only requires access to local state, we should be good. I'm starting to keep some documentation that we can add to an overview document.
+
+Somewhere we need to document the "life of a push request". Currently this seems like the best place. Here is my stab at it:
+<p>
+In Ketch a push request is issued through the leader. The steps are as follows (see xxx@xxx.xxx KetchPreRecieve} for an example):
+<ul>
+<li>Create a {@link Proposal} with the xxx@xxx.xxx ReceiveCommand}s that represent the push
+<li>Invoke  xxx@xxx.xxx #queueProposal()} on the leader
+<li>Invoke xxx@xxx.xxx Proposal#await()}
+<li>To see the status of the push, check {@link Proposal#getCommands()}, looking at xxx@xxx.xxx Command#getResult()}
+</ul>
+<p>
+The leader gains consensus by first pushing the needed objects and a {@link RefTree} representing the desired target repository state to the {@code refs/txn/accepted} branch on each of the replicas. Once a majority has succeeded, the leader commits the state by either pushing the {@code refs/txn/accepted} value to {@code refs/txn/committed} (for Ketch-aware replicas) or by pushing updates to xxx@xxx.xxx refs/heads/master}, etc. for stock git replicas.
+<p>
+Internally, the actual transport to replicas is performed on background threads via the {@link KetchSystem}'s executor service. For performance, the {@link KetchLeader}, {@link KetchReplica} and {@link Proposal} objects share some state, and may invoke each other's methods on different threads. This access is protected by the leader's xxx@xxx.xxx #lock} object. Care must be taken to prevent concurrent access by correctly obtaining the leader's lock.
+
+Line:127, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchLeader.java xxx@xxx.xxx #queued
+
+Line:132, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchLeader.java -> nit: xxx@xxx.xxx true}
+
+Line:133, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchLeader.java -> s/This/The {@link #refTree} is passed into the ctor of a xxx@xxx.xxx Proposal}, and that external reference to the RefTree object is held by the proposal until it materializes the tree object in the data store. This variable/
+
+Line:134, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchLeader.java -> s/./ or xxx@xxx.xxx refTree} is replaced with a fresh copy to isolate it from any running rounds./
+
+Line:142, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchLeader.java -> s/copyOnQueue/roundHoldsReferenceToRefTree/
+
+Yes that is a long name, but this is Java. :-)
+
+Line:144, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchLeader.java -> s/Top/End/
+
+Line:271, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchLeader.java -> Rename to queueProposal?
+
+Line:55, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/ReplicaPushRequest.java -> nit: s/Request/A request/
+
+Line:111, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/ReplicaPushRequest.java -> I don't see locking here or in afterPush(). Is it a layer up? I think you can drop this here.
+
+Line:144, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/ReplicaPushRequest.java -> Same concern. Is this needed?
+
+Line:78, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/RemoteGitReplica.java -> s/follower/replica/
+
+Add:
+The remote replica may be fully Ketch-aware or a stock git server acting as a non-voting follower.
+
+Line:147, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/RemoteGitReplica.java -> s/tn/transport/
+Also, try with resources?
+
+Line:193, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/RemoteGitReplica.java -> s/check/isExpectedValue/
+
+Line:212, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/RemoteGitReplica.java -> s/commit/prepareCommit/
+
+Line:239, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/RemoteGitReplica.java -> s/c/cmd/
+
+Line:49, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/ReplicaSnapshot.java -> nit:A snapshot
+
+Line:90, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> s/or/or a/
+
+Line:105, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> Document the thread safely needs of this class at a high level--how some state can be accessed by both the leader's thread and an executor thread, so the leader's lock is used to protect retryFuture and other state.
+
+Line:109, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> s/replica/replica in establishing consensus/
+
+Line:131, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> So even if the next proposal is ready it does not get batched with it? If so, then this new text is good.
+
+Line:136, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> This reads like the commit is never sent alone, that we may wait an hour until a new proposal comes in. If that's not true, change to "If the next proposal is available, batch the commit with it, otherwise just send the commit. This generates less nework..."
+
+Line:304, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> Maybe pushTxnAcceptedAsync?
+
+Line:307, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> s/c/committed/, to be consistent with other methods.
+
+Line:330, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> pushCommitAsync?
+
+Line:338, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> s/commit/prepareTxnCommitted/
+
+Line:374, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> s/n/name/
+n is always an index
+
+Line:379, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> s/nextPush/runNextPushRequest/
+
+Does this always need to be called with the leader's lock held.
+
+Enough going on here to warrant JavaDoc.
+
+Line:380, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> s/c/committed/
+
+Line:392, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> s/n/cmd/
+
+Line:393, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> s/rn/name/
+
+Line:432, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> s/n/cmd/
+
+Line:512, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> s/start/startPush/
+
+Line:553, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> Why have a void function with invisible side effects? Make this return the new state and assign it to the "state" variable. Shouldn't it reset the state to "CURRENT" if its other conditions aren't triggered?
+
+Line:673, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> s/commit/prepareCommit/
+
+Line:62, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/ElectionRound.java -> I know the current text came from my previous comment but now I understand things better. :-/
+
+Please change to "The initial xxx@xxx.xxx Round} for a leaderless repository, used to establish a leader."
+
+Line:128, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/ElectionRound.java -> I don't see why the publishing of the new term should be delayed. Get rid of  the "newTerm" local and just directly assign to the "term" member variable?
+
+Line:50, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/LogId.java -> s/position/index/  That seems more consistent with Raft terminology.
+
+Also, state where these objects are stored in the graph.
+
+Line:50, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/LogId.java -> s/ObjectId/An ObjectId/
+
+Line:53, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/LogId.java -> Add:
+LogId provides a performance optimization for Ketch, the same information can be obtained by performing a xxx@xxx.xxx RevWalk}.
+
+Line:55, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/LogId.java -> I'm not sure why it is valuable to have this optimization only within a term and not cary it across terms. Please provide some rationale.
+
+Line:57, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/LogId.java -> Add:
+This differs from Raft, where leader election uses the log index and the term number to determine which replica holds a sufficiently up-to-date log. Since Ketch uses a git tree object for storage of its replicated log, it keeps the term number as Raft does but uses standard git operations to determine the log index.
+
+Line:59, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/LogId.java -> Is the more important property of LogId that it represents the Raft log index or that it is implemented as a git object?  I'd argue the former and rename this LogIndex. If you do please also rename nextId()->nextIndex().
+
+Line:132, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/ProposalRound.java -> s/.../Fast path: tree is passed/
+
+Line:133, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/ProposalRound.java -> s/.../run, and it/
+
+Line:165, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/ProposalRound.java -> s/last/lastIndex/
+
+Line:166, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/ProposalRound.java -> s/oldTree/oldTreeId/
+
+Line:222, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/ProposalRound.java -> Fix indentation
+
+Line:240, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/ProposalRound.java -> s/Collapse/For each branch, collapse/
+
+Line:190, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/LocalReplica.java -> s/.../store the current values back in the ReplicaPushRequest.
+
+Line:224, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/LocalReplica.java -> I think I've seen this replicated elsewhere. If so pull out into a utility routine.
+
+Line:234, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/Proposal.java -> s/quick/quickly/
+
+Line:52, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/Round.java -> Add:
+In Raft a log entry represents a state transition at a specific index in the replicated log. The leader can only append log entries to the log.
+<p>
+In Ketch a log entry normally gets committed under the xxx@xxx.xxx refs/txn} namespace. This occurs when:
+<ul> 
+<li>a replica wants to establish itself as a new leader by proposing a new term (see xxx@xxx.xxx ElectionRound})
+<li>an established leader wants to gain consensus on new {@link Proposal}s (see xxx@xxx.xxx ProposalRound})
+<li>an established leader wants to commit new state after gaining consensus on new xxx@xxx.xxx Proposal}s
+</ul>
+
+Is that last one true or are commits handled without Rounds?
+
+Line:55, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/Round.java -> Consider acceptedOldIndex & acceptedNewIndex.
+
+Line:65, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/Round.java -> This belongs after the paragraph that states what the method does.
+
+Line:67, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/Round.java -> s/.../commit in xxx@xxx.xxx refs/accepted}/
+
+Worth stating that it updates the accepted RefTree if it does that. Should it always?
+
+Line:76, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/Round.java -> Add JavaDoc for this. I don't love this name. Methods always start with verbs but "accept" really refers to refs/txn/accepted. Maybe better as "runAsync". Or "queue"? If you were going after the visitor pattern nomenclature, this doesn't map to the visitor pattern.
+
+Line:84, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/Round.java -> s/with/by the leader with/
+
+Line:75, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/StageBuilder.java -> s/.../by chaining commits./
+
+Line:194, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/StageBuilder.java -> If you are talking about the commits variable just quote is and leave it lower case to make that clear.
+
+Line:199, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/StageBuilder.java -> This is a magic number that I don't understand. Why is 128 a good number for batching? Worth a comment or pulling out as a constant with JavaDoc.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2016-01-18 21:45:32.000000000
+
+Patch Set 3:
+
+(63 comments)
+
+Line:53, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/LeaderSnapshot.java -> Done
+
+Line:70, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchLeader.java -> Done
+
+Line:88, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchLeader.java -> Done.
+
+Line:127, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchLeader.java -> Done
+
+Line:132, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchLeader.java -> Done
+
+Line:133, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchLeader.java -> Done
+
+Line:134, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchLeader.java -> Done
+
+Line:142, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchLeader.java -> Done
+
+Line:144, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchLeader.java -> Done
+
+Line:271, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchLeader.java -> Done
+
+Line:55, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/ReplicaPushRequest.java -> Done
+
+Line:111, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/ReplicaPushRequest.java -> Its inside afterPush(), see the line saying leader.lock.lock(). Comment stands.
+
+Line:144, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/ReplicaPushRequest.java -> Yes
+
+Line:78, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/RemoteGitReplica.java -> Well, a stock Git server can act as a voter without being Ketch-aware.
+
+I added instead:
+
+ * <p>
+ * The remote replica may be fully Ketch-aware, or a standard Git server.
+
+Line:147, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/RemoteGitReplica.java -> Done. Transport did not implement AutoCloseable so I had to add a commit to the series to introduce that.
+
+Line:193, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/RemoteGitReplica.java -> Done
+
+Line:212, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/RemoteGitReplica.java -> Done
+
+Line:239, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/RemoteGitReplica.java -> Done
+
+Line:49, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/ReplicaSnapshot.java -> Done
+
+Line:90, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> Done
+
+Line:105, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> Done
+
+Line:109, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> Done
+
+Line:131, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> Correct. In FAST we allow the two pushes to run concurrently with each other. This allows the commit to potentially go faster as it has less to transfer than if it were combined with the next batch which is sending objects.
+
+Line:136, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> Correct we don't wait to commit when there's no proposal so I used your text.
+
+Line:304, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> Done
+
+Line:307, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> Done, but with the line wrapping its forcing I don't think it has improved the readability of this code at all.
+
+Line:330, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> Done
+
+Line:338, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> Done
+
+Line:374, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> Done
+
+Line:379, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> Done
+
+Line:380, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> Done
+
+Line:392, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> Done
+
+Line:393, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> Done
+
+Line:432, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> Done
+
+Line:512, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> Done
+
+Line:553, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> Done. I'm reasonably certain it shouldn't return CURRENT.
+
+Line:673, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/KetchReplica.java -> Done
+
+Line:62, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/ElectionRound.java -> Done
+
+Line:128, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/ElectionRound.java -> Done
+
+Line:50, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/LogId.java -> Done
+
+Line:50, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/LogId.java -> Done
+
+Line:53, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/LogId.java -> Done
+
+Line:55, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/LogId.java -> Added some text about why
+
+Line:57, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/LogId.java -> Done
+
+Line:59, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/LogId.java -> Hmm. Maybe you are right. Renamed LogIndex.
+
+Line:132, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/ProposalRound.java -> Done
+
+Line:133, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/ProposalRound.java -> Done
+
+Line:165, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/ProposalRound.java -> Done
+
+Line:166, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/ProposalRound.java -> Done
+
+Line:222, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/ProposalRound.java -> Done
+
+Line:240, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/ProposalRound.java -> Done
+
+Line:190, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/LocalReplica.java -> Done
+
+Line:224, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/LocalReplica.java -> Done, I created a new base commit for the series that creates this utility method and then used it in Ketch.
+
+Line:234, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/Proposal.java -> Done
+
+Line:52, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/Round.java -> Copied most of your proposed comment to the code.
+
+The last one is not true. Broadcasting commit is not handled with a Round.
+
+Line:55, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/Round.java -> Done
+
+Line:65, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/Round.java -> Done
+
+Line:67, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/Round.java -> Yes, it does sometimes modify the RefTree. Sentence added to the JavaDoc.
+
+Line:76, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/Round.java -> Renamed runAsync, added a JavaDoc.
+
+Line:84, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/Round.java -> Done
+
+Line:75, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/StageBuilder.java -> Done
+
+Line:194, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/StageBuilder.java -> Done
+
+Line:199, org.eclipse.jgit/src/org/eclipse/jgit/internal/ketch/StageBuilder.java -> 128 is just WAG. Pulled out to a constant with some JavaDoc.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-01-21 04:15:10.000000000
+
+Change has been successfully merged into the git repository by Yoselin Hanna
+
+-------------------------------------

@@ -1,0 +1,131 @@
+DESCRIPTION
+
+CBD-177 access counters for aggregate view reads
+
+This depends on a small
+change in CouchDB: http://review.couchbase.org/#change,17199
+
+I think it is better to make this change in CouchDB, than to
+access the ETS table directly, just based on the number of
+private APIs I'd end up exposing in order to find the lookup
+key into that ETS table. If there is some bigger-picture plan
+for moving the accessing of this stats table, then we should
+discuss it. Otherwise I think this patch alone is best done
+by having the stats look up be done by the set-view process.
+
+This patch lays the ground work for tracking per-design doc
+stats, but there is more needed before those are rendered in JSON.
+The actual rendering of the stats in JSON is in the next path here:
+http://review.couchbase.org/#change,17384
+
+Change-Id: I81866ba4f8b9895a661ae42b875eda797f799c9b
+
+
+COMMENTS
+
+author: Jordan Ballard
+date: 2012-06-19 18:11:39.741000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-06-20 17:14:25.570000000
+
+Patch Set 5: I would prefer that you didn't submit this
+
+(9 inline comments)
+
+Biggest problems are:
+
+* we can have 2 or more design docs for same index file. And then stats for this one index file will be aggregated twice
+
+* stats_collector now does quite complex parsing of our own stats. Thats bad thing. Performance wise and code maintainability wise.
+
+Line:109, src/couch_stats_reader.erl -> lets do list 2 binary conversion once
+
+Line:80, src/couch_stats_reader.erl -> can be made <<"couch">> for some speedup
+
+atom_to_binary should be faster and less GC-ful
+
+Line:84, src/couch_stats_reader.erl -> I want this integer 2 list and to binary go away. There's no need for stats collector to parse those
+
+Line:96, src/couch_stats_reader.erl -> this is used for db stats as well and is innefficient
+
+Line:126, src/couch_stats_reader.erl -> really?
+
+Perhaps comment should be expanded why
+
+Line:131, src/couch_stats_reader.erl -> emacs would indent this differently btw
+
+Line:138, src/couch_stats_reader.erl -> Computing fragmentation that early looks wrong.
+
+We normally just collect raw stuff that can be aggregated for entire cluster. And with aggregated entire cluster data & disk size we can "correctly" compute fragmentation.
+
+Line:157, src/couch_stats_reader.erl -> flattening this later seems inefficient
+
+Line:212, src/stats_collector.erl -> why we need atoms here?
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-06-20 17:16:56.604000000
+
+Patch Set 5: (1 inline comment)
+
+See more inline and of course it cannot be merged without (currently WIP) couch commit
+
+Line:631, src/capi_set_view_manager.erl -> this is IMHO quite questionable. Deserves separate commit with explanation why it's needed
+
+-------------------------------------
+author: Jordan Ballard
+date: 2012-06-21 16:29:39.351000000
+
+Patch Set 5: (2 inline comments)
+
+I think I will rename the stats so it is clear that more than one design doc name can be shared by the same index file.
+
+Line:138, src/couch_stats_reader.erl -> computing on this stat later is hard because we dont have the list of design documents at hand in the function that registers the computed stats. I think for sake of code sanity it is easier to just let the design document stats bundle up here, even if it's a little more in a proplist to copy.
+
+Line:631, src/capi_set_view_manager.erl -> yes I think changing this fixed a bug I was having that was preventing me from working on the other features. I'll try un-changing it and see how I do. If we need it, I'll extract it.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2012-06-21 17:37:44.809000000
+
+Patch Set 5: (1 inline comment)
+
+
+
+Line:118, src/couch_stats_reader.erl -> New compaction daemon doesn't read this value from couch config anymore. And it doesn't attempt to store an up to date value in it. ns_config:search_node_prop(ns_config:get(), compaction_daemon, min_file_size) should be used instead.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-06-21 19:57:23.944000000
+
+Patch Set 5:
+
+Just to make one of earlier comments more obvious.
+
+We do have infrastructure in place in stats_collector to avoid stringifying couch stats numbers and parsing & massaging them back. Right now your code makes this problem of not using this infrastructure and stringifying and parsing back worse by having special and unclean massaging of couch view stats.
+
+-------------------------------------
+author: Jordan Ballard
+date: 2012-06-21 20:34:53.526000000
+
+Patch Set 5: (5 inline comments)
+
+patch set 6 reflects these changes
+
+Line:109, src/couch_stats_reader.erl -> Done
+
+Line:84, src/couch_stats_reader.erl -> are you saying it should be fine for me to return the values as integers? I can experiment with that change.
+
+... update, tried it, didn't work
+
+Line:118, src/couch_stats_reader.erl -> Done
+
+Line:126, src/couch_stats_reader.erl -> Done
+
+Line:212, src/stats_collector.erl -> I tried leaving them alone (staying binary) but my patch doesn't work when its like that
+
+-------------------------------------

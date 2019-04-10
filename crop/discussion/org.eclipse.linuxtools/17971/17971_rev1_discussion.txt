@@ -1,0 +1,119 @@
+DESCRIPTION
+
+TMF: Fix concurrency issue in TMF UI tests
+
+Change-Id: I4b360b8d1e5e064e0a9470ed8f450f52b969d189
+Signed-off-by: Ricky Reeves <Meredith xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2013-11-01 19:43:51.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/3816/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-01 20:16:19.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/3816/ : SUCCESS
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-11-01 22:25:52.000000000
+
+Patch Set 1:
+
+Fix looks good, but it's not technically a "UI" test. Should it be called "...in TMF scheduler tests" ?
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-11-01 22:26:29.000000000
+
+Patch Set 1:
+
+With the previous fix, +1 from me
+
+-------------------------------------
+author: Kaeden Tapia
+date: 2013-11-01 22:57:09.000000000
+
+Patch Set 1:
+
+Hi Meredith Scott. I made this small C program to put some pressure on the CPU while running the test:
+
+#include <pthread.h>
+
+#define NUM_THREADS 8
+
+void* foo() {
+  while (1) {}
+  return 0;
+}
+
+int main(void) {
+  int i;
+  for (i = 0; i < NUM_THREADS; ++i) {
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_t numThread;
+    pthread_create(&numThread, &attr, foo, 0);
+  }
+
+  while (1) {}
+
+  return 0;
+}
+
+Then I ran the test many times by adding this test method in the test class:
+
+   xxx@xxx.xxx
+    public void TestAlot() {
+        int NUM_A_LOT = 100;
+        for (int i = 0; i < NUM_A_LOT ; ++i) {
+            executionOrder();
+            System.out.println("num: " + i);
+        }
+    }
+
+Without your fix, I was getting a failure on the first iteration of the test. After your fix, it behaves better but unfortunately, I got a failure after 23 iterations:
+
+java.lang.AssertionError: expected:<[FOREGROUND1, FOREGROUND2, FOREGROUND3, FOREGROUND4, BACKGROUND1, FOREGROUND1, FOREGROUND2, FOREGROUND3, FOREGROUND4, BACKGROUND2]> 
+but was:<[FOREGROUND1, FOREGROUND2, FOREGROUND3, FOREGROUND4, BACKGROUND1, FOREGROUND4, BACKGROUND1, FOREGROUND1, FOREGROUND2, FOREGROUND3]>
+
+-------------------------------------
+author: Kaeden Tapia
+date: 2013-11-01 22:58:21.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:7, /COMMIT_MSG -> I think this should be TMF Core not UI
+
+-------------------------------------
+author: Ricky Reeves
+date: 2013-11-04 12:36:47.000000000
+
+Patch Set 1:
+
+Thanks for reviewing and testing it. I'll fix the commit message.
+
+Marc-Andre, the failure in your stress test could mean 3 things:
+
+1) There is still a problem in the test case
+2) There is a problem in the algorithm (concurrency?)
+3) The algorithm is correct, but sometimes when a request is scheduled it didn't actually get time time to read one event due to the running C program.
+
+I'll need to investigate further and do some tracing :-)
+
+However, we should merge this fix (after I fixed the commit message) because it fixes a concurrency problem.
+
+-------------------------------------

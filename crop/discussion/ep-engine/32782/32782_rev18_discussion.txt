@@ -1,0 +1,101 @@
+DESCRIPTION
+
+MB-9900: Rollback in ep-engine
+
+- Setting threshold for reseting vbucket and
+sending entire snapshot to 50%.
+
+Change-Id: I0fbe8d91994807073be61d65b735ca79fe6a42ba
+
+
+COMMENTS
+
+author: Abby Duran
+date: 2014-02-06 01:59:11.247000000
+
+Patch Set 18: Code-Review-1
+
+(19 comments)
+
+Line:19, src/upr-consumer.cc -> Please don't include the couchstore header file here. This breaks our abstraction.
+
+Line:232, src/upr-consumer.cc -> I'm not sure why we need to pass the start timestamp to the underlying get function. If you want to measure the timings of the operation, please start the timer inside getWithHeader function.
+
+Line:240, src/upr-consumer.cc -> You need to check if the item is deleted or not. Calling "itm->isDeleted()" will tell you if an item is deleted or not. If it returns true, then we should call "del" instead of "set".
+
+Line:248, src/upr-consumer.cc -> We should not call "del" if we receive an error here. For now, we can simply add the warning level logs with the return code, but need to address how we can recover from the error to support the failover correctly, which should be a separate commit.
+
+Line:261, src/upr-consumer.cc -> Please use "void *dbHandle" instead of using couchstore-specific DB handle.
+
+Line:291, src/upr-consumer.cc -> It seems to me that we perform the rollback asynchronously. Did you confirm this with the other teams (e.g., ns-server, view, or XDCR)?
+
+Line:325, src/upr-consumer.cc -> "Vbucket %d not found for rollback"
+
+Line:337, src/upr-consumer.cc -> If the rollback is failed due to some internal errors, then we should send the error message back to the producer, so that it can close the connection. We don't need to address this in this commit, but should address it later.
+
+Line:200, src/upr-stream.h -> RCPtr<VBucket> &vb
+
+Line:49, src/kvstore.h -> Please don't use upper chars for typedef. This is not our coding style.
+
+Line:201, src/kvstore.h -> Please rename void * _db_ to void *dbHandle
+
+Line:358, src/couch-kvstore/couch-kvstore.cc -> Please remove this and start the timer inside getWithHeader
+
+Line:2074, src/couch-kvstore/couch-kvstore.cc -> this is wrong as I mentioned in the previous patch set. The file name should have the format of "vbucket_id.couch.revNum". Please use stringstream instance to create a database file name instead of using string concatenation.
+
+Line:2111, src/couch-kvstore/couch-kvstore.cc -> We should not open the db with read-only mode because we append the rewinded header at the end of file.
+
+Line:2165, src/couch-kvstore/couch-kvstore.cc -> Please check the return code from couchstore_commit. If it fails, then we should close the handles and return ENGINE_ROLLBACK.
+
+Line:2930, src/ep.cc -> Where do we use err.second? If it is never used, we should not define "ROLLBACK_ERROR_CODE"
+
+Line:105, src/upr-consumer.h -> opaque should be renamed to avoid name conflict with the member variable. Same for rollbackSeqno and vbid.
+
+Line:113, src/upr-consumer.h -> Add the vbucket id to the string.
+
+Line:442, src/upr-stream.cc -> So, we don't need to update vb uuid and high seqno that are member variables of this stream instance?
+
+-------------------------------------
+author: Emerson Nolan
+date: 2014-02-06 03:07:09.487000000
+
+Patch Set 18:
+
+(3 comments)
+
+Line:291, src/upr-consumer.cc -> I checked with the ns_server team, ns_server needn't be notified on rollback completion.
+
+Line:2930, src/ep.cc -> As rolledbackSeqno sometimes can be less than the rollbackseqno from the call, i'm passing that value back, so that we can prune the entries uptil that seqno in the failover table, as done below.
+
+Line:442, src/upr-stream.cc -> Failover table's latest entry is set to the required vb_uuid and by_seqno, when we prune entries in the rollback function returns in ep.cc.
+
+-------------------------------------
+author: Abby Duran
+date: 2014-02-06 03:17:58.293000000
+
+Patch Set 18:
+
+(1 comment)
+
+Line:442, src/upr-stream.cc -> Well, what i'm saying here is that as PassiveStream has "vb_uuid" and "high_seqno" member variables, we can simply update like
+
+vb_uuid = vb->failovers->getLatestEntry().vb_uuid;
+high_seqno = vb->failovers->getLatestEntry().by_seqno;
+
+Then, pass them to StreamRequest below.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2014-02-06 03:39:42.615000000
+
+Patch Set 18:
+
+(1 comment)
+
+Line:240, src/upr-consumer.cc -> In couch-kvstore.cc, in function getWithHeader, we basically set this status to ENGINE_SUCCESS if we find the object or else the ENGINE_KEY_ENOENT if it isn't found.
+
+Since we are getting based on the rewinded header, a GET_SUCCESS indicates that we need to overwrite the item, with the older value and otherwise issue a delete in the hash table.
+
+However, itm used below needs to be changed to gcb.val.getValue().
+
+-------------------------------------

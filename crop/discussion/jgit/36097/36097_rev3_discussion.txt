@@ -1,0 +1,101 @@
+DESCRIPTION
+
+Implement atomic refs update, if possible by database
+
+Inspired by the series[1], this implements the possibility to
+have atomic ref transactions.
+If the database supports atomic ref update capabilities, we'll
+advertise these. If the client wishes to use this feature, either
+all refs will be updated or none at all.
+
+[1] http://thread.gmane.org/gmane.comp.version-control.git/259019/focus=259024
+
+Change-Id: I7b5d19c21f3b5557e41b9bcb5d359a65ff1a493d
+Signed-off-by: Beau Terry xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Beau Terry
+date: 2014-11-07 23:26:41.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-11-07 23:26:47.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/5695/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-11-07 23:34:43.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/5695/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2014-11-07 23:43:20.000000000
+
+Patch Set 3:
+
+(6 comments)
+
+Line:1259, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> We try to shove this into one line when its this simple:
+
+ xxx@xxx.xxx true if any commands have been rejected. */
+
+Line:1261, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> final is not necessary. Some older code uses it frequently but we have been slowly removing it from newer code.
+
+Line:1265, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> I think the inverse logic makes more sense:
+
+    if (cmd.getResult() != NOT_ATTEMPTED && cmd.getResult() != OK)
+      return true;
+  }
+  return false;
+
+An empty set should be "no rejects".
+
+Line:57, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceivePack.java -> iirc static imports go first in the file.
+
+Line:203, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceivePack.java -> "atomic" might be sufficient description here and let you pull in the line length some, possibly avoiding the line wrapping.
+
+Line:214, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceivePack.java -> Instead of duplicating this logic, force them to fail:
+
+  if (atomic && anyRejects())
+    failPendingCommands();
+
+with:
+
+  private void failPendingCommands() {
+    for (ReceiveCommand cmd : commands) {
+      if (cmd.getResult() == Result.NOT_ATTEMPTED)
+        cmd.setResult(OTHER_REASON, "transaction aborted");
+    }
+  }
+
+This will gracefully fall through. The .onPreReceive() will get an empty collection from filterCommands() finding no matches with NOT_ATTEMPTED (since it was all changed in failPendingCommands()) and then executeCommands() will do nothing too, and you drop into the existing reportStatus code after unlockPack().
+
+-------------------------------------
+author: Beau Terry
+date: 2014-11-08 02:46:19.000000000
+
+Patch Set 3:
+
+(4 comments)
+
+Line:1259, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> Done
+
+Line:1261, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> Done
+
+Line:1265, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> Oops. indeed My code seemed to be broken there anyway, as in the false case we need to check all cmds, so no early return.
+
+Line:57, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceivePack.java -> Done
+
+-------------------------------------

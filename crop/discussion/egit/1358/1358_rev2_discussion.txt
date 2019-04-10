@@ -1,0 +1,105 @@
+DESCRIPTION
+
+Don't display merge commit as conflicting
+
+GitModelCommit.calculateKid() use right now commit time to determinate
+change direction (incoming/outgoing) this is more reliable then
+comparing remote vs ancestor and base vs ancestor.
+
+Bug: 322496
+Bug: 323057
+Change-Id: Ia304b382e476daad5e2db3c852d91985e0199b92
+Signed-off-by: Leslie Stephenson xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Leslie Stephenson
+date: 2010-08-21 00:34:40.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-08-21 01:28:34.000000000
+
+Patch Set 2: I would prefer that you didn't submit this
+
+(3 inline comments)
+
+
+
+Line:237, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/synchronize/model/GitModelCommit.java -> This is uh, pointless.
+
+The merge base of a commit and its parents is going to be one of the parents.
+
+What were you actually trying to do?
+
+Line:245, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/synchronize/model/GitModelCommit.java -> Parsing zeroId will always throw an exception.
+
+Line:10, /COMMIT_MSG -> I disagree.  The correct thing to do is compare the commit graphs in left-right mode.  This isn't directly supported in JGit with a thing called "left-right mode", you have to do configure it yourself in the application level.
+
+Create two RevFlag instances from a RevWalk, call them LOCAL and REMOTE.
+
+parseCommit() the current branch, and add the LOCAL flag to it.  markStart() that commit.
+
+parseCommit() the matching remote branch, and add the REMOTE flag to it.  markStart() that commit.
+
+Step the RevWalk until you get back a commit that contains both LOCAL and REMOTE on it.  That is your common merge base.  But more importantly, as you stepped it looking for this point you built up a list of commits.  If you store those commits into two lists based on which flags they have (only LOCAL ones go into the "outgoing list" and only REMOTE ones go into the "incoming list"), you get a very accurate representation of what is about to sync.
+
+As for finding the matching remote branch, that typically comes from the repository configuration.  Get the Config, find the variables branch.${currentBranchName}.remote and branch.${currentBranchName}.merge.  The first tells you which remote configuration block you need to examine.  The second tells you the branch name in that remote.  You'll then need to examine the remote.${remoteName}.fetch RefSpecs to find the one that matches the branch.merge value, so you can map that to the local reference name.  That local reference name is what you need to resolve in order to parse that remote branch's commit.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-08-21 13:52:39.000000000
+
+Patch Set 2: (1 inline comment)
+
+isn't direction something the user decides on? This one
+can only tell that user added, delete or changed something relative to the merge base in non, one or both branches.
+
+I Am Not A Synchronize API Expert.
+
+Line:237, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/synchronize/model/GitModelCommit.java -> Us this the terminology confusion I commented on in a previous commit?. I.e. "base" here is niot the merge base, but trather "our"?
+
+-------------------------------------
+author: Leslie Stephenson
+date: 2010-08-22 21:42:25.000000000
+
+Patch Set 2: (4 inline comments)
+
+> isn't direction something the user decides on? This one can only tell that user added, delete or changed something relative to the merge base in non, one or both branches.
+
+Yes, user can 'decides' on 'direction', changes that was marked as incoming when comparing 'origin/master' vs 'current branch' should be marked as outgoing wile synchronizing 'current branch vs 'origin/master'. The same is with outgoing changes when source and destination branch will be shwitched.
+
+Line:237, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/synchronize/model/GitModelCommit.java -> I want to find parent of 'actual' commit so that I can find objects that was changed by 'actual' commit. In most cases there would be only a one commit, but in case of merge commits I want get merge ancestor so that changes in merge commit can be properly described in SyncView.
+
+Line:237, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/synchronize/model/GitModelCommit.java -> Actually in some cases 'base' isn't always same as 'our'. Because in Git Model we are comparing commit vs. commit. This means that most comparisons will be done 'our' vs 'our' commit (that are commit that was made by user in theirs topic branch) or 'their' vs 'their' (in this case that are commits that comes from remote repository). There would be only one commit that can be described as 'our' vs 'their', this will be a common ancestor commit.
+
+But this is only my humble opinion ...
+
+Line:245, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/synchronize/model/GitModelCommit.java -> I'll fix this, thanks for pointing this out ;)
+
+Line:10, /COMMIT_MSG -> Thank you Shawn for this information, I'll re-implement this change exactly the way you describe it ;)
+
+-------------------------------------
+author: Carlie Harper
+date: 2010-08-23 14:07:19.000000000
+
+Patch Set 2: I would prefer that you didn't submit this
+
+(1 inline comment)
+
+> isn't direction something the user decides on? This one can only tell that user added, delete or changed something relative to the merge base in non, one or both branches.
+
+> Yes, user can 'decides' on 'direction', changes that was marked as incoming when comparing 'origin/master' vs 'current branch' should be marked as outgoing wile synchronizing 'current branch vs 'origin/master'. The same is with outgoing changes when source and destination branch will be shwitched.
+
+I doubt that. In my opinion the synchronize API is made to compare the local state with any other state (see bug 322489). So everything that is there locally but not on the other state is an outgoing change, everything which is there on the other state but not locally is incoming. The other state is a remote server at CVS but can be any other commit at git (normally a branch or a tag).
+
+So in git each commit I can reach from my HEAD but not from the other commit is outgoing, each commit I can reach from the other commit but not from my HEAD is incoming.
+
+Line:237, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/synchronize/model/GitModelCommit.java -> I still do not understand why we need any ancestor in the GitModel. An ancestor is used by the synchronize framework to calculate the entries for the three way compare. But in GitModel we just compare to the parent, don't we? I still would say that we should return null in GitModelBlob.getAncestor (javadoc: Returns null if this input has no ancestor or in the two-way compare case.)
+
+When there is more than one parent things of course get more complicated. But returning any ancestor commit is definitely wrong.
+
+-------------------------------------

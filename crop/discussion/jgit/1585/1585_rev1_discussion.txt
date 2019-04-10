@@ -1,0 +1,75 @@
+DESCRIPTION
+
+Move cached element hash codes to HashedSequence
+
+Most diff implementations really want to use cached hash codes for
+elements, rather than element equality, as they need to perform many
+compares and unique hash codes for elements can really speed that
+process up.
+
+To make it easier to define element hash functions, move the caching
+of hash codes into a wrapper sequence type, so that individual
+sequence types like RawText don't need to do this themselves.  This
+has a nice property of also allowing the sequence to no longer care
+about the specific SequenceComparator that is going to be used, nad
+permits the caching to only examine the middle region that isn't
+common to the two inputs.
+
+Change-Id: If8623556da9419117b07c5073e8bce39de02570e
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-09-12 18:47:39.000000000
+
+Patch Set 1:
+
+I think this change permits us to stop having the comparator in the RawText instance, which fixes the issue you noticed during the earlier refactoring that added the comparator type.
+
+I wrote this while I wasn't the most lucid.  So it really needs a lot of review before we include it.  :-)
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-09-16 22:16:57.000000000
+
+Patch Set 1: (4 inline comments)
+
+
+
+Line:58, org.eclipse.jgit/src/org/eclipse/jgit/diff/HashedSequence.java -> One thing surprised me: I was expecting a HashedSequence would also be responsible for triggering hash calculation for certain elements. A getter for the hashCode of element x which would look up if we have the hashCode already and if not trigger calculation. This lazy way of calculation hashes may reduce our resource demand on huge contents. Maybe, on huge contents we switch to a diff which only needs the hashes for a certain window on the Sequence. Ok, ok, that's far away in the moment - but a HashedSequence which really only a dumb store will prevent us to do so.
+
+Line:63, org.eclipse.jgit/src/org/eclipse/jgit/diff/HashedSequence.java -> If I understand correctly HashedSequence does not only add a cache of hashes to Sequence, but also offers the funtionality to work only on a subset of the original sequence. By having an offset here we will ignore some prefix of the original Sequence. Correct? Then you should document.
+
+Line:18, /COMMIT_MSG -> 'nad'? That's a typo, or?
+
+Line:51, org.eclipse.jgit/src/org/eclipse/jgit/diff/HashedSequenceComparator.java -> Maybe now I understand better why we have the begin field in the HashedSequence. I was expecting a HashedSequenceComparator to do one thing: provide a fast equals() and hash() by using the knowledge that the Sequences have hashes with them. But additionally we do some index translation with offset. Isn't the Subsequence focusing on index translation. Maybe we could always use Subsequences for index translation and remove that aspect from this class.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-09-16 22:51:12.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(2 inline comments)
+
+
+
+Line:58, org.eclipse.jgit/src/org/eclipse/jgit/diff/HashedSequence.java -> There is no point in trying to lazily compute a hash code for a each element.  The way that any diff function works, we will need to examine the hash code of each element at least once before the function is complete.  Therefore we need each code at least once, and therefore we can do it all faster by *not* being lazy about it.  Being lazy requires checking to see if the code has been computed yet, per element.  That's expensive.
+
+If you look at the PatienceDiffIndex code, it loops through every element in the region of both sequences and gets their hash code.  No sense in lazily computing that.
+
+We can avoid hash computation for common header/footers by looking for those common header/footer elements and skipping over them.  But that only works because the start and end of a sequence we easily defined (0 and size()-1), and we can work under the assumption that it is common for the header and footer to not change for at least one element in either direction, due to file copyright headers often being unchanged, and due to most edits appearing more in the middle of a file rather than at the exact end of it.
+
+But that still leaves us with the entire mid section, where we have to compute everything.
+
+Line:51, org.eclipse.jgit/src/org/eclipse/jgit/diff/HashedSequenceComparator.java -> I didn't do that because it would require PatienceDiff to perform a translation on every Edit it creates to translate from the HashedSequence wrapping the Subsequence space into the original space.
+
+Using the original element indexes meant I didn't have to do the translation on the Edit.
+
+But maybe you are right.  Maybe we should be doing the translation on the Edit at the end.  The Edit list is shorter than the element list.  So deferring the translation means we can save operations (by not translating on each hash call), and its probably more clear.
+
+I'll rework this.  Thanks.
+
+-------------------------------------

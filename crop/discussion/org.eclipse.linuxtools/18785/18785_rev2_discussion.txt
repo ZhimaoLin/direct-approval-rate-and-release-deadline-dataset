@@ -1,0 +1,132 @@
+DESCRIPTION
+
+[ctf] Plug the unsigned utils comparator into Stream comparator.
+
+This patch-set fixes a pending TODO found randomly.
+It modifies the code to use the unsigned comparator and avoid
+bugs for large timestamp values.
+
+The comparator no longer accept null values.
+
+Change-Id: Idee0e56edfe85ba01a27fb79d1076736fee24874
+Signed-off-by: Jordon Obrien xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Jordon Obrien
+date: 2013-11-24 20:02:01.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-24 20:21:49.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4126/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-24 21:06:15.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4126/ : SUCCESS
+
+-------------------------------------
+author: Tessa Dickson
+date: 2013-11-24 23:35:57.000000000
+
+Patch Set 2: Code-Review+1
+
+(1 comment)
+
+lgtm, but I cannot review the impact of the semantic change. I think throwing an exception makes much more sense than returning 0 (a success) and thus fail silently.
+
+Line:13, /COMMIT_MSG -> "no longer accepts"
+
+-------------------------------------
+author: Jordon Obrien
+date: 2013-11-25 15:29:24.000000000
+
+Patch Set 2:
+
+In fact, it's broken because you no longer have a full ordering.
+
+Assume A, B and null.
+
+A < null -> 0
+B < null -> 0
+null < null -> 0
+
+Thus, an algorithm that receives this value may assume any order. I'm pretty sure some Java structure will get corrupted.
+
+But, I believe it didn't cause any problem because null was never present.
+
+After looking again a the code, do we want an illegal exception, or a simple runtime null exception is enough.
+In this case, the tests against null are useless.
+
+-------------------------------------
+author: Tessa Dickson
+date: 2013-11-25 15:32:24.000000000
+
+Patch Set 2:
+
+Just to clarify. When you say "it's broken", you mean the previous semantic, not your patch.
+
+-------------------------------------
+author: Jordon Obrien
+date: 2013-11-25 15:45:35.000000000
+
+Patch Set 2:
+
+Yes, current code base is broken.
+This patch-set aborts with an exception.
+
+-------------------------------------
+author: Luciana Barry
+date: 2013-11-25 20:43:33.000000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:41, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/internal/ctf/core/trace/StreamInputReaderTimestampComparator.java -> How to handle null in a Comparator is implementation-specific. Here, the intention is that in an ordered list of StreamInputReader's, the first one holds the next event (lowest time stamp). So a reader with a null event should be considered greater than a reader with any event. If both readers have a null event they should be equal...
+
+Line:46, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/internal/ctf/core/trace/StreamInputReaderTimestampComparator.java -> ...HOWEVER... as far as I can tell, a reader is never added to the priority queue if it doesn't have a current event (looking at code in CTFTraceReader). So I think we can just do nothing special here and let it throw a NullPointerException when it tries to call getTimestamp.
+
+-------------------------------------
+author: Luciana Barry
+date: 2013-11-25 20:47:03.000000000
+
+Patch Set 2:
+
+Although the class is never used, it might be a good idea to apply the same fix to use the unsigned comparator in StreamInputReaderComparator.
+
+-------------------------------------
+author: Jordon Obrien
+date: 2013-11-25 20:50:58.000000000
+
+Patch Set 2: Code-Review+1
+
+Patrick, an other patch-set will kill the StreamReaderComparator
+
+https://git.eclipse.org/r/#/c/18796/
+
+I think it's already merged.
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-11-25 21:42:37.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:46, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/internal/ctf/core/trace/StreamInputReaderTimestampComparator.java -> NPE vs. IAE, choose your poison! They're both RuntimeException's, and since this method can already throw a NPE, we could just leave it at that. And maybe add xxx@xxx.xxx NullPointerException to the Javadoc documenting it.
+
+-------------------------------------

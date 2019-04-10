@@ -1,0 +1,122 @@
+DESCRIPTION
+
+RefDirectory: remove ref lock file for following ref dir removal
+
+Before this fix, ref directory removal did not work. That was because
+the ref lock file was still in the leaf directory at deletion time.
+Hence no deep ref directories were ever deleted, which negatively
+impacted performance under large directory structure circumstances.
+
+This fix removes the ref lock file before attempting to delete the ref
+directory (which includes it); applies to the leaf directory solely.
+The other deep parent directories are therefore now successfully
+deleted in turn, since leaf's content (lock file) gets removed first.
+
+The ref lock file is still also removed in the calling block's finally
+clause, just in case, as before. Such double-unlock brought by this
+fix is harmless (a no-op).
+
+A new (private) RefDirectory#delete method is introduced to support
+this gc-specific case; other RefDirectory#delete callers remain
+untouched.
+
+Change-Id: I47ba1eeb9bcf0cb93d2ed105d84fea2dac756a5a
+Signed-off-by: Tyler Harvey xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Tyler Harvey
+date: 2016-05-26 18:17:19.000000000
+
+Uploaded patch set 2: Commit message was updated.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-05-26 18:17:25.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/8406/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-05-26 18:27:22.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/8406/ : SUCCESS
+
+-------------------------------------
+author: Mitchell Griffith
+date: 2016-05-27 17:32:48.000000000
+
+Patch Set 2: Code-Review+1
+
+-------------------------------------
+author: Zachary Orozco
+date: 2016-05-30 09:16:43.000000000
+
+Patch Set 2:
+
+(3 comments)
+
+Line:1075, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> Why do we need "depth > 0". Do we really want to handle refs located directly underneath "refs/" differently from those which are one directly below? I can understand that we don't want to delete the "refs/" folder itself and that therefore we behave differently on level 0 than on levels>0. But unlocking refs should be done the same on all levels, or?
+
+Line:15, /COMMIT_MSG -> maybe you should clarify "leaf directory". I was first expecting leaf directory to be those which don't have subdirectories. But you mean all directories except the root dir, or?
+
+Line:25, /COMMIT_MSG -> Is this GC specific? I think the problem (and the fix) is purely inside RefDirectory. It's all in RefDirectory.pack(). Inside that method we aquire lock's on refs and don't unlock them before trying to delete the refs. Everybody who uses JGit to call the public method RefDirectory.pack() is affected.
+
+-------------------------------------
+author: Tyler Harvey
+date: 2016-06-01 21:39:16.000000000
+
+Patch Set 2:
+
+(3 comments)
+
+Line:1075, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> A depth of 1 means that we are looking at deleting folder 'dir' in (e.g.) refs/heads/dir. I don't think we want to also remove 'heads' in the latter example; so we stop there -at depth 1. That is how the existing code below used to do it (and so failed as per this fix); cf. current line 1079. Another example is refs/tags (or, refs/any): I don't think we'd want to delete 'tags', even if empty.
+
+Now, the unlocking of the ref is still always performed no matter what, depth unrelated, thanks to that .unlock call in the calling block's finally clause.
+
+Line:15, /COMMIT_MSG -> Your expectation is right. This is exactly what I mean, yes, also as per the other sentence below this one. Let me know if you think that both sentences together are not clear enough. I still amended this to clarify the depth of such removals.
+
+Line:25, /COMMIT_MSG -> Done; good point, speech amended.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2016-06-10 08:56:50.000000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:1075, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> I agree that we don't want to delete the folders 'refs/heads' and 'refs/tags'. But we shouldn't misuse lock files just to prevent our code from folder deletion. 
+
+I debugged it and I don't see that we ever try to delete "refs/heads" (independent from how we lock/unlock refs). When we are called for ref "refs/heads/dir/r" then depth==1. Means we are entering the loop in line 1079 only once deleting "refs/heads/dir". We never try to delete "refs/heads".
+
+I would still vote for removing "depth>0 &&" in line 1075. Your tests are green even without that condition and top level ref folders are not even tried to be deleted.
+
+Line:15, /COMMIT_MSG -> Hmm. Does this mean if you have a repo with refs/heads/master, refs/heads/test/f, refs/heads/test/march/g and you call pack() then you expect that has effects only on the only leaf directory refs/heads/test/march. No, with the help of your fix we'll delete the folders refs/heads/test/march and refs/heads/test.
+
+-------------------------------------
+author: Tyler Harvey
+date: 2016-06-10 13:03:48.000000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:1075, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> Done
+
+Line:15, /COMMIT_MSG -> Done; removed the potentially confusing part of this sentence based on my understanding of your concern.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-07-15 08:43:53.000000000
+
+Change has been successfully merged into the git repository by Zachary Orozco
+
+-------------------------------------

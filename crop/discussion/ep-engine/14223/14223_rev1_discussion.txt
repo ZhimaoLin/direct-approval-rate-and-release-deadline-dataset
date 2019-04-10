@@ -1,0 +1,52 @@
+DESCRIPTION
+
+MB-4595 Schedule backfill for a fresh client with empty data
+
+There is a case that causes data loss after rebalance in
+the cluster running for a very short period:
+
+1) Start the one node cluster and load a small number of items
+into the node. The node will still have the open checkpoint with
+id 1 for each vbucket.
+2) Shutdown the node and start it again. After warmup, the node
+still has the open checkpoint 1 for each vbucket, but each
+checkpoint doesn't have any items in its datastructure.
+3) Add another fresh node to the cluster and rebalane in. In this
+case, no backfill tasks are scheduled for vbucket takeovers
+because the fresh node starts with the open checkpoint id 1 and
+the original node still has the open checkpoint id 1.
+
+Consequently, each vbucket takeover is completed without backfill
+but does not send any items from the open checkpoint 1 because
+it doesn't have any items. This causes data loss after rebalance.
+
+To resolve the above issue, we always schedule the backfill for
+the fresh client with empty data (i.e., checkpoint id 1).
+The better and more comprehensive solution would be to restore the
+open checkpoint as part of warmup, which we will provide soon.
+
+Change-Id: Ia115dd7f4cd10bfb79c9c2593366935bea508ea5
+
+
+COMMENTS
+
+author: Abby Duran
+date: 2012-03-25 23:12:14.043000000
+
+Patch Set 1: Verified
+
+
+
+-------------------------------------
+author: Kenny Maynard
+date: 2012-03-25 23:25:31.653000000
+
+Patch Set 1: Looks good to me, approved
+
+(1 inline comment)
+
+
+
+Line:419, tapconnection.cc -> Can you add a comment here for why we are checking this and maybe include the bug number. I feel like we will forget why we're doing this at some point.
+
+-------------------------------------

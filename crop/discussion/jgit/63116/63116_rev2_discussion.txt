@@ -1,0 +1,160 @@
+DESCRIPTION
+
+Fix symlink content comparison on MacOS in tree walk
+
+Symlinks on MacOS are written as UTF-8 NFD, but
+readSymbolicLink().toString() converts to NFC with potentially fewer
+bytes. May occur in particular if the link target has non-ASCII
+characters for which the NFC and NFD encodings differ. This may lead
+to an EOFException: Short read of block.
+
+Fix by allowing the read to succeed even if less than the expected
+number of bytes are returned by the entry's input stream.
+
+Includes a new MacOS-only test.
+
+Change-Id: I264c5972d67b1cbb1ed690580f5706e671b9affd
+Signed-off-by: Alayna Houston xxx@xxx.xxx
+
+COMMENTS
+
+author: Alayna Houston
+date: 2015-12-22 21:03:42.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-12-22 21:03:48.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7777/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-12-22 21:14:37.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7777/ : SUCCESS
+
+-------------------------------------
+author: Alayna Houston
+date: 2015-12-22 21:19:15.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:18, /COMMIT_MSG -> Fails for me consistently with the expected EOFException without the fix in WorkingTreeIterator, and succeeds consistently with the fix. Perhaps someone with a newer OS X than my 10.7.5 could verify? Installed cgit version on my machine used to prepare the test repo and also for cloning during the test is git 2.2.1.
+
+-------------------------------------
+author: Eden Lin
+date: 2015-12-23 00:35:51.000000000
+
+Patch Set 2:
+
+(2 comments)
+
+Thanks.
+
+Line:189, org.eclipse.jgit.test/tst/org/eclipse/jgit/indexdiff/IndexDiffWithSymlinkTest.java -> Will this continue to work with future versions of Java? Is there some other way to read the raw symlink --- e.g., does invoking "readlink" do the trick?
+
+File Comment: org.eclipse.jgit.test/tst-rsrc/org/eclipse/jgit/indexdiff/filerepo.git.zip -> I had to be extra cautious in reviewing this because the .git/config in a git repository can provide arbitrary code for git to execute.
+
+It would have been safer and easier to review if the repo were in a bundle file (see man git-bundle) or a fast-import stream. E.g. given a fast-import stream:
+ 
+ blob
+ mark :1
+ data 10
+ äéü.txt
+ blob
+ mark :2
+ data 8
+ test.txt
+ blob
+ mark :3
+ data 5
+ Test
+ 
+ blob
+ mark :4
+ data 7
+ äéü
+ 
+ reset refs/heads/master
+ commit refs/heads/master
+ mark :5
+ author A U Thor xxx@xxx.xxx 1450727513 +0100
+ committer Tom xxx@xxx.xxx 1450727513 +0100
+ data 26
+ Initial commit with links
+ M 120000 :1 testfolder/aeu.txt
+ M 120000 :2 testfolder/link.txt
+ M 100644 :3 testfolder/test.txt
+ M 100644 :4 "testfolder/\303\244\303\251\303\274.txt"
+ 
+(I generated the above by running 'git fast-export master' in the test repository) I can revive the repository with
+
+ git init filerepo
+ git -C filerepo fast-import </path/to/fast-export/output
+ git -C filerepo checkout -f
+
+-------------------------------------
+author: Kayleigh Dennis
+date: 2015-12-23 00:37:07.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:18, /COMMIT_MSG -> Applied this patch on master and maven didn't complain anything on Mac 10.11.
+
+-------------------------------------
+author: Alayna Houston
+date: 2015-12-23 10:15:37.000000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:189, org.eclipse.jgit.test/tst/org/eclipse/jgit/indexdiff/IndexDiffWithSymlinkTest.java -> I see no way to obtain the raw bytes using readlink/stat. To make this future-proof, I could just skip the assertions on the raw path content if rawPath() returns null.
+
+Or try to verify the length only (10 for NFC, 13 for NFD) -- if there's a way to obtain that safely. Maybe ls -l aeu.txt and extract the number from the output. Other options might be
+* Java: BasicFileAttributes.size(), but the semantics of that method is undefined (implementation-specific) for links
+* stat -f "%z" aeu.txt (MacOS/BSD) or stat -c "%s" aeu.txt (GNU stat) -- we don't know which one is installed
+
+File Comment: org.eclipse.jgit.test/tst-rsrc/org/eclipse/jgit/indexdiff/filerepo.git.zip -> Didn't know about that -- will change to use that. I didn't like the binary zip format either.
+
+-------------------------------------
+author: Alayna Houston
+date: 2015-12-23 10:17:30.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:18, /COMMIT_MSG -> Ok, so it works not just for me :-), and 10.11 behaves still the same way regarding NFC/NFD. Thanks for checking.
+
+-------------------------------------
+author: Alayna Houston
+date: 2015-12-23 20:11:24.000000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:189, org.eclipse.jgit.test/tst/org/eclipse/jgit/indexdiff/IndexDiffWithSymlinkTest.java -> Done by not checking raw path contents if they're unavailable.
+
+File Comment: org.eclipse.jgit.test/tst-rsrc/org/eclipse/jgit/indexdiff/filerepo.git.zip -> Done
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-10-10 22:31:01.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

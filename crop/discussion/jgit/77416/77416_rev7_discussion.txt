@@ -1,0 +1,74 @@
+DESCRIPTION
+
+Do not fake a SymbolicRef as an ObjectIdRef
+
+When doing a detaching operation, JGit fakes a SymbolicRef as an
+ObjectIdRef. This is because RefUpdate#updateImpl dereferences the
+SymbolicRef when updating it. For example, assume that HEAD is
+pointing to refs/heads/master. If I try to make a detached HEAD
+pointing to a commit c0ffee, RefUpdate dereferences HEAD as
+refs/heads/master first and changes refs/heads/master to c0ffee. The
+detach argument of RefDatabase#newUpdate avoids this dereference by
+faking HEAD as ObjectIdRef.
+
+This faking is problematic for the linking operation of
+DfsRefDatabase. It does a compare-and-swap operation on every
+reference change because of its distributed systems nature. If a
+SymbolicRef is faked as an ObjectRef, it thinks that there is a
+racing change in the reference and rejects the update. Because of
+this, DFS based repositories cannot change the link target of symbolic
+refs. This has not been a problem for file-based repositories because
+they have a file-lock based semantics instead of the CAS based one.
+The reference implementation, InMemoryRepository, is not affected
+because it only compares ObjectIds.
+
+When [1] introduced this faking code, there was no way for RefUpdate
+to distinguish the detaching operation. When [2] fixed the detaching
+operation, it introduced a detachingSymbolicRef flag. This commit uses
+this flag to control whether it needs to dereference the symbolic refs
+by calling Ref#getLeaf. The same flag is used in the reflog update
+operation.
+
+This commit does not affect any operation that succeeds currently. In
+some DFS repository implementations, this fixes a ref linking
+operation, which is currently failing.
+
+[1]: https://eclipse.googlesource.com/jgit/jgit/+/01b5392cdbc12ce2e21fd1d1afbd61fdf97e1c38
+[2]: https://eclipse.googlesource.com/jgit/jgit/+/3a86868c0883d2a564db88bf9ae4a5fe235bb63f
+
+Change-Id: I118f85f0414dbfad02250944e28d74dddd59469b
+Signed-off-by: Sandra Garrison xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Sandra Garrison
+date: 2016-07-26 19:16:55.000000000
+
+Uploaded patch set 7: Patch Set 6 was rebased.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-07-26 19:17:01.000000000
+
+Patch Set 7:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/8811/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-07-26 19:24:34.000000000
+
+Patch Set 7: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/8811/ : FAILURE
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-08-26 00:57:42.000000000
+
+Change has been successfully merged into the git repository by Yoselin Hanna
+
+-------------------------------------

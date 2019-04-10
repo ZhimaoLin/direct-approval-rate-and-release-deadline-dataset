@@ -1,0 +1,116 @@
+DESCRIPTION
+
+Log major key events to be able to quickly recover HT state.
+
+This change introduces a new on-disk binary format for logging major
+key events only.  These events are limited to the creation and
+destruction of keys only -- modification of keys is out of scope, as
+is storing values.
+
+* Flow
+
+The logging hooks in to the persistence flow and does the following:
+
+After writing any new key or deleting any existing key from disk, a
+new log entry is buffered.
+
+The buffer is written when a block is full or on a flush event
+(configurable, usually after a commit1 or commit2 event).
+
+Before sending a commit to the underlying store, a commit1 event is
+logged.
+
+After the underlying store completes its commit, a commit2 is logged.
+
+* Configuration
+
+There are four new engine parameters that come with this feature:
+
+** klog_path
+
+Where the events should be logged.  An empty string (default) disables
+logging.
+
+** klog_block_size
+
+The buffer/block size for log entries.  The number should line up with
+the underlying filesystem block size.  Multiples may increase
+throughput.
+
+** klog_flush
+
+Configures when the buffer should be force-flushed.  There are four
+possible values:
+
+   off: never force a flush
+   commit1: force a flush after commit1 only
+   commit2: force a flush after commit2 only
+   full: force a flush after both commit1 and commit2
+
+** klog_sync
+
+Configures when the file should be fsynced.  There are four
+possible values:
+
+   off: never fsync
+   commit1: fsync after commit1 only
+   commit2: fsync after commit2 only
+   full: fsync after both commit1 and commit2
+
+Change-Id: Icdfcb4ae2da129144390e199ef794d85cd8246da
+
+
+COMMENTS
+
+author: Noah Dean
+date: 2012-01-21 08:22:17.692000000
+
+Uploaded patch set 11.
+
+-------------------------------------
+author: Abby Duran
+date: 2012-01-21 19:09:13.355000000
+
+Patch Set 11: Verified; Looks good to me, approved
+
+Unless the other reviewers have any other comments, I think we can merge this feature now. This looks great.
+
+-------------------------------------
+author: Noah Dean
+date: 2012-01-21 19:16:10.309000000
+
+Patch Set 11:
+
+Awesome.  :)
+
+The one thing not taken care of, and may just be marked as a bug for cleanup, was Trond's feedback about eintr handling in writes.  That would lead to a crash under some specific circumstances.
+
+Similarly, a corrupt block would lead to a (detected and controlled) crash where it'd probably be more appropriate to throw away the log.
+
+It may be worth moving forward with these two things as required enhancements for release since they're (important) edge cases, but will get people faster hands-on experience with the rest of the work.
+
+-------------------------------------
+author: Abby Duran
+date: 2012-01-21 19:55:20.876000000
+
+Patch Set 11:
+
+Yeah, makes sense to me. Especially, if a log file is corrupted, we can then skip the first phase of warmup using a log file, and construct a new log file by catching keys and their meta data from KVStore::dumpKeys(..) or KVStore::dump(..). 
+
+Or, there can be other better ways to deal with this case.
+
+-------------------------------------
+author: Asher Vang
+date: 2012-01-23 06:59:33.595000000
+
+Patch Set 11: Looks good to me, approved
+
+
+
+-------------------------------------
+author: Noah Dean
+date: 2012-01-23 17:22:53.441000000
+
+Change has been successfully cherry-picked as b7075ce6da292eb8969ce2765e656e37c4e3f249.
+
+-------------------------------------

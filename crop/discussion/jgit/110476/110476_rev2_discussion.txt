@@ -1,0 +1,104 @@
+DESCRIPTION
+
+Teach UploadPack to support blob-max-bytes
+
+Teach UploadPack to advertise the blob-max-bytes capability and
+support a "blob-max-bytes" line in the request. This is analogous to a
+patch sent to the Git mailing list [1].
+
+When blob-max-bytes is set, blobs larger than the given size are not
+sent to the client, unless they appear in a tree with a filename
+starting with ".git". Bitmaps have to be disabled in this situation,
+because an ordinary object walk is needed to know the filename of
+every blob accessed.
+
+If a JGit server were to be patched with this commit, and a repository
+on that server configured with RequestPolicy.ANY, a Git client patched
+with the patch set from the linked e-mail [1] would be able to perform
+a partial clone.
+
+[1] xxx@xxx.xxx
+
+Change-Id: If72b4b422c06ab432137e9e5272d353b14b73259
+Signed-off-by: Landin Hensley xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Landin Hensley
+date: 2017-10-20 23:48:09.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-10-20 23:48:15.000000000
+
+Patch Set 2:
+
+Build Started https://ci.eclipse.org/jgit/job/jgit.gerrit/11454/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-10-20 23:56:50.000000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+https://ci.eclipse.org/jgit/job/jgit.gerrit/11454/ : FAILURE
+
+-------------------------------------
+author: Eden Lin
+date: 2017-10-21 00:07:11.000000000
+
+Patch Set 2:
+
+(2 comments)
+
+I like it. Except for the nits mentioned below, my only remaining nit is the point about config mentioned before.
+
+Line:639, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/ObjectWalk.java -> optional: can this get a name that distinguishes it the kind of ".git file" described in gitrepository-layout(5)?
+
+E.g. how about something like isGitSpecialFile() or nameBeginsWithDotGit()?
+
+Or should this expose currVisit.buf to allow the caller to perform arbitrary checks on the name?
+
+Line:2020, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriter.java -> I had trouble understanding the 'reject' test. It has structure
+
+  boolean reject = A && B && C && (oversized = D)
+
+If reject is true, that means that A, B, and C were true, which means oversized got set to D and that it was also true. So why are these separate variables?
+
+I think the intent is
+
+ if (blobMaxBytes >= 0 && object.getType() == OBJ_BLOB && !walk.isGitFile() && ... size > blobMaxBytes ...) {
+     // It could appear as a .git* file later in the traversal.
+     // Mark it as unseen to allow it to be considered again.
+     object.remove(SEEN);
+ } else {
+     addObject(...);
+ }
+
+In other words, there's no such thing as rejected because of size --- all rejected blobs are rejected because of size.
+
+-------------------------------------
+author: Landin Hensley
+date: 2017-10-21 00:16:33.000000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:639, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/ObjectWalk.java -> Changed to isGitSpecialFile. If we were to expose currVisit.buf, we would have to expose nameEnd and namePtr as well, and I think it's better to keep that an implementation detail.
+
+Line:2020, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriter.java -> Ah, you're right. Changed to remove the "oversized".
+
+-------------------------------------
+author: Eden Lin
+date: 2017-10-21 00:23:21.000000000
+
+MISMATCHED INLINE COMMENT
+Line:639, org.eclipse.jgit/src/org/eclipse/jgit/revwalk/ObjectWalk.java -> Agreed. Thanks for your thoughtfulness.
+
+-------------------------------------

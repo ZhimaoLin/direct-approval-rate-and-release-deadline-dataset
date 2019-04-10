@@ -1,0 +1,115 @@
+DESCRIPTION
+
+Delete non empty directories before checkout
+
+I the checkout target is currently a non-empty directory (and was a link
+or a regular file before), this directory will be removed before
+performing checkout, but only if it contains no indexed files.
+
+If the current directory contains indexed files, the checkout will first
+delete all untracked files and then report a conflict.
+
+Bug: 474973
+Change-Id: Ifc6c61592d9b54d26c66367163acdebea369145c
+Signed-off-by: Jayvion Booth xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Jayvion Booth
+date: 2015-08-18 18:05:24.000000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-08-18 18:22:55.000000000
+
+Patch Set 6:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7041/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-08-18 18:31:20.000000000
+
+Patch Set 6: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7041/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-08-21 07:06:09.000000000
+
+Patch Set 6:
+
+(1 comment)
+
+Line:1158, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> I think your change fixes JGit to that extend that it enables the "git checkout HEAD -- <x> <y>". JGit was failing on that before. But we should take care not to delete untracked files during a "git checkout HEAD".
+
+Git normally takes care not to delete unsaved (especially untracked) files in the filesystem. Native git will fail to do a standard checkout of a branch when he has to delete/modify unsaved file content to achieve that. But if you tell git explicitly that he should overwrite/delete certain files then git thinks you are aware of that you are about to loose data and will do it. You would say "git checkout -f ..." or "git checkout HEAD -- <x> <y>" to tell git about that. That's why your test cases are green. In your tests you do "git checkout HEAD -- <x> <y>" and in this case you are allowed to overwrite <x> or <y>.
+
+Have you thought about that? To be honest I tried to contribute a test which shows my concerns but couldn't produce one. JGit behaved well with your change. The thing is that we typically don't enter "checkoutEntry" for really untracked files. So maybe you are aware about that point.
+
+See here how native git doesnt delete untracked files unless "checkout -f" or "checkout -- <path>" is used:
+
+  + git init test
+  Initialized empty Git repository in /tmp/f/test/.git/
+  + cd test
+  + mkdir d
+  + touch d/a
+  + git add d/a
+  + git commit -m 'add d/a'
+  [master (root-commit) d16db8e] add d/a
+   1 file changed, 0 insertions(+), 0 deletions(-)
+   create mode 100644 d/a
+  + git branch side
+  + mkdir d2
+  + touch d2/b
+  + git add d2/b
+  + git commit -m 'add d2/b'
+  [master 34d3eb2] add d2/b
+   1 file changed, 0 insertions(+), 0 deletions(-)
+   create mode 100644 d2/b
+  + git checkout side
+  Switched to branch 'side'
+  + mkdir d2
+  + echo important
+  + git status
+  On branch side
+  Untracked files:
+    (use "git add <file>..." to include in what will be committed)
+ 
+        d2/
+ 
+  nothing added to commit but untracked files present (use "git add" to track)
+  + git checkout master
+  error: The following untracked working tree files would be overwritten by checkout:
+        d2/b
+  Please move or remove them before you can switch branches.
+  Aborting
+  + git checkout master -- d2
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-08-21 07:26:39.000000000
+
+Patch Set 6:
+
+(1 comment)
+
+Line:1158, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> I'm not sure if I've fixed  "git checkout HEAD -- <x> <y>" - this was not the goal, since I haven't noticed that jgit can't do this and also never tested if this works in all cases. Do you have an example where "git checkout HEAD -- <x> <y>" fails? Do we have a bug for this?
+
+The intent of this patch is to only fix jgit behavior if we want to checkout file (or link) but find a *directory* instead, see line 1157 in the patch. JGit always tried to delete that "file" which of course always failed if the *directory* was not empty.
+
+I haven't checked however if this code affects  "git checkout HEAD" behavior. I will grok about this on weekend.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-10-09 15:09:46.000000000
+
+Change has been successfully merged into the git repository by Zachary Orozco
+
+-------------------------------------

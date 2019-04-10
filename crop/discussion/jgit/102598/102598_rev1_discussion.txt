@@ -1,0 +1,91 @@
+DESCRIPTION
+
+Fix exception handling for opening bitmap index files
+
+When creating a new PackFile instance it is specified whether this pack
+has an associated bitmap index file or not. This information is cached
+and the public method getBitmapIndex() will always assume a bitmap index
+file must exist if the cached data tells so. But it may happen that the
+packfiles are repacked during a gc in a different process causing the
+packfile,bitmap-index and index file to be deleted. Since JGit still has
+an open FileHandle on the packfile this file is not really deleted and
+can still be accessed. But index and bitmap index file are deleted.
+Modify getBitmapIndex() to be aware of such a situation in invalidate
+the packfile instance if such a situation occurs.
+
+This problem showed up when a gerrit server was serving repositories
+which where garbage collected with native git regularly. Fetches and
+clones for certain repositories failed permanently after a native git gc
+was deleting old bitmap index files.
+
+Change-Id: I8e620bec74dd3f310ba42024f9a657062f868f0e
+
+
+COMMENTS
+
+author: Zachary Orozco
+date: 2017-08-07 12:28:11.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-08-07 12:28:17.000000000
+
+Patch Set 1:
+
+Build Started https://ci.eclipse.org/jgit/job/jgit.gerrit/10872/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-08-07 12:40:03.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://ci.eclipse.org/jgit/job/jgit.gerrit/10872/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-08-08 12:38:50.000000000
+
+Patch Set 1: Code-Review-1
+
+(6 comments)
+
+File Comment: org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/file/GcConcurrentTest.java -> can you add a test which tests that after a gc run by a different process jgit will find and use the bitmap index of the new packs created by gc ?
+
+Line:151, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/file/GcConcurrentTest.java -> remove dead code ?
+
+Line:167, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/file/GcConcurrentTest.java -> remove duplicate "when"
+
+Line:169, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/file/GcConcurrentTest.java -> repo is gc'ed
+
+Line:14, /COMMIT_MSG -> missing blank after comma
+
+Line:17, /COMMIT_MSG -> Fix getBitmapIndex() to invalidate
+
+-------------------------------------
+author: Zachary Orozco
+date: 2017-08-14 15:45:17.000000000
+
+Patch Set 1:
+
+(6 comments)
+
+File Comment: org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/file/GcConcurrentTest.java -> I could add a test with multiple processes. But I think it is not required because this test shows (because he is failing without the fix) that even a gc started from the same process shows the problem. The test shows that you only have to run a gc with a different Repository instance (pointing to the same location in the filesystem) in order to corrupt the original repository/objectDatabase. And with the fix we can write the packfile - means we detect the new packfile.
+
+An explicit test whether the new bitmap index file is used has been added.
+
+Line:151, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/file/GcConcurrentTest.java -> Done
+
+Line:167, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/file/GcConcurrentTest.java -> Done
+
+Line:169, org.eclipse.jgit.test/tst/org/eclipse/jgit/internal/storage/file/GcConcurrentTest.java -> Done
+
+Line:14, /COMMIT_MSG -> Done
+
+Line:17, /COMMIT_MSG -> Done
+
+-------------------------------------

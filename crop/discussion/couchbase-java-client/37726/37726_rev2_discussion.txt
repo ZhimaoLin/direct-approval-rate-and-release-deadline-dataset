@@ -1,0 +1,79 @@
+DESCRIPTION
+
+JCBC-463: Harden shutdown procedure in CouchbaseClient
+
+Motivation
+----------
+Lingering bucket streaming threads are reported, this could be the case
+if something is preventing them from being shut down.
+
+Modifications
+-------------
+Split up the spymemcached IO and view IO shutdown in two different
+try/catch blocks, to make sure the other part always runs, even if
+something goes wrong in the other.
+
+This change goes hand-in-hand with related shutdown hardening changes
+in spymemcached directly.
+
+Result
+------
+Shutting down of the config threads now also happens if an exception
+is raised during memcached IO shutdown.
+
+Change-Id: I65bbe9ab1b5c27333012268cd3aafa5d8aa528b4
+
+
+COMMENTS
+
+author: Natasha Sullivan
+date: 2014-06-02 10:55:26.683000000
+
+Patch Set 2: Commit message was updated
+
+-------------------------------------
+author: Andreas Short
+date: 2014-06-02 14:54:26.540000000
+
+Patch Set 2: Code-Review-1
+
+(1 comment)
+
+Line:26, /COMMIT_MSG -> This result isn't necessarily true from my read of the code.  We'd pop back up the stack after the exception handler, right?  
+
+I think this is one of those areas that could be approached with a concurrent latch.  We're shutting three or more things down and we're not really shut down until they're all shut down.
+
+As written, it'd give us more info, but wouldn't complete the config shutdown if something went wrong at the memcached level.
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2014-06-03 09:42:51.301000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:26, /COMMIT_MSG -> I'm not sure I understand what you're saying but I have the feeling it is right ;)
+
+Here is what my motivation was:
+In case if the memcache shutdown fails, we just bail out, never giving the other stuff that we need to shutdown in the jcbc a chance to clean out nicely.
+
+I just segregated the two processes into two try/catch blocks to be sure the other part gets a chance to run as well.
+
+I'm not sure how a latch would help here since we are sync anyway, we'd need to spin that off into threads which we then need to shutdown anyway?
+
+-------------------------------------
+author: Andreas Short
+date: 2014-06-04 14:16:52.156000000
+
+Patch Set 2: Code-Review+2
+
+got it now
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2014-06-04 16:23:12.922000000
+
+Patch Set 2: Verified+1 Code-Review+2
+
+-------------------------------------

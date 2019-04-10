@@ -1,0 +1,71 @@
+DESCRIPTION
+
+MB-19280: Fix data race in CouchKVStore stats access
+
+As reported by ThreadSanitizer. CouchKVStore maintains a map of
+vBucketID to counter - dbFileRevMap. This is read by some of the stats
+functions (e.g. getNumPersistedDeletes) without a lock and hence there
+is a potential race.
+
+Solve this by changing the type of these counters to RelaxedAtomic<>.
+
+WARNING: ThreadSanitizer: data race (pid=10155)
+  Read of size 8 at 0x7d9000008000 by main thread (mutexes: write M21730):
+    #0 CouchKVStore::getNumPersistedDeletes(unsigned short) ep-engine/src/couch-kvstore/couch-kvstore.cc:2095 (ep.so+0x000000326779)
+    #1 EventuallyPersistentEngine::doDcpVbTakeoverStats(void const*, void (*)(char const*, unsigned short, char const*, unsigned int, void const*), std::string&, unsigned short) ep-engine/src/ep_engine.cc:5312 (ep.so+0x000000155ca5)
+    #2 EventuallyPersistentEngine::getStats(void const*, char const*, int, void (*)(char const*, unsigned short, char const*, unsigned int, void const*)) ep-engine/src/ep_engine.cc:4462 (ep.so+0x000000154622)
+
+  Previous write of size 8 at 0x7d9000008000 by thread T8 (mutexes: write M15079):
+    #0 CouchKVStore::updateDbFileMap(unsigned short, unsigned long) ep-engine/src/couch-kvstore/couch-kvstore.cc:1306 (ep.so+0x000000311d3c)
+    #1 CouchKVStore::openDB(unsigned short, unsigned long, _db**, unsigned long, unsigned long*) ep-engine/src/couch-kvstore/couch-kvstore.cc:1336 (ep.so+0x00000030f7ae)
+    #2 CouchKVStore::setVBucketState(unsigned short, vbucket_state&, Callback<KVStatsCtx>*) ep-engine/src/couch-kvstore/couch-kvstore.cc:981 (ep.so+0x00000031a557)
+    #3 CouchKVStore::snapshotVBucket(unsigned short, vbucket_state&, Callback<KVStatsCtx>*) ep-engine/src/couch-kvstore/couch-kvstore.cc:891 (ep.so+0x00000031a11c)
+    #4 EventuallyPersistentStore::snapshotVBuckets(Priority const&, unsigned short) ep-engine/src/ep.cc:949 (ep.so+0x0000000dce69)
+
+Change-Id: I83db17ffce0d0a49cfe80f23a34e5dac25ede719
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2016-04-21 08:21:35.222000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-21 08:21:44.517000000
+
+Patch Set 2:
+
+Branch restricted. PLEASE READ this URL: 
+
+http://server.jenkins.Piper Jefferson.com/job/restricted-branch-check/12643/artifact/restricted.html : FAILURE
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-21 08:22:39.319000000
+
+Patch Set 2:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/511/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-21 08:27:16.839000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/511/ : FAILURE
+
+Make encountered an error building one or more targets. ( http://factory.Piper Jefferson.com//job/ep-engine-Jasmin Rangel-3.0.x/511/ )
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-04-23 01:17:10.234000000
+
+Change has been successfully cherry-picked as da65c6d980cce70f105ed21d7c983fc8480ab103
+
+-------------------------------------

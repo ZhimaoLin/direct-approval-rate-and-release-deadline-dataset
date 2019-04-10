@@ -1,0 +1,169 @@
+DESCRIPTION
+
+RepositorySourceProvider: update selection in background job
+
+Move selection update to a background job to prevent UI freezes.
+
+See https://git.eclipse.org/r/#/c/63410/2/
+
+Change-Id: I60aac4695fbc34fc99d193f76eb577c6a1890af5
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+Signed-off-by: Jayvion Booth xxx@xxx.xxx
+
+COMMENTS
+
+author: Brenden Conley
+date: 2016-01-08 08:32:37.000000000
+
+Patch Set 9:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/7987/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-01-08 09:22:41.000000000
+
+Patch Set 9: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/7987/ : ABORTED
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-01-08 12:21:02.000000000
+
+Patch Set 9:
+
+Sorry about the late reply; I was travelling.
+
+I'm not sure this is the right approach.
+
+1. I think something is fundamentally wrong if the property tester needs to know the source provider. (Yes, I see this has changed slightly in the follow-up change, but basically only the access to the RepositorySourceProvider has been hidden in a utility class.)
+2. The text selection originally was included to have correct enablement of GitFlow submenu entries is the context menu in an open editor. To avoid that we re-evaluate the property tester on each text selection change, the RepositorySourceProvider was introduced. Now that we don't handle the text selection anymore, we wouldn't need any of this at all. We could just revert back to commit a612318d (before the RepositorySourceProvider was introduced) and simply remove the text selection handling in SelectionPropertyTestser.getRepository().
+3. Not handling the text selection breaks the context menu in open editors. I don't get any GitFlow entries at all anymore. Yes, I realize that this is fixed in the follow-up change I0bc7aee.
+
+The RepositorySourceProvider was supposed to do the cheap part (getting the repository from the selection), and enable us to do the expensive part (accessing the repo config) only if the repo really changed, which isn't the case as long as only the text selection within an editor changes. The assumption was that getting the repo from the selection was indeed cheap. We use that same mechanism elsewhere, and it never caused any performance problems. It's used in the lightweight decorator, and also in the ResourceStatePropertyTester and in the EGit UI SelectionPropertyTester (resourcesSingleRepository).
+
+So, the real question is why is getting the repo from the selection in the RepositorySourceProvider suddenly expensive, when it isn't in other places?
+
+Maybe it's because the RepositorySourceProvider gets instantiated rather early, and the projects are not mapped yet. That's what I read from Andrey's stack trace. If so, there might be ways to mitigate this:
+
+* "Activating" the RepositorySourceProvider only once the rest of Eclipse startup is done. Let it return a null entry initially, and switch it on only once the workbench has been restored. At that point presumably the projects are mapped... I don't know off-hand how we'd detect "workbench has been restored", though.
+* Alternatively, start a background job as soon as the EGit UI plugin is activated to asynchronusly try to map projects/restore the GitProviders, and hope that by the time the RepositorySourceProvider gets called, the projects are mapped. Perhaps it's even good enough to just try to load the project persistent properties in the background -- I didn't look into what gets ached there when and how.
+* Alternatively, let the RepositorySourceProvider not handle text selections, but let it additionally listen to active part changes, and whenever an editor becomes active, start listening to changes to the editor input, then determine the repo from the editor input. Again, I don't know off-hand how we'd listen to either (active part changes and editor input changes), but I guess Eclipse has the mechanisms we'd need to do that. I'm also not sure if listening to editors is enough -- what about views?
+
+Off-hand, all this job logic here strikes me as rather complicated -- even if in the end, with the follow-up change, it appears to work.
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-01-08 12:44:39.000000000
+
+Patch Set 9:
+
+(1 comment)
+
+Line:82, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/selection/RepositorySourceProvider.java -> Not sure I understand this right. You want the <with> to not return early but actually call the property test(s), which then do a waitFor? What exactly do we gain by that compared to waiting here?
+
+Also, can't we have a
+
+  private static Object IN_PROGRESS_PLACEHOLDER = new Object();
+
+and then use that here instead of allocating a new object every time?
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-01-08 12:54:57.000000000
+
+Patch Set 9: -Verified
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/7989/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-01-08 13:00:21.000000000
+
+Patch Set 9: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/7989/ : FAILURE
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-01-08 13:09:58.000000000
+
+Patch Set 9: -Verified
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/7990/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-01-08 13:33:18.000000000
+
+Patch Set 9: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/7990/ : SUCCESS
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-01-09 09:09:35.000000000
+
+Patch Set 9:
+
+> So, the real question is why is getting the repo from the selection
+ > in the RepositorySourceProvider suddenly expensive, when it isn't
+ > in other places?
+
+Have updated my Eclipse now also to Mars.1/EGit 4.2.0.201601080847. I do _not_ get any UI monitoring reports, neither on startup nor on selection changes nor on text input.
+
+@Andrey:
+* Do you consistently and reproducibly get these UI "freeze" reports?
+* When exactly do you get them? On what UI operations?
+* What's the freeze time reported?
+
+Is there anything special about your workspace? Such as workspace located on a slow (non-local?) disk? Huge number of projects and/or repos?
+
+I really would like to get at the bottom of this and understand exactly why you are getting UI freeze messages for something that in past experience seemed like a fairly cheap operation.
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-01-11 08:21:18.000000000
+
+Patch Set 9:
+
+> I really would like to get at the bottom of this and understand
+ > exactly why you are getting UI freeze messages for something that
+ > in past experience seemed like a fairly cheap operation.
+
+I now got one such UI freeze report. Happened when I started Eclipse and started doing things before the JDT initialization was done.
+
+JDT initialization always takes an inane amount of time for me, and generally starting to type or invoking context menus or doing just about anything before it's done is a bad idea. Used to be much better in Kepler...
+
+Anyway, in the assorted stack traces I got, I see two things:
+
+1. I see a conflict between JDT setting a persistent property (source attachment) and EGit trying to read a persistent property (team provider ID). If those properties happen to be in the same Bucket, JDT may block EGit.
+
+2. The RepositorySourceProvider may try to access the persistent property concurrently with the GitLightweightDecorator or even ActionHandlers' isEnabled().
+
+Not sure what we could do about (1). But (2) could perhaps be solved by making sure that action handlers don't try to re-determine the repo themselves but use the one determined by the RepositorySourceProvider. (I.e., similar to what the follow-up change to this one does.) That would at least reduce the contention on that persistent property bucket. However, doing so needs probably some more changes. See comment on the follow-up change.
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-01-19 06:26:35.000000000
+
+Patch Set 9: Code-Review-1
+
+I'm getting more and more convinced that this is just masking a problem that sits elsewhere. See bug 486081 and https://git.eclipse.org/r/#/c/64620/ . (I should add that in the UI freeze bug 486081 is about there was no RepositorySourceProvider is sight anywhere in the stack traces.)
+
+-------------------------------------
+author: Jayvion Booth
+date: 2016-01-19 06:31:29.000000000
+
+Patch Set 9:
+
+Makes sense.
+
+-------------------------------------

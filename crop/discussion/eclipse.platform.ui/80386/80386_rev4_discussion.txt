@@ -1,0 +1,196 @@
+DESCRIPTION
+
+Bug 500332 - Dispatch progress manager notifications in the UI thread
+
+There is no more need for synchronization in listeners as they are all
+executed in the same thread (aka thread safety via thread confinement). 
+
+Listeners have been changed accordingly by: 
+- removing thread safe data structures
+- removing unnecessary synchronized blocks 
+- removing WorkLeon OchoachJobs to run task in the UI thread. The concept of
+infrastructure job disappears at the same time.
+
+Change-Id: Ie4aa98b29c7272c22dccc3fcc84d29b78e7448bf
+Signed-off-by: Cash Galloway xxx@xxx.xxx
+
+COMMENTS
+
+author: Rayan Moreno
+date: 2016-10-03 15:22:13.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-10-03 15:22:19.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/10735/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-10-03 15:53:55.000000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/10735/ : SUCCESS
+
+-------------------------------------
+author: Kelly Potter
+date: 2016-10-11 17:09:58.000000000
+
+Patch Set 4:
+
+(12 comments)
+
+Line:633, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/ProgressManager.java -> How did you determine that computeIfAbsent() is more expensive? I'd think it does exactly the same amount of synchronization as containsKey(...)... and if we ever start calling Display.asyncExec faster than the UI thread can process them, the runtime for n calls degenerates to O(n^2) due to the way insertion happens.
+
+(This isn't necessarily wrong - I'm just wondering how you came to this conclusion).
+
+Line:638, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/ProgressManager.java -> The timerExec call, below, may result in a call to refreshJobInfo occurring after the job has been removed. This could potentially cause problems in some listeners. Suggest checking the return value of remove(...) to determine if the job was still present in scheduledUpdates. Abort early if it is missing.
+
+You could then remove the job from scheduledUpdates when the job is removed in order to protect against this possibility.
+
+Line:641, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/ProgressManager.java -> This method knows it's already on the UI thread, so there's no need to call into the utility function refreshGroup that performs an additional asyncExec. Extract the innards of refreshGroup (which run on the UI thread) into its own private utility method and call that utility here.
+
+Line:655, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/ProgressManager.java -> Rather than using one runnable per JobInfo, it would be simpler and more efficient to use one global Runnable that iterates over the pending scheduledUpdates. scheduledUpdates could be a Set rather than a map, and you could use a static boolean rather than a containsKey call to determine whether the global runnable has been scheduled.
+
+Line:676, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/ProgressManager.java -> This could potentially become expensive if invoked rapidly, much like refreshJobInfo can. As far as I can tell none of the current callers do this, but it may be safer to use a pendingGroupUpdates set that works similar to the pendingUpdates sets for tasks. If you take my other suggestion, above, of using a single global runnable for the pendingUpdates then that same runnable could process the pending group updates.
+
+Line:687, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/ProgressManager.java -> This method is unused and has no test coverage. It would be much safer to delete it than to change it. If you anticipate a future use for it and wish to keep it, please write a regression test before changing it.
+
+Line:712, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/ProgressManager.java -> Suggest removing the job from pendingUpdates, to prevent listeners from receiving an update after a removal.
+
+Line:727, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/ProgressManager.java -> If you take my other suggestion, above, and use a pendingGroupUpdates set, the group should probably be removed from pendingGroupUpdates here.
+
+Line:212, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/ProgressViewUpdater.java -> Although this is now guaranteed to run in the UI thread, I'd suggest that you still make it asynchronous using a timerExec. This could potentially be called by refresh(JobInfo) n times every 100ms (where n is the number of running jobs). Since this method itself runs in O(n) time, the time spent in updates would quickly degenerate to O(n^2) if there were a large number of jobs all reporting progress faster than one update per 100ms.
+
+Also, the time between updates should probably be configurable via a constant. I suspect we could probably handle one update every 16ms (or as fast as a 60hz monitor can go) without too much of a performance cost. Let's set it to 100ms initially and then try to reduce it based on numbers from the performance tests until we see a measurable increase in the runtime cost.
+
+Line:399, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/ProgressAnimationItem.java -> Suggest using a timerExec + boolean to ensure that there is a maximum refresh rate. Possibly write a utility class that accepts a Runnable and a maximum refresh rate in order to share the implementation between removed, finished, and ProgressViewUpdator.
+
+Line:33, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/JobInfo.java -> I'm having trouble following the chain of callers for this member variable -- but it looks to me as though it may be accessed in both the UI thread and the Job's thread, in which case some sort of synchronization is needed or (even better) the UI thread should be acting on a different copy of the data.
+
+Could you please either add a comment explaining how we ensure that the variable is only used in a single thread or add code to ensure thread safety.
+
+Line:111, tests/org.eclipse.ui.tests/Eclipse UI Tests/org/eclipse/ui/tests/progress/ProgressAnimationItemTest.java -> Please add a comment explaining why this asyncExec is necessary.
+
+-------------------------------------
+author: Rayan Moreno
+date: 2016-10-13 14:19:27.000000000
+
+Patch Set 4:
+
+(12 comments)
+
+Patch set 7 still has one failing unit test in ProgressAnimationItemTest (see my comment in the source and in the reply to your comment)
+
+Also note that the introduction of the throttler in the listeners degrades the performances (probably due to the SWT queue handling). From my testing, the performance level is approximately the same as with the scheduledExecutor. Thoughts?
+
+Line:633, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/ProgressManager.java -> I determined it via profiling. IIRC, computeIfAbsent is more expensive only when the key is present (it does more things to prepare the insertion which must be atomic with the get()). 
+
+Anyway, this is all solved by the usage of a pendingUpdates set as you suggested below.
+
+Line:638, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/ProgressManager.java -> Done
+
+Line:641, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/ProgressManager.java -> Done
+
+Line:655, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/ProgressManager.java -> Done
+
+Line:676, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/ProgressManager.java -> Done
+
+Line:687, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/ProgressManager.java -> Deleted.
+
+Line:712, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/ProgressManager.java -> Done
+
+Line:727, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/ProgressManager.java -> Done
+
+Line:212, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/ProgressViewUpdater.java -> Done
+
+Line:399, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/ProgressAnimationItem.java -> Done
+
+Line:33, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/JobInfo.java -> You're right. I overlooked at this field. I've reverted to ConcurrentLinkedQueue.
+
+Line:111, tests/org.eclipse.ui.tests/Eclipse UI Tests/org/eclipse/ui/tests/progress/ProgressAnimationItemTest.java -> I've added a comment explaining why. However, this is not enough anymore, and it seems that the timerExec in ProgressAnimationItem make it impossible to use the asyncExec trick. Any idea how I could fix the broken tests?
+
+-------------------------------------
+author: Kelly Potter
+date: 2016-10-18 14:48:38.000000000
+
+Patch Set 4:
+
+(2 comments)
+
+Line:633, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/progress/ProgressManager.java -> Thanks. The profiler is always right. :-)
+
+Line:111, tests/org.eclipse.ui.tests/Eclipse UI Tests/org/eclipse/ui/tests/progress/ProgressAnimationItemTest.java -> Currently you trigger your assertion when an asyncExec gets to the front of the queue and you run the event loop until it's empty.
+
+Option 1:
+
+Instead, you could use the existing listener interfaces to register a listener on JobManager that gets called back when the appropriate change occurs, and you could run the event loop until the change event is received.
+
+Option 2:
+
+Your other comment seems to indicate that my suggestion of using a Throttler based on timerExec actually slowed things down rather than speeding them up... which is bad. What if Throttler just used an asyncExec without the timerExec? I'm not sure if that would perform better or worse than the timerExec version, but if it's better then that would let you continue to use the asyncExec trick here.
+
+Of course, you could also do both if you wanted.
+
+-------------------------------------
+author: Kelly Potter
+date: 2016-10-18 14:58:17.000000000
+
+Patch Set 4:
+
+Hey, sorry for attaching comments to your old patch so late. I actually wrote them ages ago but gerrit didn't send them thanks to this bug:
+
+https://bugs.eclipse.org/bugs/show_bug.cgi?id=506154
+
+-------------------------------------
+author: Kelly Potter
+date: 2016-10-19 13:43:47.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:111, tests/org.eclipse.ui.tests/Eclipse UI Tests/org/eclipse/ui/tests/progress/ProgressAnimationItemTest.java -> Since we're still using timerExec in Throttler, using the listener interfaces would probably be the best option.
+
+-------------------------------------
+author: Rayan Moreno
+date: 2016-10-24 13:53:38.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:111, tests/org.eclipse.ui.tests/Eclipse UI Tests/org/eclipse/ui/tests/progress/ProgressAnimationItemTest.java -> +1. It works. Thanks!!!
+
+-------------------------------------
+author: Kelly Potter
+date: 2016-10-28 00:03:31.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:111, tests/org.eclipse.ui.tests/Eclipse UI Tests/org/eclipse/ui/tests/progress/ProgressAnimationItemTest.java -> Looks like there's a race condition here.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-11-13 23:54:41.000000000
+
+Project policy requires all submissions to be a fast-forward.
+
+Please rebase the change locally and upload again for review.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-11-13 23:54:57.000000000
+
+Change has been successfully merged into the git repository by Kelly Potter
+
+-------------------------------------

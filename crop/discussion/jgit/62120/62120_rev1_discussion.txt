@@ -1,0 +1,171 @@
+DESCRIPTION
+
+Fix push with jgit pgm failing with "unauthorized"
+
+Pushing with JGit commandline to e.g. Github failed with "unauthorized"
+since HttpUrlConnection calls the configured authenticator implicitly.
+
+The problem is that during a push two requests are sent to the server,
+first a GET and then a POST (containing the pack data). The first GET
+request sent anonymously is rejected with 401 (unauthorized). When an
+Authenticator is installed the java.net classes will use the
+Authenticator to ask the user for credentials and retry the request.
+But this happens under the hood and JGit level code doesn't see that
+this happens.
+
+The next request is the POST but since JGit thinks the first GET request
+went through anonymously it doesn't add authentication headers to the
+POST request. This POST of course also fails with 401 but since this
+request contains a lot of body-data streamed from JGit (the pack file!)
+the java.net classes can't simply retry the request with authorization
+headers. The whole process fails.
+
+Fix this by using Apache httpclient which doesn't use Authenticator to
+retrieve credentials. Instead initialize TransportCommand to use the
+default credential provider if no other credentials provider was set
+explicitly. org.eclipse.jgit.pgm.Main sets this default for the JGit
+command line client.
+
+Change-Id: Ic4e0f8b60d4bd6e69d91eae0c7e1b44cdf851b00
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+
+COMMENTS
+
+author: Douglas Trujillo
+date: 2015-12-07 15:34:00.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-12-07 15:58:59.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7679/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-12-07 16:07:07.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7679/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-12-08 12:22:34.000000000
+
+Patch Set 1:
+
+Let's debug together. On my linux box it still fails. See this trace with my environment,.netrc settings,proxy, ...
+
+  ~/git/jgit> ls -l ~/.netrc ~/.gitcookies
+  ls: cannot access /home/chris/.netrc: No such file or directory
+  ls: cannot access /home/chris/.gitcookies: No such file or directory
+  ~/git/jgit> git config -l | grep credential
+  ~/git/jgit> env | grep proxy
+  http_proxy=http://proxy.wdf.sap.corp:8080
+  https_proxy=https://proxy.wdf.sap.corp:8080
+  no_proxy=....
+  ~/git/jgit> git log --oneline -1
+  1b508b4 Fix push with jgit pgm failing with "unauthorized"
+  ~/git/jgit> mvn -q clean install -Dmaven.test.skip=true
+  Warning:  org.apache.xerces.jaxp.SAXParserImpl$JAXPSAXParser: Property 'http://www.oracle.com/xml/jaxp/properties/entityExpansionLimit' is not recognized.
+  ...
+  Warning:  org.apache.xerces.parsers.SAXParser: Property 'http://www.oracle.com/xml/jaxp/properties/entityExpansionLimit' is not recognized.
+  ~/git/jgit> cd /tmp
+  /tmp> git clone https://github.com/chalstrick/dondalfi.git
+  Cloning into 'dondalfi'...
+  ...
+  Checking connectivity... done.
+  /tmp> cd dondalfi/
+  /tmp/dondalfi> echo $(date) >>a && git commit -a -m modA
+  [master 5acf13e] modA
+   1 file changed, 1 insertion(+)
+  /tmp/dondalfi> git push origin HEAD:refs/heads/master
+  Username for 'https://github.com': chalstrick
+  Password for xxx@xxx.xxx 
+  Counting objects: 18, done.
+  ...
+     96fe9f3..5acf13e  HEAD -> master
+  /tmp/dondalfi> echo $(date) >>a && git commit -a -m modA
+  [master a5eafff] modA
+   1 file changed, 1 insertion(+)
+  /tmp/dondalfi> java -jar ~/git/jgit/org.eclipse.jgit.pgm/target/jgit-cli.jar push origin HEAD:refs/heads/master
+  Username for https://github.com/chalstrick/dondalfi.git/info/refs?service=git-receive-pack: chalstrick
+  Password: 
+  Counting objects:       3
+  Finding sources:        100% (3/3)
+  Getting sizes:          100% (2/2)
+  Compressing objects:    100% (390/390)
+  Writing objects:        100% (3/3)
+  org.eclipse.jgit.api.errors.TransportException: https://github.com/chalstrick/dondalfi.git: 401 Authorization Required
+  	at org.eclipse.jgit.api.PushCommand.call(PushCommand.java:164)
+  	at org.eclipse.jgit.pgm.Push.run(Push.java:130)
+  	at org.eclipse.jgit.pgm.TextBuiltin.execute(TextBuiltin.java:199)
+  	at org.eclipse.jgit.pgm.Main.execute(Main.java:223)
+  	at org.eclipse.jgit.pgm.Main.run(Main.java:124)
+  	at org.eclipse.jgit.pgm.Main.main(Main.java:98)
+  Caused by: org.eclipse.jgit.errors.TransportException: https://github.com/chalstrick/dondalfi.git: 401 Authorization Required
+  	at org.eclipse.jgit.transport.TransportHttp$Service.openResponse(TransportHttp.java:875)
+  	at org.eclipse.jgit.transport.TransportHttp$MultiRequestService.execute(TransportHttp.java:977)
+  	at org.eclipse.jgit.transport.TransportHttp$Service$HttpExecuteStream.read(TransportHttp.java:903)
+  	at org.eclipse.jgit.util.io.UnionInputStream.read(UnionInputStream.java:145)
+  	at org.eclipse.jgit.util.IO.readFully(IO.java:247)
+  	at org.eclipse.jgit.transport.PacketLineIn.readLength(PacketLineIn.java:186)
+  	at org.eclipse.jgit.transport.SideBandInputStream.needDataPacket(SideBandInputStream.java:158)
+  	at org.eclipse.jgit.transport.SideBandInputStream.read(SideBandInputStream.java:140)
+  	at org.eclipse.jgit.util.IO.readFully(IO.java:247)
+  	at org.eclipse.jgit.transport.PacketLineIn.readLength(PacketLineIn.java:186)
+  	at org.eclipse.jgit.transport.PacketLineIn.readString(PacketLineIn.java:138)
+  	at org.eclipse.jgit.transport.BasePackPushConnection.readStringLongTimeout(BasePackPushConnection.java:370)
+  	at org.eclipse.jgit.transport.BasePackPushConnection.readStatusReport(BasePackPushConnection.java:322)
+  	at org.eclipse.jgit.transport.BasePackPushConnection.doPush(BasePackPushConnection.java:202)
+  	at org.eclipse.jgit.transport.TransportHttp$SmartHttpPushConnection.doPush(TransportHttp.java:807)
+  	at org.eclipse.jgit.transport.BasePackPushConnection.push(BasePackPushConnection.java:154)
+  	at org.eclipse.jgit.transport.PushProcess.execute(PushProcess.java:167)
+  	at org.eclipse.jgit.transport.Transport.push(Transport.java:1250)
+  	at org.eclipse.jgit.api.PushCommand.call(PushCommand.java:157)
+  	... 5 more
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-12-15 09:05:26.000000000
+
+Change could not be merged because of a missing dependency.
+
+The following changes must also be submitted:
+
+* Ibbd45b73efc663821866754454cea65e6d03f832
+* I894d1621aaccd71dfe100fe83a1bd9d50a1e0808
+
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-12-15 11:44:09.000000000
+
+Change could not be merged because of a missing dependency.
+
+The following changes must also be submitted:
+
+* Ibbd45b73efc663821866754454cea65e6d03f832
+
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-12-15 11:45:21.000000000
+
+The change requires a local merge to resolve.
+
+Please merge (or rebase) the change locally and upload the resolution for review.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-12-15 12:31:25.000000000
+
+Change has been successfully merged into the git repository by Zachary Orozco
+
+-------------------------------------

@@ -1,0 +1,57 @@
+DESCRIPTION
+
+JVMCBC-202: make Observe eager and resilient to failed over replica
+
+(backported by cherry pick from commit 1f86ea3)
+
+Motivation
+----------
+Observe should succeed as soon as minimal criteria are met.
+It also should be resilient to X replica out of N being unavailable
+(because in fail-over) and be able to succeed the ReplicateTo count
+Y <= N - X.
+
+For instance, with 3 replicas A B C configured, A being unavailable and
+B being laggy, a ReplicateTo.ONE should return immediately after C
+responds (not wait for B nor fail because of A).
+
+Modifications
+-------------
+State of the Observe is now represented by an immutable ObserveItem. It
+is in charge of tracking replicated/persisted counts, as well as holding
+the logic to map from an ObserveResponse to these counters. It can be
+check()ed vs ReplicateTo/PersistTo criteria.
+
+Instead of aggregating responses with a toList() (which will block until
+all responses are received), a scan is performed that aggregate into
+ObserveItems (both final and intermediate).
+
+This allows to take the shortcut to success as soon as a good enough
+state is observed.
+
+Also failed nodes and errors will be delayed (via mergeDelayErrors) so
+that other available nodes have a chance to be taken into account, and
+potentially lead to a good enough observed state. This means that if
+enough replicas are remaining available for the ReplicateTo factor to be
+met for instance, then the observe will succeed.
+
+Results
+-------
+When there is a failed over, unavailable, replica and an available one,
+an observe of ReplicateTo.ONE will succeed, just considering response
+from the available replica.
+
+Change-Id: Ie068f5280352293566efec23f3141ce5a75e6d58
+Reviewed-on: http://review.couchbase.org/51510
+Tested-by: Estrella Humphrey xxx@xxx.xxx
+Reviewed-by: Natasha Sullivan xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Gerrit Code Review
+date: 2015-05-29 14:57:05.918000000
+
+Change has been successfully cherry-picked as ae7820f3fedaa739dbf6466235be697c4e0b3f35
+
+-------------------------------------

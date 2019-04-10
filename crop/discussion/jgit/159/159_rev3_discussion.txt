@@ -1,0 +1,125 @@
+DESCRIPTION
+
+Switch build to Apache Felix maven-bundle-plugin
+
+Tycho isn't production ready for projects like JGit to be using as
+their primary build driver.  Some problems we ran into with Tycho
+0.6.0 that are preventing us from using it are:
+
+ * Tycho can't run offline
+
+   The P2 artifact resolver cannot perform its work offline.  If the
+   build system has no network connection, it cannot compile a
+   project through Tycho.  This is insane for a distributed version
+   control system where developers are used to being offline during
+   development and local testing.
+
+ * Magic state in ~/.m2/repository/.meta/p2-metadata.properties
+
+   Earlier iterations of this patch tried to use a hybrid build,
+   where Tycho was only used for the Eclipse specific feature and P2
+   update site, and maven-bundle-plugin was used for the other code.
+   This build seemed to work, but only due to magic Tycho specific
+   state held in my local home directory.  This means builds are not
+   consistently repeatable across systems, and lead me to believe
+   I had a valid build, when in fact I did not.
+
+ * Manifest-first build produces incomplete POMs
+
+   The POM created by the manifest-first build format does not
+   contain the dependency chain, leading a downstream consumer to
+   not import the runtime dependencies necessary to execute the
+   bundle it has imported.  In JGit's case, this means JSch isn't
+   included in our dependency chain.
+
+ * Manifest-first build produces POMs unreadable by Maven 2.x
+
+   JGit has existing application consumers who are relying on
+   Maven 2.x builds.  Forcing them to step up to an alpha release
+   of Maven 3 is simply unacceptable.
+
+ * OSGi bundle export data management is tedious
+
+   Editing each of our pom.xml files to mark a new release is
+   difficult enough as it is.  Editing every MANIFEST.MF file to
+   list our exported packages and their current version number is
+   something a machine should do, not a human.  Yet the Tycho OSGi
+   way unfortunately demands that a human do this work.
+
+ * OSGi bundle import data management is tedious
+
+   There isn't a way in the MANIFEST.MF file format to reuse the
+   same version tags across all of our imports, but we want to have
+   a consistent view of our dependencies when we compile JGit.
+
+After wasting more than 2 full days trying to get Tycho to work,
+I've decided its a lost cause right now.  We need to be chasing down
+bugs and critical features, not trying to bridge the gap between
+the stable Maven repository format and the undocumented P2 format
+used only by Eclipse.
+
+So, switch the build to use Apache Felix's maven-bundle-plugin.
+
+This is the same plugin Jetty uses to produce their OSGi bundle
+manifests, and is the same plugin used by the Apache Felix project,
+which is an open-source OSGi runtime.  It has a reasonable number
+of folks using it for production builds, and is running on top of
+the stable Maven 2.x code base.
+
+With this switch we get automatically generated MANIFEST.MF files
+based on reasonably sane default rules, which reduces the amount
+of things we have to maintain by hand.  When necessary, we can add
+a few lines of XML to our POMs to tweak the output.
+
+Our build artifacts are still fully compatible with Maven 2.x, so
+any downstream consumers are still able to use our build products,
+without stepping up to Maven 3.x.  Our artifacts are also valid as
+OSGi bundles, provided they are organized on disk into a repository
+that the runtime can read.
+
+With maven-bundle-plugin the build runs offline, as much as Maven
+2.x is able to run offline anyway, so we're able to return to a
+distributed development environment again.
+
+By generating MANIFEST.MF at the top level of each project (and
+therefore outside of the target directory), we're still compatible
+with Eclipse's PDE tooling.  Our projects can be imported as standard
+Maven projects using the m2eclipse plugin, but the PDE will think
+they are vaild plugins and make them available for plugin builds,
+or while debugging another workbench.
+
+This change also completely removes Tycho from the build.
+
+Unfortunately, Tycho 0.6.0's pom-first dependency resolver is broken
+when resolving a pom-first plugin bundle through a manifest-first
+feature package, so bundle org.eclipse.jgit can't be resolved,
+even though it might actually exist in the local Maven repository.
+
+Rather than fight with Tycho any further, I'm just declaring it
+plugina-non-grata and ripping it out of the build.
+
+Since there are very few tools to build a P2 format repository, and
+no documentation on how to create one without running the Eclipse
+UI manually by poking buttons, I'm declaring that we are not going
+to produce a P2 update site from our automated builds.
+
+Change-Id: If7938a86fb0cc8e25099028d832dbd38110b9124
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2009-12-28 23:49:50.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2009-12-28 23:53:52.000000000
+
+Patch Set 3: Looks good to me, approved; IP review completed
+
+
+
+-------------------------------------

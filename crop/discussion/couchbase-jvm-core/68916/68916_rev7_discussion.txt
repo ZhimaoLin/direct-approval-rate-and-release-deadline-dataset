@@ -1,0 +1,51 @@
+DESCRIPTION
+
+JVMCBC-371: Safeguard connect callback on endpoint.
+
+Motivation
+----------
+Previously it has always been expected (as the contract states)
+that when connecting a channel the future always returns with either
+success or failure eventually. It has been observed that in some
+environments it is possible that this contract doesn't hold.
+
+In the end, it doesn't really matter if its an environmental
+issue or a bug in netty, we should safeguard it with a finite
+timeout and then enter the retry loop just to be safe.
+
+Modifications
+-------------
+This changeset leaves the actual retry logic on failed connect
+attempts unchanged, all it does is wrap the original callback
+into an rx Single and then add an explicit timeout, which is
+currently set to 500ms above the socket connect timeout. If
+this timeout hits, it gets converted into a socket connect
+timeout so the previous logic of error handling works as
+usual.
+
+Note that the only thing that had to be added is that
+if the channel is null, we need to schedule the retry
+on an event loop from the ioPool. In theory we could
+always do this, but I wanted to leave as much logic
+as possible the same as before to avoid regressions.
+
+Result
+------
+If the connect callback never returns we now have
+a safeguard in place that lets the client retry with
+the normal logic.
+
+Change-Id: I0513c28777f87ae4be1ac6b18e32c5216fab5111
+Reviewed-on: http://review.couchbase.org/68916
+Tested-by: Natasha Sullivan xxx@xxx.xxx
+Reviewed-by: Marques Ellis xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Gerrit Code Review
+date: 2016-10-27 05:07:24.283000000
+
+Change has been successfully cherry-picked as 677bae630ca3afd6311ac58d7857dd6447f7774d by Natasha Sullivan
+
+-------------------------------------

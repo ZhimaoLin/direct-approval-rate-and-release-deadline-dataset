@@ -1,0 +1,48 @@
+DESCRIPTION
+
+MB-5264: Use correct ep_engine stats to check if XDCR items persisted
+
+This change-set removes using ep_engine checkpoint stat in CAPI before
+updating the document, which is unnecessary and has caused slow XDCR
+rate. Instead, it is using write queue size and number of completed
+flushes stats to make sure XDCR items have been persisted. It also
+allows XCR to use ep_startup_time to ensure no engine crash and
+restart during XCDR.
+
+Change-Id: I84ef3b002753597fb7fbb4b7dc73a73bad67e3f3
+
+
+COMMENTS
+
+author: Macie Morton
+date: 2012-06-07 00:17:08.239000000
+
+Uploaded patch set 9.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-06-07 01:49:13.587000000
+
+Patch Set 9:
+
+on point 3) of in this flushing approach. I quote:
+
+3) if write queue is not empty but flusher is inactive, wait for the current items in write queue to flush in next flush (one more completed flush)
+
+What can happen is flusher_todo is down to zero but flusher has not yet bumped completed runs counter. And there's stuff in write queue. In this case you need to wait for flusher runs counter to be incremented twice (one for currently nearly done flush and another one for next run that'll persist currently queued items). But your code will wait only for one "bump" of flusher runs counter.
+
+So even if we fix seemingly unreliable ep_queue_size stat we have problem pointed out above. And if there's indeed problem with ep_queue_size it needs to be fixed anyways.
+
+-------------------------------------
+author: Macie Morton
+date: 2012-06-07 02:38:20.664000000
+
+Patch Set 9:
+
+Thanks for comment. Looks like it is a different case we tNathalie Landryed about. 
+
+IMHO the real issue is that ep_engine stats are updated asynchronously, not the algorithm in ensure_full_commit. In your example, flusher_todo is updated in a way that value 0 does not necessarily means the flusher is inactive. Thread could still be in flushOne() after flushing the last item.
+
+To fix it, we can either 1) create a new boolean ep_engine stat like "flusher_active" which should be updated synchronously with completed_flush; or 2) make the last decrement of flusher_todo synchronous with completed_flush; or 3)we always wait until completed_flush bumped by 2, or time out if nothing to flush after being bumped by 1, as long as write queue is not empty, regardless of state of flusher_todo. This is easiest, but probably not optimal.
+
+-------------------------------------

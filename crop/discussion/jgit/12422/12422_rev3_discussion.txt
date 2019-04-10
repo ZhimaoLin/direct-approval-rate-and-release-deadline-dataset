@@ -1,0 +1,105 @@
+DESCRIPTION
+
+Add a method to ObjectInserter to read back inserted objects
+
+In the DFS implementation, flushing an inserter writes a new pack to
+the storage system and is potentially very slow, but was the only way
+to ensure previously-inserted objects were available. For some tasks,
+like performing a series of three-way merges, the total size of all
+inserted objects may be small enough to avoid flushing the in-memory
+buffered data. DfsOutputStream already provides a read method to read
+back from the not-yet-flushed data, so use this to provide an
+ObjectReader in the DFS case.
+
+In the file-backed case, objects are written out loosely on the fly,
+so the implementation can just return the existing WindowCursor.
+
+Change-Id: I454fdfb88f4d215e31b7da2b2a069853b197b3dd
+
+
+COMMENTS
+
+author: Santos Moore
+date: 2013-05-03 18:46:54.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-05-03 19:15:11.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3495/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-05-03 20:38:55.000000000
+
+Patch Set 3: Fails
+
+Build Failed 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3495/ : FAILURE
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-05-04 15:20:14.000000000
+
+Patch Set 3: No score
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3502/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-05-04 15:25:34.000000000
+
+Patch Set 3: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3502/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2013-05-05 16:23:23.000000000
+
+Patch Set 3: I would prefer that you didn't submit this
+
+(5 inline comments)
+
+
+
+Line:399, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsInserter.java -> Ironically the way you have this implemented we have data in cache but the output stream doesn't know how to get it, so you re-read from disk.
+
+Look at what DfsPackParser does. It tries to keep track of the output position and uses cache blocks when possible for reading, and only asks the DfsOutputStream for data if the cache block is missing.
+
+I wonder if you can refactor code out of DfsPackParser to share with DfsInserter to implement a common cache-based read-back.
+
+Line:435, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsInserter.java -> IIRC this is not carried into the new clone reader by any other implementation.
+
+Line:502, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsInserter.java -> Import these using a static import.
+
+Line:506, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsInserter.java -> 0xf
+
+Line:530, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsInserter.java -> If you are doing this also override isLarge() to return true. The default version of isLarge() calls this method and traps the exception to return true. That is a slow way to say "don't call this".
+
+-------------------------------------
+author: Santos Moore
+date: 2013-05-15 17:53:29.000000000
+
+Patch Set 3: (5 inline comments)
+
+
+
+Line:399, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsInserter.java -> I'm happy to fix this, but it seems like belongs in DfsOutputStream. ISTM a smart implementation of DfsOutputStream.read would do this, since it knows the PackKey it's writing.
+
+Line:435, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsInserter.java -> Done
+
+Line:502, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsInserter.java -> Done
+
+Line:506, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsInserter.java -> Done
+
+Line:530, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsInserter.java -> Done
+
+-------------------------------------

@@ -1,0 +1,265 @@
+DESCRIPTION
+
+MB-13910: Refactor flow control code; add a new flow control policy
+
+Create flow control class and flow control manager class.
+Also add a new aggressive flow control policy which always allocates
+5% of bucket memory quota across all flow control buffers.
+Change-Id: I473dc553b12ef8512ac47fb898f3e311e8e53c0c
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2015-07-08 22:59:44.689000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-07-08 22:59:52.382000000
+
+Patch Set 2:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/411/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-07-08 23:06:58.170000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/411/ : SUCCESS
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2015-07-08 23:54:11.098000000
+
+Patch Set 2:
+
+Adding more test cases to test producer behavior.
+
+Meanwhile request you guys to give review comments
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2015-07-09 00:10:26.550000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:53, src/dcp/flow-control.cc -> Please ignore this comment. This is not supposed to be there. Will remove it in the next patch
+
+-------------------------------------
+author: Abby Duran
+date: 2015-07-09 01:45:16.987000000
+
+Patch Set 2: Code-Review-2
+
+Please split this commit into two parts (one for refactoring and the other for a new flow control). Otherwise, it might be tricky to figure out any functional or performance regressions.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-07-09 11:12:57.568000000
+
+Patch Set 2: Code-Review-1
+
+(33 comments)
+
+Line:1937, src/ep_engine.cc -> As before, I think putting these on their own line would improve readability.
+
+Line:3, src/flow-control-manager.h -> 2015
+
+Line:27, src/flow-control-manager.h -> Useful warning, but it would be great if there was a description of what the class is actually supposed to do :)
+
+Line:48, src/flow-control-manager.h -> Ditto - how does this differ from the other flow control policies?
+
+Line:61, src/flow-control-manager.h -> Same here
+
+Line:78, src/flow-control-manager.h -> And here
+
+Line:128, CMakeLists.txt -> Nit: Please put each source file on it's own line. I know a bunch of existing files here don't do this, but by putting each file on it's own line it makes it much easier to merge changes / track when different source files were added / removed.
+
+Also - try to keep the list alphabetical - again I know it's not perfect at the moment but we should at least add new stuff in the correct place :)
+
+Line:3701, tests/ep_testsuite.cc -> Just use a std::string; it knows how long it is.
+
+Line:3712, tests/ep_testsuite.cc -> Consider using the checkeq() macro, which prints what the expected and actual values were when they don't match.
+
+Line:3717, tests/ep_testsuite.cc -> Ditto
+
+Line:3720, tests/ep_testsuite.cc -> Ditto
+
+Line:3721, tests/ep_testsuite.cc -> Magic number; where does this come from?
+
+Line:3727, tests/ep_testsuite.cc -> Again, prefer checkeq
+
+Line:3730, tests/ep_testsuite.cc -> checkeq
+
+Line:3737, tests/ep_testsuite.cc -> checkeq
+
+Line:3740, tests/ep_testsuite.cc -> checkeq
+
+Line:3741, tests/ep_testsuite.cc -> more magic numbers - where do they come from?
+
+Line:714, src/ep_engine.h -> As before, can be maintain encapsulation by not exposing the whole object?
+
+Line:493, configuration.json -> As an aside, 1% of the quota could be pretty significant - we see deployments with perhaps 60GB server quota; 600MB is a decent chunk of that. Perhaps we should consider changing to a float?
+
+Line:3, src/flow-control-manager.cc -> 2015
+
+Line:50, src/flow-control-manager.cc -> I don't know the full context here, but is WARNING perhaps overkill for this message? consider if NOTICE (or even INFO) is a better choice. (NOTICE was added to master; it's not in Sherlock).
+
+Line:111, src/flow-control-manager.cc -> Same here
+
+Line:120, src/flow-control-manager.cc -> Ditto
+
+Line:159, src/flow-control-manager.cc -> Similar here
+
+Line:3, src/dcp/flow-control.h -> 2015
+
+Line:28, src/dcp/flow-control.h -> Would be helpful to add a black-box description of what this class does here.
+
+Line:76, src/dcp/flow-control.h -> You may want to increase this to a uint64_t - 4 billion bytes (4GB) doesn't sound unreasonable for what a DCP stream might process.
+
+Line:3, src/dcp/flow-control.cc -> Update to 2015
+
+Line:28, src/dcp/flow-control.cc -> Style: I generally prefer to put one initiializer list item per line, for ease of reeding.
+
+Line:60, src/dcp/flow-control.cc -> C++ style is preferred:
+
+ std:string buf_size(std::to_string(bufferSize));
+
+Line:65, src/dcp/flow-control.cc -> explicitly using strlen("connection_buffer_size") is less error-prone - are you /sure/ that string is 22 characters long? why not just get the compiler to count for you :)
+
+Line:80, src/dcp/flow-control.cc -> I know they are the same value (due to the assignment at line 50), but i'd argue it's more obvious if you write this as:
+
+ ackedBytes.fetch_add(ackable_bytes);
+ freedBytes.fetch_sub(freedBytes);
+
+... or even better call your helper method incrFreedBytes()
+
+Line:810, src/dcp/consumer.cc -> If we are allowing unfettered access to one of our member variables, this is a sign we are breaking encapsulation. Can we instead just return a const reference, or maybe provide method(s) which allow the client to only perform a constrained set of operations?
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2015-07-09 22:03:10.565000000
+
+Patch Set 2:
+
+(20 comments)
+
+I am submitting this change as 2 separate changelists now.
+In the current changelist I will just put the refactor code.
+
+In the subsequent changelist I will add the new "aggressive" flow control policy
+
+Line:1937, src/ep_engine.cc -> Done
+
+Line:3, src/flow-control-manager.h -> Done
+
+Line:27, src/flow-control-manager.h -> Done
+
+Line:48, src/flow-control-manager.h -> Done
+
+Line:61, src/flow-control-manager.h -> Done
+
+Line:78, src/flow-control-manager.h -> Done
+
+Line:128, CMakeLists.txt -> Done
+
+Line:714, src/ep_engine.h -> Currently ep_engine obj is used as a global context having handles to other class objs (like epstore, dcpConnMap_, config, checkpointConfig, serverApi etc..). If we follow strict encapsulation policy on this class we may end up bloating up this class with wrapper functions to the functions in all the classes which have their handles here. In my opinion, we can make an exception of maintaining  encapsulation for this one class.
+
+If you don't agree or have other suggestions, please feel free to continue this discussion
+
+Line:493, configuration.json -> We also limit every flow control buffer between dcp_conn_buffer_size (10 MB) and dcp_conn_buffer_size_max(50MB).
+So the rule is 1%, but also between a MIN and a MAX.
+
+Line:3, src/flow-control-manager.cc -> Done
+
+Line:50, src/flow-control-manager.cc -> Since this logged only once during a connection (or a disconnection), thought this would be helpful to debug any issues we might see in future.
+
+This is a big log overhead, but a good debug help
+
+Line:3, src/dcp/flow-control.h -> Done
+
+Line:28, src/dcp/flow-control.h -> Done
+
+Line:76, src/dcp/flow-control.h -> Generally we would have acked by then or else producer would have stopped sending mutations.
+Anyways, we don't what corner cases we may hit in customer sites. Let me go ahead and update this to uint64_t to be on safer side.
+
+Line:3, src/dcp/flow-control.cc -> Done
+
+Line:28, src/dcp/flow-control.cc -> Done
+
+Line:60, src/dcp/flow-control.cc -> Done
+
+Line:65, src/dcp/flow-control.cc -> Done
+
+Line:80, src/dcp/flow-control.cc -> There is contention on "freedBytes". For correct calculation, increment in ackedBytes should be equal to decrement in freedBytes. And this should also be equal to the bytes sent in buffer acknowledgement
+
+Doing the way you have suggested will need using a lock
+
+Line:810, src/dcp/consumer.cc -> Good catch. 
+Done!
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-07-10 09:00:56.786000000
+
+Patch Set 2:
+
+(4 comments)
+
+Line:714, src/ep_engine.h -> No, that's fine - thanks for the explanation.
+
+Line:50, src/flow-control-manager.cc -> One thing which we've tried to do in memcached (and I'd like to expand to ep-engine) is the correct semantic level for log messages. The issue at the moment is virtually everything is logged at WARNING, so when you look at the logs you cannot easily tell what is actually a warning condition (and should not happen under normal circumstance) and what is just informative.
+
+For example, take a look at the syslog levels: https://en.wikipedia.org/wiki/Syslog . While we don't directly follow that, the intent I think is useful - that under normal operation you should see no warnings (or errors) for that matter.
+
+Note that the new level "NOTICE" is enabled by default, and so this should be used for significant events which we want to record, but are not unexpected.
+
+Line:80, src/dcp/flow-control.cc -> From my reading of the code ackable_bytes is assigned without bufferSizeLock being held, and you're assigning it here after releasing it, so I don't understand what the potential race is. Could you elaborate please?
+
+Line:97, src/dcp/flow-control.cc -> Note you don't need to explicitly unlock the lock - the whole intent of SpinLockHolder is when it does out of scope the lock is released.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2015-07-10 18:10:19.078000000
+
+Patch Set 2:
+
+(3 comments)
+
+Line:50, src/flow-control-manager.cc -> Ok, I will change the log level to NOTICE
+
+Line:80, src/dcp/flow-control.cc -> ackable_bytes is a local variable and is assigned from freedBytes atomically above in line 50.
+For every run of handleFlowCtl() when we send buffer_acknowledgement to the producer, there is a decrement in freedBytes and increment in ackedBytes (both are non local varaibles, also both are atomic). We want both this increment and decrement by same amount. By using ackable_bytes this is ensured.
+There is a race for freedBytes, that is, whenever incrFreedBytes() is called it is updated. So using freedBytes.fetch_sub(freedBytes) is subject to data race.
+
+setFlowControlBufSize lock is used to make "read from bufferSize and read+write on pendingControl" atomic
+
+Line:97, src/dcp/flow-control.cc -> Making sure we do not hold this lock for a longer period in case somebody later on adds some code after the if-else blocks
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-07-10 19:08:05.428000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:80, src/dcp/flow-control.cc -> OK, thanks for the explanation. Given the subtlety here (and the fact I didn't notice it reading just this patch in isolation :) ), I think it's worth adding a comment (perhaps to the initialisation of ackable_bytes) describing it's use to help future readers of the code.
+
+Line:97, src/dcp/flow-control.cc -> I agree that's a good approach in general, but given the very next thing this code will encounter is the end of the scope (at the return), you aren't actually releasing it any quicker than if you just let it go out of scope and RAII kick in.
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-07-31 18:30:58.848000000
+
+Change has been successfully cherry-picked as 95fd6a7b8fd792b50b9393ce055dd9cca723b08c
+
+-------------------------------------

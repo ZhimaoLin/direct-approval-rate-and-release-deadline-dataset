@@ -1,0 +1,194 @@
+DESCRIPTION
+
+Provide an option to include a value while deleting an item
+
+- The store API has been expanded to assign a state for the
+  document. Calling this API with DocumentState::Deleted
+  and a value will persist the value and the document will
+  be in deleted state.
+- The get API has been enchanced to retrieve a value
+  for a document in deleted state.
+
+Change-Id: I34a0b90f11137263991a2771fb82d6d9234303fd
+
+
+COMMENTS
+
+author: Bobby Buck
+date: 2017-01-04 00:13:53.136000000
+
+Uploaded patch set 40.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-04 00:14:01.944000000
+
+Patch Set 40:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1239/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-04 00:14:02.209000000
+
+Patch Set 40:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/2519/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-04 00:14:02.444000000
+
+Patch Set 40:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2406/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-04 00:14:02.659000000
+
+Patch Set 40:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2060/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-04 00:23:47.042000000
+
+Patch Set 40: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2060/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2406/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1239/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/2519/ : SUCCESS
+
+-------------------------------------
+author: Kymani Ramirez
+date: 2017-01-04 11:58:47.448000000
+
+Patch Set 40: Code-Review-1
+
+(14 comments)
+
+Line:2143, src/couch-kvstore/couch-kvstore.cc -> probably worth leaving code unchanged, as no functional change - so annotate can be used.
+
+Line:21, tests/module_tests/timing_tests.cc -> why do we need now need to include memcached/types.h?
+
+Line:263, src/ep_engine.h -> add comment what variable nullptr corresponds to
+(i.e. similar to the "not force" above)
+
+Line:6808, tests/ep_testsuite.cc -> as no functional change - suggest leaving unchanged so annotate works
+
+Line:1308, tests/ep_testsuite_basic.cc -> be good to add some comments describing test.
+
+Line:1335, tests/ep_testsuite_basic.cc -> use checkeq(..
+
+Line:1336, tests/ep_testsuite_basic.cc -> use checkeq(..
+
+Line:1340, tests/ep_testsuite_basic.cc -> use checkeq(..
+
+Line:1377, tests/ep_testsuite_basic.cc -> as no functional change suggest leaving unchanged.
+
+Line:158, tests/suite_stubs.c -> add comment for what variables the zeros correspond to
+(and below)
+
+Line:1702, src/ep.cc -> given no functional change - probably worth leaving alone - so that annotate can be used.
+
+Line:1788, src/ep.cc -> given no functional change - probably worth leaving alone - so that annotate can be used.
+
+Line:358, tests/module_tests/hash_table_test.cc -> good to add comment what variable the extra zero corresponds to
+(and for the others added below)
+
+Line:91, src/couch-kvstore/couch-kvstore.h -> why do you need the deleteItem check? - i.e. why can't it just be
+if (value.get() == nullptr)
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-01-04 13:15:52.491000000
+
+Patch Set 40: Code-Review-1
+
+(9 comments)
+
+Line:249, src/ep_engine.cc -> Style: If you use a `switch` statement here you don't have to repeat the `document_state ==` section in both places.
+
+Line:264, src/ep_engine.cc -> Note you also need to update the stats.numOpsDelete, and check for isDegradedMode (as per itemDelete().
+
+I suggest you instead refactor itemDelete to pass in the (deleted) value to use, and then you can call that instead (and keep the common code).
+
+Line:1581, src/couch-kvstore/couch-kvstore.cc -> `new` doesn't return nullptr on failure; it'll throw a std::bad_alloc exception. You probably want to catch that and return COUCHSTORE_ERROR_ALLOC_FAIL.
+
+Also make sure that we call couchstore_free_document(doc) before returning otherwise we'll leak.
+
+Line:2536, tests/ep_testsuite.cc -> If you prefer you could just make Alive be the default value for the state argument to storeCasOut(), and then you don't have to update all these call-sites.
+
+Line:1327, tests/ep_testsuite_basic.cc -> Should also test the negative case - i.e. that performing a get() with DocumentState::Alive returns EOENT.
+
+Line:690, src/ep.cc -> Given that the default constructor of const_char_buffer creates a zero-length, nullptr buffer, you can simplify this to:
+
+ const_char_buffer empty_value;
+ vb->ht.unlocked_softDelete(v, 0, vbid, getItemEvictionPolicy(), 
+                            empty_value, PROTOCOL_BINARY_RAW_BYTES);
+
+or, if you prefer and want to be even more terse:
+
+ vb->ht.unlocked_softDelete(v, 0, vbid, getItemEvictionPolicy(), 
+                            {}, PROTOCOL_BINARY_RAW_BYTES);
+
+Line:1778, src/ep.cc -> The default value for the 4th argument of bgFetch is already false is it not? Any reason for this change?
+
+Line:55, src/kvbucket.h -> I wouldn't bother keeping these all aligned - it just introduces a whitespace-only change which makes it harder to track when code was actually added.
+
+Line:553, src/hash_table.cc -> I don't think this new `vbucket` param should be necessary - a hashTable is owned by a given vBucket already, it shouldn't need to know about the ID.
+
+It looks like you need this to be able to call setValueForDelete - I suggest that instead you move this logic up one level - have softDelete (and related functions) take an `Item* deleted_value`. If this is null, it'll behave just as the code currently does. If it's non-null, then that's used as the now-deleted value.
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2017-01-04 13:59:27.676000000
+
+Patch Set 40: Code-Review-2
+
+(3 comments)
+
+Line:1338, tests/ep_testsuite_basic.cc -> moar C++!! use a unique_ptr<char[]> buf(new [info.value[0].iov_len + 1]) and remove the cb_free, or a std::vector<char> buf(info.value[0]....);
+
+Line:573, src/hash_table.cc -> No need for the temp docKey, serial_key can be passed straight to Item. DocKey, StoredDocKey and SerialisedDocKey inherit the same interface and can all be passed when an API takes a DocKey.
+
+For example this compiles and creates Item from the StoredValue's serial key
+  Item itm(v.getKey(), v.getFlags(), v.getExptime()...);
+
+Line:576, src/hash_table.cc -> Note this is going to wastefully heap allocate a StoredDocKey inside Item which is not going to be used, it will just be deleted when the function returns.
+
+We should directly write to v with the new value without having to create a Item to pass the data (I think a new method on StoredValue is needed to support this code more efficently).
+
+-------------------------------------
+author: Bobby Buck
+date: 2017-01-04 22:58:01.220000000
+
+Patch Set 40:
+
+(1 comment)
+
+Line:91, src/couch-kvstore/couch-kvstore.h -> A deleted item could either have a value associated with it or not. The value.get() checks whether a value is associated or not.
+
+-------------------------------------
+author: Tate Garrett
+date: 2017-01-11 14:39:48.497000000
+
+Change could not be merged due to a path conflict.
+
+Please rebase the change locally and upload the rebased commit for review.
+
+-------------------------------------
+author: Tate Garrett
+date: 2017-01-11 15:01:30.298000000
+
+Change has been successfully cherry-picked as d3586e47402c4c087afcc426da98bc102373a959 by Ashlee Kent
+
+-------------------------------------

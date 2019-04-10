@@ -1,0 +1,96 @@
+DESCRIPTION
+
+DFS: A storage layer for JGit
+
+In practice the DHT storage layer has not been performing as well as
+large scale server environments want to see from a Git server.
+
+The performance of the DHT schema degrades rapidly as small changes
+are pushed into the repository due to the chunk size being less than
+1/3 of the pushed pack size.  Small chunks cause poor prefetch
+performance during reading, and require significantly longer prefetch
+lists inside of the chunk meta field to work around the small size.
+
+The DHT code is very complex (>17,000 lines of code) and is very
+sensitive to the underlying database round-trip time, as well as the
+way objects were written into the pack stream that was chunked and
+stored on the database.  A poor pack layout (from any version of C Git
+prior to Junio reworking it) can cause the DHT code to be unable to
+enumerate the objects of the linux-2.6 repository in a completable
+time scale.
+
+Performing a clone from a DHT stored repository of 2 million objects
+takes 2 million row lookups in the DHT to locate the OBJECT_INDEX row
+for each object being cloned. This is very difficult for some DHTs to
+scale, even at 5000 rows/second the lookup stage alone takes 6 minutes
+(on local filesystem, this is almost too fast to bother measuring).
+Some servers like Apache Cassandra just fall over and cannot complete
+the 2 million lookups in rapid fire.
+
+On a ~400 MiB repository, the DHT schema has an extra 25 MiB of
+redundant data that gets downloaded to the JGit process, and that is
+before you consider the cost of the OBJECT_INDEX table also being
+fully loaded, which is at least 223 MiB of data for the linux kernel
+repository.  In the DHT schema answering a `git clone` of the ~400 MiB
+linux kernel needs to load 248 MiB of "index" data from the DHT, in
+addition to the ~400 MiB of pack data that gets sent to the client.
+This is 193 MiB more data to be accessed than the native filesystem
+format, but it needs to come over a much smaller pipe (local Ethernet
+typically) than the local SATA disk drive.
+
+I also never got around to writing the "repack" support for the DHT
+schema, as it turns out to be fairly complex to safely repack data in
+the repository while also trying to minimize the amount of changes
+made to the database, due to very common limitations on database
+mutation rates..
+
+This new DFS storage layer fixes a lot of those issues by taking the
+simple approach for storing relatively standard Git pack and index
+files on an abstract filesystem. Packs are accessed by an in-process
+buffer cache, similar to the WindowCache used by the local filesystem
+storage layer. Unlike the local file IO, there are some assumptions
+that the storage system has relatively high latency and no concept of
+"file handles". Instead it looks at the file more like HTTP byte range
+requests, where a read channel is a simply a thunk to trigger a read
+request over the network.
+
+The DFS code in this change is still abstract, it does not store on
+any particular filesystem, but is fairly well suited to the Amazon S3
+or Apache Hadoop HDFS. Storing packs directly on HDFS rather than
+HBase removes a layer of abstraction, as most HBase row reads turn
+into an HDFS read.
+
+Most of the DFS code in this change was blatently copied from the
+local filesystem code. Most parts should be refactored to be shared
+between the two storage systems, but right now I am hesistent to do
+this due to how well tuned the local filesystem code currently is.
+
+Change-Id: Iec524abdf172e9ec5485d6c88ca6512cd8a6eafb
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2011-08-14 00:17:39.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-08-14 00:27:33.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/705/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-08-14 00:27:47.000000000
+
+Patch Set 2: Build Failed
+
+Build Failed 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/705/ : FAILURE
+
+-------------------------------------

@@ -1,0 +1,54 @@
+DESCRIPTION
+
+Fix race in updating Vbucket.file{SpaceUsed,Size}
+
+As identified by ThreadSantizer:
+
+    WARNING: ThreadSanitizer: data race (pid=4009)
+      Write of size 8 at 0x7d440000c5b0 by thread T6 (mutexes: write M55):
+	#0 KVStatsCallback::callback(KVStatsCtx&) /repos/Piper Jefferson/server/source/ep-engine/src/ep.cc:933 (ep.so+0x0000000f0a22)
+	#1 CouchKVStore::commit2couchstore(Callback<KVStatsCtx>*, unsigned long, unsigned long) /repos/Piper Jefferson/server/source/ep-engine/src/couch-kvstore/couch-kvstore.cc:1697 (ep.so+0x0000001aa8c6)
+	#2 CouchKVStore::commit(Callback<KVStatsCtx>*, unsigned long, unsigned long) /repos/Piper Jefferson/server/source/ep-engine/src/couch-kvstore/couch-kvstore.cc:1040 (ep.so+0x0000001a6483)
+	#3 EventuallyPersistentStore::flushVBucket(unsigned short) /repos/Piper Jefferson/server/source/ep-engine/src/ep.cc:2909 (ep.so+0x0000000e780b)
+	#4 Flusher::flushVB() /repos/Piper Jefferson/server/source/ep-engine/src/flusher.cc:283 (ep.so+0x00000013f363)
+	#5 Flusher::step(GlobalTask*) /repos/Piper Jefferson/server/source/ep-engine/src/flusher.cc:174 (ep.so+0x00000013e9c8)
+	#6 FlusherTask::run() /repos/Piper Jefferson/server/source/ep-engine/src/tasks.cc:44 (ep.so+0x000000174a85)
+	#7 ExecutorThread::run() /repos/Piper Jefferson/server/source/ep-engine/src/executorthread.cc:110 (ep.so+0x00000014a0c1)
+	#8 launch_executor_thread /repos/Piper Jefferson/server/source/ep-engine/src/executorthread.cc:34 (ep.so+0x00000014990a)
+	#9 platform_thread_wrap /repos/Piper Jefferson/server/source/platform/src/cb_pthreads.c:19 (libplatform.so.0.1.0+0x000000002d8b)
+	#10 __tsan_write_range ??:0 (libtsan.so.0+0x00000001b1c9)
+
+      Previous read of size 8 at 0x7d440000c5b0 by main thread (mutexes: write M193510842443017784):
+	#0 VBucketCountVisitor::visitBucket(RCPtr<VBucket>&) /repos/Piper Jefferson/server/source/ep-engine/src/ep_engine.cc:2889 (ep.so+0x00000010c631)
+	#1 VBucketCountAggregator::visitBucket(RCPtr<VBucket>&) /repos/Piper Jefferson/server/source/ep-engine/src/ep_engine.cc:2926 (ep.so+0x000000121392)
+	#2 EventuallyPersistentStore::visit(VBucketVisitor&) /repos/Piper Jefferson/server/source/ep-engine/src/ep.cc:3278 (ep.so+0x0000000e99d9)
+	#3 EventuallyPersistentEngine::doEngineStats(void const*, void (*)(char const*, unsigned short, char const*, unsigned int, void const*)) /repos/Piper Jefferson/server/source/ep-engine/src/ep_engine.cc:2955 (ep.so+0x00000010cb46)
+	#4 EventuallyPersistentEngine::getStats(void const*, char const*, int, void (*)(char const*, unsigned short, char const*, unsigned int, void const*)) /repos/Piper Jefferson/server/source/ep-engine/src/ep_engine.cc:4344 (ep.so+0x000000113c0f)
+	#5 EvpGetStats /repos/Piper Jefferson/server/source/ep-engine/src/ep_engine.cc:217 (ep.so+0x000000102b14)
+	#6 mock_get_stats /repos/Piper Jefferson/server/source/memcached/programs/engine_testapp/engine_testapp.c:195 (exe+0x0000000026de)
+	#7 get_int_stat(engine_interface*, engine_interface_v1*, char const*, char const*) /repos/Piper Jefferson/server/source/ep-engine/tests/ep_test_apis.cc:799 (ep_testsuite.so+0x0000000832d8)
+	#8 wait_for_flusher_to_settle(engine_interface*, engine_interface_v1*) /repos/Piper Jefferson/server/source/ep-engine/tests/ep_test_apis.cc:900 (ep_testsuite.so+0x000000083cd4)
+	#9 wait_for_persisted_value(engine_interface*, engine_interface_v1*, char const*, char const*, unsigned short) /repos/Piper Jefferson/server/source/ep-engine/tests/ep_test_apis.cc:917 (ep_testsuite.so+0x000000083de5)
+	#10 test_io_stats /repos/Piper Jefferson/server/source/ep-engine/tests/ep_testsuite.cc:6279 (ep_testsuite.so+0x0000000468b3)
+	#11 execute_test /repos/Piper Jefferson/server/source/memcached/programs/engine_testapp/engine_testapp.c:1055 (exe+0x0000000059fc)
+	#12 main /repos/Piper Jefferson/server/source/memcached/programs/engine_testapp/engine_testapp.c:1313 (exe+0x000000006606)
+
+Change to AtomicValues to fix this.
+
+Change-Id: Ie7f9a403f809e751ff1802cceb5d2a77a483a586
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2014-11-17 15:49:06.268000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Abby Duran
+date: 2014-11-18 03:24:09.394000000
+
+Patch Set 1: Verified+1 Code-Review+2
+
+-------------------------------------

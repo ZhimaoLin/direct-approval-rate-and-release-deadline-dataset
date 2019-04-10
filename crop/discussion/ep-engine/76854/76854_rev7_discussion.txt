@@ -1,0 +1,83 @@
+DESCRIPTION
+
+MB-23936: Use Threadlocal variables to accumulate stats
+
+Currently when we allocate/deallocate memory, we update the per bucket
+variable `totalMemory`. Mutiple threads contend on this variable heavily
+as mem allocation/deallocation happen often. The primary idea of
+this commit is to maintain threadlocal mem counters for each bucket and
+merge it to the `totalMemory` once the local counter reaches a threshold
+either based on size or no.of times the local counter has been updated.
+This does show a notable increase in overall performance.
+
+Limitations:
+-----------
+- We create one thread local variable per bucket. Different OS'es seem
+  to enforce different limits on the no.of tlv. Although we have a hard
+  limit of 10 buckets, I'm noting this here for future reference.
+  -> [NetBSD:256 Linux:1024 OSX:512 Windows:1088]
+
+- Windows does not seem to provide an api for releasing the mem
+  allocated for a thread-local on thread exit in a way like pthreads do.
+  So there will be a small leak of about (3*long) on every bucket
+  unload.
+
+- Valgrind might say that the unit tests have leaks on the
+  threadlocals. This is because, in the tests, bucket init happens on
+  the main thread & when main thread exits the program it does not
+  call pthread_exit, so the dtors are not called.
+
+Change-Id: Id14ced2776a29afae18831b372140dd028136b32
+
+
+COMMENTS
+
+author: Trace Williamson
+date: 2017-04-21 23:26:27.265000000
+
+Uploaded patch set 7.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-04-21 23:58:08.250000000
+
+Patch Set 7: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4711/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/5931/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5413/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6183/ : SUCCESS
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2017-04-24 08:12:35.215000000
+
+Patch Set 7: Code-Review-1
+
+(1 comment)
+
+Line:15, /COMMIT_MSG -> Can you include some of the tests you've used for measurements and maybe quote some changes? Any negative changes?
+
+-------------------------------------
+author: Trace Williamson
+date: 2017-04-24 17:12:08.101000000
+
+Patch Set 7:
+
+(4 comments)
+
+Line:15, /COMMIT_MSG -> It is very difficult add numbers & explain test cases in a commit message as of now. I've  explained the tests done & some numbers in the review comments. Mebbe I can do a wiki page separately once we have more data. We need to run lot more tests and compare the results with master for which I was told that the current way would be to merge into master first.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-25 09:49:41.733000000
+
+MISMATCHED INLINE COMMENT
+Line:15, /COMMIT_MSG -> I think it's fine to simply quote the numbers you saw in showfast (as per the MB) here- the intent is so we have a record in the code that this was a ~25% speedup; so for example when people are looking in history / binary-chipping they have a quick summary of what this patch does. For example, they can quickly see we expect a big jump in perf (in some workloads) here.
+
+-------------------------------------

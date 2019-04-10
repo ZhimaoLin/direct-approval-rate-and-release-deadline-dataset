@@ -1,0 +1,87 @@
+DESCRIPTION
+
+Do authentication re-tries on HTTP POST when pushing
+
+There is at least one git server out there (GOGS) that does
+not require authentication on the initial GET for
+info/refs?service=git-receive-pack but that _does_ require
+authentication for the subsequent POST to actually do the push.
+
+This occurs on GOGS with public repositories; for private
+repositories it wants authentication up front.
+
+Handle this behavior by adding 401 handling to our POST request.
+Note that this is suboptimal; we'll re-send the push data at
+least twice if an authentication failure on POST occurs. It
+would be much better if the server required authentication
+up-front in the GET request.
+
+Also limit the number of times we'll follow redirects.
+
+Tested successfully with a public repository at try.gogs.io.
+That server offers only BASIC auth, so the other paths
+(DIGEST, NEGOTIATE, fall back from DIGEST to BASIC) are untested
+and I have no way to test them.
+
+Also tested with a public repo after clearing the credentials and
+then entering wrong data: correctly asks three times during the HTTP
+POST for user name and password, then gives up.
+
+Also tested successfully with a private repo at try.gogs.io,
+verifying that the authentication from GET gets applied initially
+to the POST request.
+
+Bug: 513043
+Change-Id: I97ee5058569efa1545a6c6f6edfd2b357c40592a
+Signed-off-by: Alayna Houston xxx@xxx.xxx
+
+COMMENTS
+
+author: Alayna Houston
+date: 2017-06-16 16:53:20.000000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-06-16 16:53:25.000000000
+
+Patch Set 6:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/10360/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-06-16 17:03:32.000000000
+
+Patch Set 6: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/10360/ : SUCCESS
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-06-17 12:18:26.000000000
+
+Patch Set 6:
+
+(1 comment)
+
+Line:1021, org.eclipse.jgit/src/org/eclipse/jgit/transport/TransportHttp.java -> While I think that this statement is correct, I also see that HttpAuthMethod.Negotiate creates a *new* GSSContext on each configureRequest(). I think that is broken.
+
+Another thing that I haven't quite found the answer to is how SPNEGO is supposed to work with several subsequent requests. I can't believe that each request has to be authenticated individually and go again through the several exchanges. I would expect a once established GSSContext to remain valid (after all,it has a lifetime), and be able to re-use it for multiple subsequent requests until the lifetime ends. But I don't see our code doing that, and I have not found any clear documentation of that. What should the token be to send on the second request once the GET has been successfully authenticated with NEGOTIATE?
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-06-19 05:49:20.000000000
+
+Patch Set 6:
+
+(1 comment)
+
+Line:1021, org.eclipse.jgit/src/org/eclipse/jgit/transport/TransportHttp.java -> > While I think that this statement is correct, I also see that HttpAuthMethod.Negotiate creates a *new* GSSContext on each configureRequest(). I think that is broken.
+
+Hmmm... maybe I've been looking for too long at the JDK doing NTLM as part of Negotiate at https://www.eclipse.org/forums/index.php/t/1086668/ ... If we do only the Kerberos part of SPNEGO, using a fresh context might actually work?
+
+-------------------------------------

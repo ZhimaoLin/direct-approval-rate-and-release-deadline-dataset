@@ -1,0 +1,97 @@
+DESCRIPTION
+
+Add percent-encoding of reserved characters in URIish
+
+We do this for the the names that have an explicit scheme and
+do it both ways. The URIish is parsed before decoding. Only
+a few special characters are encoded for the path part of the
+URI, i.e. space, non-ASCII and control characters. The percent
+encoding is assumed to be a stream encoding so we interpret it
+as UTF-8.
+
+Change-Id: I82d1910df9472e21d7212a2b984ff7d8fb2cbf0f
+
+
+COMMENTS
+
+author: Juliet Cantu
+date: 2011-11-25 07:17:58.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-11-25 07:18:11.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1072/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-11-25 07:21:40.000000000
+
+Patch Set 2: Build Successful
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1072/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-11-26 07:26:17.000000000
+
+Patch Set 2: I would prefer that you didn't submit this
+
+(8 inline comments)
+
+
+
+Line:219, org.eclipse.jgit/src/org/eclipse/jgit/transport/URIish.java -> Do we need to worry about the odd corner case of HTTP where "http://HOST/a/b%2Fc/d" decodes to "a/b/c/d" but may then fail on the remote server because the b%2Fc component was meant to be parsed as a single directory component of /a/ namespace and not as "b" by itself?
+
+I think this is pretty unlikely. But it can happen here. It may be worthwhile at least writing a test case that shows this happens with URIish so its documented as expected behavior.
+
+Line:254, org.eclipse.jgit/src/org/eclipse/jgit/transport/URIish.java -> (optional) I usually prefer to see a blank line before a long try/finally block like this that declares a new local variable.
+
+Line:261, org.eclipse.jgit/src/org/eclipse/jgit/transport/URIish.java -> Instead of using ByteArrayOutputStream you can allocate a byte[bytes.length] and keep a running len counter. decode() below will take byte[],0,len to decode the buffer. We know we cannot exceed bytes.length as the loop either copies byte-for-byte or collapses 3 bytes to 1 (e.g. "%2F" to "/").
+
+Line:265, org.eclipse.jgit/src/org/eclipse/jgit/transport/URIish.java -> Shouldn't this be i + 2? If the input is "%2" this isn't really a valid hex escape. But the substring for i + 3 should fail.
+
+Line:267, org.eclipse.jgit/src/org/eclipse/jgit/transport/URIish.java -> We shouldn't assume the UTF-8 encoding of the input string is the same length as the string is in UTF-16. Instead use the RawParseUtils class to parse a hex digit from the byte[] using our hex parser functions.
+
+Style-nit here, we put spaces after commas in method calls.
+
+Line:276, org.eclipse.jgit/src/org/eclipse/jgit/transport/URIish.java -> private?
+
+Line:279, org.eclipse.jgit/src/org/eclipse/jgit/transport/URIish.java -> style-nit: curly braces not necessary. Should we be paranoid about the JVM platform encoding and specify Constants.CHARACTER_ENCODING here?
+
+Line:292, org.eclipse.jgit/src/org/eclipse/jgit/transport/URIish.java -> typo on escape in esacpeReservedChars
+
+-------------------------------------
+author: Juliet Cantu
+date: 2011-11-27 10:20:46.000000000
+
+Patch Set 2: (8 inline comments)
+
+
+
+Line:219, org.eclipse.jgit/src/org/eclipse/jgit/transport/URIish.java -> Ouch. Back to the drawing board. This is quite bad. It seems the standard among web apps is to parse the path *before* decoding, hence a%2Fb is rarely the same as a/b. The former usually returns a 404.
+
+I'll add a getRawPath for this.
+
+Line:254, org.eclipse.jgit/src/org/eclipse/jgit/transport/URIish.java -> I'll add  a blank, but before the declaration of bytes instead.
+
+Line:261, org.eclipse.jgit/src/org/eclipse/jgit/transport/URIish.java -> ByteArrayOutputStream is slightly higher level. Do we need super-efficiency here?
+
+Line:265, org.eclipse.jgit/src/org/eclipse/jgit/transport/URIish.java -> Done
+
+Line:267, org.eclipse.jgit/src/org/eclipse/jgit/transport/URIish.java -> RawparseUtils wouldn't assume that...!? Only ASCII digits are valid here and they are 1 to 1.
+
+Line:276, org.eclipse.jgit/src/org/eclipse/jgit/transport/URIish.java -> Done
+
+Line:279, org.eclipse.jgit/src/org/eclipse/jgit/transport/URIish.java -> ok, using encodeASCII
+Done
+
+Line:292, org.eclipse.jgit/src/org/eclipse/jgit/transport/URIish.java -> Done
+
+-------------------------------------

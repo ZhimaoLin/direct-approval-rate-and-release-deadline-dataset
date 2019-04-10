@@ -1,0 +1,129 @@
+DESCRIPTION
+
+refactoring to use generic pipeline apis
+
+Change-Id: Id426354395d178fc4e28b66fdadaec6570a3eead
+
+
+COMMENTS
+
+author: Enzo Knox
+date: 2014-09-16 22:34:09.023000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Leonel Abbott
+date: 2014-09-17 07:21:03.160000000
+
+Patch Set 1:
+
+(6 comments)
+
+Hi Yu,
+
+I have provided some initial review comments.
+
+Cheers,
+
+Line:19, secondary/projector/feed_factory.go -> feed_factory can be external to projector ? I think goxdcr can use adminport independent of projector's adminport, in other words nuances in projector.go can be left undisturbed if xdcr can have an application (and an adminport) independant of projector.
+
+Line:45, secondary/projector/feed.go -> NewFeed() is essential for projector application.
+Right now this feed instantiation is encapsulated by feed_factory which has Start() and Stop() interface method, which may not be enough to update a live feed.
+
+Line:387, secondary/projector/feed.go -> Yes, feed.engines are updated in a for loop above.
+
+Line:674, secondary/projector/feed.go -> This is another place where the current design of projector does not fit well with pipelines.
+
+An endpoint is not a target for a feed, rather is a shared target between several buckets and its vbucket-routines. On a live feed, a bucket might get deleted but we leave the endpoint active, so that it can receive messages from other bucket's vbucket-routines.
+
+On the other hand, an endpoint is referred by only one bucket and its vbucket-routines, in which case endpoint needs be garbage collected when the bucket is deleted.
+
+This is implemented with timeout and harakiri.
+
+Line:340, secondary/projector/bucket_feed.go -> This breaks the topology of go-routines.
+
+Control-path,
+feed->bucket-feed->kvfeed->upr
+kvfeed->runScatter
+
+Data-path
+upr->runScatter->vbucket-routine->endpoints
+
+To implement rollback (yet to be implemented),
+runScatter -> kvfeed
+
+Breaking this topology will make it difficult to maintain the code. Right now this mix & match works because the code has enough mechanics for failsafety and avoid race-conditions.
+
+Line:71, secondary/projector/projector.go -> Is it possible to avoid this dependancy ?
+If we can use projector feed as a library and create adaptors to them inside couchbase_goxdcr ...
+
+Changes to this file and adminport.go can be avoided if xdcr can have an application program and adminport independent of projector.
+
+-------------------------------------
+author: Enzo Knox
+date: 2014-09-17 17:42:23.782000000
+
+Patch Set 1:
+
+(6 comments)
+
+Line:19, secondary/projector/feed_factory.go -> feed_factory is a factory built specifically for projector and is not shared by other components like xdcr. That is why it is put inside projector.
+
+yes, xdcr will be using an independent adminport. That is not related to the factory, though.
+
+Line:45, secondary/projector/feed.go -> NewFeed() always creates a new feed. Updating of a live feed would not have gone through NewFeed() before refactoring, correct?
+
+Line:387, secondary/projector/feed.go -> will remove the TODO comment.
+
+Line:674, secondary/projector/feed.go -> I agree that endpoints in feed may not behave like target nozzles in pipeline. This is not an issue for refactoring, though. Feed overrided the default pipeline behavior by calling feed.CloseFeed() in feed.Stop(). In other words, feed is closed and endpoints are cleaned up in exactly the same way before and after refactoring.
+
+That being said, I did not see the code where an endpoint could be kept alive when a bucket gets deleted. Even before refactoring, feed.doClose() would call Close() on all its endpoints, which would get all the endpoints it refers to closed.  Wouldn't it?
+
+Line:340, secondary/projector/bucket_feed.go -> Can you be more specific about what change to the topology is problematic? Is it the rollback scenario?
+
+As far as I can see, the data path did not change after refactoring. The control path changed very little - vbucket-routine is now started and stopped by bucketfeed rather than kvfeed. The command channels remained the same, though. 
+
+In the case of rollback, I assume that some component upstream to kvfeed, e.g., bucketfeed or feed, would take care of the computation of new timestamps and sending new requests to kvfeed. Refactoring would not change that.
+
+Line:71, secondary/projector/projector.go -> Changes to this file are not to make projector sharable by xdcr. xdcr will have its own application and adminport.
+
+The refactoring effort could have different scopes. In the minimum scope, we refactor only the component to be shared, i.e., kvfeed, and keep changes to other components as little as possible. In the expanded scope, we refactor all components with conceptual counterparts in the pipeline framework, including projector, and make them generic. My understanding is that we want to take the latter approach to showcase the pipeline concept and to promote code sharing.
+
+-------------------------------------
+author: Enzo Knox
+date: 2014-09-17 17:43:37.847000000
+
+Patch Set 1:
+
+Pratap,
+
+I have replied to your comments. Please review.
+
+-------------------------------------
+author: Justice Schneider
+date: 2014-09-19 06:18:58.183000000
+
+Patch Set 1:
+
+(2 comments)
+
+Before this can be merged, all references (dependencies) must be forked to couchbase repo due to licensing / source control reasons.
+
+Folks - we need to follow same coding conventions as the module, in terms of length, naming etc.
+
+Please wait for +2 from me before merging as I'd like to be involved in the review as well. Thanks a lot!
+
+Line:620, secondary/projector/feed.go -> Line is too long - please limit length to 80 characters
+
+Line:38, secondary/projector/bucket_feed.go -> It is necessary that all references are to github.com/couchbase only. So this repo must be forked into couchbase prior to merging the commit.
+
+-------------------------------------
+author: Enzo Knox
+date: 2015-02-02 06:48:49.905000000
+
+Abandoned
+
+no longer applicable
+
+-------------------------------------

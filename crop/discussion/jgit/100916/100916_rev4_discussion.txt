@@ -1,0 +1,108 @@
+DESCRIPTION
+
+Send a detailed event on working tree modifications
+
+Currently there is no way to determine the precise changes done
+to the working tree by a JGit command. Only the CheckoutCommand
+actually provides access to the lists of modified, deleted, and
+to-be-deleted files, but those lists may be inaccurate (since they
+are determined up-front before the working tree is modified) if
+the actual checkout then fails halfway through. Moreover, other
+JGit commands that modify the working tree do not offer any way to
+figure out which files were changed.
+
+This poses problems for EGit, which may need to refresh parts of the
+Eclipse workspace when JGit has done java.io file operations.
+
+Provide the foundations for better file change tracking: the working
+tree is modified exclusively in DirCacheCheckout. Make it emit a new
+type of RepositoryEvent that lists all files that were modified or
+deleted, even if the checkout failed halfway through. We update the
+'updated' and 'removed' lists determined up-front in case of file
+system problems to reflect the actual state of changes made.
+
+EGit thus can register a listener for these events and then knows
+exactly which parts of the Eclipse workspace may need to be refreshed.
+
+Two commands manage checking out individual DirCacheEntries themselves:
+checkout specific paths, and applying a stash with untracked files.
+Make those two also emit such a new WorkingTreeModifiedEvent.
+
+Furthermore, merges may modify files, and clean, rm, and stash create
+may delete files.
+
+Bug: 500106
+Change-Id: I7a100aee315791fa1201f43bbad61fbae60b35cb
+Signed-off-by: Alayna Houston xxx@xxx.xxx
+
+COMMENTS
+
+author: Alayna Houston
+date: 2017-08-04 07:47:40.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-08-04 07:47:49.000000000
+
+Patch Set 4:
+
+Build Started https://ci.eclipse.org/jgit/job/jgit.gerrit/10824/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-08-04 08:00:19.000000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+https://ci.eclipse.org/jgit/job/jgit.gerrit/10824/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-08-04 08:18:12.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+File Comment: org.eclipse.jgit.test/tst/org/eclipse/jgit/events/ChangeRecorder.java -> instead of moving this class to the tst/ folder you can remove the test scope from the junit dependency to fix the maven build issue:
+
+ diff --git a/org.eclipse.jgit.test/pom.xml b/org.eclipse.jgit.test/pom.xml
+ index dad1e3cac..084014c61 100644
+ --- a/org.eclipse.jgit.test/pom.xml
+ +++ b/org.eclipse.jgit.test/pom.xml
+ @@ -66,7 xxx@xxx.xxx
+     <dependency>
+       <groupId>junit</groupId>
+       <artifactId>junit</artifactId>
+-      <scope>test</scope>
+     </dependency>
+
+     <!-- Optional security provider for encryption tests. -->
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-08-04 08:21:10.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+File Comment: org.eclipse.jgit.test/tst/org/eclipse/jgit/events/ChangeRecorder.java -> I know: I actually tried that first. But then I noticed test.bzl -- I don't know bazel at all, and have no idea whether that setup also would need to be changed. Instead of ending up with inconsistent maven/bazel setups, I chose to move the class.
+
+But if it's OK to just ignore test.bzl, I'll happily move the class back and remove the test scope from the org.junit dependency.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-08-04 08:38:46.000000000
+
+Patch Set 4:
+
+actually it's the opposite, PS 4 breaks the bazel build since it moves ChangeRecorder to tst/. We would have to tweak org.eclipse.jgit.test/BUILD to fix this. If ChangeRecorder is under src/ the bazel build & test works fine.
+
+I'll try once more to setup another build job to ensure we don't break the bazel build.
+
+-------------------------------------

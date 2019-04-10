@@ -1,0 +1,63 @@
+DESCRIPTION
+
+Client cert auth changes for ssl services
+
+This commit separates the client auth changes for ssl services
+from rest of the changes.
+
+Change-Id: I076ae82ccf23056303756790798cf7f191976961
+
+
+COMMENTS
+
+author: Tamara Lamb
+date: 2017-03-16 01:43:27.699000000
+
+Uploaded patch set 3: Patch Set 2 was rebased.
+
+-------------------------------------
+author: Kian Santos
+date: 2017-03-18 00:46:51.332000000
+
+Patch Set 3:
+
+(6 comments)
+
+Line:204, src/ns_ssl_services_setup.erl -> This function is good and in the right place. Can you replace the client_cert_auth config key lookup in memcached_config_mgr with a call to this function? Also, remove the client_cert_auth() function in menelaus_web_cert and have callers call this function instead.
+
+Line:264, src/ns_ssl_services_setup.erl -> should be indented as follows:
+
+ssl_auth_options() ->
+    case client_cert_auth() of
+        disable ->
+            [];
+        enable ->
+            [{verify, verify_peer}];
+        mandatory ->
+            [{fail_if_no_peer_cert, true},
+             {verify, verify_peer}]
+    end.
+
+(we use the indent-region macro in emacs Erlang mode)
+
+Line:274, src/ns_ssl_services_setup.erl -> should be indented as follows:
+
+ssl_server_opts() ->
+    Path = ssl_cert_key_path(),
+    ssl_auth_options() ++
+        [{keyfile, Path},
+         {certfile, Path},
+         {versions, supported_versions(ssl_minimum_protocol())},
+         {cacertfile, ssl_cacert_key_path()},
+         {dh, dh_params_der()},
+         {ciphers, supported_ciphers()}].
+
+Line:394, src/ns_ssl_services_setup.erl -> you are missing the initialization of the client_cert_auth part of the gen_server state here
+
+Line:467, src/ns_ssl_services_setup.erl -> Need to flush client_cert_auth_changed
+
+Line:476, src/ns_ssl_services_setup.erl -> you are not actually changing the client_cert_auth element of the gen_server state here. 
+
+Obviously this code also fails the test of "don't repeat yourself" but we can refactor this later separately.
+
+-------------------------------------

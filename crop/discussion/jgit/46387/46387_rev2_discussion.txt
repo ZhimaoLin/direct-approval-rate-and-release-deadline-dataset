@@ -1,0 +1,154 @@
+DESCRIPTION
+
+Avoid storing large packs in block cache during reuse
+
+When a large pack (> 30% of the block cache) is being reused by
+copying it pollutes the block cache with noise by storing blocks
+that are never referenced again.
+
+Avoid this by streaming the file directly from its channel onto
+the output stream.
+
+Change-Id: I2e53de27f3dcfb93de68b1fad45f75ab23e79fe7
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2015-04-23 22:22:18.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-04-23 22:22:25.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/6275/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-04-23 22:29:01.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/6275/ : SUCCESS
+
+-------------------------------------
+author: Eden Lin
+date: 2015-04-23 22:36:04.000000000
+
+Patch Set 2: Code-Review+1
+
+Tests would be nice. Since I don't see any existing tests of dfs functionality except for DfsInserterTest, that looks more like an idea for later than something that should happen in this change.
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2015-04-24 00:42:12.000000000
+
+Patch Set 2:
+
+(5 comments)
+
+Line:492, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsPackFile.java -> Wrap this in a try block for more consistent error handling (this call throwing IOException and n != hdrlen are equivalent errors).
+
+Line:508, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsPackFile.java -> Readability improvement to use Constants.SHA_CHECKSUM_LENGTH for "20" and define a Constants.PACK_HEADER_LENGTH and use it in place of "12".
+
+Line:540, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsPackFile.java -> Similar issue here, I think we need to set the file invalid on any IOException thrown in this loop.
+
+Line:576, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsPackFile.java -> The error handling is similar in 4 places so extract it to a method.
+
+Line:213, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsBlockCache.java -> getCanCopyThroughCache
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-04-24 03:22:07.000000000
+
+Patch Set 2:
+
+(5 comments)
+
+Line:492, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsPackFile.java -> Unnecessary. We unpin only to shed memory on the potentially long running normal path. If we throw the caller already has a finally block already wrapping us much higher up the stack that will have the same effect of unpin() by calling close()/release() on the DfsReader ctx.
+
+And if they forget DfsReader will eventually become unreachable and GC.
+
+Line:508, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsPackFile.java -> Historically we have never done this in file format code.
+
+Line:540, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsPackFile.java -> We don't do that. Its subtle.
+
+An IOException can be transient. For those we don't want to set invalid as that will make the file unavailable for any use later on even if the transient condition clears. Unfortunately we cannot categorize transient vs. permanent IOException conditions so we do not try.
+
+A successful read of -1 means we hit EOF earlier than we wanted. Successfully. That is an unambiguous problem with this file that is not transient and will not be fixed by retrying at a later time.
+
+Line:576, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsPackFile.java -> Done
+
+Line:213, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsBlockCache.java -> No, its not really getting a property. Its computing a value based on the argument and state. We don't always follow getFoo when we are computing something.
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2015-04-24 16:43:03.000000000
+
+Patch Set 2:
+
+(5 comments)
+
+Line:487, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsPackFile.java -> It is somewhat confusing to me that the header is not getting copied into the buffer when validation is disabled. I understand not needing to create the MessageDigest, but is it really OK not to copy the header?  If the header should always get copied, maybe a better name for this method would be processHeader()
+
+Line:492, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsPackFile.java -> The subtle behavior that transient IOExceptions should be allowed to propagate out without marking the file as invalid needs to be documented in a comment to prevent future breakage. By not knowing this, I would have incorrectly approved a refactoring that changed that behavior.
+
+Line:508, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsPackFile.java -> Is there a reason not to start? I'll gladly do this in a comprehensive follow up commit.
+
+Line:540, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsPackFile.java -> See my comment above.
+
+Line:213, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsBlockCache.java -> Fair enough, this is not strictly an accessor. However, the current name of the form <verb><adverbial phrase> indicates that this method is performing actual copying, which is misleading. Perhaps "shouldCopyThroughCache" or "checkCanCopyThroughCache".
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-04-24 17:55:04.000000000
+
+Patch Set 2:
+
+(4 comments)
+
+Line:487, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsPackFile.java -> We aren't copying the entire file. We copy the entire file minus header and trailer. :)
+
+When we are copying the entire pack file the header has to be cut off because the caller has already inserted their own header, and the caller's header many be different from our header. For example if new objects have been added to the repository the caller will be including those into the output file before this file is copied. The caller's header needs to adjust the object count to be the sum of those new objects plus the number of objects in this file.
+
+We cut off the trailer for the same reason. When the caller wrote a different header and content ahead of us that alters the trailer SHA-1 for the caller's file. Our trailer cannot go out.
+
+But I discovered the validation stuff isn't even used. So I'm probably going to write a change that rips it out. Which may reduce some of the confusion.
+
+Line:492, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsPackFile.java -> Unclear where we document that. Class doc? Its a property throughout the entire DFS package.
+
+Also frankly this is one reason you don't have committer rights on the repository yet. There is historical baggage and underdocumented (or flat out undocumented) assumptions that can be tricky. So you can't approve a refactoring that changes this sort of behavior yet. :)
+
+Line:508, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsPackFile.java -> We don't put most file format constants up in the public Constants class. They belong closer to the storage code as they are hidden internal details of the storage that can change as storage formats change.
+
+Historically in the C code we wrote many of these with literal constants right in the code because the sizes were closely coupled with other aspects of how the file was processed. Hiding the length in a constant didn't help understanding the code very much.
+
+This may be less true in Java with everything so far removed from the machine, but its still important to understand the file format.
+
+Line:213, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsBlockCache.java -> shouldCopyThroughCache is a better name, thanks. See https://git.eclipse.org/r/46448.
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2015-04-24 22:10:50.000000000
+
+Patch Set 2:
+
+(3 comments)
+
+Line:487, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsPackFile.java -> The subsequent cleanup made things clearer, thanks.
+
+Line:492, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsPackFile.java -> Capturing pervasive things like this in the top-level README.md file makes sense to me. I'll collect a few of them and then propose an update to that document.
+
+I think throwing the IOException directly below makes this issue more subtle, since not all IOExceptions are being treated alike. In that case, you read data that was somehow corrupted. This code is now gone but in the case below throwing the IOException-derived EOFException may make more sense.
+
+Line:508, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsPackFile.java -> Understood that it should live closer to the file handling code. 
+
+I wouldn't characterize it as hiding the length. You are providing the semantic meaning for the length by using a symbolic constant rather than a literal constant. Someone new to the code can get a quick understanding of the file's format without referencing external documentation, and in cases where the same length field holds different data in the same file it makes the code easier to read for everyone.
+
+-------------------------------------

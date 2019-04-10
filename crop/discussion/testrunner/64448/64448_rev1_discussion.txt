@@ -1,0 +1,161 @@
+DESCRIPTION
+
+Reconnect if disconnected during check for vbucket state
+
+A client may be disconnected at any given time (it could
+for instance try to connect to a bucket before it is
+enabled and hence get the "no bucket" error and get
+disconnected. This is not a fatal error in this function
+so we could simply just reconnect and try again.
+
+Change-Id: I665c38df54cdff0b6d45a2002d1390b043ca6afc
+
+
+COMMENTS
+
+author: Asher Vang
+date: 2016-05-26 11:56:46.476000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-05-26 13:39:52.150000000
+
+Patch Set 1:
+
+I don't know if this is the correct place to solve this - I would have though the high-level test shouldn't attempt to connect to a bucket before it's created.
+
+(I'm wondering if this will mask some other issues if we incorrectly disconnect a client in the middle of some series of operations).
+
+-------------------------------------
+author: Asher Vang
+date: 2016-05-26 13:57:29.801000000
+
+Patch Set 1:
+
+Note: I'm not saying that the client did connect before the bucket was created. The symptom here is that the client is disconnected, which _could_ happen for a number of reasons (the no bucket one being one, an exception being thrown on the server another). This is an "end to end" test, which means that if the server can recover from the situation by disconnecting a client, the server is encouraged to do that. the end to end testing _SHOULD_ allow for retries.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-05-26 14:15:22.579000000
+
+Patch Set 1: Code-Review+1
+
+> Note: I'm not saying that the client did connect before the bucket
+ > was created. The symptom here is that the client is disconnected,
+ > which _could_ happen for a number of reasons (the no bucket one
+ > being one, an exception being thrown on the server another). This
+ > is an "end to end" test, which means that if the server can recover
+ > from the situation by disconnecting a client, the server is
+ > encouraged to do that. the end to end testing _SHOULD_ allow for
+ > retries.
+
+To clarify - I'm not saying we shouldn't retry, just that I'm not sure the intent of the test. 
+
+Probably need some feedback from QE / whoever wrote/maintains this.
+
+-------------------------------------
+author: Kian Santos
+date: 2016-06-01 04:52:14.369000000
+
+Patch Set 1:
+
+I was thinking this issue happens (the randomly failing memcapable.WarmUpMemcachedTest test) because the bucket is freshly created. I created a CBQE to track this which has hte stack trace: CBQE-3435.
+
+However, it looks like the code (1) creates the bucket (2) auths against the bucket (which I believe internally and then invoke "select bucket" before moving to the "get_vbucket_state" call which fails with a disconnect. 
+
+@Trond: is it true that doing a sasl auth against the bucket will disconnect you if the bucket does not exist?
+
+-------------------------------------
+author: Asher Vang
+date: 2016-06-01 05:20:13.026000000
+
+Patch Set 1:
+
+@davef as a rule of thumb you may get disconnected at _ANY_ time. There is no guarantee that the connection won't be disconnected (and there never been such a contract). It is part of the internal error handling that we'd rather have the client to reconnect than do a complex error recovery on the server.
+
+If ns_server defines the credentials in isasl.pw before the bucket is created then you're put in the no-bucket which will either return ENGINE_DISCONNECT (watson) or NO-BUCKET (spock) the next time you try to run an operation. For spock you'd have to run a (successful) SELECT BUCKET in order to get out of this bucket.
+
+-------------------------------------
+author: Kian Santos
+date: 2016-06-02 04:29:36.235000000
+
+Patch Set 1: Code-Review+2
+
+@Trond: yes, that's true (that you can get disconnected at any time) but in this case the client has *only just* created the bucket and as you know, ns_server doesn't have a handy synchronous API for bucket creation (or other stuff.) That's a longer term plan that I'll work on, I promise. :-) So in this case I think it's precisely the issue that the user is in NO-BUCKET and gets disconnected.
+
+So anyway, to summarize: I think your change is good and I'm going to +2 it (with a couple of comments inline.)
+
+This code could use some love and curation certainly -- it does seem like the hairiness of the test infrastructure is getting away from us a bit. And there is the question of whether this code should be using the standard python client, although I'm not entirely sure the answer is "no". But these are longer term issues. For now, if we are to keep this test at all, a simple change like you have is the right approach. (It's either this change or we toss the test, in my opinion.)
+
+-------------------------------------
+author: Kian Santos
+date: 2016-06-02 04:32:07.548000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:295, lib/membase/helper/bucket_helper.py -> I'd prefer if we were explicit here and just say that it's "probably because the bucket is not yet created on this node (as we have just created it)", but I'm ok if you'd prefer not to do this.
+
+Line:297, lib/membase/helper/bucket_helper.py -> did you get a lot of these messages while testing?
+
+-------------------------------------
+author: Kian Santos
+date: 2016-06-02 04:45:38.573000000
+
+Patch Set 1: -Code-Review Verified-1
+
+Actually, it just failed verification for me. Relevant section of the log is below. It fails with a disconnect but then the sasl_auth in the exception handling routine dies with a broken connection too. Too tired to think about it more tonight; let's tNathalie Landry tomorrow.
+
+2016-06-01 21:40:57 | INFO | MainProcess | test_thread | [data_helper.direct_client] creating direct client 127.0.0.1:12000 default
+2016-06-01 21:40:57 | INFO | MainProcess | test_thread | [data_helper.direct_client] creating direct client 127.0.0.1:12000 default
+2016-06-01 21:40:57 | ERROR | MainProcess | test_thread | [bucket_helper.wait_for_vbuckets_ready_state] got disconnected from the server, reconnecting
+ERROR
+2016-06-01 21:40:57 | WARNING | MainProcess | test_thread | [rest_client.is_ns_server_running] server 127.0.0.1:9000 status is warmup
+2016-06-01 21:40:59 | WARNING | MainProcess | test_thread | [rest_client.is_ns_server_running] server 127.0.0.1:9000 status is warmup
+2016-06-01 21:41:01 | WARNING | MainProcess | test_thread | [rest_client.is_ns_server_running] server 127.0.0.1:9000 status is warmup
+2016-06-01 21:41:03 | WARNING | MainProcess | test_thread | [rest_client.is_ns_server_running] server 127.0.0.1:9000 status is warmup
+2016-06-01 21:41:05 | INFO | MainProcess | test_thread | [bucket_helper.delete_all_buckets_or_assert] deleting existing buckets [u'default'] on 127.0.0.1
+2016-06-01 21:41:05 | INFO | MainProcess | test_thread | [bucket_helper.delete_all_buckets_or_assert] remove bucket default ...
+2016-06-01 21:41:11 | INFO | MainProcess | test_thread | [bucket_helper.delete_all_buckets_or_assert] deleted bucket : default from 127.0.0.1
+2016-06-01 21:41:11 | INFO | MainProcess | test_thread | [bucket_helper.wait_for_bucket_deletion] waiting for bucket deletion to complete....
+2016-06-01 21:41:11 | INFO | MainProcess | test_thread | [rest_client.bucket_exists] node 127.0.0.1 existing buckets : []
+
+======================================================================
+ERROR: do_warmup_100k (memcapable.WarmUpMemcachedTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "pytests/memcapable.py", line 922, in do_warmup_100k
+    self._do_warmup(100000)
+  File "pytests/memcapable.py", line 876, in _do_warmup
+    ready = BucketOperationHelper.wait_for_memcached(self.master, "default")
+  File "lib/membase/helper/bucket_helper.py", line 319, in wait_for_memcached
+    bucket, timeout_in_seconds, log_msg)
+  File "lib/membase/helper/bucket_helper.py", line 299, in wait_for_vbuckets_ready_state
+    bucket_info.saslPassword.encode('ascii'))
+  File "lib/mc_bin_client.py", line 447, in sasl_auth_plain
+    return self.sasl_auth_start('PLAIN', '\0'.join([foruser, user, password]))
+  File "lib/mc_bin_client.py", line 443, in sasl_auth_start
+    return self._doCmd(memcacheConstants.CMD_SASL_AUTH, mech, data)
+  File "lib/mc_bin_client.py", line 139, in _doCmd
+    return self._handleSingleResponse(opaque)
+  File "lib/mc_bin_client.py", line 131, in _handleSingleResponse
+    cmd, opaque, cas, keylen, extralen, data = self._handleKeyedResponse(myopaque)
+  File "lib/mc_bin_client.py", line 122, in _handleKeyedResponse
+    cmd, errcode, opaque, cas, keylen, extralen, rv = self._recvMsg()
+  File "lib/mc_bin_client.py", line 98, in _recvMsg
+    raise exceptions.EOFError("Got empty data (remote died?). from {0}".format(self.host))
+EOFError: Got empty data (remote died?). from 127.0.0.1
+
+----------------------------------------------------------------------
+Ran 1 test in 38.331s
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-06-16 00:47:12.936000000
+
+Change has been successfully cherry-picked as d2ef540046fa8f9fad72450404e51bd29e33a2c9 by Kian Santos
+
+-------------------------------------

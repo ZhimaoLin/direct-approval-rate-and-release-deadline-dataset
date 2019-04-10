@@ -1,0 +1,125 @@
+DESCRIPTION
+
+MB-17766: Incorrect ordering during ActiveStream's takeover-send phase
+
+A race between the step() and ActiveStreamCheckpointProcessorTask
+can cause mutations to be queued into the readyQ after the
+setVBucketState(active) message.
+
+Here's the scenario in chronology (T: Front-end thread, BT: IO thread):
+1. T1: ActiveStream::setVBucketStateAckRecieved()
+2. T1: transitionState(takeoverSend) => schedules ActiveStreamCheckpointProcessorTask
+3. BT1: manageConnections() notifies memcached about specific conn (max idle time: 5s)
+4. BT2: ActiveStreamCheckpointProcessorTask runs, gets all Items For Cursor
+5. T1: step() -> takeoverSendPhase() -> readyQ is empty
+        => nextCheckpointItem() return false, as getNumItemsForCursor returns 0
+        => setVbucketState(active) added to readyQ
+6. BT2: ActiveStreamCheckpointProcessorTask continues, adds mutations acquired into readyQ
+        -> Note the mutations were acquired in step 4
+        => Notified memcached connections
+7. T1: step() .. ships messages in incorrect order
+
+On the new master, the vbucket is promoted to active state and then more
+mutations are received from the old master. If there were front end ops
+at this time, there could be an inconsistency in highSeqno or in worst
+cases crashes in checkpoint manager due to highSeqno not belonging in
+the designated range.
+
+The fix here would be to acquire streamMutex for the length of
+nextCheckpointItemTask() which is run by ActiveStreamCheckpointProcessorTask,
+so that no such incorrect ordering of DCP messages takes place.
+
+*Test case induces the race with a hack, fix verifies test case.
+
+Change-Id: I68d2fea97694d179769a40dac2d557641961f47f
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2016-02-06 01:40:46.004000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-06 01:40:50.997000000
+
+Patch Set 3:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2359/ (2/2)
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-02-06 01:44:39.328000000
+
+Patch Set 3:
+
+@All, Test case induces the race (and thereby the issue) with a hack. If anyone can think of a better way to induce the race that would cause the issue, I'm open to ideas.
+
+Note that this is a prospective candidate for 3.1.4, so once we arrive at a consensus on the test case, I can push a change for the correct branch.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-06 01:51:11.347000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1591/ : SUCCESS
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2359/ : SUCCESS
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-02-06 20:23:56.583000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:707, src/dcp/stream.cc -> I know sleeps are quite undesirable, so can I get some thoughts on how we can deterministically force the issue.
+
+-------------------------------------
+author: Bobby Buck
+date: 2016-02-07 00:54:02.032000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:705, src/dcp/stream.cc -> Given that we are injecting code deliberately for testing purposes, should we consider having a global state for "test mode"? (Probably not for this commit, but for the future testing. Then we can do if (testMode) { induce delays/inject corrupt data/ skip a few mutations etc based on the test we are performing} )
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-02-07 02:08:12.611000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:705, src/dcp/stream.cc -> Perhaps, but note that this is invoked only when the task is separately invoked (not as part of auxIO - which is the normal caller) - only for the test that is added as part of this commit. If we add a testMode here, and make this delay apply whenever testMode is set, it could induce slowness in every test which could be undesirable.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-02-07 02:15:57.300000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:705, src/dcp/stream.cc -> But I guess, we can set testMode only for relevant tests.
+I could use that approach for this test too, but the more pressing matter here would be finding an alternative to sleep (used below).
+
+-------------------------------------
+author: Bobby Buck
+date: 2016-02-07 02:19:42.322000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:705, src/dcp/stream.cc -> We don't have to implement the testMode idea for this test now. I was thinking of more long term testing where you can specify in some test context structure about the your intent on what you wish to test. Set those parameters and then your test would behave accordingly. But that requires more thought on how to implement in a clean and extensible fashion.
+
+-------------------------------------

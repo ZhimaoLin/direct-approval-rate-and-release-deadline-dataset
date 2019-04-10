@@ -1,0 +1,124 @@
+DESCRIPTION
+
+Introduce hook support into the FS implementations
+
+This introduces the background plumbing necessary to call for the git
+hooks from JGit. This implementation will be OS-dependent as it aims to
+be compatible with existing hooks, mostly written in Shell. It is
+compatible with unix systems and windows as long as an unix emulator
+such as Cygwin is in its PATH.
+
+Change-Id: I1f82a5205138fd8032614dd5b52aef14e02238ed
+Signed-off-by: Gustavo Green xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Gustavo Green
+date: 2014-11-04 13:26:28.000000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-11-04 13:26:34.000000000
+
+Patch Set 5:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/5667/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-11-04 13:34:34.000000000
+
+Patch Set 5: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/5667/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2014-11-20 12:08:00.000000000
+
+Patch Set 5: Code-Review-1
+
+(9 comments)
+
+Some tests would be nice
+
+Line:633, org.eclipse.jgit/src/org/eclipse/jgit/util/FS.java -> Why "By default"? This method uses stdout and stderr and I have no chance choosing something different. I would simply say "The hook's standard ..."
+
+Line:647, org.eclipse.jgit/src/org/eclipse/jgit/util/FS.java -> Do I have the chance to find out whether a hook was called or  not? Depending on the environment you may want to warn the caller if e.g. a hook was present but couldn't be executed on this FS. A caller may skip certain steps if he knows that no hook was executed (and therefore nothing has changed in his repo)
+
+Line:706, org.eclipse.jgit/src/org/eclipse/jgit/util/FS.java -> you spent so much effort on FileFilter and listFiles calls that I guess I am overlooking something. But why not implement this method as:
+
+  public File findHook(Repository repository, final Hook hook) {
+    File hookf = new File(
+      new File(repository.getDirectory(), "hooks"), hook.getName()); //$NON-NLS-1$
+    return hookf.isFile() ? hookf : null;
+  }
+
+Line:754, org.eclipse.jgit/src/org/eclipse/jgit/util/FS.java -> This method is not specific to hooks at all, or?
+
+Line:1062, org.eclipse.jgit/src/org/eclipse/jgit/util/FS.java -> why create a buffer to store some content which we want to throw away in the end? If output is <null> don't initialize a writer and during the call() method when writer is not initialized just read lines.
+
+Line:414, org.eclipse.jgit/src/org/eclipse/jgit/util/FileUtils.java -> Question: are expecting that base is always a folder
+
+Line:432, org.eclipse.jgit/src/org/eclipse/jgit/util/FileUtils.java -> If we interprete base and other as Strings in the current filesystem we maybe should take care about case sensitivity. E.g. on Windows base="C:\git\jgit" and ours="C:\Git\test\d\f.txt" should lead to "..\test\d\f.txt". The current implementation would return "..\..\Git\test\d\f.txt". On Windows "C:\Git" and "C:\git" refer to the same folder. 
+
+It's a shame we can't use Java7. There is Path.relativize().
+
+I think we need some tests here.
+
+Line:195, org.eclipse.jgit/resources/org/eclipse/jgit/internal/JGitText.properties -> The lines in this file seem to be sorted. Please put this line to the correct place
+
+Line:7, org.eclipse.jgit/src/org/eclipse/jgit/util/Hook.java -> nit: trailing blank
+
+-------------------------------------
+author: Gustavo Green
+date: 2014-11-20 13:08:47.000000000
+
+Patch Set 5:
+
+(9 comments)
+
+Answers to each comment. I'll only upload a new patch set with the modifications marked as "done" when I'll have a few unit tests ready.
+
+Line:633, org.eclipse.jgit/src/org/eclipse/jgit/util/FS.java -> True :). Changed that.
+
+Line:647, org.eclipse.jgit/src/org/eclipse/jgit/util/FS.java -> cgit does not differentiate between "not called" and "returned 0", so I haven't either.
+
+I wanted to preserve the exit code in case we ever need it... but I guess I could treat "-1" as a special case meaning that the hook wasn't run... Or create a "ProcessResult" class to hold the exit code and an enum telling me "OK", "NOT_PRESENT" or "NOT_AVAILABLE"? Though in the present case and with the hooks I've implemented so far, I see no use for this information. Should I implement it anyway?
+
+Line:706, org.eclipse.jgit/src/org/eclipse/jgit/util/FS.java -> Humm... I guess I'm just stupid :). I implemented this in java 7 first and reverted it to java 5 afterwards, so I just didn't think about the easy way ^^.
+
+Changed to this much simpler implementation.
+
+Line:754, org.eclipse.jgit/src/org/eclipse/jgit/util/FS.java -> I did try to make it as generic as possible... Though now that you mention it, I did end up with something that's completely unrelated to the hooks. Would you rather I rename this to "runProcess" ?
+
+Line:1062, org.eclipse.jgit/src/org/eclipse/jgit/util/FS.java -> Indeed. Done.
+
+Line:414, org.eclipse.jgit/src/org/eclipse/jgit/util/FileUtils.java -> Yes, I seek for a common prefix between the two paths to make the second relative to the "location" specified by the first. In the example I give above, if "project" is a folder, the relative path will be "../another_project/pom.xml". If it is a file, I guess the result should drop the leading "..". I'll change the javadoc to make this assumption explicit.
+
+Line:432, org.eclipse.jgit/src/org/eclipse/jgit/util/FileUtils.java -> I must admit that I didn't even think about case sensitivity (this was coded on windows, and still I haven't noticed the potential issue). Nice catch.
+
+I'll write a few tests to make the behavior clear then try and fix the implementation to behave well on windows with examples such as what you've just given here.
+
+Line:195, org.eclipse.jgit/resources/org/eclipse/jgit/internal/JGitText.properties -> Done
+
+Line:7, org.eclipse.jgit/src/org/eclipse/jgit/util/Hook.java -> Done
+
+-------------------------------------
+author: Zachary Orozco
+date: 2014-11-21 09:05:41.000000000
+
+Patch Set 5:
+
+(2 comments)
+
+Line:647, org.eclipse.jgit/src/org/eclipse/jgit/util/FS.java -> I would spent a return value class and a enum as you suggested. This allows also to write tests which check that behaviour. That's not needed for our usages in the api package but users which don't use api may be interested. And ... maybe the CommitCommand may emit a warning if hooks are present but not executed.
+
+Line:754, org.eclipse.jgit/src/org/eclipse/jgit/util/FS.java -> Yes, runProcess. You did it already. Done
+
+-------------------------------------

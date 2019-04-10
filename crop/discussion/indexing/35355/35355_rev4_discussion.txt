@@ -1,0 +1,108 @@
+DESCRIPTION
+
+Initial implementation of system port library.
+
+Includes API for start a server listening on system port.
+Includes client APIs to access a remote system port.
+Messages, defined with protobuf, should implement `Message` interface.
+  protobuf.Mutation implements Message interface.
+Added benchmark code for system port library.
+
+Change-Id: I5ebf2abdec25709ebf3055e24c7860cc36b52187
+
+
+COMMENTS
+
+author: Leonel Abbott
+date: 2014-04-11 10:00:10.923000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Dominique Stanton
+date: 2014-04-11 21:29:16.142000000
+
+Patch Set 4:
+
+(7 comments)
+
+Line:24, secondary/adminport/admin.go -> Sometimes "Message" means the actual message content itself.  If this type is intended for marshall/unmarshal, then how about just calling it MessageSerializer?   Or MessageMarshaller?  Just to be clear the intention of the type
+
+Line:101, secondary/adminport/admin_httpd.go -> Is there any other error coming from s.srv.Serve() that needs to be reported to the caller?  Documentation does not say much about what error this function will return.
+
+Line:102, secondary/adminport/admin_httpd.go -> Perhaps it is better to have a separate function to clean up httpserver, instead of calling close(s.reqch) directly here.    
+
+Does the listener needs to be closed?  What if the caller does not call Close()?  Does it leave an open connection?   Since the listener is only be used in this function, why we need to close the listener in the Close()?
+
+Line:108, secondary/adminport/admin_httpd.go -> Do you need to check if s.lis is null?  If someone mistakenly call Stop() before Start()?
+
+Line:128, secondary/adminport/admin_httpd.go -> Can Decode() returns error?  For example, the message is corrupted?
+
+Line:140, secondary/adminport/admin_httpd.go -> Should we return the error back versus just let the client time-out (as in the current implementation)?
+
+Line:141, secondary/adminport/admin_httpd.go -> Within this function, what if any of these calls become panic?   This will propagate all the way to the Start() function and terminate everything? Maybe it is OK.  Just to double check.  One of the issue with XDCR is that it stops processing any request if it receives certain error from the remote cluster.  Just want to make sure that if the daemon dies, it can be restarted.
+
+-------------------------------------
+author: Leonel Abbott
+date: 2014-04-14 08:28:39.240000000
+
+Patch Set 4:
+
+(7 comments)
+
+Line:24, secondary/adminport/admin.go -> Done
+
+Line:101, secondary/adminport/admin_httpd.go -> Done
+
+Line:102, secondary/adminport/admin_httpd.go -> Done
+
+Line:108, secondary/adminport/admin_httpd.go -> Modification that addresses all above comments.
+
+func (s *httpServer) Start() (err error) {
+    if s.lis, err = net.Listen("tcp", s.srv.Addr); err != nil {
+        return err
+    }
+
+    // Server routine
+    go func() {
+        err := s.srv.Serve(s.lis) // serve until listener is closed.
+        if err != nil {
+            log.Println("server error:", err) // TODO: use an appropriate logging module.
+        }
+        s.shutdown()
+    }()
+    return
+}
+
+func (s *httpServer) Stop() {
+    log.Println("Stopping server", s.srv.Addr)
+    s.shutdown()
+}
+
+func (s *httpServer) shutdown() {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+
+    if s.lis != nil {
+        s.lis.Close()
+        close(s.reqch)
+        s.lis = nil
+    }
+}
+
+Line:128, secondary/adminport/admin_httpd.go -> Yes.
+Changed the code to log the error and return InternalServerError status back to http client.
+
+Line:140, secondary/adminport/admin_httpd.go -> Yes.
+Change the code to return InternalServerError status back to httpclient.
+
+Line:141, secondary/adminport/admin_httpd.go -> This is a good point.
+Generally I add blanket fault-tolerance once we fully understand the code and how it interacts with rest of the system, sometimes it is good to recover and in other cases it is better to allow the failure to propogate. I can add panic recovery right away.
+
+    go func() {
+        if err := recover(); err != nil {
+            log.Printf("error handling http request: %v\n", err)
+        }
+    }()
+
+-------------------------------------

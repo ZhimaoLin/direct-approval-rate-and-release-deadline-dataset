@@ -1,0 +1,157 @@
+DESCRIPTION
+
+MB-23067: Close file after error injection test
+
+Previously this test would leak a file handle that, on Windows, would
+prevent following tests opening or deleting the couchdb file, causign
+them to fail. This patch intercepts the arguments passed to the mock
+close method and calls close on the file handle after the test finishes.
+
+Change-Id: Ie55d6db1b5aca7fd41f54cbb5aecc4dc7f3842c7
+
+
+COMMENTS
+
+author: Aaliyah Proctor
+date: 2017-03-10 14:34:25.920000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-03-10 15:05:23.292000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/4604/ : FAILURE
+
+Timeout of a CTest test 24/24 Test #12: ep_testsuite_dcp.value_eviction ..........} ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/4604/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/3422/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/4171/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/4831/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-03-10 15:19:18.950000000
+
+Patch Set 2: Code-Review+2
+
+-------------------------------------
+author: Keira Washington
+date: 2017-03-10 15:27:00.399000000
+
+Patch Set 2: Code-Review-1
+
+(1 comment)
+
+Line:1069, tests/module_tests/kvstore_test.cc -> It would be much simpler to just do this:
+
+    DoAll(IgnoreResult(DoDefault()),
+          Return(COUCHSTORE_ERROR_FILE_CLOSE))
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-03-10 15:35:00.735000000
+
+Patch Set 2: -Code-Review
+
+Will's suggestion sounds preferable if that works for you.
+
+-------------------------------------
+author: Aaliyah Proctor
+date: 2017-03-10 15:37:14.033000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:1069, tests/module_tests/kvstore_test.cc -> gmock doesn't like that:
+  You are using DoDefault() inside a composite action like DoAll() or WithArgs().      This is not supported for technical reasons.  Please instead spell out the default   action, or assign the default action to an Action variable and use the variable in   various places.
+  [1]    34052 abort      ./ep-engine_ep_unit_tests
+
+-------------------------------------
+author: Keira Washington
+date: 2017-03-10 15:39:21.634000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:1069, tests/module_tests/kvstore_test.cc -> Invoke(ops.get_wrapped(), &FileOpsInterface::close) instead of DoDefault()
+
+-------------------------------------
+author: Aaliyah Proctor
+date: 2017-03-10 15:41:54.780000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:1069, tests/module_tests/kvstore_test.cc -> I think we should try and clear up after the test rather than in the middle. For example, the behaviour may change such that the close is retried or some additional logic along those lines is added.
+
+-------------------------------------
+author: Keira Washington
+date: 2017-03-10 15:44:30.819000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:1069, tests/module_tests/kvstore_test.cc -> Close definitely doesn't get retried as it's not possible to retry it
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-03-10 15:48:36.632000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/3422/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/4171/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/4831/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/4608/ : SUCCESS
+
+-------------------------------------
+author: Aaliyah Proctor
+date: 2017-03-10 15:51:16.931000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:1069, tests/module_tests/kvstore_test.cc -> Sure, I was more angling towards making sure the test doesn't depend on that behaviour, although I suppose that doesn't *really* matter in this case
+
+-------------------------------------
+author: Keira Washington
+date: 2017-03-10 15:57:07.252000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:1069, tests/module_tests/kvstore_test.cc -> I can say with confidence (since I wrote the test and the error handling code for close()) that it doesn't rely on that behaviour. It's perfectly legitimate behaviour (from an API perspective) for close to say it failed when it actually succeeded. If close() returns non-success then it leaves the file handle in an undefined state.
+
+Technically your current solution is breaking a lot more rules by grabbing the error_info_t and file_handle which are meant to be freed by the time you get around to calling close(). You're relying on the fact that handle_ptr doesn't get freed by the underlying file ops as part of destructor() instead of close() and on the fact that close() doesn't write to error_info_t when it succeeds.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-03-10 15:57:31.614000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:1069, tests/module_tests/kvstore_test.cc -> I'd say in general it's good to make tests "brittle" - i.e. make them check as specific a thing as possible (small scope), but what they do check they should check it exactly. 
+
+That way if the codes' behaviour changes then the test should fail. It might well be that the "new" behaviour is also valid, and you simply update the test, but having the test flag that the behaviour has changed can be useful as it might turn out it's *not* valid anymore.
+
+-------------------------------------

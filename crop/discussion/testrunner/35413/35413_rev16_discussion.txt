@@ -1,0 +1,119 @@
+DESCRIPTION
+
+CBQE-2187 Add Verification Library for Rebalance and Failover Tests
+
+Change-Id: Id44cd1d66731542f6572f0d1925fbf1df346c71f
+
+
+COMMENTS
+
+author: Quentin Ali
+date: 2014-04-14 08:19:06.926000000
+
+Uploaded patch set 16.
+
+-------------------------------------
+author: Quentin Ali
+date: 2014-04-14 08:20:48.179000000
+
+Patch Set 16:
+
+1) Addressed the comments given by Andrei
+2) Tested the changes in code. Will send logs via email
+3) Added tests for comparing results for using cbtransfer analysis (per node and union across all nodes)
+
+Please check:: pytests/analysis/clusterinfoanalysis.py
+
+Example of runs (tests were run against 2.5.1 since 3.0.0 cbtransfer is broken)
+./testrunner -i ~/ini/palm.ini -t analysis.clusterinfoanalysis.DataAnalysisTests.test_data_analysis_disk_memory_comparison_all,items=10,items_size=10,vbuckets=64
+
+./testrunner -i ~/ini/palm.ini -t analysis.clusterinfoanalysis.DataAnalysisTests.test_data_analysis_disk_memory_comparison_per_node,items=10,items_size=10,vbuckets=64
+
+analyze_all_result and analyze_per_node_result now return True in their return logic if criteria matches for {updated, deleted, added} items
+
+4) In failover tests we check bucket sequence and failover log information since they should not change after rebalance. However, the logic for verification will change if we were adding data during rebalance or doing compaction. In that case, the comparison logic will be different. As of now, it is very simple. Note that since active and replica will change per bucket, we will need separate logic to verify, the current changes to test case do not cover such verification, but will be added in this week.
+
+5) Ran test case for failover to verify change in logic for analyzing the final result
+
+This does graceful failover with delta rebalance for 2 nodes
+
+./testrunner -i ~/ini/palm.ini -t failover.failovertests.FailoverTests.test_failover_then_add_back,replicas=2,num_failed_nodes=2,items=10,recoveryType=delta:delta,standard_buckets=1,graceful=True,vbuckets=64
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2014-04-14 09:13:29.042000000
+
+Patch Set 16:
+
+Build Started http://factory.couchbase.com/job/testrunner-Jasmin Rangel-master/1035/
+
+-------------------------------------
+author: Esperanza Cherry
+date: 2014-04-14 09:30:21.038000000
+
+Patch Set 16:
+
+1)you sent me:
+compare_failover_test https://friendpaste.com/7i271E8xhYs4HldATTa8z6
+
+can't find logs where there is verification.
+it should be after log.info("Begin VERIFICATION ...").
+but i don't see these logs there.
+2) you set vbuckets=64 in test params. seems like tests will be broken if cluster has other vbucket number?
+
+3)you sent me compare_result_for_data: https://friendpaste.com/4ExRgD87uOWlL8ymeaj0h5
+
+It seems that we can not be sure that the verification was carried out at all. I do not see any log about these.
+
+4) did you try failover tests with 1024 vbuckets, more then 1 bucket and real data( not 10 items)
+
+
+
+I did not worry so much about new verifications/new code and what they do, but whether failover tests are broken.
+
+-------------------------------------
+author: Esperanza Cherry
+date: 2014-04-14 10:00:44.708000000
+
+Patch Set 16:
+
+"Note that since active and replica will change per bucket, we will need separate logic to verify, the current changes to test case do not cover such verification, but will be added in this week."
+it means that failover test will work only for _add_back cases?
+
+seems like your current verification makes the same check that "def _verify_vbucket_nums_for_swap"
+
+https://github.com/couchbase/testrunner/blob/master/pytests/newupgradebasetest.py#L433
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2014-04-14 10:05:54.343000000
+
+Patch Set 16: Verified-1
+
+Build Failed 
+
+http://factory.couchbase.com/job/testrunner-Jasmin Rangel-master/1035/ : FAILURE
+
+-------------------------------------
+author: Quentin Ali
+date: 2014-04-14 17:31:57.860000000
+
+Patch Set 16:
+
+This particular verification
+
+https://github.com/couchbase/testrunner/blob/master/pytests/newupgradebasetest.py#L433
+
+Is for active and replica. Not sure why this is upgrade tests only. The one we have added is to make sure cbstats for vbucket-sequenceno does not change i.e. uuid, highest sequence no.,purge sequence number 
+
+I think all these verification methods should be taken out to a common place and then reused. 
+
+For your logs request, I will run the tests again and paste it.
+
+-------------------------------------
+author: Quentin Ali
+date: 2014-04-14 17:32:15.477000000
+
+Patch Set 17: Patch Set 16 was rebased
+
+-------------------------------------

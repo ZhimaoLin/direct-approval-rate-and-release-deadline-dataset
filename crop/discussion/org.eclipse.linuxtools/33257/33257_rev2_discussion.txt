@@ -1,0 +1,130 @@
+DESCRIPTION
+
+tmf: Do not use Display.sleep in tests
+
+Similar to bug 415992 and change 25443. The display needs to be woken up
+because it's possible to get in a state where nothing will wake up the UI
+thread (events, messages), especially if the tests are being run unattended.
+Instead of using the highly implementation-dependent solution of doing a
+Display.asyncExec (which only works on Mac, not Windows), we can simply not put
+the display to sleep and just have the thread sleep. This is safer because
+Display.sleep by definition should not wake up until an event is received which
+we cannot guarantee will happen.
+
+Change-Id: Ib2282bcd71c9376d7bbdb084c094892146410ff7
+Signed-off-by: Alivia Ritter xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2014-09-11 21:46:21.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/8934/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-09-11 22:17:41.000000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/8934/ : FAILURE
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-09-11 22:40:39.000000000
+
+Patch Set 2: Code-Review-1
+
+(2 comments)
+
+comment applies to both files
+
+Line:183, lttng/org.eclipse.linuxtools.tmf.ui.tests/src/org/eclipse/linuxtools/tmf/ui/tests/views/uml2sd/loader/Uml2SDTestFacility.java -> no need for this comment, there is no Display.sleep anymore so it just confusing
+
+Line:185, lttng/org.eclipse.linuxtools.tmf.ui.tests/src/org/eclipse/linuxtools/tmf/ui/tests/views/uml2sd/loader/Uml2SDTestFacility.java -> are you sure you want to put 10 *milliseconds*? The delay() method is usually called with IUml2SDTestConstants.GUI_REFESH_DELAY which is 1000 milliseconds, and sometimes more. In this case here it will always pick the 10.
+
+If you are confident the tests work with a 10 milliseconds delay, wouldn't it be better to change the constant instead?
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-09-11 23:30:29.000000000
+
+Patch Set 2: -Verified
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/8936/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-09-12 00:11:34.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/8936/ : SUCCESS
+
+-------------------------------------
+author: Kaeden Tapia
+date: 2014-09-12 02:34:55.000000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:183, lttng/org.eclipse.linuxtools.tmf.ui.tests/src/org/eclipse/linuxtools/tmf/ui/tests/views/uml2sd/loader/Uml2SDTestFacility.java -> this pattern:
+if (!display.readAndDispatch) {
+   display.sleep()
+}
+
+is the typical SWT event loop. For example:
+http://git.eclipse.org/c/platform/eclipse.platform.swt.git/tree/examples/org.eclipse.swt.snippets/src/org/eclipse/swt/snippets/Snippet1.java
+
+My reasoning was that someone reading this might think it is a mistake to call Thead.sleep because it is very unusual by SWT "standards". I can remove the comment but I thought you should know why I put that first.
+
+Line:185, lttng/org.eclipse.linuxtools.tmf.ui.tests/src/org/eclipse/linuxtools/tmf/ui/tests/views/uml2sd/loader/Uml2SDTestFacility.java -> The idea is to have the UI tick a few times during the given waitTime. So a waitTime of 1000 ms will tick more or less 100 times depending on the work in the dispatch, etc. The Math.min just covers the case where one would call this method with < 10 ms, then it won't overshoot as much. But that's just a small "polish" nit. We can remove the Math.min without really affecting much but it just feels a bit more correct to me.
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-09-12 19:25:34.000000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:183, lttng/org.eclipse.linuxtools.tmf.ui.tests/src/org/eclipse/linuxtools/tmf/ui/tests/views/uml2sd/loader/Uml2SDTestFacility.java -> Oh ok, if there is a reason for the reader to expect a Display.sleep() there, then the comment makes sense.
+
+I thought it was a case of a comment making sense only when one reads the diff:
+
+  - functionA();
+  + //Do not call functionA()!
+  + functionB();
+
+which then in the code turns into a useless comment:
+
+  //Do not call functionA()!
+  functionB();
+
+that type of comment goes better in the commit message.
+
+Line:185, lttng/org.eclipse.linuxtools.tmf.ui.tests/src/org/eclipse/linuxtools/tmf/ui/tests/views/uml2sd/loader/Uml2SDTestFacility.java -> Ok, the code itself makes sense. It's just semantically, we always call this function with values >1000. So I was wondering if changing the constant instead would be clearer. Or maybe an easier change is to just rename the parameter "waitTimeMillis" to "maxWaitTimeMillis".
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-09-12 20:28:56.000000000
+
+Patch Set 2: Verified+1 Code-Review+1
+
+Ok, after some discussion, it's clearer now. At least, it's not less clear/ugly than it was before. ;)
+
+-------------------------------------
+author: Kaeden Tapia
+date: 2014-09-12 21:58:50.000000000
+
+Patch Set 2: Code-Review+2
+
+-------------------------------------

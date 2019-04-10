@@ -1,0 +1,78 @@
+DESCRIPTION
+
+Implement zero-copy for single window objects
+
+Objects that fall completely within a single window can be worked
+with in a zero-copy fashion, provided that the window is backed by
+a normal byte[] and not by a ByteBuffer.
+
+This works for a surprising number of objects.  The default window
+size is 8 KiB, but most deltas are quite a bit smaller than that.
+Objects smaller than 1/2 of the window size have a very good chance
+of falling completely within a window's array, which means we can
+work with them without copying their data around.
+
+Larger objects, or objects which are unlucky enough to span over a
+window boundary, get copied through the temporary buffer.  We pay
+a tiny penalty to realize we can't use the zero-copy code path,
+but its easier than trying to keep track of two adjacent windows.
+
+With this change (as well as everything preceeding it), packing
+is actually a bit faster.  Some crude benchmarks based on cloning
+linux-2.6.git (~324 MiB, 1,624,785 objects) over localhost using
+C git client and JGit daemon shows we get better throughput, and
+slightly better times:
+
+  Total Time    | Throughput
+  (old)  (now)  | (old)          (now)
+  --------------+---------------------------
+  2m45s  2m37s  | 12.49 MiB/s    21.17 MiB/s
+  2m42s  2m36s  | 16.29 MiB/s    22.63 MiB/s
+  2m37s  2m31s  | 16.07 MiB/s    21.92 MiB/s
+
+Change-Id: I48b2c8d37f08d7bf5e76c5a8020cde4a16ae3396
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Juliet Cantu
+date: 2010-07-02 22:51:49.000000000
+
+Patch Set 1: I would prefer that you didn't submit this; IP review completed
+
+(2 inline comments)
+
+Can be fixed by follow-up patch, after which we'll flip the approved flag.
+
+Line:83, org.eclipse.jgit/src/org/eclipse/jgit/lib/ByteArrayWindow.java -> Add a check for corrupt data. If the compressed data is truncated inflate will return 0 and this loops forever.
+
+Line:98, org.eclipse.jgit/src/org/eclipse/jgit/lib/ByteArrayWindow.java -> This will hang if the checked data is truncated. See c10e13415705d63e4d5d2487ca6fff1fe1ff10bb for a patc
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-07-02 22:57:23.000000000
+
+Patch Set 1: (2 inline comments)
+
+
+
+Line:83, org.eclipse.jgit/src/org/eclipse/jgit/lib/ByteArrayWindow.java -> Please see the rewrite of this code in http://egit.eclipse.org/r/1035.  I think I already have your concern fixed.
+
+Line:98, org.eclipse.jgit/src/org/eclipse/jgit/lib/ByteArrayWindow.java -> I don't think I see the problem.  If the data is truncated, inf.inflate() will return 0.  0 is not > 0, so the loop will break, and the method will return to the caller in PackFile.  The caller checks for inf.finished(), and marks the object corrupt if it returned false.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-07-05 22:36:36.000000000
+
+Patch Set 1: Looks good to me, approved
+
+
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-07-27 16:11:49.000000000
+
+Change has been successfully pushed.
+
+-------------------------------------

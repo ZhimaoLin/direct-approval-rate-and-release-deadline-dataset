@@ -1,0 +1,68 @@
+DESCRIPTION
+
+MB-5367 Make select bucket command synchronous
+
+The select_bucket command should be syncrhonous. If it didn't
+succeed, subsequent commands wouldn't succeed either. With
+async select_bucket, out-of-sequence responses scenario is
+possible and mc-engine handleResponse would abort because
+select_bucket has no implicitResponse. The change is to make
+resetConnection try selectBucket only for other commands and
+selectBucket itself will re-send the command until succeeded.
+
+The function waitOnce is added to be used by select_bucket.
+In follow-up commits, it will be used by notify_update,
+deleteVBucket, and flush so that they can use the same
+re-send code path. The old function wait() will be used for
+mc-kvstore specific commands.
+
+The function clearConnection is to separate connection
+clearing from the attempt to select bucket. The use of Mutex
+is for clearing connection incl. response handler queue etc.
+The other alternative is to keep resetConnection but move
+clearing code and mutex lock holder to a inner scope within
+resetConnection.
+
+Change-Id: Ibbb8a47a7c9a0a1574213b5786be9a1204cbfd96
+
+
+COMMENTS
+
+author: Roman Murillo
+date: 2012-05-28 21:47:59.146000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Audrina Olson
+date: 2012-05-29 16:59:23.547000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:1356, mc-kvstore/mc-engine.cc -> We probably add debug/warning log when retry case either in waitOnce() or after sendCommand. This will help debug where selecBucket hangs in case of repeating sendCommand   .
+
+-------------------------------------
+author: Abby Duran
+date: 2012-05-29 18:48:47.547000000
+
+Patch Set 2: I would prefer that you didn't submit this
+
+(2 inline comments)
+
+The commit message body is too much detailed. We don't need to describe it at the level of a function. I think the first paragraph is already enough for a commit message.
+
+Line:588, mc-kvstore/mc-engine.cc -> If we don't define clearConnection(), you can unlock the lock by calling lh.unlock() here before calling selectBucket()
+
+Line:565, mc-kvstore/mc-engine.cc -> I don't think it's necessary to define clearConnection unless clearConnection is invoked by other parts in addition to resetConnection.
+
+-------------------------------------
+author: Macie Morton
+date: 2012-05-29 20:10:28.923000000
+
+Patch Set 2:
+
+is is possible to write a few unit test cases to verify that select bucket is now synchronous?
+
+-------------------------------------

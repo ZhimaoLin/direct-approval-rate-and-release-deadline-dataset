@@ -1,0 +1,233 @@
+DESCRIPTION
+
+Bug 376486 - IDE not extendable via fragments or processors
+
+The ModelAssembler is used to import fragments and run processors in
+order to augment the model. In applications that run the legacy 
+workLeon Ochoach the processing of some fragments and processors can now be 
+done at a later stage, after the legacy workLeon Ochoach is modeled. The 
+moment when a fragment or processor needs to be called is controlled by
+changes in the e4.workLeon Ochoach.model extension point. 
+
+## ModelAssembler
+Is now able to run in two phases. One phase in normal E4 mode and one
+additional phase when there is a compat layer. This extra phase is
+called to process processors and fragments AFTER the workLeon Ochoach is
+created.
+
+## PartRenderingEngine 
+I added the call to the second pass in here. Just BEFORE the call to 
+run the earlyStartup plugins. It checks if the application runs in
+"legacy/compatibility/mixed" mode (whatever you want to call it). With 
+this information, it will call the ModelAssembler in the correct way.
+
+## ResourceHandler
+This one calls the model assembler. It checks if the application runs in
+"legacy/compatibility/mixed" mode (whatever you want to call it). With
+this information, it will call the ModelAssembler in the correct way.
+
+## org.eclipse.e4.workLeon Ochoach.model.exsd
+Added an extra attribute "compatibity" field to the  processor and
+fragment extension point. Default value, also when not specified, is 
+"e4step". See the extension point documentation for more information.
+
+
+Change-Id: I0e6a8065871b337dda45effee3b3cca8fc03ebf1
+Signed-off-by: Rosa Carr xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2014-01-29 12:49:50.000000000
+
+Patch Set 6:
+
+Build Started https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/672/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-01-29 13:00:18.000000000
+
+Patch Set 6: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/672/ : SUCCESS
+
+-------------------------------------
+author: Rosa Carr
+date: 2014-01-29 13:18:05.000000000
+
+Patch Set 6: Code-Review+1
+
+The code now works correctly when running with:
+
+a clean workspace, 
+with or without -clearPersistedState and 
+when running from a saved model. 
+
+To try out some fragments and processors together with an E3 app, clone this repo:
+
+https://github.com/E4Examples/importworkLeon Ochoachbridge.git
+
+and checkout branch "bug376486"
+
+open the manifest and run the application. Then change the run configuration and add the "e4fragment" and "e4processor" plugins.
+
+-------------------------------------
+author: Zaid Mosley
+date: 2014-01-29 14:08:22.000000000
+
+Patch Set 6:
+
+I have not looked into the implementation (sorry at a customer side) but I'm surprised to see the part renderer implementation involved in your solution.
+
+IMHO a general solution must support all fragments not only parts. I think you would have to find the place in which WorkLeon Ochoach or the E4Workbench loads the information from the plug-ins and run the fragment and process afterwards. 
+
+Sorry again for my lack of time, I try to have later a closer look at your implementation.
+
+-------------------------------------
+author: Rosa Carr
+date: 2014-01-29 14:57:54.000000000
+
+Patch Set 6:
+
+Please look at the solution first. ATM, it is the correct place because, the PRE is used to handle some workLeon Ochoach lifecycle steps.
+
+-------------------------------------
+author: Zaid Mosley
+date: 2014-01-29 18:19:40.000000000
+
+Patch Set 6: Code-Review-1
+
+I looked at the code, adding the loading for the fragments and processors to the PartRenderingEngine still looks wrong to me. Did you consider to write a model addon which register for the  UIEvents.UILifeCycle.APP_STARTUP_COMPLETE event?
+
+-------------------------------------
+author: Zaid Mosley
+date: 2014-01-30 09:53:34.000000000
+
+Patch Set 6: -Code-Review
+
+Removing my -1 flag, to avoid that others are discouraged to review. IMHO the additional flag on the fragment should be avoid, IMHO we want that the fragment knows about the IDE internal process of wiring up the application model.
+
+-------------------------------------
+author: Zaid Mosley
+date: 2014-01-30 09:56:27.000000000
+
+Patch Set 6:
+
+One work (don't was missing): IMHO we don't want that the fragment knows about the IDE internal process of wiring up the application model.
+
+-------------------------------------
+author: Rosa Carr
+date: 2014-01-30 11:03:44.000000000
+
+Patch Set 6:
+
+Lars, thanks for your feedback. Let me try to explain why I did this and why I think it is a good thing:
+
+First I'm sorry for the length of the reply put please read it carefully because this is difficult stuff.
+
+
+# Why two steps
+I agree it would be better to have the processing of the processors and fragments in one step but this is not possible because the legacy workLeon Ochoach is created -after- the initial processing of fragments and processors. This is "Bug 376486".
+
+I tried to run the ModelAssembler (which processes the extension point) -after- the creation of the legacy workLeon Ochoach but that failed because the legacy workbench depends on an initialized model (i.e. when initial add-ons are added by running the processors in the extension point.) 
+
+## Catch-22
+1. The model is initialized with processors but it is too early for our IDE processors and fragments to be processed because the e3-workLeon Ochoach model is not yet created. 
+
+2. If we delay the processing of processors and fragments until after the creation of the e3-workLeon Ochoach then the model is not initialized with add-ons and the e3wb cannot be created.
+
+# Solution
+In this solution, the processing of the model is done in two steps. Therefore the user needs to indicate -when- a fragment.e4xmi needs to be added to the model -before- or -after- the creation of the workLeon Ochoach model.
+
+# Bonus
+As an added bonus, we can now run processors and fragments that -only- need to be processed in case we are running in an e3 workLeon Ochoach model or -only- if we are running in a pure e4 app.
+
+I have made good documentation in the extension point that makes it clear to a user when the fragment or processor is executed.
+
+I hope this makes it clear why the extension point change is needed.
+
+-------------------------------------
+author: Slade Moran
+date: 2014-02-04 14:08:12.000000000
+
+Patch Set 6: Code-Review-1
+
+(1 comment)
+
+The fundamental behaviour here is to allow a second pass right before the model is rendered, right?
+
+It seems complicated to have 4 states (sortof).  Wouldn't it be enough to offer a second pass for fragments and processors (and that could be tied just before rendering)?
+
+We currently offer to load processors and fragments (and then processors again sometimes) during model loading.  Then we offer the main lifecycle manager to ProcessAdditions and ProcessRemovals.  Then we process the AddOns.  Then we render everything with createGui(*).
+
+I'd like to see a discussion of the startup lifecycle.  i.e. What about delaying AddOns until right before rendering?
+
+Line:1085, bundles/org.eclipse.e4.ui.workLeon Ochoach.swt/src/org/eclipse/e4/ui/internal/workbench/swt/PartRenderingEngine.java -> If you're going to cast, you should probably make this an instanceof Boolean check (which will fail when it's null, so you're covered)
+
+-------------------------------------
+author: Rosa Carr
+date: 2014-02-05 18:39:04.000000000
+
+Patch Set 6:
+
+> The fundamental behaviour here is to allow a second pass right before the model is rendered, right?
+
+Well, after the workLeon Ochoach has filled in the model. If I set a breakpoint in the second pass I can already see a GUI. Do you think it can be done earlier in the LC?
+
+> It seems complicated to have 4 states (sortof). Wouldn't it be enough to offer a second pass for fragments and processors (and that could be tied just before rendering)?
+
+Maybe. I can see value in also being able to specify that the fragment or processor should NOT be running if in pure E4 mode or NOT if in legacy mode.
+
+-------------------------------------
+author: Slade Moran
+date: 2014-02-09 20:19:27.000000000
+
+Patch Set 6:
+
+> Well, after the workLeon Ochoach has filled in the model. If I set a breakpoint in the second pass I can already see a GUI. Do you think it can be done earlier in the LC?
+
+If we pushed the AddOn processing phase to just before the rendering then it would be model processing after the workLeon Ochoach had added to the model but before the rendering phase.
+
+> Maybe. I can see value in also being able to specify that the fragment or processor should NOT be running if in pure E4 mode or NOT if in legacy mode.
+
+But that's not the main thrust of the problem in this bug.  It could be managed by checking for certain known constructs and exiting quickly (and so it doesn't need feature work and API, just an agreed on constant)
+
+-------------------------------------
+author: Rosa Carr
+date: 2014-02-09 22:01:32.000000000
+
+Patch Set 6:
+
+> If we pushed the AddOn processing phase
+
+You suggest to move the existing AddOn processing to just before rendering #IN ADDITION# to allow this second pass with the extension point. Can you confirm that this is what you mean?
+
+> But that's not the main thrust of the problem
+
+Okay. I will refactor it.
+
+-------------------------------------
+author: Rosa Carr
+date: 2014-02-09 23:37:36.000000000
+
+Patch Set 6: -Code-Review
+
+AddOn processing creates the ContextService (CSAddon) which is needed by the workLeon Ochoach to initialize [2]. If such core services[1] are created by addons then we cannot move creation of AddOns to a point after the workbench fills in the model.
+
+[1]
+bundleclass://org.eclipse.e4.ui.services/org.eclipse.e4.ui.services.ContextServiceAddon
+bundleclass://org.eclipse.e4.ui.bindings/org.eclipse.e4.ui.bindings.BindingServiceAddon
+
+[2]
+org.eclipse.e4.core.di.InjectionException: Unable to process "ContextService.contextService": no actual value was found for the argument "EContextService".
+	at  <snip>
+org.eclipse.ui.internal.WorkLeon Ochoach.initializeDefaultServices(Workbench.java:2193)
+	at org.eclipse.ui.internal.WorkLeon Ochoach.init(Workbench.java:1573)
+	at org.eclipse.ui.internal.WorkLeon Ochoach.access$40(Workbench.java:1534)
+	at org.eclipse.ui.internal.WorkLeon Ochoach$58.run(Workbench.java:2717)
+
+-------------------------------------

@@ -1,0 +1,57 @@
+DESCRIPTION
+
+Avoid a syscall to get the file size if modification time has not changed
+
+We think file size does not change unless modification time also does. The
+possible exception is if the modification time is withi the granularity of
+file system timestamps. FAT has a resolution of two seconds.
+
+Change-Id: Ic133d92804f5b1c1be252db9bd55e24dba985af1
+
+
+COMMENTS
+
+author: Juliet Cantu
+date: 2010-11-14 23:49:26.000000000
+
+Patch Set 1: Do not submit
+
+This is based on an idea I presented on the mailing list. HOWEVER, I see no noticeable difference when attempting a commit in Eclipse, i.e. the part from selecting Commit in the Team menu, until the Commit dialog appears. 
+
+Does anyone else notice an improvement? Even on the linux kernel with over 2000 files I saw no certain improvement. If there is an improvement it likely less than 10%, which is less than I expected.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-11-15 18:31:22.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(3 inline comments)
+
+Have you tried to strace the JVM and see if your change actually reduced the number of stat calls?
+
+On Win32 this should be giving us a nice improvement, but on Linux the VFS is so blazingly fast that we probably can't measure the difference for a local POSIX filesystem like ext2/3/4, XFS, JFS.  Over NFS however this may be a huge difference.
+
+I agree with the logic, and what you are trying to do here.  I'm somewhat surprised this isn't a measurable improvement.  But if the before and after straces show a reduced number of stat(2) syscalls, we should make the change anyway.  Reducing syscalls even if we aren't getting an improvement for the Linux kernel will still help with the really sick cases of 100k+ files in a repository's working directory.
+
+Line:183, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> This should be p.now, not reading the clock.  I think your intent was to read the clock at the start of the entire iteration, and then use that single timestamp for all subdirectories.  Here you are updating the clock within each subdirectory as the TreeWalk recurses into them, but then you aren't updating it when we pop back out and evaluate another file in the parent directory.  That's somewhat inconsistent timestamp behavior.
+
+Line:634, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> Style-nit: Line wrapping here is very ugly.
+
+Line:10, /COMMIT_MSG -> s/withi/within/
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-11-16 22:59:41.000000000
+
+Patch Set 1:
+
+See "[jgit-dev] Avoiding stat calls (again)" on the mailing list on what to fix first. Of course I won't notice a stat less when every file is being read....
+
+-------------------------------------
+author: Juliet Cantu
+date: 2012-12-18 21:03:24.000000000
+
+Patch Set 1: Abandoned
+
+-------------------------------------

@@ -1,0 +1,52 @@
+DESCRIPTION
+
+JVMCBC-352: Some N1QL splits can confuse parser into raw mode
+
+Motivation
+----------
+While executing large selects in a loop it was found that in some runs
+the parsing would fail with a Jackson parsing error: a row would be
+an incomplete JSON object.
+
+After investigating, it turns out the server returns a chunked response
+that is split in a way that the parser is confused into thinking it is
+operating on RAW results.
+The bug occurs when the last characters in the buffers are all line
+returns or whitespaces, which should trigger a wait for more data but
+doesn't. The method that chooses between RAW result mode and classic
+result mode then defaults to thinking it is RAW, and ends up producing
+bad JSON.
+
+Additionally this wasn't surfaced by "split at every position" tests
+because the RAW parsing splits on commas, and the only commas in the
+test's data are between JSON objects. As a consequence, the test would
+still see JSON objects being parsed correctly.
+
+Modifications
+-------------
+Made sure to trigger a wait for more data when deciding between RAW and
+classic results if the end of the buffer is only whitespace.
+
+Added an additional field to the first result object of the test data
+in "chunked.json" so that the issue would be triggered in the "split at
+every position" test.
+
+Result
+------
+Parser is now correctly making the decision of how to parse rows, even
+if the response is chunked at the beginning of the results array.
+
+Change-Id: I71e98c3db9dcff0b8dff72b43d4a9cfce830665d
+Reviewed-on: http://review.couchbase.org/66281
+Tested-by: Estrella Humphrey xxx@xxx.xxx
+Reviewed-by: Natasha Sullivan xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Gerrit Code Review
+date: 2016-07-28 13:16:26.293000000
+
+Change has been successfully cherry-picked as 7985ac5aed9fbd3f8a0b69c526520b4c3d4ce6ea by Estrella Humphrey
+
+-------------------------------------

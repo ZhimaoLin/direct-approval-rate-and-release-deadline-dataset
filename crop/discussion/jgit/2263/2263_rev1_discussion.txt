@@ -1,0 +1,66 @@
+DESCRIPTION
+
+Add progress reporting to IndexDiff
+
+Change-Id: I4f05bdb0c58b039bd379341a6093f06a2cdfec6e
+Signed-off-by: Juliet Cantu xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2011-01-17 21:33:12.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(3 inline comments)
+
+My -1 is only over the first common on line 114.  The rest I could live with.
+
+Line:114, org.eclipse.jgit/src/org/eclipse/jgit/lib/IndexDiff.java -> Isn't this condition always true?  You set worked = total above, but then subtract from it only 100 times.  If we have 1000 files in the DirCache, at the "end" of the iteration worked is still 900.
+
+Line:257, org.eclipse.jgit/src/org/eclipse/jgit/lib/IndexDiff.java -> If this.filter is a PathFilter (which is usually what type it is when its non-null) we won't iterate the entire repository.  Instead we'll skip over large chunks of it based on what the PathFilter says is relevant.  Is it OK in those cases for the progress monitor to be inaccurate?
+
+Its ugly, but we might be able to do better by peeking at the DirCacheIterator's state.  It has an index that tells us how far into the DirCache we currently are... which is exactly what the progress should be.  When this.filter is a PathFilter and we skip over an entire subdirectory that isn't relevant, DirCacheIterator's state reflects the number of paths that were skipped over and thus would give us a more accurate progress update.  But doing so requires poking DirCacheIterator's API, and I'm not sure we want to expose internal state like that.
+
+Line:311, org.eclipse.jgit/src/org/eclipse/jgit/lib/IndexDiff.java -> Is this an issue for EGit when the TreeWalk stops without visting every node?  I seem to remember some problem with the Eclipse ProgressMonitor stuff where ending the current task without working 100% of the units within that task confused it.  Am I mistaken, or have we worked around that in the EGit wrapper that adapts Eclipse ProgressMonitor to JGit ProgressMonitor?
+
+-------------------------------------
+author: Juliet Cantu
+date: 2011-01-18 07:50:27.000000000
+
+Patch Set 1: (2 inline comments)
+
+
+
+-------------------------------------
+author: Juliet Cantu
+date: 2011-01-18 21:29:32.000000000
+
+Patch Set 1: Do not submit
+
+I got to think again. I dropped all index entries and
+this did not work so well. Btw, the repo has >100000 files.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2011-01-18 07:50:26.000000000
+
+MISMATCHED INLINE COMMENT
+Line:114, org.eclipse.jgit/src/org/eclipse/jgit/lib/IndexDiff.java -> I guess I could investigate more. Will include be called for every entry,
+i.e. also the different stages. We can assume this filter is the first
+one?
+
+This is a leftover from my first cut, where I decided to ignore the presense of unmerged entries. The worked counter is a way of cutting
+of progress once we reach "100 per cent".
+
+-------------------------------------
+author: Juliet Cantu
+date: 2011-01-18 07:50:26.000000000
+
+MISMATCHED INLINE COMMENT
+Line:257, org.eclipse.jgit/src/org/eclipse/jgit/lib/IndexDiff.java -> I was looking at that index, but wasn't convinced it was meant for public consumption. 
+
+Can't I just move the progress filter to be first filter in order to fix the first problem. I don't think we have to 100% accurate, the main idea is to let the user feel good.
+
+-------------------------------------

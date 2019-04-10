@@ -1,0 +1,116 @@
+DESCRIPTION
+
+Retry bucket creation
+
+When running the test suite on Windows it have sporadic test
+failures due to the fact that sometimes the bucket deletion
+takes more time than expected.
+
+I believe that we need to improve the bucket deletion code
+to correctly monitor when the bucket is completely gone so
+that it may be recreated, since this workaround will fail
+if the bucket deletion code is really slow.
+
+Change-Id: I0b8b1385483fdccb525f7d88d3435273ec4755e1
+
+
+COMMENTS
+
+author: Asher Vang
+date: 2014-08-22 13:04:42.460000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2014-08-22 13:04:48.288000000
+
+Patch Set 3:
+
+Build Started http://factory.couchbase.com/job/testrunner-Jasmin Rangel-master/2436/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2014-08-22 13:21:02.893000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+http://factory.couchbase.com/job/testrunner-Jasmin Rangel-master/2436/ : SUCCESS
+
+-------------------------------------
+author: Ayla Reynolds
+date: 2014-08-22 13:52:13.457000000
+
+Patch Set 3: Code-Review-1
+
+(5 comments)
+
+Another round of review.
+
+Line:1535, lib/membase/api/rest_client.py -> Nitpick: there should be spaces around the `=`.
+
+Line:1540, lib/membase/api/rest_client.py -> You could use `elif` instead. So combined with the comments below it might look like that (it would stay within the 80 characters bounds):
+
+    if status:
+        break
+    elif (int(header['status']) == 503 and
+            '{"_":"Bucket with given name still exists"}' in content):
+        log.info("The bucket still exists, sleep 1 sec and retry")
+        time.sleep(1)
+    else:
+        raise BucketCreationException(ip=self.ip, bucket_name=bucket)
+
+Line:1541, lib/membase/api/rest_client.py -> Long if statements should be wrapped in braces instead of using the backslash syntax: http://legacy.python.org/dev/peps/pep-0008/#multiline-if-statements
+
+Line:1542, lib/membase/api/rest_client.py -> You could just use `content.rstrip()` as you probably want to strip all whitespace characters anyway.
+
+Another way would be testing if content contains that string (it's not the same as you do but should lead to the desired result):
+
+    '{"_":"Bucket with given name still exists"}' in content
+
+Line:1550, lib/membase/api/rest_client.py -> Does it really matter if it's 60 or 59 secs? I would just not do the `+ 1`. Or do the range in the for loop as range(1, maxwait).
+
+-------------------------------------
+author: Titus Ho
+date: 2014-08-22 15:49:32.090000000
+
+Patch Set 3:
+
+(2 comments)
+
+Line:1477, lib/membase/api/rest_client.py -> I'm curious about whether there is a way to verify delete eventually finishes.
+As I'd really like it if we could put verification here instead of create.
+
+Line:1541, lib/membase/api/rest_client.py -> cool, just learned server distinguishes from deletion in progress and bucket already exists
+
+-------------------------------------
+author: Asher Vang
+date: 2014-08-22 15:58:07.753000000
+
+Patch Set 3:
+
+(2 comments)
+
+Line:1477, lib/membase/api/rest_client.py -> I've requested information from Alk about this, because that's the real problem. The other is just a workaround to compensate for this limitation...
+
+Line:1550, lib/membase/api/rest_client.py -> I need the +1 because it will never be == to maxwait the way range() works..
+
+-------------------------------------
+author: Asher Vang
+date: 2014-08-25 07:33:39.779000000
+
+Patch Set 3:
+
+(4 comments)
+
+Line:1477, lib/membase/api/rest_client.py -> There is no way to do that right now, but it may be addressed in a future release. For now all we can do is to log it...
+
+Line:1535, lib/membase/api/rest_client.py -> Done
+
+Line:1540, lib/membase/api/rest_client.py -> Done
+
+Line:1541, lib/membase/api/rest_client.py -> Done
+
+-------------------------------------

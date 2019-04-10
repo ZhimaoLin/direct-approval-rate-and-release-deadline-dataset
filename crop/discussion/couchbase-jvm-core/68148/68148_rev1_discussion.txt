@@ -1,0 +1,114 @@
+DESCRIPTION
+
+JCBC-1007: Fix queries not load balancing correctly when in MDS.
+
+Motivation
+----------
+The round robin mechanism for locating the proper nodes on Query, FTS and Views
+correctly used an "offset" when iterating through the node list, but the list
+also includes nodes with different services. In a setup like this:
+
++------------+------------+---------------+---------------+
+| Node A: KV | Node B: KV | Node C: Query | Node D: Query |
++------------+------------+---------------+---------------+
+
+Round robin would skip forward on the nodes where query is not enabled, leading
+to queries being sent to: C, C, C, D, C, C, C, D, since C would handle offsets
+for A and B respectively. In non-MDS this is not an issue since query nodes
+are available on all machines. In other constellations this is not an issue
+as well, but the ordering can't be controlled by the user and as a result
+is non-deterministic.
+
+Query service is illustrated but the same issue is found in FTS and Views.
+
+Modifications
+-------------
+Unit tests have been added for this situation as regression tests. After considering
+ideas to advance the offset in various ways I determined the safest way to get
+to a good approach is to filter the nodes list upfront to only include nodes
+for this particular service. Then in all cases we can be sure only nodes for
+that specific service are touched in the first place.
+
+Result
+------
+Since now the nodes are filtered by the service type, other nodes with different
+services do not skew the round-robin algorithm and as a result n1ql queries
+(as well as view and fts ones) are distributed more evenly over the cluster.
+
+Change-Id: I4e178b6fdb7508b95e198d703b43a7f30bd08213
+
+
+COMMENTS
+
+author: Natasha Sullivan
+date: 2016-09-29 07:22:35.600000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2016-09-29 07:23:45.977000000
+
+Patch Set 1: Verified+1
+
+-------------------------------------
+author: Cory Peck
+date: 2016-09-29 07:36:27.102000000
+
+Patch Set 1: Code-Review+2
+
+-------------------------------------
+author: Marques Ellis
+date: 2016-09-29 14:41:19.407000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:67, src/main/java/com/couchbase/client/core/node/locate/QueryLocator.java -> If counter exceeds max int, offsets will be negative?
+
+-------------------------------------
+author: Cory Peck
+date: 2016-09-29 16:07:02.624000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:67, src/main/java/com/couchbase/client/core/node/locate/QueryLocator.java -> interesting, I didn't know that in java % preserves sign. In ruby result of % always positive
+
+-------------------------------------
+author: Marques Ellis
+date: 2016-09-29 18:01:35.793000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:67, src/main/java/com/couchbase/client/core/node/locate/QueryLocator.java -> Yes, some languages take a different approach https://en.wikipedia.org/wiki/Modulo_operation. Math.floorMod should fix it.
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2016-09-30 09:52:18.572000000
+
+Patch Set 1: -Verified
+
+(1 comment)
+
+Line:67, src/main/java/com/couchbase/client/core/node/locate/QueryLocator.java -> yep this will fix it, awesome catch
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2016-09-30 09:55:01.225000000
+
+Patch Set 1:
+
+oh darn, this is only in since java 8, I'll find something that works for java 6 too (maybe straight backport)
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-09-30 10:16:45.303000000
+
+Change has been successfully cherry-picked as 1a7d65be5a6ca612e6f5ca51f3b757bd2ac75af3 by Natasha Sullivan
+
+-------------------------------------

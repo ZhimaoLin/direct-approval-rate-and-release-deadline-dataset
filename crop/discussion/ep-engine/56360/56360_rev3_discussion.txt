@@ -1,0 +1,159 @@
+DESCRIPTION
+
+Address lock inversion scenario in DcpConsumer/ProcesserTask
+
+Addressing this lock inversion by ensuring that upon destroyCookie
+in testHarness which essentially invokes causes disconnection of the
+connection, the processer task of the consumer is first cancelled
+before closing all of its streams.
+
+WARNING: ThreadSanitizer: lock-order-inversion (potential deadlock) (pid=193603)
+Cycle in lock order graph: M27357 (0x7d5000016940) => M12635 (0x7d5000018120) => M27357
+
+  Mutex M12635 acquired here while holding mutex M27357 in main thread:
+    #0 pthread_mutex_lock <null> (engine_testapp+0x00000047f130)
+    #1 cb_mutex_enter /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/platform/src/cb_pthreads.cc:189 (libplatform.so.0.1.0+0x000000004d92)
+    #2 Mutex::acquire() /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/mutex.cc:31 (ep.so+0x00000010a139)
+    #3 ExecutorPool::_wake(unsigned long) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/locks.h:71 (ep.so+0x0000000e2246)
+    #4 ExecutorPool::wake(unsigned long) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/executorpool.cc:345 (ep.so+0x0000000e2371)
+    #5 Flusher::wake() /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/flusher.cc:158 (ep.so+0x0000000ef406)
+    #6 EventuallyPersistentStore::queueDirty(RCPtr<VBucket>&, StoredValue*, LockHolder*, unsigned long*, bool, bool, bool, bool) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/flusher.h:89 (ep.so+0x00000007ff03)
+    #7 EventuallyPersistentStore::deleteWithMeta(std::string const&, unsigned long*, unsigned long*, unsigned short, void const*, bool, ItemMetaData*, bool, bool, unsigned long, ExtendedMetaData*, bool) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/ep.cc:2986 (ep.so+0x000000091f54)
+    #8 PassiveStream::processDeletion(MutationResponse*) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/dcp/stream.cc:1325 (ep.so+0x000000073e0d)
+    #9 PassiveStream::messageReceived(DcpResponse*) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/dcp/stream.cc:1161 (ep.so+0x0000000733ef)
+    #10 DcpConsumer::deletion(unsigned int, void const*, unsigned short, unsigned long, unsigned short, unsigned long, unsigned long, void const*, unsigned short) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/dcp/consumer.cc:355 (ep.so+0x0000000577d6)
+    #11 EvpDcpDeletion(engine_interface*, void const*, unsigned int, void const*, unsigned short, unsigned long, unsigned short, unsigned long, unsigned long, void const*, unsigned short) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/ep_engine.cc:1657 (ep.so+0x0000000ae4dd)
+    #12 mock_dcp_deletion(engine_interface*, void const*, unsigned int, void const*, unsigned short, unsigned long, unsigned short, unsigned long, unsigned long, void const*, unsigned short) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/memcached/programs/engine_testapp/engine_testapp.cc:659 (engine_testapp+0x0000004c635d)
+    #13 test_dcp_consumer_delete_with_time_sync(engine_interface*, engine_interface_v1*) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/tests/ep_testsuite.cc:6412 (ep_testsuite.so+0x00000007bfa3)
+    #14 execute_test(test, char const*, char const*) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/memcached/programs/engine_testapp/engine_testapp.cc:1090 (engine_testapp+0x0000004c4192)
+    #15 __libc_start_main /build/buildd/eglibc-2.15/csu/libc-start.c:226 (libc.so.6+0x00000002176c)
+
+  Mutex M27357 acquired here while holding mutex M12635 in main thread:
+    #0 pthread_mutex_lock <null> (engine_testapp+0x00000047f130)
+    #1 cb_mutex_enter /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/platform/src/cb_pthreads.cc:189 (libplatform.so.0.1.0+0x000000004d92)
+    #2 Mutex::acquire() /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/mutex.cc:31 (ep.so+0x00000010a139)
+    #3 PassiveStream::clearBuffer() /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/locks.h:71 (ep.so+0x0000000723d9)
+    #4 PassiveStream::setDead(end_stream_status_t) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/dcp/stream.cc:1021 (ep.so+0x0000000728e3)
+    #5 DcpConsumer::closeAllStreams() /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/dcp/consumer.cc:875 (ep.so+0x000000055cc1)
+    #6 DcpConsumer::~DcpConsumer() /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/dcp/consumer.cc:113 (ep.so+0x000000055751)
+    #7 DcpConsumer::~DcpConsumer() /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/dcp/consumer.cc:111 (ep.so+0x000000055e35)
+    #8 Processer::~Processer() /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/atomic.h:271 (ep.so+0x000000054bfd)
+    #9 ~SingleThreadedRCPtr /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/atomic.h:271 (ep.so+0x0000000e61a2)
+    #10 ExecutorPool::stopTaskGroup(unsigned long, task_type_t, bool) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/executorpool.cc:585 (ep.so+0x0000000e68ee)
+    #11 EventuallyPersistentStore::~EventuallyPersistentStore() /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/ep.cc:471 (ep.so+0x00000007e1d6)
+    #12 EventuallyPersistentEngine::~EventuallyPersistentEngine() /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/ep_engine.cc:6342 (ep.so+0x0000000cabea)
+    #13 EvpDestroy(engine_interface*, bool) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/ep_engine.cc:144 (ep.so+0x0000000ace97)
+    #14 mock_destroy(engine_interface*, bool) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/memcached/programs/engine_testapp/engine_testapp.cc:98 (engine_testapp+0x0000004c4c07)
+    #15 execute_test(test, char const*, char const*) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/memcached/programs/engine_testapp/engine_testapp.cc:995 (engine_testapp+0x0000004c4247)
+    #16 __libc_start_main /build/buildd/eglibc-2.15/csu/libc-start.c:226 (libc.so.6+0x00000002176c)
+
+Change-Id: I113064316f38618eeea54f25777691d9e6291780
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2015-10-24 00:59:35.203000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-10-24 00:59:38.698000000
+
+Patch Set 3:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1412/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-10-24 01:01:49.496000000
+
+Patch Set 3: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1412/ : ABORTED
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/647/ : FAILURE
+
+Make encountered an error building one or more targets. ( http://factory.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/647/ )
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-10-24 01:01:56.216000000
+
+Patch Set 3: -Verified
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/648/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-10-24 01:04:56.596000000
+
+Patch Set 3:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/649/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-10-24 01:08:03.149000000
+
+Patch Set 3:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/650/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-10-24 01:10:20.009000000
+
+Patch Set 3:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/651/ (2/2)
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-10-24 01:12:30.408000000
+
+Patch Set 3:
+
+Thread sanitizer appears to be failing because of ENV issue, I'll look into it on Monday.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-10-24 01:27:50.144000000
+
+Patch Set 3: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/651/ : FAILURE
+
+Make encountered an error building one or more targets. ( http://factory.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/651/ )
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1413/ : SUCCESS
+
+-------------------------------------
+author: Abby Duran
+date: 2015-10-25 17:58:21.374000000
+
+Removed the following votes:
+
+* Verified-1 by Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+
+
+-------------------------------------
+author: Abby Duran
+date: 2015-10-25 17:59:03.328000000
+
+Patch Set 3: Verified+1 Code-Review+2
+
+Thread sanitizer failure seems a build env. issue.
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-10-25 17:59:04.967000000
+
+Change has been successfully cherry-picked as ef725b7478a56d85afbfc972351ebee9013b05cf
+
+-------------------------------------

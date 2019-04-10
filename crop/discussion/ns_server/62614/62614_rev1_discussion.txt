@@ -1,0 +1,68 @@
+DESCRIPTION
+
+Periodically purge orphaned memcached buckets
+
+Buckets may be orphaned if delete bucket in memcached fails for some
+reason. Periodically check for buckets in memcached that are not
+defined in ns_server, and delete them.
+
+Change-Id: I453c26f9c1fcf664b26b6cd9a586c2c46fd7f414
+
+
+COMMENTS
+
+author: Leah Mcdaniel
+date: 2016-04-08 16:14:29.572000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Leah Mcdaniel
+date: 2016-04-08 16:15:02.272000000
+
+Patch Set 1: Verified+1
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2016-04-09 02:53:23.845000000
+
+Patch Set 1:
+
+This is raceful. It's possible that you get the list of buckets from config, then some new bucket gets created and propagated to memcached, and only then you take the list of buckets from memcached. So you will believe that the newly created bucket is orphaned and will delete it.
+
+-------------------------------------
+author: Leah Mcdaniel
+date: 2016-04-11 17:25:56.483000000
+
+Patch Set 1:
+
+If the purge is run by ns_bucket_worker, just like normal creation and deletion, we get rid of the race, but I am not sure if it will work.
+
+Assume there is an orphaned bucket B on node N.
+ns_bucket_worker on node N tries to delete it
+concurrently a client creates a new bucket B.
+The bucket is created on all nodes except node N, because ns_bucket_worker is busy deleting the old bucket.
+
+Q: Does anything bad happen if the bucket is not created on one active node within a reasonable time?
+
+If the delete in memcached of the orphaned bucket fails, then ns_bucket_worker will finally try to "create" the bucket, i.e. starting all needed bucket processes.
+After this there will be no more attempts to delete the orphans since the bucket now exists in ns_config.
+
+ns_memcached will now detect that the bucket already exists in memcached and either try to reuse it, or force a delete and recreate by exit({shutdown, reconfig})
+
+Q: Is it safe in this case to reuse the existing bucket?
+
+Another question is, what are the possible reasons for deleting the bucket in memcached to fail that we are trying to handle?
+Is it just that the bucket was not deleted because of a ns_server restart, or are there any memcached errors that makes it impossible to delete a bucket that we must be able to cope with?
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2016-04-11 23:17:51.916000000
+
+Patch Set 1:
+
+If you look at the ns_orchstrator code that creates buckets, there's already a best-effort check there that prevents bucket creation before the old one is deleted. Though one bucket deletion ideally should not block any other buckets from being deleted.
+
+It's not ok to reuse a bucket. You can bucket uuid (which is also available via memcached stats) to distinguish between buckets.
+
+-------------------------------------

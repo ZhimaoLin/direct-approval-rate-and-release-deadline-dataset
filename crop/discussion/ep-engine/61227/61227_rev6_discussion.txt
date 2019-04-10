@@ -1,0 +1,45 @@
+DESCRIPTION
+
+MB-18650: Speedup hash_table_test (particulary under TSan) by ~40x
+
+The hash_table_test takes ~45s to run when run under ThreadSantizer
+during commit-validation jobs, and sometimes (under machine load) can
+hit it's 60s timeout. Looking at the test itself, there are a few
+adjustments which can be made to the implementation to speed it up,
+without removing any of the test functionality / scope:
+
+* Use shorter keys (%d instead of key%d). While this may seem unlikely
+  to speed the test up, hash table searching requires a memcmp of keys
+  and hence this halves the amount of data which needs to be
+  compared. Note that TSan intercepts all memcmp() calls, so these are
+  much slower than normal when running under TSan).
+
+* Remove unnecessary copying of std::string.
+
+* Reduce the number of threads for the concurrent test from 16 to
+  4. Note that while this does reduce the amount of concurrency, these
+  tests were written before we started using Valgrind /
+  ThreadSanitizer which do a very good job of detecting data races
+  without necessarily "brute-forcing" by running a large number of
+  threads.
+
+* Reduce the key count for some tests - the actual number doesn't
+  matter here, just there's a representable sample.
+
+Combined, these changes reduce the wall-lock runtime down to under 1s
+when run with ThreadSanitizer.
+
+Change-Id: I17c6e20d0c31f1071e23c3db5c8ff2a9d464f1cf
+Reviewed-on: http://review.Piper Jefferson.org/61227
+Tested-by: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+Reviewed-by: Asher Vang <Asher xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Tate Garrett
+date: 2016-03-11 11:46:44.561000000
+
+Change has been successfully cherry-picked as dbaac7ebd1913aa08fed712a5e7c69f8e89dd490
+
+-------------------------------------

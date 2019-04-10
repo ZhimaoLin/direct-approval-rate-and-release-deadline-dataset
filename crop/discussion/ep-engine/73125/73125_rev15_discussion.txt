@@ -1,0 +1,146 @@
+DESCRIPTION
+
+MB-16181: Flusher integration and set/get support
+
+This commit ties together collections code so that system events
+and manifest updates are now applied to storage.
+
+Without any external API calls data will still flow because all
+keys are by default, default collection keys and the $default
+collection exists in the VB::Manifest.
+
+With an external call (currently via VBucket) we can make changes to
+the collection state and enable policing of collections. Changes to
+collections creates SystemEvents and they are now flushed to
+couchstore.
+
+SystemEventFlush tries to capture extra state for a single
+run of the flusher for the handling of SystemEvents (writing
+special documents and _local docs)
+
+This commit enables set/get only to be collection aware - each
+datapath in/out method will need similar "isValid" checks.
+
+EPBucket unit tests enable namespace persistence and check that
+collections can be created, written and read from (get/set only)
+
+Change-Id: Ia6e6cb14d7e0fa2c418e0f52d9ab38ab36baf12d
+
+
+COMMENTS
+
+author: Jim WNathalie Landryer
+date: 2017-02-09 15:49:07.624000000
+
+Uploaded patch set 15.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-02-09 16:09:00.091000000
+
+Patch Set 15: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/3740/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/2358/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/3137/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/3535/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-02-09 16:12:15.260000000
+
+Patch Set 15: Code-Review-1
+
+(7 comments)
+
+Line:997, src/kvstore.h -> As discussed, I think it's worth adding a few comments here on why we've chosen this (slightly sub-optimimal) method to push the manifestItem down to be stored.
+
+Line:2033, src/kv_bucket.cc -> Is this de-dupe code going to catch out collection create/delete messages (say if two were in the same checkpoint? Or do we add a collection-specific suffix?
+
+Line:429, src/couch-kvstore/couch-kvstore.h -> Can this be null? If not prefer reference.
+
+Line:479, src/couch-kvstore/couch-kvstore.h -> Similary here.
+
+Line:69, src/systemevent.cc -> Looks like this isn't logically const (given we call setOperation())
+
+Line:70, src/systemevent.cc -> Should this ever get called with a non-system_event?
+
+Line:100, src/systemevent.h -> Style: Maybe keep this at the top of the file so all forward decls are together?
+
+-------------------------------------
+author: Keira Washington
+date: 2017-02-09 17:13:13.397000000
+
+Patch Set 15:
+
+(1 comment)
+
+Line:69, src/systemevent.cc -> Nope, because if you only want const access then you would just pass in a reference to the underlying object. Generally you shouldn't pass a smart pointer by const reference.
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2017-02-10 10:39:04.564000000
+
+Patch Set 15:
+
+(1 comment)
+
+Line:69, src/systemevent.cc -> Ah can't help to get in there can you. The point was it becomes misleading that you can have the const smart pointer but update the managed object, clearly the two are different entities, but the lines become blurred with smart ptr management, anyway our smart pointers can't manage const objects because RCValue needs inc/dec
+
+-------------------------------------
+author: Keira Washington
+date: 2017-02-10 10:56:18.068000000
+
+Patch Set 15:
+
+(1 comment)
+
+Line:69, src/systemevent.cc -> > but the lines become blurred with smart ptr management
+
+The semantics for smart pointers and const in the standard library are pretty consistent in this regard. They're also the exact same semantics that const has with regular pointers and iterators.
+
+> anyway our smart pointers can't manage const objects because RCValue needs inc/dec
+
+You can justifiably make the RCValue's ref counter mutable since it would still be logically const.
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2017-02-09 17:09:25.747000000
+
+MISMATCHED INLINE COMMENT
+Line:2033, src/kv_bucket.cc -> The events get the revision added to the key to ensure uniqueness, here and in the disk index
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2017-02-09 17:09:25.747000000
+
+MISMATCHED INLINE COMMENT
+Line:429, src/couch-kvstore/couch-kvstore.h -> Done
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2017-02-09 17:09:25.747000000
+
+MISMATCHED INLINE COMMENT
+Line:479, src/couch-kvstore/couch-kvstore.h -> Done
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2017-02-09 17:09:25.747000000
+
+MISMATCHED INLINE COMMENT
+Line:69, src/systemevent.cc -> yeah, a const smart_pointer to non-const object? Is that a failing of our RCPtr, would unique or shared_ptr force const access only?
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2017-02-09 17:09:25.747000000
+
+MISMATCHED INLINE COMMENT
+Line:70, src/systemevent.cc -> all items in the checkpoint come through here, and only the system_event ones are "captured"
+
+-------------------------------------

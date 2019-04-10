@@ -1,0 +1,83 @@
+DESCRIPTION
+
+Improve abysmal performance of commit info update in history view
+
+When the number of branches is large, the large amounts of
+RevWalk.isMerge translates a gross a amount calls to
+MergeBaseGenerator.carryOntoOne with deep stacks. For 8200 branches,
+e.g. if you fetch refs/changes/* from Gerrit, this translates
+to 50 million calls to carryOntoOne.
+
+In real that is ~3.3 seconds for a repo with the large number
+of refs and .06 for a normal clone.
+
+Take a simpler approach and scan every branch until we find the
+selected commit or one of it's parents. After this fix info update
+with the large refs set is about .5 seconds. For normal clones
+there is no difference.
+
+Change-Id: I6de60760f1644b4e968c7b0caeffcc0007b2da33
+
+
+COMMENTS
+
+author: Zachary Orozco
+date: 2011-12-08 17:07:37.000000000
+
+Patch Set 1: (2 inline comments)
+
+Matthias and I came across a couple of questions ...
+
+Line:313, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/history/CommitInfoBuilder.java -> On a repo with a long history this might cost a lot of memory. Wouldn't it make sense to limit the size of the cutOff list? Even a incomplete cutOff list helps.
+
+Another idea: can't we mark the direct parents of commit as "uninteresting" in the RevWalk?
+
+Line:320, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/history/CommitInfoBuilder.java -> We are doing a depth first search here - one ref after the other. If I look the RevWalk API we could also mark all refs as starting refs. Why aren't we using that and do a breadth first search?
+
+-------------------------------------
+author: Zachary Orozco
+date: 2011-12-08 22:08:01.000000000
+
+Patch Set 1: (2 inline comments)
+
+
+
+Line:313, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/history/CommitInfoBuilder.java -> Regarding marking direct parents as uninteristing I found the answer myself: This wouldn't help much. For 99% of the cases if you visit the direct parent of the commit X then you would have visited the commit X itself one step before. And you would have stopped your walk at commit X. Therefore you will nearly never reach the direct parents of commit X.
+
+Line:320, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/history/CommitInfoBuilder.java -> Again I found the answer myself: If you have added multiple starting points and you do find the commit then you still don't know which of the starting points has led you to the commit. But that's exactly what you want to know: which of the starting refs lead me to the commit.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2011-12-18 23:07:05.000000000
+
+Patch Set 1:
+
+Does that mean the patch is good?
+
+-------------------------------------
+author: Zachary Orozco
+date: 2011-12-19 08:21:18.000000000
+
+Patch Set 1:
+
+Looks ok to me. But there is question from me unanswered. Look at my first comment and the question whether it would make sense to limit the size of the cutOff list.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2011-12-28 00:35:34.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:313, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/history/CommitInfoBuilder.java -> I was thinking about making the cutoff list smaller, but I'm not sure how to do it. One way is this: For most practical purposes we can exclude branches by looking at the tip, i.e. if the tip of  a branch is older than the commit we are looking at, it is very unlikely to be a candidate. Do I add some time skew to be sure?
+
+-------------------------------------
+author: Juliet Cantu
+date: 2011-12-30 06:42:06.000000000
+
+Patch Set 1: Abandoned
+
+Move to for/master http://egit.eclipse.org/r/#change,4893
+
+-------------------------------------

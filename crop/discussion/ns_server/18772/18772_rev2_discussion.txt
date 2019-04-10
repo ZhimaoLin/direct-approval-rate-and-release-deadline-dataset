@@ -1,0 +1,189 @@
+DESCRIPTION
+
+MB-5307: avoid false negatives in missing_revs
+
+See source comment below.
+
+Previously it was possible to incorrectly return false ("I don't need
+this revision") when in fact it was needed.
+
+For example, lets assume remote 'meta' is {10, non-deleted,
+SomethingSmall} and local 'meta' is {10, deleted, SomethingBig}. So we
+want to prefer remote. But get_missing_revs can't be sure about that
+due to missing deletedness. Correct answer is return true ("Please
+send remote value and revision to me"), but previous implementation
+would look at RevId and incorrectly conclude it's not needed.
+
+So seemingly correct implementation is to assume remote revision is
+not deleted as 'worst' case.
+
+Change-Id: Ia8b6b47642af684a7586c0bc3677ee90399cb9d2
+
+
+COMMENTS
+
+author: Nathalie Landry
+date: 2012-07-24 19:06:07.270000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-07-24 19:08:56.680000000
+
+Patch Set 2:
+
+Running verifications right now. But I think it's ready for comments.
+
+I think we should also avoid sending get_missing_revs for deleted items as just always sending them into _bulk_docs is going to be approx. same amount of bytes on the wire.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-07-24 19:38:34.171000000
+
+Patch Set 2: Verified
+
+
+
+-------------------------------------
+author: Macie Morton
+date: 2012-07-24 20:05:33.891000000
+
+Patch Set 2: I would prefer that you didn't submit this
+
+I do not understand this change. Deleted or non-deleted is never considered when we pick up the winner.  The comparison order does not and should not include flag "Deleted" at all.
+
+-------------------------------------
+author: Macie Morton
+date: 2012-07-24 20:10:52.866000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:122, src/capi_replication.erl -> We should remove the Deleted flag from comparison here, instead of adapting to it in the is_missing_rev function.
+
+-------------------------------------
+author: Macie Morton
+date: 2012-07-24 20:13:38.590000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:97, src/capi_replication.erl -> This comparison prefers existent item over deleted item, which is wrong.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-07-24 20:14:40.742000000
+
+Patch Set 2:
+
+Well we don't have to consider deletedness. But I recall 100% surely that we made a conscious decision on that.
+
+When originally same revision is changed deleted on one cluster and mutated on other cluster we decided we want to prefer live version.
+
+Similar thing also happens when couch picks winning revision (but at GET time). When among set of conflicting revisions we always prefer non-deleted.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-07-24 20:17:27.703000000
+
+Patch Set 2: (1 inline comment)
+
+Replied to inline comment
+
+Line:97, src/capi_replication.erl -> It's not wrong.
+
+We're not preferring anything. Here we only decide if we need to send this stuff with _bulk_docs. And because we don't have deletedness of remote revision we have to be conservative and assume it's alive.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2012-07-24 20:38:00.774000000
+
+Patch Set 2: Looks good to me, approved
+
+
+
+-------------------------------------
+author: Macie Morton
+date: 2012-07-24 20:47:14.075000000
+
+Patch Set 2: Do not submit
+
+(1 inline comment)
+
+
+
+Line:97, src/capi_replication.erl -> We do NOT need deletedness of an item when we decide if we should replicate a remote item. And we should not use that, because in eyes of XDCR,  deletedness is just an update, such information is already included in Seqno.
+
+It is wrong and unnecessary to include deletedness again here.
+
+You are trying to change the fundamental comparison algorithm in XDCR and unnecessarily introducing these false positive/negative issues.
+
+
+Again, the bug is in function do_update_replicated_doc_loop(), not here.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-07-24 20:50:25.759000000
+
+Patch Set 2:
+
+I believe you're making mistake. But because it's your area, that's in the end your problem. Feel free to abandon this.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2012-07-24 21:06:52.616000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:97, src/capi_replication.erl -> Nothing is introduced here. Deletedness of item has been taken into account almost from the very beginning of the existence of this code. The idea was to prefer update to deletion. Because that's how couchdb behaves. But our code is limited by the fact that we don't have revision histories.
+
+-------------------------------------
+author: Macie Morton
+date: 2012-07-24 21:08:51.426000000
+
+Patch Set 2:
+
+Alk, I did not design XDCR from beginning. But from the function spec and tNathalie Landrying with Srini, we do not use deletedness in picking up winner. Neither do we prefer live items over deleted items in replicating. It is a bug to use deletedness in do_update_replicated_doc_loop().  As I said earlier, deletedness of an item is already included in Seqno.
+
+
+The issue in your commit is
+
+1. propagate the bug from do_update_replicated_doc_loop() to is_missing_rev()
+
+2. introduce false positive/negative issue since we do not know if the item is deleted at remote side, which increases replication cost unnecessarily. The current algorithm does not have false positive/negative issue. 
+
+3. Changing algorithms to pick up winner is an architecture level change, not just a simple bug fix. Such changes requires careful thinking. Also, our QE team may need to redo the complete test. 
+
+In future, if it is necessary , or our customers require us to prefer living item over deleted item, we can adopt your commit, but not this time. 
+
+
+I am sorry I have to put "-2" here. Thanks for review and hope you understand my concerns.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-07-24 21:10:11.072000000
+
+Patch Set 2:
+
+From some phase 2 phase discussion with Junyi my understanding is he doesn't want to prefer update over delete. Because for some cases (larger revnums) this won't be the case anyway.
+
+That makes sense. And it'll make code simpler.
+
+The only think I disagree with is his assertion that previous approach is 'wrong' or fundamentally worse. Which simply not the case IMHO. Both approaches are similarly flawed and otherwise practical difference is very small.
+
+I'll let Junyi to change this code to ignore deletedness
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-07-24 21:10:54.172000000
+
+Patch Set 2: Abandoned
+
+abandoned as code owner wants different direction to be taken
+
+-------------------------------------

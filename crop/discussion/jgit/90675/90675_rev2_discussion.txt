@@ -1,0 +1,99 @@
+DESCRIPTION
+
+FileRepository.autoGC: run in background
+
+When running an automatic gc on a FileRepository, when the caller
+passes a NullProgressMonitor, fork off a new thread (per repository)
+to run the gc in.
+
+In some cases, the auto gc limit is lower than the true number of
+unreachable loose objects, so auto gc will run after every (e.g) fetch
+operation.  This leads to the appearance of poor fetch performance.
+Since these GCs will never make progress (until either the objects
+become referenced, or the two week timeout expires), blocking on them
+simply reduces throughput.
+
+In the event that an auto GC would make progress, it's still OK if it
+runs in the background.  The progress will still happen.
+
+This matches the behavior of regular git.
+
+If the user passes a ProgressMonitor that is not a
+NullProgressMonitor, they might actually care about the progress of
+the gc, and would get confused if that progress happened after the
+autoGC call returns, so we run in the foreground in that case.  But we
+still don't run more than one GC at a time, so if a background GC
+is happening, another gc isn't started.
+
+Change-Id: I3870cadb4a0a6763feff252e6eaef99f4aa8d0df
+Signed-off-by: Carissa Dunn xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Carissa Dunn
+date: 2017-02-09 00:42:59.000000000
+
+Uploaded patch set 2: Commit message was updated.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-02-09 00:43:05.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/9770/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-02-09 00:50:58.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/9770/ : SUCCESS
+
+-------------------------------------
+author: Zane Norton
+date: 2017-02-09 18:01:46.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:30, /COMMIT_MSG -> Is this really important?  If so, it appears that the implementation in this change is unlikely to actually prevent this.
+
+-------------------------------------
+author: Carissa Dunn
+date: 2017-02-09 18:07:10.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:30, /COMMIT_MSG -> That should be "one autoGC".  Will fix the message.
+
+-------------------------------------
+author: Zane Norton
+date: 2017-02-09 18:11:11.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:30, /COMMIT_MSG -> I don't think it is likely to prevent that either. :(  The current implementation only limits this from happening per instance of the jgit FileRepository.  I suspect that many servers use one instance of FileRepository per request (even for requests to the same repo on disk), so other requests will likely not be blocked by this.  And, of course, requests in other servers will also not be blocked.
+
+-------------------------------------
+author: Carissa Dunn
+date: 2017-02-09 18:33:58.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:30, /COMMIT_MSG -> To the extent that that was possible before, it's still possible now, yes.  I guess the difference is that previously, a client would probably have blocked while the server was GCing, while now it might make a second request, causing a second auto GC.  This won't hurt correctness (unless it would have done so prior to this patch), but it will cause additional server load.
+
+On reflection, I think regular git takes a lock before a background auto gc ("gc.log.lock"). I guess I'll change the code to do that.
+
+-------------------------------------

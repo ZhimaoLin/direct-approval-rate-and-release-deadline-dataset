@@ -1,0 +1,231 @@
+DESCRIPTION
+
+RFC Build JGit with Buck
+
+TODO:
+
+- use Orbit/P2 instead of Maven Central
+- javadoc (archive, pgm, junit, ant)
+- api compatibility checks
+
+Questions:
+
+- should test code live in a different Eclipse project?
+
+Change-Id: I7a0fb6b2ee910f6d0d7cd7c42b7c9ca7aba23f49
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2013-11-24 11:13:28.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/egit/job/jgit.gerrit/4233/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-24 11:24:11.000000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/jgit.gerrit/4233/ : SUCCESS
+
+-------------------------------------
+author: Keenan Rosario
+date: 2013-11-24 20:45:13.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:57, tools/download_file.py -> Well that doesn't scale any more, if more projects use Gerrit's approach and try
+to mimic missing Buck native support for Maven artifacts.
+
+Instead of saving it under
+
+ $HOME/.gerritcodereview/buck-cache
+
+or even
+
+ $HOME/.project-foo/buck-cache
+ $HOME/.project-bar/buck-cache
+
+we should just do
+
+$HOME/.buck-cache
+
+or even be more explicit about content with:
+
+ $HOME/.buck-maven-cache
+
+or to reflect that it is all Buck related and extendable for the future, with:
+
+ $HOME/.buck/maven-cache
+
+-------------------------------------
+author: Keenan Rosario
+date: 2013-11-24 20:56:13.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+File Comment: .buckversion -> Can we try to sync Buck versions between Gerrit & JGit projects? Working on the same machine for two projects that have different Buck versions is going to be a pain.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2013-12-08 00:44:31.000000000
+
+Patch Set 4: Code-Review-1
+
+(7 comments)
+
+nice, impressing build speed :-)
+
+test ConstantsEncodingTest.testEncode_Unicode() is failing:
+
+ FAIL <100ms  4 Passed   1 Failed   org.eclipse.jgit.lib.ConstantsEncodingTest
+ FAILURE testEncode_Unicode: array lengths differed, expected.length=12 actual.length=20
+ java.lang.AssertionError: array lengths differed, expected.length=12  actual.length=20
+	at org.junit.Assert.fail(Assert.java:88)
+	at  org.junit.internal.ComparisonCriteria.assertArraysAreSameLength(ComparisonCriteria.java:71)
+	...
+
+In Eclipse and from Maven build the test is ok.
+
+I am using
+ java version "1.7.0_45"
+ Java(TM) SE Runtime Environment (build 1.7.0_45-b18)
+ Java HotSpot(TM) 64-Bit Server VM (build 24.45-b08, mixed mode)
+ on Mac OS X 10.8.5
+also tried 1.7.0_25 and 1.6.0_41 and the test also fails there
+
+I will try to run this on Hudson to see if the test also fails there
+
+How can I set JVM options for test runs ?
+
+With the generated all-in-one project we can't use bundle nature which we probably will need for egit which runs in OSGi environment. Maybe we can use both, all-in-one for gerrit and other non-osgi consumers and the current checked-in ones which have manifest and bundle nature for OSGi consumers like egit ?
+
+Line:2, .gitignore -> I am not sure we should ignore .project and .classpath files since they allow contributors who don't want to install neither Maven nor Buck a way to hack on jgit using checked in project/classpath files, they can either install dependencies into Eclipse or use a target platform for setting up the jgit classpath
+
+Line:3, lib/jetty/BUCK -> we now use 7.6.14.v20131031
+
+Line:5, lib/ant/BUCK -> we now use 1.9.2 coming with Luna
+
+Line:12, lib/ant/BUCK -> s/1.7.1/1.9.2/
+
+Line:4, .buckconfig -> can we add aliases for all the other bundles
+and another one "all" which builds all bundles, this would be handy on Hudson
+
+Line:26, lib/BUCK -> we are now using 0.1.50 coming with Luna
+
+Line:69, lib/BUCK -> we use 1.3
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-12-08 01:11:01.000000000
+
+Patch Set 4: -Verified
+
+Build Started https://hudson.eclipse.org/egit/job/jgit.gerrit/4304/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-12-08 01:12:29.000000000
+
+Patch Set 4: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/egit/job/jgit.gerrit/4304/ : ABORTED
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-12-08 01:13:36.000000000
+
+Patch Set 4: -Verified
+
+Build Started https://hudson.eclipse.org/egit/job/jgit.gerrit/4305/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-12-08 01:23:48.000000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/jgit.gerrit/4305/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2013-12-09 09:36:46.000000000
+
+Patch Set 4:
+
+Looks like the test failure is caused by the default charset defined on OS level, the test doesn't fail if is set default encoding to UTF-8 in bash profile
+
+ export LANG=en_US.UTF-8
+ export LC_ALL=$LANG
+
+I also tried to instead pass file encoding as a vm parameter to junit by adding
+
+ vm_args = [
+    '-Dfile.encoding=UTF-8'
+  ]
+
+to the java_test build rule defined in org.eclipse.jgit.test/BUCK but this didn't work. Though setting this in org.eclipse.jgit.test/pom.xml works for Maven ;-?
+
+-------------------------------------
+author: Keenan Rosario
+date: 2013-12-09 10:15:55.000000000
+
+Patch Set 4:
+
+That's weird why the construct:
+
+ vm_args = [
+    '-Dfile.encoding=UTF-8'
+ ]
+
+doesn't work. Buck itself uses it in:
+
+ https://github.com/facebook/buck/blob/master/DEFS
+
+that why i would expect that it is not a Buck bug?
+
+In general this series should be rebased on the latest Buck version and .buckversion should be adjusted. Currently, Gerrit uses upstream Buck version, without any private patches.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2013-12-15 01:40:37.000000000
+
+Patch Set 4:
+
+(10 comments)
+
+Line:2, .gitignore -> no, I was wrong, this is just ignoring the generated .project and .classpath files in the root directory so this is fine
+
+File Comment: .buckversion -> no idea how to synchronize this as Gerrit decides independently which JGit version it's consuming
+
+Line:1, .buckversion -> updated to current master a0cea525aac6c69f9b3c00626ee5fef48b80326d
+
+Line:3, lib/jetty/BUCK -> Done
+
+Line:57, tools/download_file.py -> not yet sure which of these proposals is the best one
+
+Line:5, lib/ant/BUCK -> Done
+
+Line:12, lib/ant/BUCK -> Done
+
+Line:4, .buckconfig -> added all, ant, http
+
+Line:26, lib/BUCK -> Done
+
+Line:69, lib/BUCK -> Done
+
+-------------------------------------

@@ -1,0 +1,124 @@
+DESCRIPTION
+
+HistogramDiff: Convert stack recursion to heap managed queue
+
+Each time the longest common substring is found the diff algorithm
+recurses to reprocess the regions before and after the common string.
+
+Large files with many edits can trigger StackOverflowError as the
+algorithm attempts to process a deeply split tree of regions. This
+is especially prone to happen in servers where the Java stack size
+may have been limited to 1M or even 256K.
+
+To keep edits produced in order two queues are used. "tmp" stores
+between 0 and 2 edits found in this cycle, which are then pushed
+onto the head of the global processing queue. This preserves the
+depth-first search strategy previously implemented through recursion.
+
+Change-Id: Iae7260c6934efdffac7c7bee4d3633a8208924f7
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2014-07-25 15:22:41.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-07-25 15:22:47.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/egit/job/jgit.gerrit/5373/
+
+-------------------------------------
+author: Santos Moore
+date: 2014-07-25 15:52:18.000000000
+
+Patch Set 1: Code-Review-1
+
+(2 comments)
+
+Line:144, org.eclipse.jgit/src/org/eclipse/jgit/diff/HistogramDiff.java -> Don't LinkedLists have high allocation costs and memory overhead? Would an ArrayDeque make more sense?
+
+Line:178, org.eclipse.jgit/src/org/eclipse/jgit/diff/HistogramDiff.java -> Do you want to clear tmp here too?
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-07-25 15:52:49.000000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/egit/job/jgit.gerrit/5373/ : ABORTED
+
+-------------------------------------
+author: Santos Moore
+date: 2014-07-25 15:53:34.000000000
+
+Patch Set 1:
+
+Also, have you been able to reproduce the StackOverflowError we were seeing in production to verify that it wasn't actually infinite recursion? This approach doesn't improve such a case, it would just blow the heap. Which seems worse in terms of server performance.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2014-07-25 16:29:42.000000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:144, org.eclipse.jgit/src/org/eclipse/jgit/diff/HistogramDiff.java -> Yes. But ArrayDeque is Java 6. Aren't we still targeting Java 5?
+
+Line:178, org.eclipse.jgit/src/org/eclipse/jgit/diff/HistogramDiff.java -> Good catch, fixed.
+
+-------------------------------------
+author: Santos Moore
+date: 2014-07-25 16:31:49.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:144, org.eclipse.jgit/src/org/eclipse/jgit/diff/HistogramDiff.java -> True, forgot about that, it's been so long :)
+
+You can still do this with an ArrayList by pushing/popping from the end instead of the beginning. You need to reverse tmp to maintain the same ordering but it's small enough to not matter.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2014-07-25 16:33:58.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+I also haven't been able to identify the example that we observed failing in production, so I have no idea if this fixes the bug, or just causes the heap to explode.
+
+Line:144, org.eclipse.jgit/src/org/eclipse/jgit/diff/HistogramDiff.java -> Pushing/popping from the front of an ArrayList is O(N^2) time. That may be a lot worse than the memory impact of LinkedList given how often we run the push+pop steps.
+
+If you think LinkedList is too costly here it may be better to write our own little queue type.
+
+-------------------------------------
+author: Santos Moore
+date: 2014-07-25 16:34:58.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:144, org.eclipse.jgit/src/org/eclipse/jgit/diff/HistogramDiff.java -> Right, that's why I said push/pop from the back in O(1) time :)
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2014-07-25 16:36:09.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:144, org.eclipse.jgit/src/org/eclipse/jgit/diff/HistogramDiff.java -> Oh, I missed the "from the back" part of your comment. Need more coffee. :)
+
+-------------------------------------

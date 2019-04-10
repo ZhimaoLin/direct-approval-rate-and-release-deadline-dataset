@@ -1,0 +1,137 @@
+DESCRIPTION
+
+Update bitmap selection throttling to fully span active branches.
+
+Replace the “bitmapCommitRange” parameter that was recently introduced
+with two new parameters: “bitmapExcessiveBranchCount” and
+“bitmapInactiveBranchAgeInDays”. If the count of branches does not
+exceed “bitmapExcessiveBranchCount”, then the current algorithm is kept
+for all branches.
+
+If the branch count is excessive, then the commit time for the tip
+commit for each branch is used to determine if a branch is “inactive”.
+"Active" branches get full commit selection using the existing
+algorithm. "Inactive" branches get fewer bitmaps near the branch tips.
+
+Introduce a "contiguousCommitCount" parameter that always enforces that
+the N most recent commits in a branch are selected for bitmaps. The
+previous nextSelectionDistance() algorithm created anywhere from 1-100
+contiguous bitmaps at branch tips.
+
+For example, consider a branch with commits numbering 0-300, with 0
+being the most recent commit. If the most recent 200 commits are not
+merge commits and the 200th commit was the last one selected,
+nextSelectionDistance() returned 100, causing commits 200-101 to be
+ignored. Then a window of size 100 was evaluated, searching for merge
+commits. Since no merge commits are found, the next commit (commit 0)
+was selected, for a total of 1 commit in the topmost 100 commits.
+
+If instead the 250th commit was selected, then by the same logic
+commit 50 is selected. At that point nextSelectionDistance() switches to
+selecting consecutive commits, so commits 0-50 in the topmost 100
+commits are selected. The "contiguousCommitCount" parameter provides
+more determinism by always selecting a constant number or topmost
+commits.
+
+Add an optimization to break out of the inner loop of selectCommits() if
+all of the commits for the current branch have already been found.
+
+When reusing bitmaps from an existing pack, remove unnecessary
+populating and clearing of the writeBitmaps/PackBitmapIndexBuilder.
+
+Add comments to PackWriterBitmapPreparer, rename methods and variables
+for readability.
+
+Add tests for bitmap selection with and without merge commits and with
+excessive branch pruning triggered.
+
+Note: I will follow up with an additional change that exposes the new
+parameters through PackConfig.
+
+Change-Id: I5ccbb96c8849f331c302d9f7840e05f9650c4608
+Signed-off-by: Ariel Sawyer xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Ariel Sawyer
+date: 2015-10-21 01:40:45.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-10-21 01:40:51.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7275/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-10-21 01:46:03.000000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7275/ : FAILURE
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2015-10-21 01:51:31.000000000
+
+Patch Set 2:
+
+The test failure is again unrelated to my change:
+java.io.IOException: Writing of 'tester-1445391864422.jgit/' failed: 403 Forbidden
+	at org.eclipse.jgit.transport.AmazonS3.error(AmazonS3.java:527)
+
+The original change was split into 3: 
+1) https://git.eclipse.org/r/#/c/58526/ "Push control of time into MockSystemReader"
+2) This current change
+3) Follow up that exposes control of GC parameters through PackConfig.
+
+-------------------------------------
+author: Eden Lin
+date: 2015-10-21 21:21:08.000000000
+
+Patch Set 2: Code-Review+1
+
+(4 comments)
+
+Looks good from a quick glance. I like the tests.
+
+I'll be more comfortable if someone (could be me later today) takes a closer look, but even in the worst case this is in much better shape for someone to make tweaks and bugfixes. Thanks for writing it.
+
+Line:187, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> (nit) missing braces around one-line if body
+
+Line:199, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> for
+
+Line:390, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> (nit) missing braces around 'for' body
+
+Line:421, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> (nit) braces around one-line if body
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2015-10-21 21:54:59.000000000
+
+Patch Set 2:
+
+(4 comments)
+
+Line:187, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> Done. Since this change is a substantial update/partial rewrite, I updated all one-line blocks to use braces.
+
+Line:199, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> Done
+
+Line:390, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> Done
+
+Line:421, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> Done
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-10-22 01:29:34.000000000
+
+Change has been successfully merged into the git repository by Eden Lin
+
+-------------------------------------

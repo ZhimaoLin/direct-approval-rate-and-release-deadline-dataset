@@ -1,0 +1,77 @@
+DESCRIPTION
+
+[performance] Speed up delta search in existing packs
+
+Searching for deltas in an existing pack is O(N^2). The delta search is
+partitioned into tasks, and each task contains one or more slices of work to be
+performed. Once each DeltaTask works through its initial (small) set of
+assigned work it attempts to "steal" additional work by searching for the
+largest remaining slice via a linear search. So if N is the number of tasks and
+K is average number of slices per task, then the number of comparisons performed
+finding largest remaining slices is K*N * N.
+
+I don't understand the delta compression algorithm well enough to know whether
+choosing the longest remaining task is always required (the current algorithm
+strongly suggests it is), or if there might be a better way to assign initial
+work so that less "stealing" is required. The change here is modest and based
+on the following understanding: tasks are set up prior to execution, and once a
+task is completed no new work is added to it. So once a task is seen as
+completed, it can be excluded from future searches. DeltaTask.Block.stealWork()
+is already synchronized. This patch removes completed tasks from the
+DeltaTask.Block.tasks member variable in that synchronized block. On the MSM
+3.10 Linux kernel repository, this was seen to decrease the time in the
+PackWriter.parallelDeltaSearch() method from (1615+1633+1458)/3 = 1568 seconds
+to (465+479+477)/3 = 473 seconds.
+
+Change-Id: I2ae37efa83bca42b0e716266ae6aa9d182e76d9c
+Signed-off-by: Ariel Sawyer xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Ariel Sawyer
+date: 2015-10-31 19:17:01.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-10-31 19:17:07.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7356/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-10-31 19:25:37.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7356/ : SUCCESS
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2015-11-02 23:12:15.000000000
+
+Patch Set 1: Code-Review-1
+
+Hold off on reviewing this. Shawn gave me some guidance that there is a breakage elsewhere. The number of tasks should never be more than the number of threads, but nearly 150k tasks are being created for this repository. I'll investigate.
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2015-11-03 19:35:04.000000000
+
+Patch Set 1: -Code-Review
+
+The creation of DeltaTasks needs to take into account objects that are marked as "doNotAttemptDelta". Pushing up what I believe is the correct fix now.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-11-04 17:55:22.000000000
+
+Change has been successfully merged into the git repository by Yoselin Hanna
+
+-------------------------------------

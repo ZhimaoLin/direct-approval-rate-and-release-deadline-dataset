@@ -1,0 +1,249 @@
+DESCRIPTION
+
+XDC Replication Manager Implementation
+
+Change-Id: Ic700bb0d44a1996093429ccc3b11805af87bca20
+
+
+COMMENTS
+
+author: Tatiana Sheppard
+date: 2011-10-04 02:06:47.419000000
+
+Patch Set 1:
+
+1. A high level design including the data structures being used is documented in the xdc_replication_manager.erl file.
+2. Unit tests aren't part of this change set. Will write them separately.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2011-10-04 13:52:39.771000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(8 inline comments)
+
+made first pass. Found few issues.
+
+On higher-level the biggest issue is why we're wrestling with persistent couch replications? There seem to be easier and transient API after all.
+
+Line:99, src/xdc_replication_manager.erl -> too generic and sends to wrong process
+
+Line:123, src/xdc_replication_manager.erl -> ns_server code should use more powerful ale logging
+
+Line:175, src/xdc_replication_manager.erl -> this is harmful. Timed out calls from this process may be interpreted as unkown messages.
+
+We've learned in hard way that it's not right to crash when this happens.
+
+Line:195, src/xdc_replication_manager.erl -> we seem to be starting feed loop second (third, etc..) time here. Do we need that logic at all? I think it would be much easier and bug free to assume constant replicator db name and create it synchronously in startup.
+
+Line:209, src/xdc_replication_manager.erl -> do we need that at all ?
+
+Line:260, src/xdc_replication_manager.erl -> FIXME
+
+Line:106, src/xdc_rep_utils.erl -> looks very much like race. Spawned process is using RepDb while we're closing database
+
+Line:198, src/xdc_rep_utils.erl -> we should not read clock twice here. We risk getting incorrect TZ offset. there's calendar:now_to_universal_time/1 that can be used
+
+-------------------------------------
+author: Porter Oconnor
+date: 2011-10-04 14:08:01.701000000
+
+Patch Set 1: (3 inline comments)
+
+
+
+Line:175, src/xdc_replication_manager.erl -> I have to disagree with this one. It's preferable to crash rather than masking/ignoring unintentional errors. If there are call timeouts, it's preferable to detect them soon and fix them.
+
+Line:195, src/xdc_replication_manager.erl -> You won't have multiple instances of the feed loop. When the database is deleted, the loop dies.
+For CouchDB the ability to rename/delete/replicate the replicator database is a feature and intentional. Maybe not for Couchbase Server however.
+
+Line:17, src/xdc_rep_utils.erl -> Don't forget to remove this later on and replace with the proper exports.
+
+-------------------------------------
+author: Porter Oconnor
+date: 2011-10-04 15:13:29.104000000
+
+Patch Set 1: (2 inline comments)
+
+Second pass review.
+I think we should instead export the util functions from couch's replication manager. You're copy-pasting basically all (or most) private functions of that module into this new module. It will be harder and more work to backport fixes to those functions.
+Exporting them is a 1 or 2 lines changes which will be easy to keep with upstream changes.
+
+Line:106, src/xdc_rep_utils.erl -> But it isn't. We're actually decrementing the reference counter. The _replicator database is never really closed by the system. Also the changes feed module keeps opening and closing it anyway.
+However, for clarity, it should be changed so that the child process is the one doing the opening
+
+Line:198, src/xdc_rep_utils.erl -> Good point. Would the following make sense to you? http://friendpaste.com/mFKnItSjDFWbVWK4uUz0N
+
+-------------------------------------
+author: Tatiana Sheppard
+date: 2011-10-04 15:22:41.943000000
+
+Patch Set 1:
+
+> On higher-level the biggest issue is why we're wrestling with persistent couch replications? There seem to be easier and transient API after all.
+
+I had written a mail about this last week. Even though couch_replicator has a simple API to trigger/cancel replication, the corresponding callbacks it requires in the manager code will be very involved in the case of XDC replication (compared to simple couch replication). So, after discussion with Filipe, we had decided we would explore the current approach (because it's simpler) where we interact with the couch_replication_manager and couch_replicator by creating/deleting couch replication documents. This is the reason that you see two handlers: one for the processing updates to XDC docs and the other for processing updates to Couch docs.
+
+-------------------------------------
+author: Tatiana Sheppard
+date: 2011-10-04 15:24:09.297000000
+
+Patch Set 1:
+
+> I think we should instead export the util functions from couch's replication manager. You're copy-pasting basically all (or most) private functions of that module into this new module. It will be harder and more work to backport fixes to those functions. Exporting them is a 1 or 2 lines changes which will be easy to keep with upstream changes.
+
+I agree. That's why I marked these functions as FIXME with the intention of reusing the code. Will upload a patch.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2011-10-04 21:05:17.182000000
+
+Patch Set 1:
+
+current approach forces UI to filter out non x-datacenter design documents. Not sure it makes sense.
+
+And there seem to be lots of corner cases in your approach. It doesn't seem easier and safer then more transient state.
+
+For example vbucket map changes, but right after that either entire server or your gen_server crashes (thus losing ETS tables linking x-datacenter replications to vbuckets replications).
+
+After restart your approach seem to allow 'leaving behind' stale (and invalid) vbucket replications.
+
+Also forgot to comment inline. inets:{start,stop} looks very scary. And I don't see auth support which is a requirement.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2011-10-04 21:05:42.728000000
+
+Patch Set 1:
+
+sorry I meant: 'filter out non-x-datacenter replicator documents'
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2011-10-04 22:19:39.249000000
+
+Patch Set 1: (2 inline comments)
+
+
+
+Line:1, src/xdc_replication_manager.erl -> Missing @author xxx@xxx.xxx here too.
+
+Line:1, src/xdc_rep_utils.erl -> We also add author and copyright tags at the top of the header. You can look in capi_frontent.erl for example.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2011-10-04 22:49:53.747000000
+
+Patch Set 1:
+
+Another vote in support of Alk's point. With current approach it's not easy to replicate replicator documents. Couch's replication does not fit our needs here since we want to replicate only a subset of documents in a database. Thus we will end up having our own custom replication which is not good.
+
+-------------------------------------
+author: Porter Oconnor
+date: 2011-10-04 22:55:45.595000000
+
+Patch Set 1:
+
+Why "With current approach it's not easy to replicate replicator documents."?
+
+I'm assuming we want to replicate only xdcr documents. Couch has "filtered replication" (I added the feature actually for 0.11)
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2011-10-04 23:03:34.860000000
+
+Patch Set 1:
+
+Was not aware about this feature. That's great.
+
+-------------------------------------
+author: Tatiana Sheppard
+date: 2011-10-06 06:36:35.847000000
+
+Patch Set 1:
+
+> For example vbucket map changes, but right after that either entire server or your gen_server crashes (thus losing ETS tables linking x-datacenter replications to vbuckets replications).
+After restart your approach seem to allow 'leaving behind' stale (and invalid) vbucket replications.
+
+I'm trying to understand this. We do cleanup the state by stopping all replications in the terminate() function before we shutdown. Are you suggesting this may not be enough? If so, I wonder how using the couch replicator API will be any better. I might be missing something here due to my still nascent knowledge of Erlang's workings.
+
+-------------------------------------
+author: Tatiana Sheppard
+date: 2011-10-06 06:39:47.276000000
+
+Patch Set 1:
+
+> Also forgot to comment inline. inets:{start,stop} looks very scary. And I don't see auth support which is a requirement.
+
+Will remove the inets calls. I wasn't aware we already initialize the inets app while starting couch.
+
+I was under the impression that the auth information will be part of the target bucket URI itself. No?
+
+-------------------------------------
+author: Nathalie Landry
+date: 2011-10-06 08:34:32.706000000
+
+Patch Set 1:
+
+Entire VM may crash. Erlang is very panic-ful when it comes to out-of-memory situations for example. But there may be other causes, like loss of power. Or kernel bug.
+
+Mixing transient and persistent state in this way seems very dangerous to me.
+
+Maybe if you can store this relation (x-datecenter-replication  <-> vbucket-replication) in some persistent way (i.e. in couch) then things could be safer. Maybe.
+
+-------------------------------------
+author: Tatiana Sheppard
+date: 2011-10-06 08:39:41.704000000
+
+Patch Set 1:
+
+We wouldn't have these issues if we used the couch replicator API i.e., async_replicate() and cancel_replication()?
+
+-------------------------------------
+author: Nathalie Landry
+date: 2011-10-06 08:41:26.283000000
+
+Patch Set 1:
+
+erlang VM crash would be definitely handled by that.
+
+Process crash: don't know. If not we could extend couch replicator so that it links replicator processes to our manager process.
+
+-------------------------------------
+author: Tatiana Sheppard
+date: 2011-10-06 08:44:47.532000000
+
+Patch Set 1:
+
+Alright, then. I'll rewrite the manager to use the couch replicator API instead.
+
+-------------------------------------
+author: Tatiana Sheppard
+date: 2011-10-08 11:01:18.943000000
+
+Patch Set 1: (5 inline comments)
+
+
+
+Line:1, src/xdc_replication_manager.erl -> Will add these in a subsequent patch.
+
+Line:99, src/xdc_replication_manager.erl -> Done
+
+Line:123, src/xdc_replication_manager.erl -> Done
+
+Line:209, src/xdc_replication_manager.erl -> Done
+
+Line:260, src/xdc_replication_manager.erl -> Done
+
+-------------------------------------
+author: Tatiana Sheppard
+date: 2011-10-09 19:49:44.987000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:1, src/xdc_rep_utils.erl -> Done
+
+-------------------------------------

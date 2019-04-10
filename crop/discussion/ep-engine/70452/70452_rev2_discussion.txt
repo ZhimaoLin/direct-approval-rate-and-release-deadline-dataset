@@ -1,0 +1,203 @@
+DESCRIPTION
+
+[Ephemeral Buckets]: Add HT functions and refactor to set stage for seq storage
+
+This commit adds Hash Table functions unlocked_remove() and
+unlocked_copyStoredValue() and refactors code in ep engine so that we can
+add sequential in-memory storage.
+
+Since 'HashTable' and sequential storage must work in tandem, some of the
+functionalities that occur in 'HashTable' during a write have been moved
+to 'VBucket'
+
+Change-Id: I62eb1ee2c5ff5dbef7a337ca55a1c45248cf2c42
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2016-11-30 07:46:12.854000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-30 07:46:22.645000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1978/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-30 07:46:22.810000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/753/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-30 07:47:53.874000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1897/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-30 07:57:53.331000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1587/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-30 08:08:02.596000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1978/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/753/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1587/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1897/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-30 08:16:54.020000000
+
+Patch Set 2: -Verified
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1979/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-30 08:35:47.528000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/753/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1587/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1897/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1979/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-11-30 11:51:00.742000000
+
+Patch Set 2: Code-Review-1
+
+(8 comments)
+
+There's still a big mix of stuff here.
+
+Try to think about the best way to review this (i.e. ensure it's 100% correct), and in future if we find bugs, making it easier to track down which patch they occurred in.
+
+For example, try to make patches either perform refactoring (no change to externally-visible behaviour / interfaces) OR introduce new functionality - that makes it much easier to identify regressions, and for the reader to review code.
+
+Additionally, the handling of notification is confusing - in EPBucket it's done at the end of EPBucket::queueDirty(), wheres with Ephemeral it's done by the base class EPBucket::set (via the new state ALREADY_ON_CHECKPOINT. This feels inconsistent and unnecessarily complex.
+
+I suggest you do something along the lines of the following:
+
+Think about where logically HashTable updating, Checkpoint updating and notification should occur (ignore where it might be in the current code - it likely needs moving). 
+
+Bear in mind that (1) siblings (EPBucket & EphemeralBucket) should expose the /same/ interface outwards - i.e. callers shouldn't generally care which one they are dealing with, and (2) base classes also shouldn't care which subclass is instantiated. Note that you're essentially breaking (2) as your new ALREADY_ON_CHECKPOINT really means to EPBucket "this mutation came from the Ephemeral subclass, so handle differently".
+
+Once we have a proposed layout - which likely will result in moving code between the existing EPBucket, VBucket & HashTable - raise a patch which does just that. I fully expect that to figure out the needed changes you'll probably need to also implement the new sibling classes (as you already have), but that code should come later.
+
+Please let me know if you have any questions.
+
+Line:644, tests/module_tests/hash_table_test.cc -> Again, this I believe is all new functionality.
+
+Line:26, src/ep_types.h -> I'm still finding these names confusing - originally they were a request to queueDirty as to if a new CAS should be generated or not - pretty self-descriptive.
+
+Your new state - "AlreadyGenerated" - is confusing:
+
+1) It's not a request - it's a description of something. What should I do if it's AlreadyGenerated - how is that different to "No"?
+
+In CheckpointManager::queueDirty, you just seem to be using this to control if the checkpoint's SeqnoEnd is updated. If that's the case, you can remove this enum by just making that code check if item's seqno is greater than the current EndSeqno, and update it if true. To me that removes the need for this new state in the enum.
+
+Line:929, src/ep.cc -> Shouldn't you be removing the old HashTable::unlocked_set method? We don't want to duplicate the code!
+
+Line:971, src/ep.cc -> Even if you do still need this new enum (see later comment), I'd suggest not adding it in this patch - make this a straight "refactor" - no change in externally-visible functionality, just change how the current functionality is implemented (i.e. moving code from HashTable to VBucket).
+
+Line:1165, src/checkpoint.cc -> It looks like we are logically performing two tasks here:
+
+a) Updating the current snapshot end seqno (Yes, AlreadyGenerated)
+b) Updating lastBySeqno & checkpointEndSeqno (all cases)
+
+Currently this is achieved with a bunch of duplicated code, and the intent isn't very clear. Additionally, we update part of this objects' state before we throw a checkpoint, which will leave this object in an inconsistent state.
+
+Consider re-writing to something like:
+
+ // Prepare the item's sequence number - note we shouldn't store it until
+ // we've checked its range - otherwise the exception is thrown after we've
+ //  modified object state - currently a bug.
+ auto proposed_lastBySeqno = lastBySeqno;
+ switch (generateBySeqno) {
+ case GenerateBySeqno::Yes:
+     qi->setBySeqno(++proposed_lastBySeqno);
+     break;
+ case GenerateBySeqno::AlreadyGenerated:
+ case GenerateBySeqno::No:
+     // Nothing to generate
+     proposed_lastBySeqno = qi->getBySeqno();
+     break;
+ }
+
+ // <<< MOVE RANGE CHECKS from 1173-1183 here - note change of "+1" 
+ // <<< for range check
+ const auto st = checkpointList.back()->getSnapshotStartSeqno();
+ const auto en = checkpointList.back()->getSnapshotEndSeqno();
+ if (!(st <= proposed_lastBySeqno) && (proposed_lastBySeqno + 1) <= en)) {
+        throw std::logic_error(...);
+  }
+
+ // Update checkpointEndSeqno & lastBySeqno
+ lastBySeqno = proposed_lastBySeqno;
+ if (proposed_lastBySeqno > lastBySeqno) {
+     checkpointList.back()->setSnapshotEndSeqno(lastBySeqno);
+ }
+
+Line:688, src/hash_table.cc -> Again - the isStale() stuff is new for Ephemeral - keep this patch as a clean refactor with no new functionality.
+
+Line:162, src/vbucket.h -> Again, this should be in a later patch - you haven't introduced any subclasses of VBucket yet.
+
+Line:47, src/hash_table.h -> Again, this kinda feels confusing and wrong - it's somewhat orthogonal to WAS_CLEAN / WAS_DIRTY. Why don't you just refactor all checkpoint management code into the VBucket - that way you don't need this new state.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2016-12-02 01:29:01.800000000
+
+Patch Set 2:
+
+(8 comments)
+
+Line:644, tests/module_tests/hash_table_test.cc -> Done
+
+Line:26, src/ep_types.h -> "AlreadyGenerated" is needed until refactoring is complete and we generate seqno only in vbucket class (not in checkpoint class)
+
+Line:929, src/ep.cc -> Will remove HashTable::unlocked_set later when I refactor hash_table_module test
+
+Line:971, src/ep.cc -> Removed
+
+Line:1165, src/checkpoint.cc -> GenerateBySeqno::AlreadyGenerated is temporary until the refactoring of seqno generation is complete
+
+Line:688, src/hash_table.cc -> Done
+
+Line:162, src/vbucket.h -> Done
+
+Line:47, src/hash_table.h -> Removed it
+
+-------------------------------------

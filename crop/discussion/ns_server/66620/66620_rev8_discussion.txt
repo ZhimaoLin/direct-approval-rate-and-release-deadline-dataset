@@ -1,0 +1,160 @@
+DESCRIPTION
+
+MB-11401: Implement a registration API in the token server.
+
+The following are the changes:
+[1] Added a new 'register' API in the ns_memcached_token module.
+    This new API is used to track the registered caller processes
+    so that when they restart we can make sure that the actions
+    done by the older incarnations can take effect before the
+    operations issued by newer incarnations are processed.
+
+    The caller will have to pass in a RegistrationName which is
+    unique and the API implementation makes use of the caller's
+    PID to distinguish between multiple instances. The caller
+    is also expected to pass the registered caller's Pid while
+    calling the get_token API.
+
+    The token service maintains 2 dicts, one mapping RegName to
+    RegPid and the other mapping Pid to {RegName, Status, RefCnt}
+    tuple. The register API implementation will add the details
+    of the caller process in both these maps.
+
+[2] The wrapper function 'cmd_with_token' has been modified to
+    accept RegPid as a parameter which will then passed on to
+    the get_token API. All the callers of this API have been
+    modified to pass in the RegPid if they have or undefined.
+
+[3] The get_token API has been modified to accept RegPid as a
+    parameter. This RegPid is then added into the mc_caller_refs
+    dict along with MonRef. The get_token also increments a reference
+    counter that is maintained against the RegPid. This reference
+    counter is used during the unregistration process to determine if
+    it's safe to unregister the caller.
+
+[4] The release_token API has been modified to accept RegPid as a
+    a parameter. It then decrements the ref count for that RegPid.
+
+[5] The 'DOWN' message handler has been modified to clear the ref
+    count for the RegPid (fetched from mc_caller_refs) as the caller
+    would not have gotten the chance to release the token. It then
+    checks if the PID is a registered caller and if so it sets the
+    Status field to 'inactive'. If the ref count for the RegName has
+    dropped to zero and if the Status of the registered process is
+    'inactive' then the corresponding entries are removed from both
+    the dictionaries (registered_names & registered_pids).
+
+[6] A wrapper API called 'register' in ns_memcached module has been
+    added. This in-turn calls the ns_memcached_token's register API.
+
+[7] Harley Martinitor_agent & terse_bucket_info_uploader modules have been
+    modified to call ns_memcached's register API in its init callback
+    and pass the Pid of the respective process to all control commands.
+
+[8] Move the check to see if session token feature is enabled to the
+    APIs and rename the is_disabled function to is_enabled.
+
+[9] Re-arrange the functions to adhere to the standard practice in
+    ns_memcached_token module.
+
+Change-Id: Iaa3d8c1ba52593c2f00a653a361e03a4cbb1751a
+
+
+COMMENTS
+
+author: Noe Perry
+date: 2016-10-04 06:48:13.451000000
+
+Uploaded patch set 8.
+
+-------------------------------------
+author: Noe Perry
+date: 2016-10-04 06:55:16.091000000
+
+Patch Set 8: Verified+1
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2016-10-04 19:21:32.450000000
+
+Patch Set 8:
+
+(6 comments)
+
+Line:32, src/terse_bucket_info_uploader.erl -> Since this guy doesn't have any child processes, there's no need to register it.
+
+Line:1116, src/mc_client_binary.erl -> You need to release token before recurring.
+
+Line:91, src/ns_memcached_token.erl -> This should really go into a previous patch.
+
+Line:224, src/ns_memcached_token.erl -> The helper functions would also be helpful in reading the original token manager commit.
+
+Line:269, src/ns_memcached_token.erl -> This should also ideally be in the very change where you introduced is_enabled.
+
+Line:387, src/ns_memcached_token.erl -> It's hard to guess what the correct number of retries should be. But 500ms seems to low. Also, let's make it configurable via ns_config.
+
+-------------------------------------
+author: Noe Perry
+date: 2016-10-05 09:32:35.986000000
+
+Patch Set 8: -Verified
+
+(6 comments)
+
+Line:32, src/terse_bucket_info_uploader.erl -> Done
+
+Line:1116, src/mc_client_binary.erl -> Oh OK. Now the release_token would get called multiple times in case we recurse but it should be fine as release_token handles it well.
+
+Line:91, src/ns_memcached_token.erl -> Done
+
+Line:224, src/ns_memcached_token.erl -> Done
+
+Line:269, src/ns_memcached_token.erl -> The is_enabled change was introduced in this commit. Earlier it was called is_disabled and was getting checked in handle_call. Hence I made this change in this commit.
+
+Line:387, src/ns_memcached_token.erl -> Have made it 1 sec (not sure if that's enough too) and have also added a config parameter.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2016-10-05 18:41:59.187000000
+
+Patch Set 8:
+
+(2 comments)
+
+Line:1116, src/mc_client_binary.erl -> But you don't allow get_token being called multiple times by the same process.
+
+Line:269, src/ns_memcached_token.erl -> Well, then it should be changed to is_enabled in that commit. There's no reason to have review artifacts in the commit history.
+
+-------------------------------------
+author: Noe Perry
+date: 2016-10-05 19:23:36.903000000
+
+Patch Set 8:
+
+(2 comments)
+
+Line:1116, src/mc_client_binary.erl -> That is correct, we don't allow get_token from same process multiple times. What I meant to say was with the fix (which is required) we would release the token before recursing but when the recursion unwinds the 'after' section also gets executed right? There we would try to release token again but it returns back with no effect.
+
+Line:269, src/ns_memcached_token.erl -> Sure !
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2016-10-05 19:34:42.568000000
+
+Patch Set 8:
+
+(1 comment)
+
+Line:1116, src/mc_client_binary.erl -> I don't see why you can't write in a way that doesn't create spurious release_token calls.
+
+-------------------------------------
+author: Noe Perry
+date: 2016-10-06 20:55:08.217000000
+
+Patch Set 8:
+
+(1 comment)
+
+Line:1116, src/mc_client_binary.erl -> Took Aliaksey's help to solve it.
+
+-------------------------------------

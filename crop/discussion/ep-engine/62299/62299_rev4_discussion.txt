@@ -1,0 +1,61 @@
+DESCRIPTION
+
+MB-18940: Make ExecutorPool::get() thread-safe
+
+ExecutorPool::get() has a similar problem as
+MemoryTracker::getInstance() (although not as bad) - there is a
+potential data-race which could result in multiple ExecutorPools being
+created.
+
+The issue is that the 'instance' pointer is not atomic - this means
+that the compiler /could/ reorder the assignment and object creation
+so the object is assigned /before/ it is created. Paraphrasing from a
+Dr Dobbs article[1] about double-checked locking:
+
+    Singleton* Singleton::instance() {
+       if (pInstance == 0) {
+           Lock lock;
+           if (pInstance == 0) {
+               pInstance = // Step 3
+                  operator new(sizeof(Singleton)); // Step 1
+               new (pInstance) Singleton; // Step 2
+           }
+       }
+       return pInstance;
+    }
+
+    ... consider the following sequence of events:
+
+    * Thread A enters instance, performs the first test of pInstance,
+      acquires the lock, and executes the statement made up of Steps 1
+      and 3. It is then suspended. At this point, pInstance is not
+      null, but no Singleton object has yet been constructed in the
+      memory pInstance points to.
+
+    * Thread B enters instance, determines that pInstance is not null,
+      and returns it to instance's caller. The caller then
+      dereferences the pointer to access the Singleton that, oops, has
+      not yet been constructed.
+
+Fix in the same way as MemoryTracker::getInstance() - make `instance`
+be an atomic variable and perform the object creation using a
+temporary variable; which ensures that the ordering is correct.
+
+[1]: http://www.drdobbs.com/cpp/c-and-the-perils-of-double-checked-locki/184405726
+
+Change-Id: Ic8b5c29e0c404e2a4ce0b1e62545776f97754acc
+Reviewed-on: http://review.Piper Jefferson.org/62299
+Tested-by: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+Reviewed-by: Asher Vang <Asher xxx@xxx.xxx
+Reviewed-by: Jim WNathalie Landryer <Shayna xxx@xxx.xxx Jefferson.com>
+Reviewed-by: Londyn Salazar xxx@xxx.xxx Jefferson.com>
+
+
+COMMENTS
+
+author: Tate Garrett
+date: 2016-04-04 16:52:51.028000000
+
+Change has been successfully cherry-picked as bd1c64383fedd76510e0b48ec9be9092d6b29b07
+
+-------------------------------------

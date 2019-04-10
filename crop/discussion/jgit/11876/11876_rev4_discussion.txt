@@ -1,0 +1,121 @@
+DESCRIPTION
+
+Split delta search buckets by byte weight
+
+Instead of assuming all objects cost the same amount of time to
+delta compress, aggregate the byte size of objects in the list
+and partition threads with roughly equal total bytes.
+
+Before splitting the list select the N largest paths and assign
+each one to its own thread. This allows threads to get through the
+worst cases in parallel before attempting smaller paths that are
+more likely to be splittable.
+
+By running the largest path buckets first on each thread the likely
+slowest part of compression is done early, while progress is still
+reporting a low percentage. This gives users a better impression of
+how fast the phase will run. On very complex inputs the slow part
+is more likely to happen first, making a user realize its time to
+go grab lunch, or even run it overnight.
+
+If the worst sections are earlier, memory overruns may show up
+earlier, giving the user a chance to correct the configuration and
+try again before wasting large amounts of time. It also makes it
+less likely the delta compression phase reaches 92% in 30 minutes
+and then crawls for 10 hours through the remaining 8%.
+
+Change-Id: I7621c4349b99e40098825c4966b8411079992e5f
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2013-04-16 16:29:37.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-04-16 16:29:43.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3385/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-04-16 16:36:33.000000000
+
+Patch Set 4: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3385/ : SUCCESS
+
+-------------------------------------
+author: Warren Watkins
+date: 2013-04-17 17:42:46.000000000
+
+Patch Set 4: I would prefer that you didn't submit this
+
+(5 inline comments)
+
+
+
+Line:130, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/DeltaTask.java -> You are really making this more complicated than it needs to be. If you returned two arrays, one for top paths and one for other paths, then you would wouldn't have this logic. The other array can at most be threads + 1 length and you wouldn't have all this overlap  logic.
+
+but, logic looks ok.
+
+Line:205, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/DeltaTask.java -> How about WeightedPath?
+
+Line:207, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/DeltaTask.java -> not used. remove
+
+Line:267, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/DeltaTask.java -> there is a race here between the dw = null and selecting the next. i.e. there could be more work but dw has not been assigned yet.  Perhaps you should set dw in this synchronized loop too.  Maybe doSlice could be refactored into newDeltaWorker() and a runWorker().
+
+ private void setWorker(ObjectReader or, Slice s) throws IOException {
+    DeltaWindow w = new DeltaWindow(block.config, block.dc, or, block.pm, block.list, s.beginIndex, s.endIndex);
+  synchronized (this) {
+    dw = w;
+  }
+ }
+
+  private void runWorker() throws IOException {
+     DeltaWorker w;
+     synchronized (this) {
+       w = dw;
+     } 
+     w.search();
+     synchronized (this) {
+       dw = null;
+     }
+  }
+
+Line:269, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/DeltaTask.java -> this would become runWorker();
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2013-04-17 17:56:57.000000000
+
+Patch Set 4: (4 inline comments)
+
+
+
+Line:130, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/DeltaTask.java -> Returning two arrays just means I have to push this logic into the computeTopPaths() method. Moving where it goes doesn't mean I can make this go away.
+
+Line:205, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/DeltaTask.java -> Done
+
+Line:267, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/DeltaTask.java -> There is no race here. We lock on this and remove the last element.
+
+Line:269, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/DeltaTask.java -> Done
+
+-------------------------------------
+author: Warren Watkins
+date: 2013-04-17 18:04:10.000000000
+
+Patch Set 4: (1 inline comment)
+
+
+
+Line:130, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/DeltaTask.java -> Right, but it is a more straight forward check. What you have is fine, just more complex.
+
+-------------------------------------

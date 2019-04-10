@@ -1,0 +1,84 @@
+DESCRIPTION
+
+MB-22208: Pass auto_failover_disabled as option...
+
+...to cleanup.
+
+Based on Poonam's initial proto-type:
+http://review.couchbase.org/#/c/66596
+
+Change-Id: I704b22d7eab33f075231d157a5205fd97a7ae1c6
+
+
+COMMENTS
+
+author: Noe Perry
+date: 2017-03-11 00:28:50.544000000
+
+Uploaded patch set 22.
+
+-------------------------------------
+author: Noe Perry
+date: 2017-03-11 00:29:36.536000000
+
+Patch Set 22: Verified+1
+
+-------------------------------------
+author: Ella Beltran
+date: 2017-03-13 23:02:46.634000000
+
+Patch Set 22:
+
+Currently, the ephemeral bucket failover logic gets executed for every Harley Martinitor cleanup call. 
+May be it should be selectively done based on who the caller of the cleanup is? This can be done by "check_for_data_loss" option to the cleanup().  
+
+Ephemeral bucket logic should definitely get executed during the periodic run_cleanup.
+But, cleanup also gets called during start_recovery and bucket flush. start_recovery is done for recovering missing vbuckets. 
+
+Also, cleanup() gets called by ns_rebalancer during failover and pre-rebalance. Those are not covered by this change.
+
+Can you please look into each caller of the cleanup() and check whether it makes sense & is also safe to execute the ephemeral bucket logic?
+
+What do I mean by safe?
+
+Consider following sequence of events.
+
+1. User does hard failover of Node1.
+2. Failover updates the vbucket map. Replicas are promoted in the map but not on the nodes yet.
+3. Failover logic calls Harley Martinitor cleanup() to apply the config.
+
+If memcached on another node say node2 were to restart between step 2 and 3, then multiple things will happen during that cleanup. We need to think whether that can be an issue because the ephemeral bucket logic would look at the vbucket map but that map has not been applied yet. 
+
+I am thinking, may be it is safer to just bypass the ephemeral bucket logic if cleanup() is happening during failover and pre-rebalance. And document that if such sequence of multiple events occur then they might lose data in ephemeral buckets. It can be revisited in future release.
+
+What do you say?
+
+-------------------------------------
+author: Noe Perry
+date: 2017-03-14 18:18:14.909000000
+
+Patch Set 22:
+
+> I am thinking, may be it is safer to just bypass the ephemeral
+ > bucket logic if cleanup() is happening during failover and
+ > pre-rebalance. And document that if such sequence of multiple
+ > events occur then they might lose data in ephemeral buckets. It can
+ > be revisited in future release.
+ 
+Yeah, maybe this should be good enough. The "check_for_data_loss" will be done only during the periodic cleanup().
+
+-------------------------------------
+author: Ella Beltran
+date: 2017-03-14 22:10:17.340000000
+
+Patch Set 22:
+
+(1 comment)
+
+Line:981, src/ns_orchestrator.erl -> Instead of this function, can you please add a new function called "is_enabled()" to the auto_failover module? This is to keep all auto_failover related code in one module.
+
+And instead of "auto_failover_diabled", please pass {auto_failover_enabled, auto_failover:is_enabled()} tuple to the cleanup() routine.
+
+Please also add a comment in the auto_failover:is_enabled() function that it is a racy check because we are looking at the setting in ns_config. Not a problem in your case but good to warm if someone else decides to leverage it in future.
+
+-------------------------------------

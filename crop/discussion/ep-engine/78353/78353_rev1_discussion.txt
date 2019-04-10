@@ -1,0 +1,94 @@
+DESCRIPTION
+
+MB-24376: Stop rangeRead on invalid Seqno
+
+An exception is thrown if the start of the readRange is updated with a
+value x < 0 || x > endSeqno, as this should not be done.
+
+When updating an item which is currently covered by a rangeRead, the
+following states occur in the seqList:
+
+ A₁ B₂ C₃        Initial items
+[A₁ B₂ C₃]       rangeRead to highSeqno
+
+{ Write Lock
+
+[A₁ B₂ C₃] A₋₁   ** Update; A₁ marked stale, new OSV appended.
+                 NB: this is before queueDirty updates seqNo
+
+[A₁ B₂ C₃] A₄    Seqno updated in queueDirty
+
+}
+
+RangeReads do not hold the write lock, and stop only upon either
+reaching the end of the seqList, or reading an item with
+seqno > endSeqno.
+There is a brief window at the state marked ** in which a rangeRead
+may try to update the start of the readRange with -1:
+
+- rangeRead (endSeqno 3) reads C₃ normally
+- proceeds to next item in the seqList
+- checks if seqno > endSeqno - !(-1 > 3), don't stop yet
+- update the start of the readRange with -1
+
+This patch ends the readRange if the current item has a seqno < 0.
+
+Change-Id: Ia1e53e4c40705b673c1f01e1b15fecbed5dff2fc
+
+
+COMMENTS
+
+author: Jace Townsend
+date: 2017-05-19 11:46:58.415000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Kymani Ramirez
+date: 2017-05-19 12:06:42.379000000
+
+Patch Set 1: Code-Review+2
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-05-19 12:07:24.012000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5802/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/5105/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/346/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6640/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-05-19 12:16:26.839000000
+
+Patch Set 1: Code-Review-1
+
+(2 comments)
+
+Line:687, tests/module_tests/ephemeral_vb_test.cc -> two?
+
+Line:696, tests/module_tests/ephemeral_vb_test.cc -> Suggest you verify your expectation - add a check that the last element in the sequence list has seqno of -1.
+
+(Consider what might happen if the implementation of public_processSet was changed such that it didn't leave the seqno at -1).
+
+-------------------------------------
+author: Jace Townsend
+date: 2017-05-19 12:24:04.907000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:687, tests/module_tests/ephemeral_vb_test.cc -> I can deffo math! :P
+
+Line:696, tests/module_tests/ephemeral_vb_test.cc -> Good point, on it
+
+-------------------------------------

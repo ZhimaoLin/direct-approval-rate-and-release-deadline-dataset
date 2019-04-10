@@ -1,0 +1,355 @@
+DESCRIPTION
+
+MB-20751: Fix lock cycle (deadlock) during bucket delete & client disconnect
+
+MB-20716 recently fixed an issue where idle DCP connections (in
+EWOULDBLOCK state) would not be notified (woken up) in the frontend
+when a bucket was deleted. The fix for this was to trigger a notify
+(via producer->notifyPaused()) as part of ep-engine bucket delete.
+
+Unfortunately this introduced a lock-order-inversion (deadlock)
+between two mutxes, which caused memcached to hang during shutdown,
+as one (or more) worker threads would never terminate.
+
+The issue is between:
+
+1. Frontend_worker thread mutex (threadLock)
+2. ConnMap::connsLock
+
+And at least two threads (although normally 3 in the wild):
+
+T1: Frontend worker thread
+T2: DestroyBucket thread
+(optional T3: A NONIO thread running ConnManager)
+
+During bucket delete, the follow sequence occurs which creates a cycle
+between threadLock and connsLock:
+
+T1<Worker>:
+    event_handler() ... conn_pending_close()
+      -> LOCK(threadLock)
+    DcpConnMap::disconnect()
+      -> ACQUIRE(connsLock)
+
+T2<DeleteBucket>:
+    EventuallyPersistentEngine::handleDeleteBucket() ...
+    DcpConnMap::shutdownAllConnections()
+      -> LOCK(connsLock)
+    notifyIOComplete() ... DcpProducer::notifyPaused()
+      -> ACQUIRE(threadLock)
+
+Part of the issue here is that DcpProducer::notifyPaused() *must* be
+called with schedule==false, as there is no longer a ConnNotifier task
+running on another thread (which never acquires the connsLock and
+hence avoids any deadlock), as the ConnNotifier has been shutdown in
+DcpConnMap::shutdownAllConnections previously. Therefore we need to
+use the variant of notifyPaused which calls notify_IO_complete in the
+same thread.
+
+The solution chosen is to essentially drop the connsLock in
+shutdownAllConnections before calling notify. We achive this by taking
+a _copy_ of the connections map (under connsLock), and then iterating
+over this copy and calling notify etc. This is safe as the elements of
+the map are all ref-counted pointers.
+
+Change-Id: I3031254eb9b695957184c4f4381adacfa51bffa5
+
+
+COMMENTS
+
+author: Bobby Buck
+date: 2016-09-02 22:35:27.243000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-09-02 22:35:36.796000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1258/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-09-02 22:35:36.949000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/65/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-09-02 22:35:37.105000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/993/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-09-02 22:35:37.255000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1167/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-09-02 22:50:20.873000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1258/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1167/ : FAILURE
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/1167/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/65/ : FAILURE
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-addresssanitizer-master/65/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/993/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-09-02 22:53:15.053000000
+
+Patch Set 2: -Verified
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1259/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-09-02 23:03:46.811000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1167/ : FAILURE
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/1167/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/65/ : FAILURE
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-addresssanitizer-master/65/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1259/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/993/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-09-02 23:04:02.723000000
+
+Patch Set 2: -Verified
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1260/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-09-02 23:05:19.344000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/66/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-09-02 23:05:36.240000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1168/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-09-02 23:12:23.390000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1169/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-09-02 23:20:30.396000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1169/ : FAILURE
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/1169/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/66/ : FAILURE
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-addresssanitizer-master/66/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1260/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/993/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-09-02 23:40:15.860000000
+
+Patch Set 2: -Verified
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1170/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-09-02 23:40:16.021000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/994/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-09-02 23:40:16.168000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/67/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-09-02 23:40:16.302000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1261/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-09-02 23:55:12.197000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1170/ : FAILURE
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/1170/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/67/ : FAILURE
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-addresssanitizer-master/67/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1261/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/994/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-09-03 00:34:57.905000000
+
+Patch Set 2: -Verified
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1262/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-09-03 00:34:58.058000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1171/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-09-03 00:44:07.422000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/995/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-09-03 00:47:58.510000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/68/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-09-03 01:02:53.623000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1262/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1171/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/995/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/68/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-09-03 01:34:02.096000000
+
+Patch Set 2: -Verified
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1263/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-09-03 01:42:41.140000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1171/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/995/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/68/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1263/ : SUCCESS
+
+-------------------------------------
+author: Kymani Ramirez
+date: 2016-09-05 09:54:16.526000000
+
+Patch Set 2: Code-Review-1
+
+(1 comment)
+
+Line:165, src/dcp/dcpconnmap.cc -> anc -> and
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-09-05 10:11:40.593000000
+
+Patch Set 2: Code-Review-1
+
+Handles by merge: http://review.Piper Jefferson.org/#/c/67308/
+
+As per the email on 5th August, the current plan is for a single person (currently me) to handle upstream merges. Apologies for any confusion / misunderstanding - I've added a copy of the emails to the wiki: http://hub.internal.Piper Jefferson.com/confluence/display/cbeng/ep-engine+merges+complete+%7C+Regressions+%7C+New+merge+process
+
+-------------------------------------
+author: Bobby Buck
+date: 2016-09-06 03:50:42.500000000
+
+Patch Set 2:
+
+I had to port this change to not run into the delete bucket problem in master for the forestdb integration effort. I pushed it into Jasmin Rangel given that I had ported it anyways. I shall abandon this, given that it is already taken care of.
+
+-------------------------------------
+author: Bobby Buck
+date: 2016-09-06 03:51:02.048000000
+
+Abandoned
+
+-------------------------------------

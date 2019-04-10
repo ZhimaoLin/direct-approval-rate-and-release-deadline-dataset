@@ -1,0 +1,74 @@
+DESCRIPTION
+
+Refactor alternate object databases below ObjectDirectory
+
+Not every object storage system will have the concept of alternate
+object databases to search, and even if they do, they may not have
+the notion of fast-access / slow-access split like we do within
+the ObjectDirectory code for pack files and loose objects.
+
+Push all of that down below the generic API so that it is a hidden
+detail of the ObjectDirectory and its related supporting classes.
+
+Change-Id: I54bc1ca5ff2ac94dfffad1f9a9dad7af202b9523
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-06-27 01:52:38.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Blake Oneal
+date: 2010-07-01 19:09:45.000000000
+
+Patch Set 4: Looks good to me, but someone else must approve
+
+(3 inline comments)
+
+I don't think the no-argument constructor is necessary but am not going to downvote as it's a trivial thing which can be resolved subsequently.
+
+Line:448, org.eclipse.jgit/src/org/eclipse/jgit/lib/FileRepository.java -> Why the whitepsace between 'objectDatabase' and 'myAlternates' ?
+
+Line:61, org.eclipse.jgit/src/org/eclipse/jgit/lib/FileObjectDatabase.java -> Just as an observation, this will do a full descent of all the alternate handles before checking impl2. Is that desirable? Wouldn't it be better to do HasObject1(objectId) || hasObject2(objectId.name() || for(myalternates) hasObject1 || for( myalternates) hasObject2 ?
+
+Line:58, org.eclipse.jgit/src/org/eclipse/jgit/lib/ObjectDatabase.java -> This is unnecessary - the class is abstract, so has to be extended for initialisation purposes. And every object gets a default no-arg constructor anyway.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-07-01 21:58:36.000000000
+
+Patch Set 4: (3 inline comments)
+
+
+
+Line:448, org.eclipse.jgit/src/org/eclipse/jgit/lib/FileRepository.java -> Crap.  Typo here that I introduced the whitespace.  Arrrrgh.  Thanks for catching it, that's just really sloppy of me.
+
+Line:61, org.eclipse.jgit/src/org/eclipse/jgit/lib/FileObjectDatabase.java -> No.  We want to check the alternates packs first before the local filesystem.
+
+Basically, looking at pack files is faster (no filesystem system calls) and more likely to hit (packs have the bulk of the objects).  So we intentionally examine pack files before we examine the loose objects.
+
+That's why this code is so nasty.  We have to examine all pack files, recursively through alternates, *then* examine the loose objects directory, and recursively go through alternates.
+
+This particular rule was hard-won on the C git side, and is based on experiences across lots of platforms, including Windows and Mac OS X where filesystem system calls are horribly slow compared to doing two or three binary search steps against an in-memory table held inside of the JVM heap.  :-)
+
+Line:58, org.eclipse.jgit/src/org/eclipse/jgit/lib/ObjectDatabase.java -> Good point about the constructor being pointless.  Its a bad habit I developed some years ago.  I should stop doing this.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-07-01 23:29:26.000000000
+
+Patch Set 4: Looks good to me, but someone else must approve; IP review completed
+
+
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-07-27 16:11:54.000000000
+
+Change has been successfully pushed.
+
+-------------------------------------

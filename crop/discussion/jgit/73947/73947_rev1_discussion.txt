@@ -1,0 +1,125 @@
+DESCRIPTION
+
+WIP: time based eviction strategy for repository cache
+
+When Repository.close() decrements the useCount to 0 currently the cache
+immediatly evicts the repository from WindowCache and RepositoryCache.
+This leads to I/O overhead on busy repositories because
+packfiles/references are inserted and deleted from the cache frequently.
+
+This commit defers the eviction of a repo from the caches until last use
+of the repository is older than time to live. The eviction is handled by
+a terminator thread which runs periodically.
+
+TODO: allow configuration of time to live and check interval.
+TODO: name terminator thread
+TODO: tests,...
+
+Change-Id: I4a0214ad8b4a193985dda6a0ade63b70bdb948d7
+Also-by: Douglas Trujillo xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Zachary Orozco
+date: 2016-05-30 14:16:54.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-05-30 14:17:01.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/8414/
+
+-------------------------------------
+author: Zachary Orozco
+date: 2016-05-30 14:22:51.000000000
+
+Patch Set 1:
+
+(4 comments)
+
+Line:1, org.eclipse.jgit.pgm/resources/log4j.properties -> just for testing to see debug output
+
+Line:880, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> just for testing
+
+Line:219, org.eclipse.jgit/src/org/eclipse/jgit/lib/RepositoryCache.java -> of course we need configuration parameters for time to live.
+
+Line:230, org.eclipse.jgit/src/org/eclipse/jgit/lib/RepositoryCache.java -> also needs to be configurable
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-05-30 14:29:24.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/8414/ : SUCCESS
+
+-------------------------------------
+author: Mitchell Griffith
+date: 2016-05-30 18:02:08.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Thank you for implementing this!
+
+Line:876, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> A Repository can be opened through the RepositoryCache or in a standalone way. We cannot change the close method to not close otherwise we will affect the standalone use case. The repository will never be closed because evict will not be called in standalone.
+
+I see 2 options here:
+
+Repository opened through the repository cache could be wrapped in a class holding the usage counters (useCnt and lastUsed) and overwrite the close method to do the logic done in evict method. The problem with that approach is that wrapping repository in not possible when repository is added to the cache using the register method. For this solution to work, we would need to remove the register method (and break backward compatibility).
+
+Another option is when repository are opened through the RepositoryCache, we leak one usage counter(as it was originally implemented) so useCnt=1 would mean that repo is not used but still in cache. In the therminator thread we do:
+
+Runnable terminator = new Runnable() {
+ xxx@xxx.xxx
+  public void run() {
+    try {
+      for (Reference<Repository> ref : cacheMap.values()) {
+        Repository repository = ref.get();
+        if (repository.useCnt.get() == 1 && (System.currentTimeMillis() - repository.lastUsed.get() > 20000)) {
+          RepositoryCache.unregister(repository);
+          repository.close();
+        }
+      }
+    } catch (Throwable e) {
+      LOG.error(e.getMessage(), e);
+    }
+  }
+};
+
+-------------------------------------
+author: Mitchell Griffith
+date: 2016-05-30 18:09:41.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:876, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> and Repository close method would look like this:
+
+public void close() {
+  lastUsed.set(System.currentTimeMillis());
+  if (useCnt.decrementAndGet() == 0) {
+    doClose();
+  }
+}
+
+-------------------------------------
+author: Zachary Orozco
+date: 2016-05-31 09:19:36.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:876, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> Proposed a solution where we explicitly check whether the repository instance is cached.
+
+-------------------------------------

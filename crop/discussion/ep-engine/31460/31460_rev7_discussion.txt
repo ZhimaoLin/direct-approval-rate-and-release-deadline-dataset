@@ -1,0 +1,137 @@
+DESCRIPTION
+
+MB-9785: Allow the checkpoint manager to work with upr streams
+
+This is a large change that does a few things other than just
+allowing a stream to access the checkpoint manager. The main
+feature of this change is that the Stream class is now a state
+machine that contains states for pending, backfilling, in-memory,
+and dead and the stream moves through these states based on how
+far behind or up to date the mutations being sent from the stream
+are. The Stream class also becomes the main place for handling
+mutations in an UPR connection.
+
+Change-Id: I4f5d6a49e31e992bd34b2bce5d8089ccbaffb1f4
+
+
+COMMENTS
+
+author: Kenny Maynard
+date: 2014-01-04 08:38:15.433000000
+
+Uploaded patch set 7.
+
+-------------------------------------
+author: Abby Duran
+date: 2014-01-06 03:01:22.385000000
+
+Patch Set 7: Code-Review-1
+
+(19 comments)
+
+I put a bunch of comments, some of them are minor. Please take a look and as I mentioned, we can address some major issues as separate commits.
+
+Line:28, src/upr-stream.cc -> Please avoid using macros for this case if possible, but instead define and use enum type.
+
+Line:107, src/upr-stream.cc -> Please increase the log level to the warning for the better debugging as the backfill is a critical task.
+
+Line:117, src/upr-stream.cc -> Please add the vbucket id to the string.
+
+Line:154, src/upr-stream.cc -> I know this is the edge case, but if start_seqno == end_seqno, we don't need to send the item with start_seqno to the destination?
+
+Line:192, src/upr-stream.cc -> Shouldn't we decrement it when it is sent to the destination?
+
+Line:193, src/upr-stream.cc -> Item instance should be freed inside this function if the state is in a wrong state.
+
+Line:208, src/upr-stream.cc -> I saw at least two issues here:
+
+1) As UPR still relies on ACK/NACK, we can't assume that the backfill task is completed and transitioned to the in-memory phase here. I think I mentioned this in another change. We should address it in a separate commit
+2) If we use async ACK/NACK like we do for TAP, there is a case where the destination can process an item with seqno 101, but not item with seqno 100. In this case, the consumer will receive items that are out of order with respect to their by-seqno values. This should be addressed in a separate commit too.
+
+Line:213, src/upr-stream.cc -> checking this flag only causes some issues. For example, if the replication is somehow slow, but the backfill task already pushes all the items into the queue and sets "isBackfillTaskRunning" to false, then we will constantly get into this condition, which seems wrong and inefficient to me.
+
+Line:215, src/upr-stream.cc -> Why "0" byseqno is always passed to the checkpoint manager?
+
+Line:233, src/upr-stream.cc -> Shouldn't we synchronize the queue access through the lock?
+
+Line:245, src/upr-stream.cc -> Same as the above commit
+
+Line:258, src/upr-stream.cc -> I don't understand why we need to look up the hash table here. i remembered that we adapted the checkpoint manger so that it can point to Item instances instead of QueuedItem.
+
+Line:270, src/upr-stream.cc -> Similarly, we should make sure that all items belong to the checkpoint should be successfully sent and acked before sending the snapshot marker. This can be a separate commit.
+
+Line:330, src/upr-stream.cc -> Please use "if" stmt.
+
+Line:4921, src/ep_engine.cc -> Please don't use dynamic_cast if we know that there is only one type for this case. We can simply use static_cast to avoid the runtime type checking overhead. Same for the above cases. We should address them in a separate commit.
+
+Line:2767, tests/ep_testsuite.cc -> I'm not sure why requesting items with seqno 2 ~ 202 doesn't require backfill from disk?
+
+Line:71, src/upr-stream.h -> Please make it the pure virtual function or add the default implementation that can be common across all the child classes.
+
+Line:351, src/checkpoint.cc -> I don't understand this calculation. Why do we subtract (number of items in a checkpoint pointed by itr + 1)? Shouldn't the cursor visit those items? If so, then we should subtract the number of items in checkpoints that we skip through, from numItems.
+
+Line:361, src/checkpoint.cc -> same comment as above.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2014-01-06 20:07:11.905000000
+
+Patch Set 7:
+
+(19 comments)
+
+I addressed all of the comments you had except for one thing. In my implementation the backfill phase ends after the backfill task completes. It sounds like you would prefer it to end once the last backfill item is sent to the destination. Let me know if you would still like me to make this change.
+
+Line:28, src/upr-stream.cc -> Moved to an enum in upr-stream.h called end_stream_status_t.
+
+Line:107, src/upr-stream.cc -> I'm actually going to delete this one since there is already a log message in the completeBackfill function that is at warning level.
+
+Line:117, src/upr-stream.cc -> Done
+
+Line:154, src/upr-stream.cc -> I think your right because we want to send everything up to and including the end sequence number for the stream.
+
+Line:192, src/upr-stream.cc -> I think I approached this differently then how it was done in tap. See my comment on "isBackfillTaskRunning" for more details.
+
+Line:193, src/upr-stream.cc -> Done
+
+Line:208, src/upr-stream.cc -> You are correct, but at the moment upr does not support ack/nack. That was the next thing I was going to implement. Let's discuss this tomorrow since I want to go over my implementation plan with you before writing any code.
+
+Line:213, src/upr-stream.cc -> When backfill completes we set the state to STREAM_IN_MEMORY so the case you mention should not happen. I think the main thing that your asking for here is only to transition from backfilling -> in-memory after the last backfill item is sent to the destination. What I have done was change state after the backfilling task is completed. I'm happy to make the change, but I just want to be clear on what the two approaches are before I do that.
+
+Line:215, src/upr-stream.cc -> I changed it to lastReadSeqno.
+
+Line:233, src/upr-stream.cc -> No. These are private functions and should only be called from the next() function (or a function that already grabs the lock) which already grabs the lock. I can add the UNLOCKED string to the end of the function name if you would like.
+
+Line:245, src/upr-stream.cc -> Commented above.
+
+Line:258, src/upr-stream.cc -> This was left over from before those changes went in. I have fixed this now.
+
+Line:270, src/upr-stream.cc -> Acking/nacking will be in a separate commit.
+
+Line:330, src/upr-stream.cc -> Done
+
+Line:4921, src/ep_engine.cc -> Done
+
+Line:2767, tests/ep_testsuite.cc -> num_items should have been 1000 so that the checkpoint remained in memory.
+
+Line:71, src/upr-stream.h -> I am going to set the state to STREAM_READING here since the Stream class is only used for consumer side streams. Later I will add a PassiveStream class and make this function pure virtual and then things will make more sense.
+
+Line:351, src/checkpoint.cc -> This was code that I had cut an pasted from below and since it didn't cause any issues during testing I didn't think much about it. Your right that this calculation is incorrect and I have fixed it for the next patch set.
+
+Line:361, src/checkpoint.cc -> Done
+
+-------------------------------------
+author: Abby Duran
+date: 2014-01-07 00:36:58.875000000
+
+Patch Set 7:
+
+(2 comments)
+
+Okay, I have a couple of comments, but we can address them later. I'm okay with merging this change.
+
+Line:213, src/upr-stream.cc -> Okay, I understand what you're trying to do here. My concern is that we change the state from BACKFILL to IN_MEMORY even if there are backfill items in the queue or unAcked items in the ACK queue that we will implement soon. This will cause some confusions in debugging, showing stats in UI, etc. Let's add this to the to-do list and address it as a separate commit.
+
+Line:2767, tests/ep_testsuite.cc -> Isn't num_items 6000? If it is, there are 1000 items in the open checkpoint, whose seq numbers are 5001 ~ 6000. The old closed checkpoint having 5000 items is mostly freed from memory.
+
+-------------------------------------

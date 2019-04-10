@@ -1,0 +1,131 @@
+DESCRIPTION
+
+Adds the git attributes computation on the treewalk
+
+Adds the getAttributes feature to the tree walk. The computation of
+attributes needs to be done by the TreeWalk since it needs both a
+WorkingTreeIterator and a DirCacheIterator.
+
+Bug: 342372
+CQ: 9120
+Change-Id: I5e33257fd8c9895869a128bad3fd1e720409d361
+Signed-off-by: Bernard Hawkins xxx@xxx.xxx
+Signed-off-by: Zachary Orozco xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Douglas Trujillo
+date: 2015-11-03 00:07:56.000000000
+
+Uploaded patch set 18: Patch Set 17 was rebased.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2015-11-03 00:14:05.000000000
+
+Patch Set 18: Code-Review+1
+
+I propose we accept Arthur's change and do further improvements on top of this initial work. 
+
+This change is sufficient for clean and smudge filter support without destroying performance of existing functionality.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-11-03 00:51:42.000000000
+
+Patch Set 18:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7367/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-11-03 00:59:14.000000000
+
+Patch Set 18: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7367/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-11-04 08:50:44.000000000
+
+Patch Set 18:
+
+> (1 comment)
+
+Ivan: this change has no issues with performance problems caused by accessing the config too often. We should not discuss this on this specific change. Lets discuss it on the change where we see this problem. I think we are near to accept this change 35377 if there are no good reasons to stop it. And since you know this area of quite well I expect that you give some nice review comments. Could you review and add some comments here? I am doing the same on your 59345.
+
+Don't get me wrong: Whether we in the end take your change 59345 should be independent whether this change 35377 gets in now or not. But your change is very big and merging it in will take some time. In the meantime accepting this would allow us to add git lfs functionality.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-11-04 08:51:02.000000000
+
+Patch Set 18: Code-Review+1
+
+-------------------------------------
+author: Nicolas Patterson
+date: 2015-11-05 10:05:12.000000000
+
+Patch Set 18:
+
+(1 comment)
+
+Line:499, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/FileRepository.java -> this patch adds basic attribute support as it's name says.
+Therefore it looks good, but is no solution for the real issue eol, just a small step towards it.
+That's ok.
+
+However there are several questions that arise. 
+These are not blocking this commit, but should partly be addressed
+in order to have a good base to continue.
+
+1) What is the transaction boundary? Currently a new AttributesNodeProvider MAY be created 
+when needed. The effective global and info nodes are then cached/freezed on exactly that version when created on the working tree.
+On the other hand a call to FileRepository.getConfig always checks for repo config changes using FileSnapshot.
+The transaction therefore uses the life repo config and a potentially dirty attributes/ignore nodes config.
+There are two options: real-time config data or freeze time config using a transactional concept (not JTA, just the theory of it).
+What sense does it make, that the git config changes while a checkout is done? none.
+
+My recommendation is the same as in the bug description: Use the git commands as the transaction boundary.
+Therefore use the good practice pattern of the Callables already in jgit and delegate the current call to a callImpl in subclasses.
+This allows for per-command refresh of whatever state of the repository. Even ThreadLocals.
+Then the git config and attributes/ignore should only be refreshed before and/or after a git command.
+(An exception is of course the instant ignore/attributes update while doing the treewalk)
+
+When doing the realtime data strategy, what happens is that every call to getAttribute for every file in the repo will HAVE TO call
+getConfig()....getAutoCRLF() and also getAttributes(path,...) and check on all involved .gitattributes files if they have changed.
+This leads to very many filestat and may even though produce corrupt results due a just missed change in the filesystem while processing the working tree in a certain order.
+
+For attribute macro support i can imagine that the AttributesNodeProvider can be the starting point.
+But again, what is the concept here? Will every getAttributes calculation for every file in the repo create a new 
+AttributesNodeProvider using repo.newAttributesNodeProvider or is there some freeze point?
+If the former is the case then every attributes calculation on a path will have to create a new macro resolution context, which in some projects
+may be rather expensive. Again why should that macro context change during a git command? (and again excluding the case when the treewalker detects a new .gitattribute/.gitignore on its first traversal).
+
+Last but not least I think this patch should be committed in order to get ahead with the eol issue afterwards.
+Do you want me to create a patch on top of Arthurs? using per git command freeze and performance caching?
+
+What can always be of use are my tests EndOfLineRepositoryTest and AttributesHierarchyTest which are RepositoryTestCases and try to test the git logic regarding eol, attributes and macros.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-11-06 08:58:14.000000000
+
+Patch Set 18:
+
+(1 comment)
+
+Line:499, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/FileRepository.java -> Ok, got your points. But since the "transactional" issues are different from the change here I don't want to mix it. I would suggest we discuss on the bug or even better on the jgit mailing list xxx@xxx.xxx Could you forward your comments to that list? Same text as here, just another forum to discuss.
+
+Regarding the relevance to this change: have you noticed that this change doesn't have many problems with excessive config reads. In a 50.000 files repo the whole java process (including starting java,reading jar files) needs 64.000 io calls to compute a jgit status. We are mainly doing one stat per working tree file and we are not touching the config per once per working tree file.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-11-18 00:39:55.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

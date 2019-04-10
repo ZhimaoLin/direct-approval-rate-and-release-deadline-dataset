@@ -1,0 +1,133 @@
+DESCRIPTION
+
+Fix MissingObjectException race in ObjectDirectory
+
+Johannes Carlsson identified a race condition[1] that can lead to
+spurious MissingObjectExceptions at read time. If two threads are
+active inside of ObjectDirectory looking for a packed object and the
+packList is currently the empty NO_PACKS list, thread A will find
+no object and eventually consider tryAgain1(). If thread A is put
+to sleep and this point and thread B also does not find the object,
+loads the packs, when thread A wakes up its tryAgain1 would return
+false and the thread never considers the packs.
+
+Rework the internal API of ObjectDirectory to keep a handle on the
+exact PackList that was iterated by thread A, allowing it to always
+retry walking through the packs if the new PackList is different.
+
+This had some ripple effect into the CachedObjectDirectory and
+the shared FileObjectDatabase interface. The new code should be
+slightly easier to follow, especially from the perspective of the
+CachedObjectDirectory trying to minimize the number of open system
+calls it makes to files matching "$GIT_DIR/objects/??/?x{38}".
+
+[1] http://dev.eclipse.org/mhonarc/lists/jgit-dev/msg02401.html
+
+Change-Id: I9a1c9d6ad6cb38404b7b9178167b714077561353
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2014-01-31 00:42:55.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/egit/job/jgit.gerrit/4512/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-01-31 01:00:38.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/jgit.gerrit/4512/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2014-01-31 17:18:50.000000000
+
+Patch Set 1: Verified+1
+
+Original poster reported this fixes the problem.
+
+-------------------------------------
+author: Santos Moore
+date: 2014-01-31 23:44:03.000000000
+
+Patch Set 1: Code-Review-1
+
+(8 comments)
+
+This fixes the bug as I understand it by keeping the pack list pointer current. A few comments that might help make the code easier to follow.
+
+Line:203, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/ObjectDirectory.java -> Is this protecting against PackList instances being shared against multiple ObjectDirectory instances, or multiple threads sharing this single ObjectDirectory? The latter seems less sane in that we shouldn't have one thread calling close() before the other thread is done, they should be using some external synchronization.
+
+Line:416, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/ObjectDirectory.java -> I think this could just be:
+
+ if (searchPacksAgain(pList))
+   continue SEARCH;
+
+Line:425, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/ObjectDirectory.java -> Optional: SEARCH is the next loop at this point, break; would be sufficient I think.
+
+Line:473, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/ObjectDirectory.java -> Better names for this and the Packed equivalents. AFAICT the difference between getLooseSize and getLooseObjectSize is that the former considers alternates and the latter does not.
+
+Line:500, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/ObjectDirectory.java -> Same as above: could use searchPacksAgain
+
+Line:508, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/ObjectDirectory.java -> Same as above: optionally drop SEARCH
+
+Line:900, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/ObjectDirectory.java -> Do these actually need to be separate classes instead of just using an ObjectDirectory[] everywhere? (The close() method of AlternateRepository closes the whole repository, not just the object database, but are you actually depending on that behavior?)
+
+Line:219, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/CachedObjectDirectory.java -> I don't understand this line. If the object was found by the last scan, then open it. If not, do another scan. But why not try to open again? And why retry exactly once instead of zero or >1 times?
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2014-02-03 22:19:55.000000000
+
+Patch Set 1:
+
+(8 comments)
+
+Line:203, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/ObjectDirectory.java -> Protecting multiple threads from calling close on the same ObjectDirectory concurrently.
+
+As it happens Repository.close() already tries with a reference counter. But I think its a little easier to follow the code saying we atomically swap in the "no pack list" and then close anything known only to this thread.
+
+Line:416, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/ObjectDirectory.java -> Done
+
+Line:425, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/ObjectDirectory.java -> Although break is sufficient by language rules I find the label slightly improves readability given the nested inner loop and that the inner loop uses "continue SEARCH". I also happen to like my bikesheds a tan color.
+
+Line:473, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/ObjectDirectory.java -> Done
+
+Line:500, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/ObjectDirectory.java -> Done
+
+Line:508, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/ObjectDirectory.java -> Ack but sticking with break SEARCH.
+
+Line:900, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/ObjectDirectory.java -> Yes the distinction is relevant between these two. FileRepository uses AlternateRepository to check if an alternate ObjectDirectory has refs associated with it. If so FileRepository advertises those ObjectIds over ReceivePack so clients can avoid pushing branches that the alternate contains.
+
+Since a Repository was opened, we want to close the Repository. But not all alternates are full repositories, it is legal in Git to point the alternate to a random directory that has no "../refs/" tree.
+
+Line:219, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/CachedObjectDirectory.java -> If wrapped.openLooseObject() fails here the object file does not exist on disk. We would not expect to see it in unpackedObjects after the scanLoose method. The most likely cause is the earlier scan was done before a `git gc` but now this open attempt fails because the loose object was pruned after being put into a pack file.
+
+openLooseObject is called from two code paths.
+
+Above in openObject() at line 190. When this method returns null the caller will look in pack files for the object. Since we just checked for the loose file on disk and could not open it, the only other place to find the object is in a pack or in an alternate. No need to retry looking at our loose object directory, its probably not going to succeed.
+
+The other caller is in LargePackedDeltaObject. The stream tries to open the object as a loose object first. If that fails by returning null it goes into a slower path where the large delta is inflated on the fly using a stream based delta inflater, which is not efficient. But the caller is prepared for returning null and doing its own form of retry. Again like the openObject() call I just explained, the file was opened but returned ENOENT because it doesn't exist. Retry after scan won't work.
+
+-------------------------------------
+author: Santos Moore
+date: 2014-02-03 23:05:49.000000000
+
+Patch Set 1:
+
+(3 comments)
+
+Line:203, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/ObjectDirectory.java -> If thread A calls close while thread B is still working, wouldn't thread B possibly rescan, essentially "reopening" the instance? That's probably safe, I guess, but it still seems to me like concurrent calls to close() is actually a smell that you're lacking synchronization somewhere else.
+
+Line:473, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/ObjectDirectory.java -> Thanks. This also makes it clear that alternates are searched recursively (which I guess is intuitive but I think I missed last time).
+
+Line:219, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/CachedObjectDirectory.java -> Ok. The part I was missing was that the race is not against new loose object creation (which is kind of pointless to try to handle), it's against gc (which is important).
+
+-------------------------------------

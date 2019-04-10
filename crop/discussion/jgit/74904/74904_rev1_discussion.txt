@@ -1,0 +1,147 @@
+DESCRIPTION
+
+WIP: time based eviction strategy for repository cache
+
+When Repository.close() decrements the useCount to 0 currently the cache
+immediately evicts the repository from WindowCache and RepositoryCache.
+This leads to I/O overhead on busy repositories because pack files and
+references are inserted and deleted from the cache frequently.
+
+This commit defers the eviction of a repository from the caches until
+last use of the repository is older than time to live. The eviction is
+handled by a background task running periodically.
+
+Change-Id: I4a0214ad8b4a193985dda6a0ade63b70bdb948d7
+Also-by: Douglas Trujillo xxx@xxx.xxx
+Also-by: Mitchell Griffith xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Dillon Cross
+date: 2016-06-08 15:09:38.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-06-08 15:09:45.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/8494/
+
+-------------------------------------
+author: Dillon Cross
+date: 2016-06-08 15:16:13.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:247, org.eclipse.jgit/src/org/eclipse/jgit/lib/RepositoryCache.java -> Do we really need explicit configuration of the delay?
+If it is undefined we could derive a reasonable default from the expiration time. For example:
+
+  delay = min(expireAfter / 10, 10 minutes)
+
+When the delay is explicitly given then we honor it.
+We could also validate it as it should be shorter than the expireAfter.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-06-08 15:25:48.000000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/8494/ : FAILURE
+
+-------------------------------------
+author: Mitchell Griffith
+date: 2016-06-08 15:29:00.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:50, org.eclipse.jgit/src/org/eclipse/jgit/lib/RepositoryCacheConfig.java -> 4.4.1
+
+Will this be a problem, adding a new api in a minor release?
+
+-------------------------------------
+author: Dillon Cross
+date: 2016-06-08 16:01:48.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:271, org.eclipse.jgit.test/tst/org/eclipse/jgit/lib/RepositoryCacheTest.java -> Looks good. Just I would propose to always double the waiting time from the previous loop iteration i..e 1, 2, 4, 8, 16, ..., 1024
+The total sum is 2^11-1 == 2048-1 =~ 2 seconds
+
+This means the the next loop iteration waits as long as all previous iterations waited (plus one ms). That means: if the repo wasn't removed in N milliseconds then wait another N milliseconds. 
+
+And the loop is less busy.
+
+-------------------------------------
+author: Dillon Cross
+date: 2016-06-08 16:02:55.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:50, org.eclipse.jgit/src/org/eclipse/jgit/lib/RepositoryCacheConfig.java -> Correct, this has to be 4.4 or 4.4.1, I am not exactly sure.
+
+Matthias said it would be OK to add this new API.
+
+-------------------------------------
+author: Mitchell Griffith
+date: 2016-06-08 18:32:17.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:271, org.eclipse.jgit.test/tst/org/eclipse/jgit/lib/RepositoryCacheTest.java -> Done, can you upload a new PS with:
+
+// Instead of using a fixed waiting time, start with small and increase:
+// sleep 2, 4, 8, 16, ..., 1024
+// This wait will time out after 2048ms
+for (int i = 1; i <= 10; i++) {
+  if (!RepositoryCache.isCached(db)) {
+    return;
+  }
+  Thread.sleep(Math.round(Math.pow(2, i)));
+}
+
+-------------------------------------
+author: Dillon Cross
+date: 2016-06-08 20:05:07.000000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:271, org.eclipse.jgit.test/tst/org/eclipse/jgit/lib/RepositoryCacheTest.java -> Done with small modifications. There is no need to compute Math.pow(2,i) for every iteration.
+
+Line:50, org.eclipse.jgit/src/org/eclipse/jgit/lib/RepositoryCacheConfig.java -> Done
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2016-06-09 23:40:44.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:247, org.eclipse.jgit/src/org/eclipse/jgit/lib/RepositoryCache.java -> Done
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-07-12 13:16:36.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

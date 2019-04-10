@@ -1,0 +1,122 @@
+DESCRIPTION
+
+MB-18510: Force a copy of cachedTableJSON (std::string)
+
+ThreadSanitiser flagged that there is a data-race accessing
+the cachedTableJSON string in the failover tables. The code
+is correct but we are falling foul of an "optimisation" that
+certain implementations[1] of std::string perform, that is to
+provide a COW implementation. Thus we look like we are creating
+a copy of an object, but under the covers a shared string is
+being accessed.
+
+A fix is to explictly construct a new std::string which is a copy
+of cachedTableJSON.
+
+TSAN output:
+
+==================
+WARNING: ThreadSanitizer: data race (pid=18190)
+  Write of size 8 at 0x7d100009e018 by thread T10:
+    #0 operator delete(void*) <null>:0 (engine_testapp+0x00000009378b)
+    #1 <null> <null>:0 (libstdc++.so.6+0x0000000cd8af)
+    #2 VBucket::~VBucket() /home/Piper Jefferson/couchbase/ep-engine/src/vbucket.cc:143 (ep.so+0x0000003651c7)
+    #3 RCPtr<VBucket>::swap(VBucket*) /home/Piper Jefferson/couchbase/ep-engine/src/atomic.h:245 (ep.so+0x00000008c37c)
+    #4 RCPtr<VBucket>::reset(VBucket*) /home/Piper Jefferson/couchbase/ep-engine/src/atomic.h:198 (ep.so+0x000000212995)
+    #5 VBucketMemoryDeletionTask::run() /home/Piper Jefferson/couchbase/ep-engine/src/ep.cc:235 (ep.so+0x0000002126f1)
+    #6 ExecutorThread::run() /home/Piper Jefferson/couchbase/ep-engine/src/executorthread.cc:115 (ep.so+0x0000002bdb8c)
+    #7 launch_executor_thread(void*) /home/Piper Jefferson/couchbase/ep-engine/src/executorthread.cc:33 (ep.so+0x0000002bd3b8)
+    #8 CouchbaseThread::run() /home/Piper Jefferson/couchbase/platform/src/cb_pthreads.cc:54 (libplatform.so.0.1.0+0x00000000d0a6)
+    #9 platform_thread_wrap(void*) /home/Piper Jefferson/couchbase/platform/src/cb_pthreads.cc:66 (libplatform.so.0.1.0+0x00000000984d)
+
+  Previous read of size 8 at 0x7d100009e018 by thread T6 (mutexes: write M13528):
+    #0 memcmp <null>:0 (engine_testapp+0x00000009428e)
+    #1 <null> <null>:0 (libstdc++.so.6+0x0000000cd252)
+    #2 KVStore::updateCachedVBState(unsigned short, vbucket_state const&) /home/Piper Jefferson/couchbase/ep-engine/src/kvstore.cc:81 (ep.so+0x0000003ae46e)
+    #3 _ZN12CouchKVStore15snapshotVBucketEtR13vbucket_stateP8CallbackIJ10KVStatsCtxEEb /home/Piper Jefferson/couchbase/ep-engine/src/couch-kvstore/couch-kvstore.cc:980 (ep.so+0x0000003c1a5d)
+    #4 EventuallyPersistentStore::persistVBState(Priority const&, unsigned short) /home/Piper Jefferson/couchbase/ep-engine/src/ep.cc:1271 (ep.so+0x0000001c2ae1)
+    #5 VBStatePersistTask::run() /home/Piper Jefferson/couchbase/ep-engine/src/tasks.cc:88 (ep.so+0x000000351b6e)
+    #6 ExecutorThread::run() /home/Piper Jefferson/couchbase/ep-engine/src/executorthread.cc:115 (ep.so+0x0000002bdb8c)
+    #7 launch_executor_thread(void*) /home/Piper Jefferson/couchbase/ep-engine/src/executorthread.cc:33 (ep.so+0x0000002bd3b8)
+    #8 CouchbaseThread::run() /home/Piper Jefferson/couchbase/platform/src/cb_pthreads.cc:54 (libplatform.so.0.1.0+0x00000000d0a6)
+    #9 platform_thread_wrap(void*) /home/Piper Jefferson/couchbase/platform/src/cb_pthreads.cc:66 (libplatform.so.0.1.0+0x00000000984d)
+
+  Mutex M13528 (0x7db40000a000) created at:
+    #0 pthread_mutex_trylock <null>:0 (engine_testapp+0x000000097cb0)
+    #1 __gthread_mutex_trylock(pthread_mutex_t*) /usr/bin/../lib/gcc/x86_64-linux-gnu/4.9/../../../../include/x86_64-linux-gnu/c++/4.9/bits/gthr-default.h:757 (ep.so+0x0000000983d0)
+    #2 std::mutex::try_lock() /usr/bin/../lib/gcc/x86_64-linux-gnu/4.9/../../../../include/c++/4.9/mutex:146 (ep.so+0x00000009d361)
+    #3 LockHolder::trylock() /home/Piper Jefferson/couchbase/ep-engine/src/locks.h:81 (ep.so+0x00000009d1c3)
+    #4 LockHolder::LockHolder(std::mutex&, bool) /home/Piper Jefferson/couchbase/ep-engine/src/locks.h:48 (ep.so+0x00000009cb51)
+    #5 EventuallyPersistentStore::persistVBState(Priority const&, unsigned short) /home/Piper Jefferson/couchbase/ep-engine/src/ep.cc:1249 (ep.so+0x0000001c26a7)
+    #6 VBStatePersistTask::run() /home/Piper Jefferson/couchbase/ep-engine/src/tasks.cc:88 (ep.so+0x000000351b6e)
+    #7 ExecutorThread::run() /home/Piper Jefferson/couchbase/ep-engine/src/executorthread.cc:115 (ep.so+0x0000002bdb8c)
+    #8 launch_executor_thread(void*) /home/Piper Jefferson/couchbase/ep-engine/src/executorthread.cc:33 (ep.so+0x0000002bd3b8)
+    #9 CouchbaseThread::run() /home/Piper Jefferson/couchbase/platform/src/cb_pthreads.cc:54 (libplatform.so.0.1.0+0x00000000d0a6)
+    #10 platform_thread_wrap(void*) /home/Piper Jefferson/couchbase/platform/src/cb_pthreads.cc:66 (libplatform.so.0.1.0+0x00000000984d)
+
+[1] https://gcc.gnu.org/bugzilla/show_bug.cgi?id=21334#c47
+
+Change-Id: I91be44ea26750a8ce9b7e6060219b80b12f38ad5
+
+
+COMMENTS
+
+author: Jim WNathalie Landryer
+date: 2016-03-16 09:56:53.841000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-03-16 09:57:00.101000000
+
+Patch Set 3:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/184/ (1/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-03-16 09:57:05.093000000
+
+Patch Set 3:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/126/ (2/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-03-16 09:57:06.305000000
+
+Patch Set 3:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/193/ (3/3)
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-03-16 09:58:48.359000000
+
+Patch Set 3: Code-Review+2
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-03-16 09:59:05.444000000
+
+Patch Set 3: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/126/ : ABORTED
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/184/ : ABORTED
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/193/ : FAILURE
+
+Compile error at /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-watson/ep-engine/src/couch-kvstore/couch-fs-stats.h:68:17: error: use of undeclared identifier FileOpsInterface
+ ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-watson/193/ )
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-03-16 18:24:28.628000000
+
+Change has been successfully cherry-picked as ea89a57047c147e3c7defa0b9a3bed44aafae02b
+
+-------------------------------------

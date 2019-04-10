@@ -1,0 +1,164 @@
+DESCRIPTION
+
+Fix default directory set when setDirectory wasn't called.
+
+Bug: 519883
+Change-Id: I46716e9626b4c4adc0806a7c8df6914309040b94
+Signed-off-by: Milo Wolf xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Milo Wolf
+date: 2017-07-25 13:43:31.000000000
+
+Uploaded patch set 8.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-07-25 13:43:40.000000000
+
+Patch Set 8:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/10666/
+
+-------------------------------------
+author: Milo Wolf
+date: 2017-07-25 13:44:46.000000000
+
+Patch Set 8:
+
+> > I think this is ready to go to me?
+ > 
+ > Have you seen my comment on Patch Set 4?
+
+Sorry I didn't see it before, I just pushed again with the fix.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-07-25 13:56:55.000000000
+
+Patch Set 8: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/10666/ : SUCCESS
+
+-------------------------------------
+author: Milo Wolf
+date: 2017-07-26 19:52:35.000000000
+
+Patch Set 8:
+
+Is it good to go? How can we move forward with this?
+
+-------------------------------------
+author: Milo Wolf
+date: 2017-08-21 10:39:19.000000000
+
+Patch Set 8:
+
+Hi, Can anyone look into this? This has been open for more than a month!!!
+
+-------------------------------------
+author: Milo Wolf
+date: 2017-08-23 11:12:48.000000000
+
+Patch Set 8:
+
+@Douglas Trujillo @Elise xxx@xxx.xxx Orozco Can anybody review this?
+I thought the state bureaucracy was the top of the slowest administration in the world but now I think I found a better candidate.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-08-23 20:57:16.000000000
+
+Patch Set 8: Code-Review-1
+
+(2 comments)
+
+Line:162, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/CloneCommandTest.java -> this pollutes the current directory with test data, when running this test from Eclipse or Maven this trash ends up in org.eclipse.jgit.test
+
+Line:237, org.eclipse.jgit/src/org/eclipse/jgit/api/CloneCommand.java -> silence non-externalized String warning in Eclipse by appending  //$NON-NLS-1$ after the semicolon
+
+the same fix is needed in org.eclipse.jgit.pgm.Clone line 103
+
+-------------------------------------
+author: Milo Wolf
+date: 2017-08-23 21:38:24.000000000
+
+Patch Set 8:
+
+(2 comments)
+
+Line:162, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/CloneCommandTest.java -> What do you recommend to do? I see only the solution of removing the test.
+
+Line:237, org.eclipse.jgit/src/org/eclipse/jgit/api/CloneCommand.java -> Why do we need this on Clone L103: `localName = uri.getHumanishName();` ?
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-08-24 08:25:52.000000000
+
+Patch Set 8:
+
+(2 comments)
+
+Line:162, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/CloneCommandTest.java -> Maybe it's time for a white-box unit test that doesn't actually clone but that just verifies that the directory gets set as expected.
+
+Something like this:
+
+* add a package visibility method getDirectory() to CloneCommand.
+
+* make verifyDirectories(URIish uri) have package visibility instead of private.
+
+Do the test as
+
+  CloneCommand command = Git.cloneRepository();
+  command.setURI(fileUri());
+  command.verifyDirectories(new URIish(fileUri());
+  File directory = command.getDirectory();
+  // Then assert that 'directory' is as expected
+
+This exploits knowledge about the implementation of CloneCommand.call(): it does a verifyDirectories(...) first, after which the directory should be set. But it doesn't actually create anything in the file system.
+
+Caveat: it's just an idea; I didn't actually try this.
+
+Otherwise, if you really want to test that CloneCommand.call() does the right thing overall, you'd have to run the test in a separate process, which requires quite a bit of setup (separate test class with main method, then calling it with the correct class path and the correct initial directory, somehow getting the result, then doing an appropriate assertion here).
+
+Also, there should be two tests: one with setBare(true) and one without. For a bare repo, I think directory should be ".../<reponame>.git", for a non-bare repo it should be ".../<reponame>".
+
+Line:237, org.eclipse.jgit/src/org/eclipse/jgit/api/CloneCommand.java -> Because it'll call setDirectory on line 122, and we'll eventually end up in InitCommand line 89 with directory not having the ".git" suffix.
+
+-------------------------------------
+author: Milo Wolf
+date: 2017-08-24 09:25:50.000000000
+
+Patch Set 8:
+
+(2 comments)
+
+Line:162, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/CloneCommandTest.java -> I see, but `verifyDirectories` is private, should I do reflection to access it?
+
+Line:237, org.eclipse.jgit/src/org/eclipse/jgit/api/CloneCommand.java -> Ok I see
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-08-24 09:28:47.000000000
+
+Patch Set 8:
+
+(1 comment)
+
+Line:162, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/CloneCommandTest.java -> No, don't use reflection. I _did_ write above "make verifyDirectories(URIish uri) have package visibility instead of private", didn't I?
+
+-------------------------------------
+author: Milo Wolf
+date: 2017-08-24 10:53:34.000000000
+
+Patch Set 8:
+
+(1 comment)
+
+Line:162, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/CloneCommandTest.java -> True
+
+-------------------------------------

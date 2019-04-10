@@ -1,0 +1,102 @@
+DESCRIPTION
+
+Fix repository cache never closing repository
+
+Repository has a usage counter that is initialized to 1 at
+instantiation and this counter is decremented when Repository.close
+method is called. There is also a Repository.incrementOpen method that
+RepositoryCache uses to increment the usage count when it's returning a
+repository that is already opened.
+
+The problem was that RepositoryCache was incrementing the usage count
+for repositories that it just opened or registered. The usage count was
+2 when it should have been 1.
+
+Incrementing usage count is now only be done for repository that are
+served from the cache.
+
+This bug is causing slow memory increase of our Gerrit server until the
+server become slow. Even if the RepositoryCache is using SoftReference,
+it seems that the JVM is not garbage collecting the repositories because
+it's not yet on the edge of being out of memory.
+
+To test this change, I replicated all repositories(11k) from Gerrit
+master to one slave. The Gerrit master used memory after this test was
+10GB without this change and 3.5GB with.
+
+Change-Id: I86c7b36174e384f106b51fe92f306018fd1dbdf0
+Signed-off-by: Mitchell Griffith xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Mitchell Griffith
+date: 2015-09-18 19:28:00.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-09-18 19:42:10.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7114/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-09-18 19:49:12.000000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7114/ : SUCCESS
+
+-------------------------------------
+author: Mitchell Griffith
+date: 2015-09-23 13:06:21.000000000
+
+Abandoned
+
+Gerrit has been benefiting from this problem (cache never closing repositories) performance wise. I have concerns about the performance impact of this change series. For now, I abandon them I will restore them once I assessed the performance impact on our production servers.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2015-09-23 13:35:17.000000000
+
+Patch Set 4:
+
+Wow - this was really close. I tested this on Windows and already typed in my +2 message. Only picking up one cup of coffee saved us from accidentily submitting this
+
+-------------------------------------
+author: Mitchell Griffith
+date: 2015-09-23 14:43:42.000000000
+
+Patch Set 4:
+
+> Wow - this was really close. I tested this on Windows and already
+ > typed in my +2 message. Only picking up one cup of coffee saved us
+ > from accidentily submitting this
+
+I still think this fix is the right thing to do, not closing resource is never a good idea but this change is defeating the RepositoryCache creator original intent, which I think was to keep stuff around as long as possible by using SoftReference.
+
+I tested this series and so far the memory consumption drastically improved because the RepositoryCache is no longer slowly growing but I can see that the disk IO increased and performance degraded in operations involving many repositories, like listing projects in Gerrit (ls-projects command).
+
+Relying on the SoftReference mechanism to evict old unused repository is not a good idea because the eviction becomes unpredictable. For example, our Gerrit master JVM heap is set to 58GB, the old generation space(Tenured Generation) is 44GB which leaves 14GB for the eden and survivor spaces. The old generation space eventually becomes full (mostly by the caches including the unbound RepositoryCache) and then the application starts slowing down because GC keeps kicking in. The SoftReference are still not being collected at that point because the buffer of available memory is not bellow the threshold that would make GC consider the SoftReference.
+
+All this to say that I will do more testing on our production server but if it turns out that the performance impact is too big, I(we) will need to consider reimplementing the RepositoryCache to achieve the goal of keeping repository in memory but without being forever (I am not sure yet what would be the eviction criteria).
+
+-------------------------------------
+author: Mitchell Griffith
+date: 2016-04-04 18:01:36.000000000
+
+Restored
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-04-07 11:02:29.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

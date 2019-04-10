@@ -1,0 +1,183 @@
+DESCRIPTION
+
+[1/4] Ephemeral class shuffle: Move kvbucket.h to kv_bucket_iface.h
+
+The current class hierarchy for Bucket classes in ep-engine looks
+like:
+
+                   KVBucket    - pure interface
+                      ^
+                      |
+                   EPBucket    - concrete, all code
+
+To add support for Ephemeral buckets, we want to create a new
+EphemeralBucket class. This is expected to share a majority of its
+code with EPBucket (VBuckets, DCP, rebalance, failover), but with
+significant changes (no storage, HashTable is ordered).
+
+As such, we want to be able to share the majority of the current
+EPBucket's code, but also deviate where necessary. This suggests an
+inheritance heirarchy of:
+
+                KVBucketIface  - pure interface
+                     ^
+                     |
+                  KVBucket     - shared code
+                     ^
+                     |
+       /----------------------------\
+       |                            |
+    EPBucket                 EphemeralBucket
+
+Where each subclass contains the class-specific code, and common code
+present in the parent class.
+
+However, it is desirable to maintain as much history in Git as
+possible - Git has poor handling of moves of individual pieces of
+code, and if we simply created a new shared parent class - KVBucket -
+and moved big chunks of code from EPBucket into KVBucket we'd likely
+cause many merge conflicts in future.
+
+It is preferable to instead break the change into a series of smaller
+patches, where we rename complete files in one patch (which Git
+handles very well), and then rename classes (i.e. make code changes)
+in a seperate patch.
+
+Therefore this patch is the first of a series of four:
+
+1. Move kvbucket.h to kv_bucket_iface.h (this patch) - change no code,
+   but move the file which is logically the abstract base class to the
+   correct filename.
+
+2. Rename class KVBucket to KVBucketIface - "make room" in the class
+   hierarchy for a new concrete KVBucket class.
+
+3. Move ep.{ccm,h} -> kv_bucket.{cc,h} - change no code, but move the
+   file which is to become the new shared parent class to the correct
+   filename.
+
+4. Rename class EPBucket -> KVBucket - Finally rename the code which
+   is the shared parent class to the correct name.
+
+Change-Id: Ifc06785b3c32a4ccc79f903c1fd37d476b879fd9
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2016-12-19 16:52:51.704000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-12-19 16:52:59.601000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/2318/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-12-19 16:59:39.753000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1881/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-12-19 17:01:46.147000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2220/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-12-19 17:02:40.233000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1059/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-12-19 17:34:06.226000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/2318/ : ABORTED
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1059/ : FAILURE
+
+Timeout of a CTest test 27/27 Test #19: ep_testsuite_dcp.value_eviction ..........} ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-addresssanitizer-master/1059/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1881/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2220/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-12-19 17:38:57.928000000
+
+Patch Set 1: -Verified
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1065/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-12-19 17:48:05.194000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/2318/ : ABORTED
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1881/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2220/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1065/ : SUCCESS
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2016-12-22 13:17:08.725000000
+
+Patch Set 1:
+
+Why do we need a separate pure interface ? Is there an advantage of this vs below ?
+Can't we just have a
+             KVBucket     - shared code + interface
+                     ^
+                     |
+       /----------------------------\
+       |                            |
+    EPBucket                 EphemeralBucket
+
+-------------------------------------
+author: Keira Washington
+date: 2016-12-22 13:23:35.506000000
+
+Patch Set 1:
+
+It's better from a code tidiness perspective to have the base class be entirely pure-virtual functions (with the exception of potentially having a few non-virtual functions which act as helpful wrappers around the virtual functions). This makes it easier to add a hypothetical third bucket type which doesn't used the common code.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2016-12-22 13:25:21.448000000
+
+Patch Set 1:
+
+yeah sounds correct, thanks Will.
+
+-------------------------------------
+author: Tate Garrett
+date: 2017-01-04 15:27:38.616000000
+
+Change has been successfully cherry-picked as 80d2cd1ed749de763acb68ef120a064b34095f56 by Ashlee Kent
+
+-------------------------------------

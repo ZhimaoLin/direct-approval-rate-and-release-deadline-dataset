@@ -1,0 +1,73 @@
+DESCRIPTION
+
+MB-7735: Fix race in notifying a paused tap connection
+
+When a tap connection becomes disconnected we keep the tap connection
+alive for period of time defined by the tap_keep_alive parameter. If
+a tap consumer reconnects with the same name as a disconnnected tap
+connection then we will reconnect that tap connection using the same
+structure and pick up where the given tap connection left off. During
+this process the connection structure may change for the given
+tap connection and as a result we need to make sure that whenever we
+notify memcached that a tap connection has new items to transmit we
+must make sure that we lock obtain a lock so that the tap connections
+cookie is not changed during this notification process. This commit
+makes sure that we hold the lock long enough to make sure that a tap
+connection is not changing under us while we are in the notification
+process.
+
+Change-Id: I35deeeaab98235500d9ba22c213c413eac1fbc04
+
+
+COMMENTS
+
+author: Kenny Maynard
+date: 2013-03-26 06:25:38.576000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Dustin Rasmussen
+date: 2013-03-27 00:25:22.195000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:253, src/tapconnmap.cc -> It should be !=, right?
+
+-------------------------------------
+author: Kenny Maynard
+date: 2013-03-27 07:24:13.720000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:253, src/tapconnmap.cc -> Yes, your correct. I also need to reduce lock contention so I will be posting another patchset soon.
+
+-------------------------------------
+author: Abby Duran
+date: 2013-03-28 04:26:32.505000000
+
+Patch Set 2: I would prefer that you didn't submit this
+
+(1 inline comment)
+
+
+
+Line:321, src/tapconnmap.hh -> Mike, adding this additional lock will eventually cause the similar dead lock because the memcached worker thread needs to grab this new lock in newProducer(), while the thread calling notify_io_complete() should grab the lock on that worker thread.
+
+Now, I understand which condition will cause this race condition. Let me think about it more how it can be resolved in a different way.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2013-03-28 18:08:56.111000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:321, src/tapconnmap.hh -> I need to clean up this change a little bit, but I think I will avoid the deadlock your tNathalie Landrying about. In any case I agree there is a better way we can code this up and I'm not really a huge fan of having two locks. Let's discuss this issue more offline.
+
+-------------------------------------

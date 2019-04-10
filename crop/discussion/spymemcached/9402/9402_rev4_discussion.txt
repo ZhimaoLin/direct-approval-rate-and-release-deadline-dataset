@@ -1,0 +1,87 @@
+DESCRIPTION
+
+Fix concurrent access to operations objects, especially near timeouts
+
+We discovered that having one thread call get() on futures with a
+timeout much shorter than the timeout built into the client could
+(after a while) reliably kill off the IO thread with a
+NullPointerException. After restarting with assertions enabled, we
+found many other ways to make the IO thread die relating mostly to
+operations that were canceled or timed out in one thread while they
+were being used in another thread.
+
+The solution to this is to make "timing out" an operation something
+similar to "cancel" - that is, not a state of the operation's state
+machine, but just a flag. Then, since this flag (as with the cancelled
+flag) can be read and set from multiple threads, synchronize the
+methods that do that.
+
+Ideally, transitionState and getState would never be called outside
+the IO thread; however, since at least getState is currently, both
+getState and transitionState should then also be synchronized.
+
+With these changes, we don't end up killing off the IO thread anymore.
+
+Change-Id: I280f31ed47922e27da3d5dc82f640c114d6014d7
+
+
+COMMENTS
+
+author: Kenny Maynard
+date: 2011-09-06 22:03:57.490000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2011-09-06 22:04:30.737000000
+
+Patch Set 4: Looks good to me, but someone else must approve
+
+Didn't compile before due to a minor error, but I put in a fix for it.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2011-09-06 22:04:36.380000000
+
+Patch Set 4: Verified
+
+
+
+-------------------------------------
+author: Andreas Short
+date: 2011-09-06 23:09:48.908000000
+
+Patch Set 4: Looks good to me, approved
+
+(2 inline comments)
+
+correctness is paramount, and I trust that this didn't have an adverse impact on Dan's environment.  The only way I can see to change this would be to add a flag and have the IO thread handle it directly, but that's basically the same thing as going synchronized without the JVM optimization, I think.
+
+Line:191, src/main/java/net/spy/memcached/protocol/BaseOperationImpl.java -> I think this may be my issue;  I was trying to assure we weren't erroneously marking something timedout that had been completed.  The timeout can come from either the IO thread or the latch from the asynch call.
+
+Line:207, src/main/java/net/spy/memcached/protocol/BaseOperationImpl.java -> same as above.  Both are probably safe to remove with this change.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2011-09-06 23:13:50.187000000
+
+Patch Set 4:
+
+The two comments by Matt will be addressed in another commit.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2011-09-06 23:13:52.760000000
+
+Change has been successfully cherry-picked as ce6a2aecf279962b1b750b53c4d4d1ff0ee7235b.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2011-09-06 23:13:53.368000000
+
+Patch Set 4:
+
+The two comments by Matt will be addressed in another commit.
+
+-------------------------------------

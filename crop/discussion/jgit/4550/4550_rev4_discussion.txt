@@ -1,0 +1,103 @@
+DESCRIPTION
+
+Add percent-encoding of reserved characters in URIish
+
+We do this for the the names that have an explicit scheme and
+do it both ways. The URIish is parsed before decoding. Only
+a few special characters are encoded for the path part of the
+URI, i.e. space, non-ASCII and control characters. The percent
+encoding is assumed to be a stream encoding so we interpret it
+as UTF-8.
+
+Change-Id: I82d1910df9472e21d7212a2b984ff7d8fb2cbf0f
+
+
+COMMENTS
+
+author: Juliet Cantu
+date: 2011-11-27 10:29:47.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-11-27 10:29:51.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1081/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-11-27 10:33:18.000000000
+
+Patch Set 4: Build Successful
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1081/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-11-27 22:19:58.000000000
+
+Patch Set 4: I would prefer that you didn't submit this
+
+(3 inline comments)
+
+
+
+Line:267, org.eclipse.jgit/src/org/eclipse/jgit/transport/URIish.java -> My suggestion to not use ByteArrayOutputStream is because it really adds little value here. The result cannot be longer than bytes.length. We copy the result twice right now, just because you are don't want to keep an output index counter.
+
+If the loop was using a new-style for loop with an iterator, maybe it would make sense to try and use a result buffer type that hides the result buffer pointer. But its not, its heavily relying on the index and direct array access because this is more efficient than doing a new substring call on each character position as you walk down the string. At that point it can be easier to follow the code if both the source and destination buffers are using the same approach, a direct pointer into the array.
+
+Whatever, we can keep the ByteArrayOutputStream. I just think its silly to allocate that, and a temporary byte array, and copy the temporary byte array over to a real byte array, just so you can call RawParseUtils.decode(), which accepts an array, a starting position, and an ending position, and thus does not need the temporary array.
+
+Line:273, org.eclipse.jgit/src/org/eclipse/jgit/transport/URIish.java -> You are still assuming the length in bytes in UTF-8 matches the length of chars in UTF-16. Consider this case:
+
+  new xxx@xxx.xxx
+
+This is a valid input. The å cannot be represented as a single byte in UTF-8, its a two-byte value. I think this loop will fail horribly on this input and not produce a reasonable result.
+
+I think we would prefer this loop to convert the bare å into its URL encoded version of its UTF-8 form, thus "cleaning up the input". If its not going to do that, we need to throw a URISyntaxException and refuse the input. But right now I think this method will mangle the input because the position of the % in the byte array is not the same position as the % in the String object, so you will try to perform parseInt against non-hex text.
+
+Line:623, org.eclipse.jgit/src/org/eclipse/jgit/transport/URIish.java -> Shouldn't we use getRawPath() here so that the a/b%2Fc/d case  is preserved through into the formatted string?
+
+-------------------------------------
+author: Juliet Cantu
+date: 2011-11-29 00:08:25.000000000
+
+Patch Set 4: (3 inline comments)
+
+
+
+Line:267, org.eclipse.jgit/src/org/eclipse/jgit/transport/URIish.java -> Done
+
+Line:273, org.eclipse.jgit/src/org/eclipse/jgit/transport/URIish.java -> Ah, didn't see that substring error... You're right.
+Done.
+
+The reason I think we should not clean up is that users may
+write URL's "manually" and I think that should be ok. We do clean up when formatting. Besides, the java URI also accepts unclean input and Git URL parsing also does it.
+
+Line:623, org.eclipse.jgit/src/org/eclipse/jgit/transport/URIish.java -> I've considered it, but to be honest; I don't know which is best. From a pure cleanliness point of view, we should. From a practial.. This way we get the URI cleaned.
+
+For reference java.net.URI does what you suggest.
+
+Should we, now that we know that git URI-encodes, use java.net.URI as much as possible and only wrap it to allow
+for local name, scp and the broken file:(no extra slashes) syntax?
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-11-29 02:58:45.000000000
+
+Patch Set 4: (1 inline comment)
+
+
+
+Line:623, org.eclipse.jgit/src/org/eclipse/jgit/transport/URIish.java -> It may be worthwhile to use java.net.URI, but I'm not sure how much that saves us. We get correct URI handling for http:// and https://. Yay. What about esoteric helper protocols that aren't http or https?
+
+For example, I have two schemes that are internal to google like google:// and some-thing-name:// that don't use an http or https style string after the :// part.
+
+In this current code, I think escape(getPath()) isn't right. It converts "a/b%2Fc/d" to "a/b/c/d" which may be wrong for the remote system. We should be using the raw path here, and require callers who set a raw path to URL escape in UTF-8 on their own, or to use our setPath() method which will URL escape consistently but then does not permit this corner case of "a/b%2Fc/d".
+
+-------------------------------------

@@ -1,0 +1,135 @@
+DESCRIPTION
+
+Unsmudge after content check also when content is different
+
+In this case we set the dircache size to the blob size. This
+should improve performance.
+
+Change-Id: I0f0f44c917adf242489bba0c5e122776b362dda2
+
+
+COMMENTS
+
+author: Juliet Cantu
+date: 2013-12-09 16:52:34.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-12-09 16:52:40.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/egit/job/jgit.gerrit/4312/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-12-09 17:04:24.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/jgit.gerrit/4312/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2013-12-10 10:41:11.000000000
+
+Patch Set 3:
+
+(3 comments)
+
+Line:861, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> Isn't it wrong to ignore autocrlf==INPUT in this case. What if you have staged content with crlf and the workingtree file contains exactly the same bytes you have staged. If you set autocrlf to INPUT wouldn't that mean that we have to report that the contents differ? What's in the file is different from what you read (eol-canonicalized) from the index.
+
+Line:898, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> Shouldn't we unsmudge entries only when they are smudged? You are setting the length independently from whether you are looking at a smudged entry or not. This is also true for the case for autcrlf = FALSE
+
+Line:907, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> if a file is not changed then we are calling entry.setLength() twice with different values. This looks strange. Maybe this setLength should be in a 'else' block.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2013-12-10 11:15:42.000000000
+
+Abandoned
+
+Integrated with parent patch
+
+-------------------------------------
+author: Juliet Cantu
+date: 2013-12-10 11:24:54.000000000
+
+Patch Set 3:
+
+(3 comments)
+
+Line:861, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> I don't undetstand. If the hash matches without tweaking, we're fine?
+
+Line:898, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> What's the difference?
+
+Line:907, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> Done
+
+-------------------------------------
+author: Zachary Orozco
+date: 2013-12-10 16:36:09.000000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:898, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> You are right - I was on a wrong path. Here was my idea: Imagine you have staged a file with CRLF and autocrlf=false. Now you switch to autocrlf=input. My expectation was that the file is immediatly dirty. That's because if on that file you would say "git rm --cached" and then "git add" you would get new content.
+
+But I learned that even native git is not so picky. It overlooks that there is potentially new content in that file and reports it as clean.
+
+Let's talk git. Here is how I tried this situation:
+
+        git init
+        git config core.autocrlf false
+        echo -ne 'line1\r\nline2\r\n' > dos.txt
+        echo -ne 'line1\nline2\n' > unix.txt
+        echo -ne 'line1\r\nline2\n' > mixed.txt
+        git add *
+        git commit -m "add unix,dos and mixed style file"
+
+        # How do the working tree files and the index look like and what does git think about the status?
+        file *
+        git ls-files -s -t --debug
+
+        # set repo to autocrlf=input 
+        git config core.autocrlf input
+
+        # get the status again. Be aware that git tells dos.txt is clean although if you would say
+        # "git rm dos.txt && git add dos.txt" you would get new content 
+        git ls-files -s -t --debug -- dos.txt
+
+        # delete the index content and add the same files again but now with autocrlf=input 
+        git rm --cached *
+        git add *
+        # Compare len and content-sha1 to previous status --- len fields have not changed (they reflect
+        # the length of the files in the working tree) but sha1's are now all the same (because of 
+        # eol-canonicalization). That means: the add brought new content although the status was clean.
+        git ls-files -s -t --debug
+
+-------------------------------------
+author: Juliet Cantu
+date: 2013-12-10 21:09:34.000000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:898, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> One might argue that stat checking should check the timestamps of the git config files in order to detect such
+changes. It might be possible to get such change included,
+especially in JGit/EGit.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2013-12-12 11:47:30.000000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:898, org.eclipse.jgit/src/org/eclipse/jgit/treewalk/WorkingTreeIterator.java -> Right, also gitattributes files have to be considered also when we start supporting them. But for me it's sufficient to be as good as cgit. Reconfiguring core.autocrlf requires some additional manual steps to be effective.
+
+-------------------------------------

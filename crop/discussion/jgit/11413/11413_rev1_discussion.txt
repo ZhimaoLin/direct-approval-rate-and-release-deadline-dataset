@@ -1,0 +1,168 @@
+DESCRIPTION
+
+Add test cases for FileUtils.rename
+
+Change-Id: I70c4455cb4271e2cbc6a4d150ec971becf33b2f3
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2013-03-24 00:06:40.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3240/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-03-24 00:11:48.000000000
+
+Patch Set 1: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3240/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2013-03-24 22:56:22.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(1 inline comment)
+
+
+
+Line:339, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/FileUtilTest.java -> This test is not working for me on Windows. That's exactly the problem which caused corrupted repo's during GC: on windows we can't rename file a to file b if b already exists. I always thought this will work on windows as long as you have correctly returned all the handles of a and b beforehand. The current rename only does a retry if on windows but this doesn't seem to be enough.
+
+Should we change FileUtils.rename() to delete the target file if the initial rename fails and then retry?
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2013-03-25 01:32:11.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:339, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/FileUtilTest.java -> wouldn't that be dangerous since this isn't atomic anymore ? What if you delete the target file and retried rename fails due to another problem ?
+
+-------------------------------------
+author: Zachary Orozco
+date: 2013-03-25 08:38:50.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:339, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/FileUtilTest.java -> Yes, that's the risk of such a FileUtils.rename(). FileUtils.rename() would not be atomic anymore. Robin has added a javadoc explicitly stating this when he changed the rename method in a non-atomic way in 11414.
+
+I think we will not get a atomic rename under all conditions on some platforms (e.g. Windows). What should we do if a rename fails on windows because the target file already exists?
+
+The good think is: we will always try to do a atomic File.renameTo() first. Only if this initial attempt fails we go into a mode where we 
+- retry the failing call
+- delete a empty folder hierarchy on the target location
+- delete the target file first (my suggestion)
+
+-------------------------------------
+author: Zachary Orozco
+date: 2013-03-25 09:57:13.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:339, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/FileUtilTest.java -> By the way: we are deleting the target in case a rename fails even in our very central LockFile class (which protects ref updates, index updates, ...). In LockFile.commit() we have this coding:
+
+		if (lck.renameTo(ref))
+			return true;
+		if (!ref.exists() || deleteRef())
+			if (renameLock())
+				return true;
+		unlock();
+		return false;
+
+If the first rename fails and the target file exists we will call deleteRef() (which deletes the target file) and then do another rename attempt in renameLock(). Non-atomic ... but we don't have a better chance if we also want to run on windows.
+
+By reading this I am convinced that we should do the same in FileUtils.rename()
+
+-------------------------------------
+author: Juliet Cantu
+date: 2013-03-25 10:41:54.000000000
+
+Patch Set 1: (2 inline comments)
+
+
+
+Line:339, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/FileUtilTest.java -> Atomic's gone. We need another utilty for that, if that's even possible.
+
+Line:339, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/FileUtilTest.java -> Are you commenting on this test? This test doesn't overwrite an existing file.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2013-03-25 12:33:54.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:339, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/FileUtilTest.java -> no, I was commenting Chris first comment here ;-)
+
+instead of deleting the target in the second try when atomic rename has failed in the first try, we could rename the target to some unique name e.g. 'target.bak.<timestamp>', then do the actual rename and only if that succeeds delete this bak file. This way we would at least have a backup for manual recovery if something bad happens
+
+-------------------------------------
+author: Zachary Orozco
+date: 2013-03-25 13:09:31.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:339, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/FileUtilTest.java -> renaming the target to a tmp file would be safer, but costs one fs call more. In the end we have to delete the tmp file. We don't spent this effort when we e.g. update a ref or update the index. Should we do here?
+
+-------------------------------------
+author: Juliet Cantu
+date: 2013-03-25 15:21:52.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:339, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/FileUtilTest.java -> It's method below that fail on Windows.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2013-03-25 16:42:38.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:339, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/FileUtilTest.java -> Chris, you suggested I modify and use FileUtils.rename for DirCacheCheckout. Have you changed your mind?
+
+-------------------------------------
+author: Zachary Orozco
+date: 2013-03-25 17:42:07.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:339, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/FileUtilTest.java -> Robin, no, I haven't changed my mind. We just have to modify FileUtils.rename() in a way the the following test succeeds on windows. And then we can use FileUtils.rename() also for DirCacheCheckout. I'll propose that.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2013-03-25 17:44:48.000000000
+
+Patch Set 1:
+
+This change has been squashed into 11414. We don't need this one anymore
+
+-------------------------------------
+author: Juliet Cantu
+date: 2013-03-25 18:50:36.000000000
+
+Patch Set 1: Abandoned
+
+-------------------------------------

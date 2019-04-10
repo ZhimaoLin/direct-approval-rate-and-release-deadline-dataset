@@ -1,0 +1,116 @@
+DESCRIPTION
+
+MB-15662: Optimization while supporting producer's compression
+
+When an active stream does a backfill, if value compression
+is enabled on the producer side, put an optimization in
+place, so that items retrieved from disk are not decompressed.
+This would ensure that the producer wouldn't have to
+compress them again before transmitting.
+
+Change-Id: I503748d4cf9356e0192441d294a35a934711ff41
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2015-07-31 03:10:34.777000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-07-31 03:10:41.390000000
+
+Patch Set 1:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/664/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-07-31 03:18:28.453000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/664/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-07-31 08:58:14.829000000
+
+Patch Set 1: Code-Review-1
+
+(4 comments)
+
+Line:1614, src/couch-kvstore/couch-kvstore.cc -> Simpler to just zero-initialize the array:
+
+ uint8_t ext_meta[EXT_META_LEN] = {0};
+
+Line:1658, src/couch-kvstore/couch-kvstore.cc -> The metadata.size check seems a bit implicit - it is not possible for us to check for some more explicit sign that the datastore does/doesn't support compression? - e.g. some actual feature flag?
+
+Line:1664, src/couch-kvstore/couch-kvstore.cc -> Is it guaranteed that couchstore will always return compressed documents? if so this is fine, otherwise we'll need to check what we actually got back was compressed.
+
+Line:478, src/couch-kvstore/couch-kvstore.h -> I'm not really a big fan of bools for flags in functions - a single bool argument is probably ok, but when you have many (4 here!) it is hard for the caller to know exactly what all these bools mean.
+
+Additionally what can happen over time is you have different boolean flags which are actually mutually exclusive - for example it appears to me that it wouldn't make sense to set keysOnly=true and also ask for decompression - if you're getting keys there's no value to consider.
+
+As such I would suggest merging with the keysOnly flag and using an explicit enum - something like:
+
+ // How should Items be retrieved?
+ enum class RetrieveMode {
+     KEY_ONLY, // Only return key
+     VALUE_PLAIN, // Return Key plus Value in it's original (possibly compressed) form.
+     VALUE_DECOMPRESSED // Return Key plus value decompressed.
+ };
+
+ ScanContext* initScanContext(shared_ptr<Callback<GetValue> > cb,
+                              shared_ptr<Callback<CacheLookup> > cl,
+                              uint16_t vbid, uint64_t startSeqno,
+                              RetrieveMode retrieveAs, bool noDeletes,
+                              bool deletesOnly);
+
+(Unrelated to this change, but you may also want to do something similar with noDeletes and deletesOnly - clearly they are mutually exclusive. Perhaps add something like a  'RetrieveFilter {ALL, NO_DELETIONS, DELETIONS_ONLY} enum and use to merge those two bool flags.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-07-31 15:50:22.468000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:1614, src/couch-kvstore/couch-kvstore.cc -> Done
+
+Line:478, src/couch-kvstore/couch-kvstore.h -> Good suggestion, I'll make that change.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-08-06 02:51:22.551000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:1658, src/couch-kvstore/couch-kvstore.cc -> As of today, we can decide that the datatype is supported in the couchstore document only based on the metadata size.
+
+To add an actual feature flag would have to be a separate change.
+
+Line:1664, src/couch-kvstore/couch-kvstore.cc -> Yes.
+
+If COUCH_DOC_IS_COMPRESSED is part of the content_meta for the document, couchstore would compress a document before storing. This is not set for a document that is compressed by client.
+
+While retrieving, passing in DECOMPRESS_DOC_BODIES as options would uncompress before fetching only if content_meta contains COUCH_DOC_IS_COMPRESSED.
+
+Not passing in DECOMPRESS_DOC_BODIES would ensure that couchstore does not decompress at all.
+
+I'll add a unit test seperetely to ensure this.
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-08-10 18:15:37.205000000
+
+Change has been successfully cherry-picked as 0457ee557fa677074be0ff4de146cdf715f486d4
+
+-------------------------------------

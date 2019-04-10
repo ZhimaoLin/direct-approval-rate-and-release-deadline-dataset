@@ -1,0 +1,139 @@
+DESCRIPTION
+
+MB-10403 Improve UPR connection notification
+
+Use spinlocks instead of conn mutex to guard UPR notifications
+similar to the way TAP does. This will decrease lock contention
+since conn mutex is no longer needed here.
+
+We now need to manipulate vbconns structure for UPR too:
+add and remove connection for a stream based on vbid.
+
+Also Refactored ConnMap/TapConnMap/UprConnMap as needed.
+
+Change-Id: I86ac07d29f3575d334f3b7f27530dc6019adf293
+
+
+COMMENTS
+
+author: Miley Adams
+date: 2014-04-07 23:40:01.437000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2014-04-07 23:40:07.588000000
+
+Patch Set 4:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-300/441/
+
+-------------------------------------
+author: Miley Adams
+date: 2014-04-07 23:41:02.139000000
+
+Patch Set 4: Verified+1
+
+updated based on Mike's comment. Also, added logic in upr manage connection.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2014-04-08 00:18:08.991000000
+
+Patch Set 4: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-300/441/ : FAILURE
+
+need to update, install, or configure build tools, environment variables, ssh credentials (requires no code change)
+
+-------------------------------------
+author: Kenny Maynard
+date: 2014-04-08 19:16:06.677000000
+
+Patch Set 4:
+
+(1 comment)
+
+One minor comment. Other than that I think this looks good.
+
+Line:61, src/upr-producer.cc -> I don't think we should use a do-while here since we're not actually looping. Let's just return call the UprConnMap remove when needed and return.
+
+-------------------------------------
+author: Abby Duran
+date: 2014-04-09 17:46:39.043000000
+
+Patch Set 4:
+
+I will get this reviewed by today.
+
+-------------------------------------
+author: Abby Duran
+date: 2014-04-09 18:53:33.026000000
+
+Patch Set 4: Code-Review-1
+
+(4 comments)
+
+Some minor comments to be addressed.
+
+Line:1053, src/tapconnmap.cc -> Can we simply use "static_cast" here as we know that they are always producers.
+
+Line:1055, src/tapconnmap.cc -> I saw that we still use a mutex inside this function, which can cause a high lock contention if memcached worker threads get into the same UPR producer. We may need to revisit this area again after we get some performance numbers.
+
+Line:1085, src/tapconnmap.cc -> *iter should be corrected to "i" (vbucket id)
+
+Line:139, src/upr-producer.cc -> It seems like we don't need do-while loop
+
+-------------------------------------
+author: Kenny Maynard
+date: 2014-04-09 18:56:37.084000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:1055, src/tapconnmap.cc -> Take a look at this review:
+http://review.Piper Jefferson.org/#/c/35373/
+
+I plan on doing something similar to this in the upr producer and that will remove the lock.
+
+-------------------------------------
+author: Miley Adams
+date: 2014-04-15 23:37:26.160000000
+
+Patch Set 4:
+
+(4 comments)
+
+Line:1053, src/tapconnmap.cc -> I can change this one this time. But there are other places have the same issue.
+
+Line:1085, src/tapconnmap.cc -> yes.
+
+Line:61, src/upr-producer.cc -> do/while solves the ugliness of "cleanup/release" before every "return statement". It's more readable and easy to maintain. for ex, if we need to change or add addition cleanup/release, we just need to do it at one place instead of before every error return.
+
+Line:139, src/upr-producer.cc -> I like the do-while structure. it's cleaner.
+
+-------------------------------------
+author: Abby Duran
+date: 2014-04-15 23:58:47.032000000
+
+Patch Set 4:
+
+(4 comments)
+
+Line:1053, src/tapconnmap.cc -> Please use static_cast. We can address other places as a separate commit.
+
+Line:60, src/upr-producer.cc -> We can simply move this connection addition to the end of this function, so that the connection is added iff all the conditions below are passed.
+
+Line:61, src/upr-producer.cc -> This method is invoked on the producer side when it receives a stream request from the consumer for a given vbucket. We should not allocate any resources until it passes all the conditions below.
+
+Line:141, src/upr-producer.cc -> I will rather adapt it like
+
+if (rv == ENGINE_SUCCESS) {
+    engine_.getUprConnMap().addVBConnByVBId(conn, vbucket);
+}
+
+-------------------------------------

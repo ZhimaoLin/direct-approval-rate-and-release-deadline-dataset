@@ -1,0 +1,153 @@
+DESCRIPTION
+
+MB-17631: Fix sporadic ep-engine unit test failures
+
+Fix resolves ep_engine testcase failures triggered by request to
+access couch-db before it is being created. This commit fixes
+failures of the following CV regression testcases:
+- test_est_vb_move
+- test_tap_takeover
+
+Here are some more details about underlying problem.
+1. Thread A.
+Testcase (actually couple of them) fails in
+"CouchKVStore::getNumPersistedDeletes" proc right after calling
+openDB( ) api with RDONLY mode for bucket 0. It fails because
+this call does not complete with success, and the reason is that
+couch-db "0.couch.1" file attempted to be opened does not exist,
+to be exact has not been created yet, and is not being created in
+this call because the api has RDONLY mode.
+2. Thread B.
+This thread runs "test_setup" proc, as part of which "0.couch.1"
+file for bucket 0 should be created. What we do here is schedule
+task which will create file "0.couch.1" and without waiting till
+it completes start testcase itself in Thread A. And so basically
+there is a racing condition between threads A & B. Though request
+to schedule task for file "0.couch.1" creation in Thread B happens
+before we start testcase in Thread A, this request is not being
+completed by the time openDB call is being issued in Thread A.
+
+Code committed with check-in allows to fix the testcase, and in
+particularly wait till couch-db file "0.couch.1" will be created,
+so testcase can check that the content of this file is correct
+(numPersistedDeletes == 0) for bucket 0.
+
+Change-Id: Ibe20b471a12afea559b319671599076b0f2a0876
+
+
+COMMENTS
+
+author: Cora Mccarty
+date: 2016-03-04 22:51:56.403000000
+
+Uploaded patch set 7: Commit message was updated.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-03-04 22:52:01.886000000
+
+Patch Set 7:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/166/ (1/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-03-04 22:52:02.044000000
+
+Patch Set 7:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/144/ (2/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-03-04 22:52:02.203000000
+
+Patch Set 7:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/149/ (3/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-03-04 23:25:22.171000000
+
+Patch Set 7: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/144/ : FAILURE
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/144/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/166/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/149/ : SUCCESS
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-03-04 23:32:45.206000000
+
+Patch Set 7: Code-Review+2
+
+-------------------------------------
+author: Abby Duran
+date: 2016-03-04 23:34:13.713000000
+
+Patch Set 7: Code-Review-1
+
+(2 comments)
+
+Line:2412, tests/ep_testsuite.cc -> I looked at the code, but don't believe that this stat condition will guarantee the file creation. When a vbucket is created in memory, its file size variable is set to 0.
+
+Line:7676, tests/ep_testsuite.cc -> See my comment above.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-03-04 23:34:52.261000000
+
+Patch Set 7: -Code-Review
+
+(1 comment)
+
+Line:2412, tests/ep_testsuite.cc -> Which call fails in this case, because we don't wait for file creation?
+
+-------------------------------------
+author: Cora Mccarty
+date: 2016-03-05 03:24:53.611000000
+
+Patch Set 7:
+
+@ Abhinav: Code fails during call to openDb( )  api with "std::runtime_error", and the reason is "0.couch.1" db is not created yet. This happens while executing procedure CouchKVStore::getNumPersistedDeletes( ).
+Based on more discussions with Chiyoung, I'll try to move wait condition synchronizing two threads into "test_setup" routine.
+
+-------------------------------------
+author: Cora Mccarty
+date: 2016-03-08 00:46:39.848000000
+
+Patch Set 7:
+
+As suggested during code review, I have tried using "ep_vb_snapshot_total" stat variable to synchronize racing threads. Here are the results:
+
+1. wait_for_stat_to_be_gte(h, h1, "ep_vb_snapshot_total", 1);
+Testcase test estimate vb move (couch store) fails with the same error message as without any fix:
+CouchKVStore::getNumPersistedDeletes:Failed to open database file for vBucket = 0 rev = 1 with error:no such file
+
+2.wait_for_stat_to_be_gte(h, h1, "ep_vb_snapshot_total", 5);
+Testcase test estimate vb move (couchstore)...Exceeded maximum wait time of 60000000us waiting for stat 'ep_vb_snapshot_total' to be greater or equal than 5 - aborting.
+
+I also tried to generalize the original fix, and move condition synchronizing two racing threads into "test_setup" procedure.  That change introduced extra failures when running CV regr test cases: test "set_with_meta exp (persisted)" fails in three different suites. The error message is:
+exceeded maximum wait time of 60000000us waiting for stat 'ep_total_persisted' to be 1 - aborting.
+Based on the results of this run, it may make more sense to fix each failing test case on individual bases as needed, rather than trying to find one-fits-all general solution.
+
+-------------------------------------
+author: Abby Duran
+date: 2016-03-08 19:42:45.752000000
+
+Patch Set 8: Patch Set 7 was rebased
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-03-12 00:18:40.200000000
+
+Change has been successfully cherry-picked as b4c873b53a1fe57c72651bcf6d9a12f16894aec4
+
+-------------------------------------

@@ -1,0 +1,128 @@
+DESCRIPTION
+
+Respect openssh config in EGit
+
+Ensure the JSch instance used knows about ~/.ssh/config. This
+enables JSch to honor more user configurations (see class
+com.jcraft.jsch.Session.applyConfig()), in particular also the
+UserKnownHostsFile configuration.
+
+Note that JSch limits the value of UserKnownHostsFile to a single
+value that moreover must not be quoted or contain blanks.
+
+Bug: 490939
+Change-Id: Icd777d4fb0a1dc33485233beb3751608c4e6500f
+Signed-off-by: Alayna Houston xxx@xxx.xxx
+
+COMMENTS
+
+author: Alayna Houston
+date: 2016-04-02 22:03:47.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-04-02 22:03:53.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/8359/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-04-02 22:31:19.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/8359/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2016-04-03 00:15:29.000000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:47, org.eclipse.egit.core/src/org/eclipse/egit/core/EclipseSshSessionFactory.java -> I don't understand this line.
+
+This yields only the home directory if the current directory is the home directory.
+
+Line:58, org.eclipse.egit.core/src/org/eclipse/egit/core/EclipseSshSessionFactory.java -> how about implementing this in a new method of JschConfigSessionFactory so that this configuration can also be done in the base class's method JschConfigSessionFactory.createDefaultJSch(FS) for cases where this is used directly ?
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-04-03 08:59:20.000000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:47, org.eclipse.egit.core/src/org/eclipse/egit/core/EclipseSshSessionFactory.java -> I know. It's copied from JGit's OpenSshConfig.get(). I think at least Jsch should use the same ssh config file as JGit.
+
+Line:58, org.eclipse.egit.core/src/org/eclipse/egit/core/EclipseSshSessionFactory.java -> If you look at the bug report, you'll see that I am unsure where exactly to do this.
+
+If we do it in JGit, we have two possibilities:
+
+1. Your suggestion of doing this in JschConfigSessionFactory.
+
+2. Refactor JGit's ssh handling. Improve JGit's OpenSshConfig to handle all entries and to implement JSch's ConfigRepository interface, and then use that. Would amount, however, to re-implementing stuff that JSch should already get right.
+
+And finally, there's additionally also the issue that JSch doesn't handle a multi-valued UserKnownHostsFile entry correctly, and doesn't handle GlobalKnownHostsFile at all.
+
+On a related note, there's also bug 353346. I wonder if that is not also related to JSch not knowing about the ssh config, and thus not knowing about the GSSAPIAuthentication setting...
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2016-04-03 14:05:16.000000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:47, org.eclipse.egit.core/src/org/eclipse/egit/core/EclipseSshSessionFactory.java -> ok, I wasn't aware of that
+
+Line:58, org.eclipse.egit.core/src/org/eclipse/egit/core/EclipseSshSessionFactory.java -> OpenSshConfig was implemented before JGit moved to Eclipse (it's already in the initial contribution commit). Back then we used jsch 0.1.37 which didn't have any support for ssh_config, according to its javadoc this was the reason to implement OpenSshConfig. According to [1] jsch added support for ssh_config in 0.1.50 and we are currently using the latest release 0.1.53. So I think it would make sense to rely on the ssh_config support in jsch instead of reimplementing that in JGit.
+
+We don't use kerberos so I have no idea what's required to test if jsch's config support would fix bug 353346
+
+[1] http://www.jcraft.com/jsch/ChangeLog
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-04-03 16:46:00.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:58, org.eclipse.egit.core/src/org/eclipse/egit/core/EclipseSshSessionFactory.java -> In that case there's another option: get rid of JGit's OpenSshConfig altogether and consistently use JSch's OpenSSHConfig instead. Looks like that one also handles per-host identity files nowadays, which appears to have been the purpose of the JGit implementation.
+
+That in turn might simplify the whole factory business; looks to me that one then wouldn't need to create special-purpose per-host JSch instances at all but could work with the default instance throughout. Session.applyConfig() appears to account for host-specific identify files.
+
+The JGit implementation checks for changes and reloads itself if the config file on disk has changed. JSch doesn't do so, so maybe we'd need to build something for this aspect.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2016-04-11 20:51:18.000000000
+
+Patch Set 1:
+
+> (1 comment)
+
+I think this is the right approach going forward
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-06-10 12:49:31.000000000
+
+Abandoned
+
+Superseded by JGit change https://git.eclipse.org/r/#/c/99067/ .
+
+I finally found that using JGit's OpenSSHConfig is not a good idea; it has a couple of annoying bugs.
+
+-------------------------------------

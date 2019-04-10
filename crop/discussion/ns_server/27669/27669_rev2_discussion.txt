@@ -1,0 +1,91 @@
+DESCRIPTION
+
+MB-8533 make statistics work on node that is pending rebalance
+
+if the node is in pending rebalance stage, then it is
+not mapped to the bucket yet and all the servers that
+provide statistical info are not started
+
+so in this case we need to call other nodes to get
+the statistics
+
+since the views signatures cannot be obtained from
+the 2.0 nodes and at this time there's no compat mode
+between 2.2 and 2.0 I decided that we can scrifice
+"View Stats" for the added and non rebalanced nodes.
+
+so in the currect solution View Stats will be hidden
+for all the nodes that do not have the bucket yet.
+
+alternative to this will be trying to obtain the info
+from the other nodes in the cluster crashing
+capi_set_view_manager on the older nodes.
+
+another alternative is to create a separate gen_server
+for obtaining the signatures. in this case the older
+nodes will return noproc, and if the cluster contains
+at least one 2.2 node that has the bucket we will
+be able to populate Views Stats. But I decided that it
+will be an overkill for such unimportant corner case.
+
+Change-Id: Iefb41122a2696069278c112c15ce2c28f7570bdd
+
+
+COMMENTS
+
+author: Philip Lara
+date: 2013-07-26 01:43:06.942000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Philip Lara
+date: 2013-07-26 01:45:27.435000000
+
+Patch Set 2: Verified+1
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2013-07-26 18:57:37.096000000
+
+Patch Set 2: Code-Review-1
+
+(2 comments)
+
+see inline
+
+Line:429, src/menelaus_stats.erl -> Why not just pick one node here and call invoke_archiver on that node. If node() is a member of ns_bucket:live_bucket_nodes() then pick node(), else just pick one of the nodes returned by live_bucket_nodes(). With this approach the code that you added in stats_archiver and ns_bucket is not needed at all. In any case, the node that you pick in this way is supposed to run all the stats services so there's no need to retry anything.
+
+Line:847, src/menelaus_stats.erl -> I don't think this message is very useful. And it will be repeated many times wasting precious space in the log.
+
+-------------------------------------
+author: Philip Lara
+date: 2013-07-26 19:34:56.515000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:429, src/menelaus_stats.erl -> I thought about it. But relying on nodes() result can cause a race condition and the node we pick can accidentally be down at the moment of the call. So there is a slight chance that the stats screen will be showing "communication error" though some nodes are alive.
+
+Line:847, src/menelaus_stats.erl -> Agree. I'll delete it.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2013-07-26 20:49:32.610000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:429, src/menelaus_stats.erl -> I believe it's tolerable to get one or two "communication error". There may be tons of other reasons that can lead to this outcome. I'd prefer simpler code over this.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2013-07-26 21:03:04.519000000
+
+Patch Set 2:
+
+i agree with aliaksey. nodes race is rare and generally harmless
+
+-------------------------------------

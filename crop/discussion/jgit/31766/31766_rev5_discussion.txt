@@ -1,0 +1,123 @@
+DESCRIPTION
+
+Set permission bits for "executable" attribute according to the umask
+
+Bug: 424395
+Change-Id: I3f5c55dd4c084529af2319029305ba2e174e0636
+Signed-off-by: Jayvion Booth xxx@xxx.xxx
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+
+COMMENTS
+
+author: Douglas Trujillo
+date: 2014-11-19 21:55:47.000000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-11-19 21:55:53.000000000
+
+Patch Set 5:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/5734/
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2014-11-19 21:56:48.000000000
+
+Patch Set 5: Code-Review+1
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-11-19 22:03:41.000000000
+
+Patch Set 5: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/5734/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2014-11-20 13:45:49.000000000
+
+Patch Set 5:
+
+(2 comments)
+
+Line:97, org.eclipse.jgit.java7.test/src/org/eclipse/jgit/util/FSJava7Test.java -> Just a comment:
+This test fails on Windows&Java7 with 
+
+java.nio.file.FileSystemException: C:\Users\d032780\AppData\Local\Temp\tmp_7205603528745083091\ä: A required privilege is not held by the client.
+
+	at sun.nio.fs.WindowsException.translateToIOException(Unknown Source)
+	at sun.nio.fs.WindowsException.rethrowAsIOException(Unknown Source)
+	at sun.nio.fs.WindowsException.rethrowAsIOException(Unknown Source)
+	at sun.nio.fs.WindowsFileSystemProvider.createSymbolicLink(Unknown Source)
+	at java.nio.file.Files.createSymbolicLink(Unknown Source)
+	at org.eclipse.jgit.util.FileUtil.createSymLink(FileUtil.java:96)
+	at org.eclipse.jgit.util.FS_Win32_Java7.createSymLink(FS_Win32_Java7.java:152)
+	at 
+...
+
+
+I know, you haven't touched the code.
+
+Line:153, org.eclipse.jgit.java7.test/src/org/eclipse/jgit/util/FSJava7Test.java -> Why this fsTick() call? It just waits long enough so that the next filesystem modification would lead to a lastmodification timestamp younger than the modification timestamp of f. Means: It makes sure that a file modified after the fstick call has a younger modification timestamp than f.
+
+Why is this needed here?
+
+-------------------------------------
+author: Jayvion Booth
+date: 2014-11-20 14:03:27.000000000
+
+Patch Set 5:
+
+(2 comments)
+
+Line:97, org.eclipse.jgit.java7.test/src/org/eclipse/jgit/util/FSJava7Test.java -> I see similar error on RHEL5 & Java 7:
+java.nio.file.NoSuchFileException: /tmp/tmp_7155677982868437684/å
+	at sun.nio.fs.UnixException.translateToIOException(UnixException.java:86)
+	at sun.nio.fs.UnixException.rethrowAsIOException(UnixException.java:102)
+	at sun.nio.fs.UnixException.rethrowAsIOException(UnixException.java:107)
+	at sun.nio.fs.UnixFileAttributeViews$Basic.readAttributes(UnixFileAttributeViews.java:55)
+	at sun.nio.fs.UnixFileSystemProvider.readAttributes(UnixFileSystemProvider.java:143)
+	at sun.nio.fs.LinuxFileSystemProvider.readAttributes(LinuxFileSystemProvider.java:96)
+	at java.nio.file.Files.readAttributes(Files.java:1669)
+	at java.nio.file.Files.getLastModifiedTime(Files.java:2192)
+	at org.eclipse.jgit.util.FileUtil.lastModified(FileUtil.java:106)
+	at org.eclipse.jgit.util.FS_POSIX_Java7.lastModified(FS_POSIX_Java7.java:271)
+	at org.eclipse.jgit.util.FSJava7Test.testSymlinkAttributes(FSJava7Test.java:114)
+
+And yes, I didn't touched this one in the assumption that it's only me who sees the issue (my RHEL 5.8 system is *really* ancient).
+
+Line:153, org.eclipse.jgit.java7.test/src/org/eclipse/jgit/util/FSJava7Test.java -> Test passes without the code, which was added as "paranoia" to separate set/read code by few ticks. Should I remove the line?
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2014-11-20 14:29:03.000000000
+
+Patch Set 5:
+
+(2 comments)
+
+Line:97, org.eclipse.jgit.java7.test/src/org/eclipse/jgit/util/FSJava7Test.java -> that might be caused by the special character "å" which maybe isn't supported on your system's default locale, we had problems with that on Hudson also which IIRC runs SLES 12, we asked webmaster to set LC_ALL=en_US.UTF-8 and this fixed the issues with this test, see https://bugs.eclipse.org/bugs/show_bug.cgi?id=416880
+
+Line:97, org.eclipse.jgit.java7.test/src/org/eclipse/jgit/util/FSJava7Test.java -> on Windows you need the privilege SeCreateSymbolicLinkPrivilege
+
+see https://bugs.eclipse.org/bugs/show_bug.cgi?id=354367#c41
+
+-------------------------------------
+author: Zachary Orozco
+date: 2014-11-21 12:30:56.000000000
+
+Patch Set 5:
+
+(2 comments)
+
+Line:97, org.eclipse.jgit.java7.test/src/org/eclipse/jgit/util/FSJava7Test.java -> Not sure whether that's the same problem. For Windows boxes it's clear. We cannot with normal privileges create symlinks. Even not with java 7. So we should "assume" that creating links is supported and by that ignore the tests on platforms which don't allow creation of symlinks.
+
+Line:153, org.eclipse.jgit.java7.test/src/org/eclipse/jgit/util/FSJava7Test.java -> I would do. fsTick(f) may sometimes wait for 2 seconds which is simply unneeded.
+
+-------------------------------------

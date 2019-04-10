@@ -1,0 +1,228 @@
+DESCRIPTION
+
+RepositoryCache: do not prematurely remove submodules
+
+Basically we have no way of knowing when we no longer reference a
+repository. In our code alone, there may be RepositoryMappings and
+RepositoryNodes directly referencing a Repository, but some views may
+also have direct references to Repository instances. We therefore cannot
+explicitly remove repositories from the RepositoryCache, since we have
+no efficient and 100% reliable way to determine whether a Repository is
+still in use somewhere. Therefore the RepositoryCache relies on weak
+reference semantics.
+
+Before https://git.eclipse.org/r/#/c/62066/ , this whole mechanism was
+broken anyway because the IndexDiffCache had no way to remove an
+IndexDiffCacheEntry instance, and those instances had hard references to
+the Repository. So once there was an IndexDiffCacheEntry for a
+repository, that Repository instance would be kept forever.
+
+https://git.eclipse.org/r/#/c/62066/  itself was a wrong approach
+because it neglected that some repositories might never be
+"configured" repositories visible in the Repositories view. Such
+repositories would be removed from the RepositoryCache while still in
+use. Submodules and nested repositories are affected by this, but so
+can top-level repositories.
+
+The approach taken in this change here fixes this. First, we go back to
+relying solely on the weak reference semantics of the RepositoryCache.
+Note that doing so does not give any guarantee about when exactly a no
+longer used and only weakly reachable Repository instance will actually
+be removed from the cache.
+
+Then we at least make sure that we don't keep any hard references
+around. That's more difficult than it may seem:
+
+* Replaced all hard references to Repository in IndexDiffCacheEntry. We
+  now only use the repository's git directory, and use that to get the
+  repository from the RepositoryCache, if it still is there.
+* The oldIndex DirCache in an IndexDiffCacheEntry also had a hard
+  reference to the Repository. Use a DirCache.read() variant that
+  doesn't set that link -- it's used only for writing a DirCache, which
+  we don't do. Note that this is a bit fragile as it relies on an
+  implementation detail of JGit, but for now I see no other way.
+* Even worse, some Eclipse internals do keep around hard references to
+  some "last selection"s. Those may contain no longer used
+  RepositoryNodes from the repository view, which still reference the
+  Repository instance through a hard reference. We have no real way to
+  reliably ensure that these Eclipse internals forget those nodes.
+  Therefore we have to ensure in RemoveCommand that we actually do null
+  out these Repository references once we're sure we have removed the
+  node from our view. (The two places I found where Eclipse holds on
+  to such defunct nodes are WorkbenchSourceProvider.lastShowInSelection,
+  set when the "Shown In..." context menu was last filled, and the
+  CommonViewer, which also remembers the last selection.)
+* Our own RepositorySourceProvider had a private field referencing the
+  last selected Repository. The RepositorySourceProvider is a singleton
+  that is instantiated very early and then kept around forever. That
+  was resolved by using a weak reference for the repository.
+* The EclipseContext also managed to (indirectly) hold on to a hard
+  reference to a Repository instance through the context variable we
+  provided. That was solved by not passing the Repository directly as
+  the context variable defined by RepositorySourceProvider but again
+  only the git directory.
+* RebaseInteractivePlan has a static global cache of plans and each plan
+  had a hard reference to a repository. A plan is computed when the view
+  is opened, even if never executed. That accumulated hard references to
+  repositories. Solved by using a weak reference.
+* The Eclipse resource tree's DataTreeLookup has a static cache of
+  instances that are re-used but not cleared after use. Those may keep
+  references to our RepositoryMapping session properties for some time
+  after the IResource to with the property was attached has gone. The
+  test explicitly accounts for this.
+
+In the full test run in maven, more problems showed up in a heap dump
+taken just before we test for no cached repositories in
+GitRepositoriesViewRepoDeletionTest: numerous FileRepository instances
+from earlier tests were still referenced.
+
+* The EclipseContext retains some handler activations of ActionHamdlers
+  of anonymous Action subclasses of SpellcheckableMessageArea, which
+  reference the area through this$0, which itself keeps a reference to
+  the CommitDialog through this$0, which means we keep the
+  CommitMessageComponent, which has a hard reference to the Repository.
+  Solved by using static subclasses that reference only the
+  SourceViewer.
+* The Eclipse NavigationHistory keeps around references to some
+  CommitEditorInputs, which also have a hard reference to a repository.
+* The synchronize view references a repository through its
+  GitSynchronizeData. Resolved in test by keeping the synchronize
+  view closed.
+* The FileRepository from testCompareWithPreviousWithMerge was still
+  referenced from the job from CompareWithPreviousActionHandler even
+  though no such job was running anymore. Referenced in the
+  ProgressMonitorFocusJobDialog, which was still kept around through
+  its fontChangeListener (an inner non-static class in the ultimate
+  ancestor class Window), which apparently somehow was still
+  registered.. Unclear why or what happened there. Not resolved.
+* Same thing with testRevertFailure; referenced from
+  RevertCommitOperation from the job in RevertHandler from
+  ProgressMonitorFocusJobDialog. Unresolved.
+* Anonymous actions in SwitchToMenu still reference a long gone
+  repository from test method selectionWithProj1. Unclear why and
+  unresolved.
+* Some repositories from earlier tests were still referenced through
+  long defunct RepositoryNode instances. Unresolved.
+* RepositoryPropertySourceProvider has a hard reference to
+  its lastObject, and the RepositoryPropertySource has hard references
+  to the configs, which may have hard references to the Repository.
+  Resolved in test by closing the property sheet; unresolved in general.
+
+Because we can't explicitly remove items from the RepositoryCache, we
+also cannot explicitly remove IndexDiffCache entries. The only thing we
+can do is to ensure we remove IndexDiffCacheEntries when we detect that
+a repository in the cache no longer exists (has been garbage collected,
+or its git directory no longer exists.)
+
+Additionally, the resource change listener of an IndexDiffCacheEntry
+unregisters itself when it finds its repository has gone.
+
+I cannot really claim that this still fixes bug 483664 because there is
+absolutely no way to ensure that repositories vanish from the
+RepositoryCache in a timely manner. But it's a best-effort attempt to
+at least try, and at the same time not to evict repositories from
+the cache prematurely.
+
+The test explicitly invokes System.gc() in an attempt to make the JVM
+actually reclaim weakly reachable objects. This is not guaranteed, but
+appears to work in practice: the test thus only shows that the obvious
+places where we kept hard references are indeed resolved, and the
+repository does indeed vanish eventually. But see the "unresolved" items
+above: there's no guarantee that some view or action handler or Eclipse
+internal class doesn't somehow still manages to keep a hard reference
+and thus prevent reclamation.
+
+Finally, testing for an empty RepositoryCache must ensure that the
+RepositoryChangeScanner does not interfere; otherwise that may
+temporarily hold hard references to repositories. Solved using a
+scheduling rule.
+
+Change-Id: I3f437caccd58d6c9fb4187f66d9f53e7834a5224
+Signed-off-by: Alayna Houston xxx@xxx.xxx
+
+COMMENTS
+
+author: Alayna Houston
+date: 2016-03-07 22:24:46.000000000
+
+Uploaded patch set 9.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-03-07 22:24:52.000000000
+
+Patch Set 9:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/8265/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-03-07 22:53:51.000000000
+
+Patch Set 9: Code-Review-1
+
+Build Unstable 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/8265/ : UNSTABLE
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-03-07 23:50:55.000000000
+
+Patch Set 9: -Code-Review
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/8266/
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-03-07 23:58:01.000000000
+
+Patch Set 9:
+
+> https://hudson.eclipse.org/egit/job/egit.gerrit/8265/ : UNSTABLE
+
+Crap. Consistently works locally (Mac). Maybe xxx@xxx.xxx time all the same. I don't see how I could get a heap dump taken on Hudson just before line 239 of the GitRepositoreisViewRepoDeletionTest runs.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-03-08 00:17:27.000000000
+
+Patch Set 9: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/8266/ : SUCCESS
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-03-08 21:33:59.000000000
+
+Patch Set 9:
+
+It's not quite clear to me why this test is still unstable. What I do see is that TestUtil.waitForJobs() accounts only for running or waiting jobs (JobManager.isIdle()). Sleeping jobs, i.e., scheduled with a delay, may still wake up after that and then run concurrently with the test for no cached repositories.
+
+There's a few candidates that we do schedule with non-zero delays:
+* ui.Activator.RepositoryChangeScanner -- accounted for
+* ui.Activator.ResourceRefreshJob -- triggered by an IndexChangedEvent and
+  reschedules itself if there were changes during its last run. Unlikely
+  to interfere, but not impossible.
+* IndexDiffUpdateJob -- schedules with a default delay of 10ms. However, we use
+  TestUtil.joinJobs(), which does wait also for sleeping jobs. Unless a new job gets
+  scheduled after that, I don't see how that could interfere.
+* Decorations -- ditto, and moreover all EGit views are hidden. I would hope that there
+  are no decoration jobs running for hidden views.
+* core.Activator.CheckProjectsToShare -- as far as I see, this doesn't access the
+  RepositoryCache.
+* the RepositoriesView's refresh job. If that should be scheduled and waking up somehow
+  after TestUtil.waitForJobs() and running even though the view is hidden and not
+  containing any repo, it could perhaps interfere. It has a rather long delay of 1 second.
+
+Any other ideas what might be up?
+
+-------------------------------------
+author: Gerrit Johnathan Pham
+date: 2016-03-14 23:20:20.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

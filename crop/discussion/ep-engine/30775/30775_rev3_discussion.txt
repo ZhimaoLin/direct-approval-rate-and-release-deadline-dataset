@@ -1,0 +1,81 @@
+DESCRIPTION
+
+CBD-1148: Migrate all NonIO tasks into Common Pool
+
+This removes per-bucket threads from the NonIO dispatcher
+into the global thread pool shared by all buckets
+Following tasks handled by the non-io thread are now migrated
+into the common shared thread pool...
+1) Backfill task
+2) Hash Table Resizer
+3) Checkpoint remover
+4) ExpiredItemPager
+5) Item Pager
+6) VBCBAdaptor (async task spawned by daemon tasks 1-4)
+7) Tap Connection Notification (daemon task)
+8) Tap Resume
+9) Tap Connection Reaper
+10) VBucket Memory Deletion
+11) FlushAll task
+12) Checkpoint Stats
+Also removed isDaemon and makes GlobalTask's starttime internal
+Change-Id: Ic5cbbfb6d1a140335b0ff1a7c7dc31e20ca47186
+
+
+COMMENTS
+
+author: Ellie Kidd
+date: 2013-12-05 02:33:46.973000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Abby Duran
+date: 2013-12-05 02:51:32.893000000
+
+Patch Set 3:
+
+(2 comments)
+
+Line:267, src/item_pager.cc -> Please cancel the job immediately.
+
+Line:507, src/ep.h -> Please remove isDaemon parameter.
+
+-------------------------------------
+author: Abby Duran
+date: 2013-12-05 02:56:24.123000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:2632, src/ep.cc -> Where do we free this task object?
+
+-------------------------------------
+author: Abby Duran
+date: 2013-12-05 03:02:26.537000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:759, src/ep.h -> This should be "ExTask task". Otherwise, we might have a memory corruption or leak.
+
+-------------------------------------
+author: Ellie Kidd
+date: 2013-12-05 06:55:51.731000000
+
+Patch Set 3:
+
+(4 comments)
+
+Line:267, src/item_pager.cc -> When I added a cancel job immediately, unit test 53 fails since the thread to shutdown the engine races faster than the thread which does the expired item pager task. so stalling the shutdown here.
+
+Line:507, src/ep.h -> Done
+
+Line:759, src/ep.h -> If it is made ExTask, then I cannot invoke the stop() method.
+Memory would get freed since we would be assigning the pointer to an ExTask instance and handing it over to the scheduler for freeing when its done with the task.
+
+Line:2632, src/ep.cc -> This is freed from within the scheduler after all references to the RCPtr are released.
+
+-------------------------------------

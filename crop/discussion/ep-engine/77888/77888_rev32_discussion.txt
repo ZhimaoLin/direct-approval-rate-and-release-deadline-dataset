@@ -1,0 +1,131 @@
+DESCRIPTION
+
+MB-24037 / MB-23605 Strip xattrs and value and record message size
+
+Moves the stripping of xattrs and value (if want key only) into
+ep-engine.  Also ensure that when the message size of the
+mutationResponse, which will be sent over the wire, is updated
+correctly.
+
+Change-Id: I29d7a240b36d7c4861c68da3e0b36fd5bf1522f9
+
+
+COMMENTS
+
+author: Kymani Ramirez
+date: 2017-05-19 14:36:40.284000000
+
+Uploaded patch set 32: Commit message was updated.
+
+-------------------------------------
+author: Kymani Ramirez
+date: 2017-05-19 14:39:52.103000000
+
+Patch Set 32:
+
+The patch will need updating once http://review.Piper Jefferson.org/#/c/78302/ has been submitted
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2017-05-19 15:28:05.819000000
+
+Patch Set 32: Code-Review-1
+
+(16 comments)
+
+Overall I think we should be looking to just update the DCP interface so that we tell dcp_mutation the value to send by applying a cb::const_char_buffer to the value at the correct offset/size
+
+Line:199, src/item.h -> Change xxx@xxx.xxx since you're updating this line
+
+Line:400, src/item.h -> format issue
+
+Line:553, src/item.h -> Duplicate of change at line 399, can you make this a function
+
+Line:725, src/item.h -> format issue
+
+Line:73, src/dcp/response.cc -> we shouldn't be const_casting, it could be that xattr utils wants to write back, but I suspect xattr utils really needs to be fixed to take a const char*
+
+Line:12, /COMMIT_MSG -> Could do with a redraft of this sentence, not clear what's meant.
+
+Line:192, src/item.cc -> to include
+
+Line:199, src/item.cc -> again, we should fix the utils. As far as we know the non-const cb::xattr method is writing to our Item data
+
+Line:209, src/item.cc -> What if this item is being used by someone else (they can be shared via ref-counted pointers). Aren't you going to change the Item and the other user will now get the wrong value? E.g flusher or another DCP stream?
+
+... <update>
+
+Ok I see this function is called only on a copy, this still feels wrong, shouldn't we create the copied item with the pruned data, i.e. get current Item, copy it's value, create Item(pruned-value), that way there's no function someone can accidentally call on a shared Item
+
+Line:329, src/dcp/producer.h -> just includeXattrs (we generally don't say xattributes throughout the code)
+
+Line:474, src/dcp/producer.cc -> more accurate to say std::bad_alloc, ENOMEM is a system call return value
+
+Line:475, src/dcp/producer.cc -> Many of our log messages say var:value,  so change this to be seqno:%
+
+Line:475, src/dcp/producer.cc -> space needed
+
+Line:155, src/dcp/dcpconnmap.cc -> I'd consider passing flags into DcpProducer and letting it configure itself from that
+
+Line:370, src/dcp/response.h -> getX() suggests this should be marked const?
+
+Line:290, src/dcp/stream.h -> should say "Yes" as they're not bools
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-05-19 15:28:16.562000000
+
+Patch Set 32: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5814/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/5115/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/356/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6652/ : SUCCESS
+
+-------------------------------------
+author: Kymani Ramirez
+date: 2017-05-19 18:49:59.571000000
+
+Patch Set 32:
+
+(15 comments)
+
+Hey Jim, Thanks for your review comments, which I have addressed in patch 33.  Regarding your overall comment about updating the dcp interface.  I did discuss this with DaveR, and we agreed that at this time we would leave the interface unchanged.  However is something for a future work item, where we should also not make a copy of the item.
+
+Line:199, src/item.h -> Done
+
+Line:400, src/item.h -> Done
+
+Line:553, src/item.h -> Done
+
+Line:725, src/item.h -> Done
+
+Line:73, src/dcp/response.cc -> There is actually const_char_buffer - so have changed to use that.
+And have removed the const_cast.
+
+Line:12, /COMMIT_MSG -> Done
+
+Line:192, src/item.cc -> Done
+
+Line:199, src/item.cc -> Done
+
+Line:209, src/item.cc -> We originally did the pruning in the copy constructor.   However on tNathalie Landrying to DaveR - he wanted the copy to just to a straight-forward copy and then worry about the pruning separately.
+
+Line:329, src/dcp/producer.h -> Done
+
+Line:474, src/dcp/producer.cc -> Done
+
+Line:475, src/dcp/producer.cc -> Done
+
+Line:155, src/dcp/dcpconnmap.cc -> Done
+
+Line:370, src/dcp/response.h -> Done
+
+Line:290, src/dcp/stream.h -> changed xxx@xxx.xxx true if both includeValue and includeXattributes are set to No, otherwise return false.
+
+-------------------------------------

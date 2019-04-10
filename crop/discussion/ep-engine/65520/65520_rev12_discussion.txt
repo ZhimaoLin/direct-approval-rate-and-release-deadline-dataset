@@ -1,0 +1,118 @@
+DESCRIPTION
+
+MB-20054: Regression test - bucket is deleted with DCPBackfill running
+
+Regression test for MB-20054 - the following abort is encountered when
+a DCPBackfill task is still running when a bucket is deleted:
+
+    Assertion failed: (engine), function verifyEngine, file
+    ep-engine/src/objectregistry.cc, line 58.
+
+This issue occurs because the DCPBackfill object (and associated
+objects ActiveStream and importantly ActiveStreams' readyQ of Items)
+is not deleted earlier in the shutdown sequence (via EvpDestroy), as
+we use ref-counted pointers for it and there is a still an outstanding
+reference by the AuxIO Thread which is running the task. Hence the
+DCPBackfill object is only deleted when we finally unregister the
+deleted bucket from the shared ExecutorPool - see the following
+backtrace:
+
+    #1  0x00007f513b75a085 in abort () from /lib64/libc.so.6
+    #2  0x00007f51337034e2 in ObjectRegistry::onDeleteItem (pItem=<value optimized out>) at ep-engine/src/objectregistry.cc:157
+    #3  0x00007f5133652094 in ~Item (this=<value optimized out>) at ep-engine/src/item.h:352
+    #4  SingleThreadedRCPtr<Item>::~SingleThreadedRCPtr (this=<value optimized out>) at ep-engine/src/atomic.h:430
+    #5  0x00007f51336c7f47 in ~MutationResponse (this=0x3cd87880) at ep-engine/src/dcp-response.h:275
+    #6  MutationResponse::~MutationResponse (this=0x3cd87880) at ep-engine/src/dcp-response.h:275
+    #7  0x00007f51336d86aa in clear_UNLOCKED (this=0x7a3f5fa0) at ep-engine/src/dcp-stream.cc:201
+    #8  ~ActiveStream (this=0x7a3f5fa0) at ep-engine/src/dcp-stream.h:178
+    #9  ActiveStream::~ActiveStream (this=0x7a3f5fa0) at ep-engine/src/dcp-stream.h:179
+    #10 0x00007f51336cc808 in RCPtr<Stream>::~RCPtr (this=0xb1823780) at ep-engine/src/atomic.h:348
+    #11 0x00007f51336d77c7 in ~DCPBackfill (this=0xb1823740) at ep-engine/src/dcp-stream.cc:114
+    #12 DCPBackfill::~DCPBackfill (this=0xb1823740) at ep-engine/src/dcp-stream.cc:114
+    #13 0x00007f513368d95f in ~SingleThreadedRCPtr (this=0x5b55a20, e=0x59c4000, taskType=NO_TASK_TYPE) at ep-engine/src/atomic.h:430
+    #14 ExecutorPool::_stopTaskGroup (this=0x5b55a20, e=0x59c4000, taskType=NO_TASK_TYPE) at ep-engine/src/executorpool.cc:532
+    #15 0x00007f513368dad3 in ExecutorPool::_unregisterBucket (this=0x5b55a20, engine=0x59c4000) at ep-engine/src/executorpool.cc:551
+    #16 0x00007f513368e143 in ExecutorPool::unregisterBucket (this=0x5b55a20, engine=0x59c4000) at ep-engine/src/executorpool.cc:602
+    #17 0x00007f5133655f82 in EventuallyPersistentStore::~EventuallyPersistentStore (this=0x59e6000)
+        at ep-engine/src/ep.cc:365
+    #18 0x00007f5133672a25 in EventuallyPersistentEngine::~EventuallyPersistentEngine (this=0x59c4000)
+        at ep-engine/src/ep_engine.cc:5791
+    #19 0x00007f5133672c95 in EvpDestroy (handle=0x59c4000, force=<value optimized out>) at ep-engine/src/ep_engine.cc:143
+
+To actually reproduce the issue is somewhat involved - we need to
+orchestrate the world such that we delete the engine while a
+DCPBackfill task is still running. We spin up a separate thread which
+will run the DCPBackfill task concurrently with destroy - specifically
+DCPBackfill must start running (and add items to the readyQ) before
+destroy(), it must then continue running (stop after) _stopTaskGroup
+is invoked.  To achieve this we use a couple of condition variables to
+synchronise between the two threads - the timeline needs to look like:
+
+    auxIO thread:  [------- DCPBackfill ----------]
+     main thread:      [--destroy()--]       [ExecutorPool::_stopTaskGroup]
+
+    --------------------------------------------------------> time
+
+Change-Id: Ic64c419cb8e4e0af2378efba9711b121aacee15b
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2016-07-07 08:14:52.637000000
+
+Uploaded patch set 12.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-07-07 08:15:00.589000000
+
+Patch Set 12:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/719/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-07-07 08:15:01.900000000
+
+Patch Set 12:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-3.0.x/330/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-07-07 08:15:06.593000000
+
+Patch Set 12: Well-Formed+1
+
+Permission granted to commit: 
+
+http://server.jenkins.Piper Jefferson.com/job/restricted-branch-check/18077/artifact/restricted.html : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-07-07 08:24:12.215000000
+
+Patch Set 12: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-3.0.x/330/ : ABORTED
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-07-07 08:24:21.954000000
+
+Patch Set 12:
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/719/ : ABORTED
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-07-07 15:59:46.671000000
+
+Change has been successfully cherry-picked as 880d879b61953d70fee6bfbba16897bf56ad8ee6 by Ashlee Kent
+
+-------------------------------------

@@ -1,0 +1,110 @@
+DESCRIPTION
+
+Introduce RawText#openText.
+
+This method reads a blob, but avoids reading the blob if the start
+contains nul bytes. This should reduce the amount of garbage that
+Gerrit produces for changes with binaries.
+
+Signed-off-by: Hayley Lang xxx@xxx.xxx
+Change-Id: Idd202d20251f2d1653e5f1ca374fe644c2cf205f
+
+
+COMMENTS
+
+author: Dominick Floyd
+date: 2017-10-10 14:09:51.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-10-10 14:09:57.000000000
+
+Patch Set 1:
+
+Build Started https://ci.eclipse.org/jgit/job/jgit.gerrit/11398/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-10-10 14:21:06.000000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+https://ci.eclipse.org/jgit/job/jgit.gerrit/11398/ : FAILURE
+
+-------------------------------------
+author: Santos Moore
+date: 2017-10-10 15:10:56.000000000
+
+Patch Set 1:
+
+(6 comments)
+
+A test would be helpful as well.
+
+Line:313, org.eclipse.jgit/src/org/eclipse/jgit/diff/RawText.java -> You could avoid a byte array copy in the binary case if you use getCachedBytes here and manually clone the array before returning in the non-binary case. (Reimplementing ObjectLoader#getBytes, basically)
+
+Line:313, org.eclipse.jgit/src/org/eclipse/jgit/diff/RawText.java -> sz? Or just omit the argument? Although it shouldn't matter.
+
+Line:314, org.eclipse.jgit/src/org/eclipse/jgit/diff/RawText.java -> Not necessary, we are in RawText.java
+
+Line:320, org.eclipse.jgit/src/org/eclipse/jgit/diff/RawText.java -> I would have expected this to be the first check. The javadoc for threshold is ambiguous, though: it's not clear what "without looking further" means.
+
+Line:324, org.eclipse.jgit/src/org/eclipse/jgit/diff/RawText.java -> I still feel like you should be able to do this without opening the object twice:
+
+* read FIRST_FEW_BYTES into a byte[]
+* pass that to isBinary and return null if true
+* allocate a new byte[sz] for the output
+* copy the first few bytes into output
+* IO.readFully the remainder of the stream into output
+
+This amounts to reimplementing part of ObjectLoader#getCachedBytes. But honestly a good chunk of that implementation is converting various corner cases into LargeObjectExceptions. You unwind that logic below anyway, so I feel like it might be worth it to handle them manually and return null rather than throwing an intermediate exception.
+
+Line:332, org.eclipse.jgit/src/org/eclipse/jgit/diff/RawText.java -> These catch blocks can be combined. Actually, is there a reason you don't catch just plain LargeObjectException?
+
+-------------------------------------
+author: Santos Moore
+date: 2017-10-10 15:11:05.000000000
+
+Patch Set 1:
+
+> Build Failed
+ > 
+ > https://ci.eclipse.org/jgit/job/jgit.gerrit/11398/ : FAILURE
+
+Flake.
+
+-------------------------------------
+author: Dominick Floyd
+date: 2017-10-10 15:21:19.000000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:313, org.eclipse.jgit/src/org/eclipse/jgit/diff/RawText.java -> the argument is necessary, or many tests that open tiny files fail with "LOE for unknown object".
+
+Line:332, org.eclipse.jgit/src/org/eclipse/jgit/diff/RawText.java -> I don't know. This is cut & paste from the originaL, which wants to handle other LOEs by rethrowing the exception.
+
+-------------------------------------
+author: Dominick Floyd
+date: 2017-10-11 13:44:37.000000000
+
+Patch Set 1:
+
+(3 comments)
+
+stay tuned for a test.
+
+Line:314, org.eclipse.jgit/src/org/eclipse/jgit/diff/RawText.java -> Done
+
+Line:320, org.eclipse.jgit/src/org/eclipse/jgit/diff/RawText.java -> Done
+
+Line:324, org.eclipse.jgit/src/org/eclipse/jgit/diff/RawText.java -> Done.
+
+I've also changed the signature to return RawText directly, which I'll use in a follow-up change to make the binary detection exact (see https://git.eclipse.org/r/#/c/102076/)
+
+-------------------------------------

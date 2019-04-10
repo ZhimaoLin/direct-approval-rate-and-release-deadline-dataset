@@ -1,0 +1,41 @@
+DESCRIPTION
+
+Cache small deltas during packing
+
+PackWriter now caches small deltas, or deltas that are very tiny
+compared to their source inputs, so that the writing phase goes
+faster by reusing those cached deltas.
+
+The cached data is stored compressed, which usually translates to
+a bigger footprint due to deltas being very hard to compress, but
+saves time during writing by avoiding the deflate step.  They are
+held under SoftReferences so that the JVM GC can clear out deltas
+if memory gets very tight.  We would rather continue working and
+spend a bit more CPU time during writing than crash due to OOME.
+
+To avoid OutOfMemoryErrors during the caching phase we also trap
+OOME and just abort out of the caching.
+
+Because deflateBound() always produces something larger than what
+we need to actually store the deflated data, we copy it over into
+a new buffer if the actual length doesn't match the buffer length.
+When packing jgit.git this saves over 111 KiB in the cache, and is
+thus a worthwhile hit on CPU time.
+
+To further save memory we store the inflated size of the delta
+(which we need for the object header) in the same field as the
+pathHash, as the pathHash is no longer necessary by this phase
+of the packing algorithm.
+
+Change-Id: I0da0c600d845e8ec962289751f24e65b5afa56d7
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-07-27 16:11:38.000000000
+
+Change has been successfully pushed.
+
+-------------------------------------

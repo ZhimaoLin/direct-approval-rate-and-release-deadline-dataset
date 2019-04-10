@@ -1,0 +1,143 @@
+DESCRIPTION
+
+[Refactor]: Move 'add' functionality from hash table to vbucket
+
+Add() functionality was a set on hash table wherein you could only
+add a new StoredValue and updating an exisiting one was not allowed
+unless it was deleted or a temp item.
+
+Actually, this is a VBucket functionality. Hash table should just
+provide functionalities of find, add new, update, soft delete and
+delete. A module that contains/uses hash table (like VBucket) should
+implement a functionality like 'add' using the hash table.
+
+Change-Id: Ibbec0ee23c7f9e7752c9889afaa35e3be38f26d6
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2017-01-26 04:42:25.788000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-26 04:42:35.099000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/3047/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-26 04:42:35.248000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2669/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-26 04:42:35.398000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/3210/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-26 04:42:35.545000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1879/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-26 05:02:02.428000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/3047/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2669/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1879/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/3210/ : SUCCESS
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-01-26 07:31:46.883000000
+
+Topic set to Ephemeral Refactor
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-01-26 09:42:46.410000000
+
+Patch Set 1: Code-Review-1
+
+(8 comments)
+
+Line:55, tests/module_tests/vbucket_test.cc -> Suggest you include a message with this EXPECT which includes the key name (to aid in debugging failures).
+
+Line:1940, src/vbucket.cc -> Note: processAdd looks pretty similar to processSet now. We should consider if it makes sense to unify them (or at the very least, extract common functionality into some helper functions) as a folllow-up change.
+
+Line:1947, src/vbucket.cc -> Should check htLock is held (as per processSet).
+
+Line:26, tests/module_tests/ep_unit_tests_main.h -> Put this into a tests/mock/mock_vbucket.h file (along with the other large mock classes).
+
+Line:874, src/vbucket.h -> This looks to be unused - please remove if so.
+
+Line:255, src/hash_table.cc -> Style: Helpful to comment this so the reader can tell what it corresponds to without looking at the definition of the function - i.e.
+
+ return unlocked_updateStoredValue(..., /*isDirty*/true);
+
+(here and elsewhere).
+
+Line:267, src/hash_table.cc -> I don't think we actually need the `isDirty` parameter here. From my reading of the code, it is always true apart from when adding a temp stored value (see VBucket::addTempStoredValue). In this case we are adding a specific Item type of StoredValue::state_temp_init.
+
+As such, we can remove the isDirty parameter (and up the call-chain), and instead pass isDirty==true to setValue iff item.getbySeqno == StoredValue::state_temp_init.
+
+Line:300, src/hash_table.cc -> Same comment here.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-01-26 21:37:12.271000000
+
+Patch Set 1:
+
+(8 comments)
+
+Line:55, tests/module_tests/vbucket_test.cc -> Done
+
+Line:1940, src/vbucket.cc -> Yeah was tempted to do it in this task itself.
+But, there are many subtle if-else checks around temp/deleted/initial item types which differentiate these 2 funcs(). Will create a ticket for future task in KV-Goodness. First step would be to merge MutationStatus, AddStatus return codes and then merge these 2 functions
+
+Line:1947, src/vbucket.cc -> Done
+
+Line:26, tests/module_tests/ep_unit_tests_main.h -> Done
+
+Line:874, src/vbucket.h -> Actually, previously in ht.unlocked_set() we re-calculated the hash bucket_num from the key. But in ht.unlocked_add() we did not re-calculate the hash bucket, rather we used the one we had calculated for unlocked_find().
+
+Though, calculating only once seems more efficient I dont know why it was that way for ht.unlocked_set().
+
+For now, I keep ht.unlocked_addNewStoredValue() in sync with earlier ht.unlocked_set(). Will create a ticket in KV-Goodness to check when/where all "hash bucket num" is calculated
+
+Line:255, src/hash_table.cc -> Don't need isDirty now
+
+Line:267, src/hash_table.cc -> Done
+
+Line:300, src/hash_table.cc -> Done
+
+-------------------------------------
+author: Tate Garrett
+date: 2017-01-27 16:56:32.455000000
+
+Change has been successfully cherry-picked as 5d323adfec82c6c5964ac9aea04b0cedb9c95e40 by Adrianna Holmes
+
+-------------------------------------

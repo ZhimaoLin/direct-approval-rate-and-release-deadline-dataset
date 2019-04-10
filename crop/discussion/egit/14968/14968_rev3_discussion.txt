@@ -1,0 +1,85 @@
+DESCRIPTION
+
+GitSyncObjectCache erroneously changes the sync state of resources
+
+When using the mapping context to determine the synchronization state
+of individual resources, the GitSyncObjectCache changes all other
+resources' state to "in-sync"... and never looks back. This causes
+very weird issues when using Team APIs, and a totally unspecified
+behavior such as a resource going from "MODIFIED" to "IN-SYNC" for no
+obvious reason.
+
+Bug: 415430
+Change-Id: Ib9d3686e87a5cb490a55b3a379b81b0fc0b1c3d9
+Also-by: Gustavo Green xxx@xxx.xxx
+Signed-off-by: Mikael Barbero xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Rayan Moreno
+date: 2013-08-24 13:20:28.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-08-24 13:34:39.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/4831/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-08-24 13:50:53.000000000
+
+Patch Set 3: Code-Review-1
+
+Build Unstable 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/4831/ : UNSTABLE
+
+-------------------------------------
+author: Danika Greer
+date: 2013-08-24 14:23:37.000000000
+
+Patch Set 3: Code-Review-2
+
+The fix is not correct and makes the test green only by accident. "key" in GitSyncCache is the Git dir path of the repository, while updateRequests contains file paths.
+
+The fix must pass updateRequests to GitSyncObjectCache#merge and it must figure out what it may update and what not. Note that it's recursive and we probably also have to pass along the parent path.
+
+Try the following test. It's not yet complete as we also need to e.g. test what happens when a new file in a new directory is added, but it's a start:
+
+xxx@xxx.xxx
+	public void hasLocalChange() throws Exception {
+		File file1 = testRepo.createFile(iProject, "a.txt");
+		File file2 = testRepo.createFile(iProject, "b.txt");
+
+		testRepo.appendContentAndCommit(iProject, file1, "content a", "commit a");
+		testRepo.appendContentAndCommit(iProject, file2, "content b", "commit b");
+
+		JGitTestUtil.write(file1, "changed content a");
+		JGitTestUtil.write(file2, "changed content b");
+
+		IFile iFile1 = testRepo.getIFile(iProject, file1);
+		IFile iFile2 = testRepo.getIFile(iProject, file2);
+
+		RemoteResourceMappingContext context = prepareContext(MASTER, MASTER);
+		assertTrue(context.hasLocalChange(iFile1, new NullProgressMonitor()));
+		assertTrue(context.hasLocalChange(iFile2, new NullProgressMonitor()));
+
+		JGitTestUtil.write(file2, "content b");
+		refresh(context, iFile2);
+		assertTrue(context.hasLocalChange(iFile1, new NullProgressMonitor()));
+		assertFalse(context.hasLocalChange(iFile2, new NullProgressMonitor()));
+	}
+
+	private void refresh(RemoteResourceMappingContext context, IFile file)
+			throws CoreException {
+		context.refresh(new ResourceTraversal[] { new ResourceTraversal(
+				new IResource[] { file }, 1, 0) }, 0, new NullProgressMonitor());
+	}
+
+-------------------------------------

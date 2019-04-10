@@ -1,0 +1,92 @@
+DESCRIPTION
+
+MB-16632: QueueDirty to queue pending DCP producer notifications
+
+Every time an item is added to the dirty queue, it will now
+add a pending notification to a queue that will be read by
+a NONIO Daemon task which will be responsible for notifying
+all the DCP producers.
+
+This is how things are done for TAP.
+This pretty much removed the notifications' lock overhead on
+store/delete/(front-end) OP latencies.
+
+Change-Id: I32c3c26daf6ea8cebeecc2a81fb1f0e957ba3e3d
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2015-10-28 17:44:19.463000000
+
+Uploaded patch set 13.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-10-28 17:44:26.298000000
+
+Patch Set 13:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/196/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-10-28 17:59:32.375000000
+
+Patch Set 13: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/196/ : SUCCESS
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2015-11-02 12:53:59.794000000
+
+Patch Set 13: Code-Review-2
+
+(2 comments)
+
+Line:1210, src/connmap.cc -> Concerned over the data structure here. Every mutation on this connection will push a new item to the queue when we no longer care about the previous vb/seqno pairs.  Maybe way can swap to two arrays of Atomic's one is true/false if the VB is notifying, the second is an integer containing the seqno
+
+Line:1211, src/connmap.cc -> This is a problem for performance when we push ops. The frequent calls to ExecutorPool::wake are slowing things down a lot. The TAP version of this code protects duplicate wakeups with an AtomicBool, if the task is running no wakeup
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-11-02 17:15:35.816000000
+
+Patch Set 13:
+
+(2 comments)
+
+Line:1210, src/connmap.cc -> I could change this to just carry vbucket details, and when the notifications do get sent out we can receive the sequence number from the vbucket (high seqno).
+
+Line:1211, src/connmap.cc -> I added an optimization where the task would be woken up only if it is snoozing on this patch already.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-11-02 17:31:52.034000000
+
+Patch Set 13:
+
+(1 comment)
+
+Line:1210, src/connmap.cc -> I like your idea too, i'll look into that as well.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-11-02 18:44:35.825000000
+
+Patch Set 13:
+
+(1 comment)
+
+Line:1210, src/connmap.cc -> Jim, the next patch has 2 arrays like you suggested. Note that this approach would not only ensure that the pendingNotifications queue doesn't grow unbounded, but would also reduce the number of times the memcached thread is notified for DCP.
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-12-02 00:34:38.823000000
+
+Change has been successfully cherry-picked as fa17728e7ca0c637c84a2208b5decfe7ba7e54f1
+
+-------------------------------------

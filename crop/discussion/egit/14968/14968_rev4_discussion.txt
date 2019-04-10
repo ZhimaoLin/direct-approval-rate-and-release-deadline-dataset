@@ -1,0 +1,143 @@
+DESCRIPTION
+
+GitSyncObjectCache erroneously changes the sync state of resources
+
+When using the mapping context to determine the synchronization state
+of individual resources, the GitSyncObjectCache changes all other
+resources' state to "in-sync"... and never looks back. This causes
+very weird issues when using Team APIs, and a totally unspecified
+behavior such as a resource going from "MODIFIED" to "IN-SYNC" for no
+obvious reason.
+
+Bug: 415430
+Change-Id: Ib9d3686e87a5cb490a55b3a379b81b0fc0b1c3d9
+Also-by: Gustavo Green xxx@xxx.xxx
+Signed-off-by: Mikael Barbero xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Rayan Moreno
+date: 2013-08-26 12:21:59.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-08-26 12:22:05.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/4836/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-08-26 12:24:41.000000000
+
+Patch Set 4: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/4836/ : FAILURE
+
+-------------------------------------
+author: Rayan Moreno
+date: 2013-08-26 12:46:41.000000000
+
+Patch Set 4:
+
+Thank you for your review and insights and sorry about the monkey patch. I've added your test along with other with sub-folders. It works pretty well. I still have an issue with hasRemoteChanges. Here is a symbolic representation of the commit
+
+* |   C
+| *   B
+|/ 
+*     A
+
+First I created a file with a content "X" and commit it in commit "A". I modify it to content "Y" in commit "B" and re-checkout commit "A". So far, everything is as expected, i.e. context has remote change and no local change. I change back the content of the file to "X". Here is the issue, the context has no local change but I would expect it not to have remote change neither. What do you think? The same behavior occurs if I commit the change to commit C, the context has remote change and no local.
+
+If you agree with my expectations, the issue seems to come form org.eclipse.egit.core.synchronize.ThreeWayDiffEntry.scan(TreeWalk). During the walk, the local id of the file is the zero id:
+
+walk.getObjectId(idBuf, 0);
+e.localId = AbbreviatedObjectId.fromObjectId(idBuf);
+
+Where it should be the same as the remote. Any idea how it should handle pseudo conflict like this?
+
+-------------------------------------
+author: Rayan Moreno
+date: 2013-08-26 12:50:12.000000000
+
+Patch Set 4:
+
+A readable tree ;)
+
+ * |   C
+ | *   B
+ |/ 
+ *     A
+
+-------------------------------------
+author: Danika Greer
+date: 2013-08-28 17:54:34.000000000
+
+Patch Set 4:
+
+I didn't yet have time to look at this. In the context with commits A, B and C, what commits are you comparing? I didn't understand that from the description.
+
+-------------------------------------
+author: Rayan Moreno
+date: 2013-08-29 13:28:39.000000000
+
+Patch Set 4:
+
+First, I'm in the following state
+
+  | *   B <-- BRANCH, file contents = "state 2"   
+  |/ 
+  *     A <-- MASTER | HEAD, file contents = "state 1"
+
+I'm comparing MASTER to BRANCH. The context properly reports that it has remote change but no local one. Then, in branch MASTER, I set the file contents to "state 2" and commit it. The file is exactly the same on BRANCH and MASTER.
+
+  * |   C <-- MASTER | HEAD, file contents = "state 2"
+  | *   B <-- BRANCH, file contents = "state 2"   
+  |/ 
+  *     A 
+
+The problem is that the context is still reporting it has remote change but no local change. I would expect either no change, neither locally nor remotely, or that it has changes on both sides.
+
+-------------------------------------
+author: Danika Greer
+date: 2013-08-29 14:17:37.000000000
+
+Patch Set 4:
+
+(3 comments)
+
+Ok, I think I get what you mean. I looked at the implementation now, and there are still bugs there, so it could be caused by that.
+
+Please run the test under coverage and you will see that there are branches that are not yet covered at all (notably the ones checking for updateRequests.contains using the invalid path).
+
+Install EclEmma[1], then run the test with Coverage As > JUnit Plug-in Test.
+
+[1] http://www.eclemma.org/
+
+Line:180, org.eclipse.egit.core/src/org/eclipse/egit/core/synchronize/GitSyncObjectCache.java -> Shouldn't this read entryValue.diffEntry.getPath() ?
+
+Line:190, org.eclipse.egit.core/src/org/eclipse/egit/core/synchronize/GitSyncObjectCache.java -> If parentPath is "" (initial call), then the path which is passed to the recursive call is "/foo" But updateRequests contains Strings of the form "foo", so it will never match. This also applies to the other places where parentPath is used.
+
+Line:197, org.eclipse.egit.core/src/org/eclipse/egit/core/synchronize/GitSyncObjectCache.java -> The parentPath is missing here.
+
+-------------------------------------
+author: Rayan Moreno
+date: 2013-08-29 16:06:13.000000000
+
+Patch Set 4:
+
+(3 comments)
+
+Line:180, org.eclipse.egit.core/src/org/eclipse/egit/core/synchronize/GitSyncObjectCache.java -> Definitely. And it should not have any reference to parentPath here, entryValue.diffEntry.getPath() already contains a full path
+
+Line:190, org.eclipse.egit.core/src/org/eclipse/egit/core/synchronize/GitSyncObjectCache.java -> You're true, i will fix that
+
+Line:197, org.eclipse.egit.core/src/org/eclipse/egit/core/synchronize/GitSyncObjectCache.java -> It is the expected behavior. The wrong one was in the first loop
+
+-------------------------------------

@@ -1,0 +1,152 @@
+DESCRIPTION
+
+[RFC] Provide native lstat() via JNI
+
+For now only implemented on MacOSX until we decided on the
+platforms to support.
+
+Also integration of native make into build is not yet done.
+Build jgitnative using CDT and copy resulting jnilib to
+bundle org.eclipse.jgit.macosx_x86_64 manually.
+
+Change-Id: Iffb12334b5440d49b6d2623ceb91f4d873f217a0
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Douglas Trujillo
+date: 2010-11-08 16:57:55.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2010-11-08 17:05:10.000000000
+
+Patch Set 2: I would prefer that you didn't submit this
+
+This now works on Mac :-) 
+
+The FSAccessJava needs to be enhanced to support file mode and some minor cleanup is left.
+
+The reason why OSGi failed to load the shared library in the previous version was that I had defined Bundle-RequiredExecutionEnvironment: J2SE-1.5 in the fragment containing the shared library without having defined that JRE in Eclipse ! I accidentally removed this entry since I moved all Java code to org.eclipse.jgit and all of a sudden loading the native library worked. This looks really odd ...
+
+With Java bundles this is causing no problem, apparently PDE then falls back using the defined Java 6 environment.
+
+As a next step we should decide on the platforms we want to support and how to build the native code (I have no recent experience on that).
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-11-08 21:39:54.000000000
+
+Patch Set 2: I would prefer that you didn't submit this
+
+(16 inline comments)
+
+Much nicer than the prior iteration I read, but many more comments inline.
+
+Line:67, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/LStat.java -> Style-nit: Unnecessary blank line.
+
+Line:145, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/LStat.java -> This should be a long.
+
+Line:1, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/FSAccessJava.java -> Missing copyright header.
+
+Line:18, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/FSAccessJava.java -> Don't truncate the length.  The lstatNative API needs to supply the length as a 64 bit value.  Which means you may need to use an int[11] and split the 64 bit value into two segments, and put it back together in Java.  Or make the members of the LStat object package accessible and populate them directly inside of the JNI code.  (I say this never having written JNI code... but it must be possible to freeze an object's location in memory and then populate its fields via some sort of set int or set long JNI operation.)
+
+Line:68, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/fs/FSAccessTest.java -> This is going to suck, but we need to test both implementations.  If the native implementation doesn't load, we should abort the test with a failure.
+
+We can use a system property to disable the native implementation test.  Developers who are trying to build JGit and can't run the native implementation on their platform would just need to define the system property on the Maven command line to bypass it.  So something like:
+
+  public void test_lstat_native() throws Exception {
+    if (!Boolean.valueOf("org.eclipse.jgit.fs.native"))
+      return;
+
+    FSAccess native = new FSAccessNative();
+    ...somehow assert native has native JNI loaded...
+    do_lstat(native);  
+  }
+
+  public void test_lstat_java() throws Exception {
+    do_lstat(new FSAccessJava());
+  }
+
+  private void do_lstat(FSAccess imp) throws Exception {
+    ... this test method ...
+  }
+
+Line:77, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/fs/FSAccessTest.java -> I don't think that is true.  It should only be true if the file was created and never written to, e.g. by the creat(2) system call.  I think its legal for close(2) to update the mtime of a file after it was opened for writing, where the open call set the ctime.  So I don't think we should rely on this assumption in our unit test.
+
+However, we should be able to rely on mtime being >= ctime.
+
+Line:79, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/fs/FSAccessTest.java -> Depends on the operating system, doesn't it?  On Win32 we probably will be setting all of these to 0 (except mode) because there isn't a sane concept of device or inode there, nor is there a great way to say the "group" or "user" of a file, since they use ACLs as their only access control system.
+
+However, you could expose a package-only visible native method that tells you the *type* of the JNI support that is loaded (e.g. isPOSIX() method) and have the unit test probe that before making these assertions.  That way on Win32 we can assert that these are in fact 0.
+
+Line:93, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/fs/FSAccessTest.java -> Haha.  I love how you defined the text to fit a particular answer.  :-)
+
+Line:98, jgitnative/lstat.c -> We should also special case EACCES here.  Not being able to access part of the directory path is a reasonable failure that we can expect to happen, and should translate into a useful error message for the end user.
+
+But other errors like EFAULT, EIO, ELOOP, ENAMETOOLONG all seem like things we can say "should never happen", and if they do, tossing up the generic LStatException is probably fine.
+
+Line:106, jgitnative/lstat.c -> That will be an API change, in a public API.  But we should do it once we can drop support for Java 6.  Which is years away from now.
+
+Line:52, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/FSAccessNative.java -> Drop this static ctor?
+
+Line:62, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/FSAccessNative.java -> Should this be package visible only?
+
+Line:96, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/FSAccessNative.java -> I wonder if we can get away with getPath() here instead of getAbsolutePath().  If the application was given a relative path into the java.io.File object, its relative to the JVM's current working directory, which cannot be changed.  That can be easily passed down into the native layer, can't it?
+
+The advantage would be that in some applications we might be able to avoid VFS traversal up to the root, and then traversal back down on every file we lstat() in the working directory.  For C Git this actually makes a performance difference on Linux, even though the VFS on Linux is incredibly fast.
+
+Line:67, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/FSAccess.java -> We should store the exceptions that were thrown in a static member, and make it accessible so GUIs can help a user resolve a native library load failure:
+
+  private static Throwable nativeLoadError;
+
+  public static Throwable getNativeImplementationLoadException() {
+    return nativeLoadError;
+  }
+
+That resolves the problem you have here about logging to System.out.println() when it doesn't load.  :-)
+
+Line:84, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/FSAccess.java -> Make this an abstract member and return true in FSAccessNative and false in FSAccessJava.
+
+Line:90, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/FSAccess.java -> Please document that lstat() returns data about a symbolic link and not the target of the link.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2010-11-19 23:39:28.000000000
+
+Patch Set 2: (14 inline comments)
+
+
+
+Line:8, org.eclipse.jgit/META-INF/MANIFEST.MF -> we don't need this line
+
+Line:1, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/FSAccessJava.java -> Done
+
+Line:18, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/FSAccessJava.java -> Done
+
+Line:68, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/fs/FSAccessTest.java -> Done
+
+Line:77, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/fs/FSAccessTest.java -> Done
+
+Line:79, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/fs/FSAccessTest.java -> Done
+
+Line:93, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/fs/FSAccessTest.java -> this was pure coincidence, I also like the answer :-)
+
+Line:98, jgitnative/lstat.c -> Done
+
+Line:106, jgitnative/lstat.c -> yeah
+
+Line:52, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/FSAccessNative.java -> Done
+
+Line:62, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/FSAccessNative.java -> Done
+
+Line:67, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/FSAccess.java -> Done
+
+Line:84, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/FSAccess.java -> Done
+
+Line:90, org.eclipse.jgit/src/org/eclipse/jgit/util/fs/FSAccess.java -> Done
+
+-------------------------------------

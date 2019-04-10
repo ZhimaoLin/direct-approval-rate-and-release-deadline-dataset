@@ -1,0 +1,152 @@
+DESCRIPTION
+
+Added caching for unpacked object look during pack indexing
+
+On Windows systems, file system lookup is a slow operation so
+checking each object if it exists during indexing after receiving
+the pack could take a siginificant time. This patch introduces
+CachedObjectDirectory that pre-caches lookup results.
+
+Signed-off-by: Veronica Mcdonald xxx@xxx.xxx
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-01-21 16:53:46.000000000
+
+Patch Set 1: Do not submit; Unclean IP, do not check in
+
+Aside from the inline comments describing some issues with the implementation, this is >200 lines so we need to run it through the CQ process.  I'll get that started after we have an updated draft of the change that is closer to something we want to submit.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:52, org.eclipse.jgit/src/org/eclipse/jgit/lib/CachedObjectDirectory.java -> I would reword this with a reference to the class:
+
+  * The cached instance of an xxx@xxx.xxx ObjectDirectory}.
+  * <p>
+  * This class caches the list of loose objects in memory, so
+  * the file system is not queried with stat calls.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:55, org.eclipse.jgit/src/org/eclipse/jgit/lib/CachedObjectDirectory.java -> Style nit:  We don't xxx@xxx.xxx tags.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:62, org.eclipse.jgit/src/org/eclipse/jgit/lib/CachedObjectDirectory.java -> You should use ObjectId, to prevent a MutableObjectId from being stored and changed behind your back.
+
+Also, due to the need to support AnyObjectId during openObject2 below, and the oddity of how RevObject gets used, I would actually use a ObjectIdSubclassMap<ObjectId> here instead of the HashSet.  Its the same type we use to support efficient traversal in a RevWalk, but probably will use a lot less memory, and knows how to work around the RevObject hashCode/equals braindamage.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:73, org.eclipse.jgit/src/org/eclipse/jgit/lib/CachedObjectDirectory.java -> This is some pretty deeply nested code, and I'm not sure I like the idea of having the hex string test logic duplicated here.
+
+What about this alternative implementation?
+
+  String[] fanout = objects.list();
+  if (fanout == null)
+    fanout = new String[0];
+
+  for (String d : fanout) {
+    if (d.length() != 2)
+      continue;
+
+    String[] entries = new File(objects, d).list();
+    if (entries == null)
+      continue;
+
+    for (String e : entries) {
+      if (e.length() != Constants.OBJECT_ID_STRING_LENGTH - 2)
+        continue;
+
+      try {
+        unpackedObjects.add(ObjectId.fromString(d + e));
+      } catch (IllegalArgumentException notAnObject) {
+      }
+    }
+  }
+
+The odds of finding a non-hex file inside of a loose object directory is incredibly low, especially once you include the test for length = 38 like we do at the start of the loop.  So we are very unlikely to throw an exception during the scan.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:115, org.eclipse.jgit/src/org/eclipse/jgit/lib/CachedObjectDirectory.java -> Given how this is line wrapping (and with the ObjectIdSubclassMap switch), I'd actually prefer:
+
+  if (unpackedObjects.get(objectId) == null)
+    return null;
+  return super.openObject2(curs, objectName, objectId);
+
+Also, you should implement hasObject on this database, but given the way the signature is, we have to do it through two methods:
+
+ xxx@xxx.xxx
+  protected abstract boolean hasObject1(AnyObjectId objectId) {
+    if (unpackedObjects.get(objectId) != null)
+      return true;  // known to be loose
+    return super.hasObject1(objectId);
+  }
+
+ xxx@xxx.xxx
+  protected abstract boolean hasObject2(String name) {
+    return false;  // loose objects were tested by hasObject1
+  }
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:64, org.eclipse.jgit/src/org/eclipse/jgit/lib/CachedObjectDatabase.java -> Style-nit:  We don't xxx@xxx.xxx tags.
+
+Also, please try to reorganize the Javadoc to have a single short sentence for the first line, and then use <p> to break paragraphs.  E.g.:
+
+ /** 
+  * xxx@xxx.xxx ObjectDatabase} wrapper providing temporary lookup caching.
+  * <p>
+  * The base class for xxx@xxx.xxx ObjectDatabase}s that wrap other 
+  * database instances and optimize querying for objects by caching
+  * some database dependent information.  Instances of this class  
+  * (or any of its subclasses) can be returned from the method 
+  * xxx@xxx.xxx ObjectDatabase#newCachedDatabase()}.  This class can be 
+  * used in scenarios where the database does not change, or when
+  * changes in the database while some operation is in progress is   
+  * an acceptable risk.
+  * <p>
+  * The default implementation delegates all requests to the wrapped
+  * database.  The instance might be indirectly invalidated if the 
+  * wrapped instance is closed.  Closing the delegating instance
+  * does not implies closing the wrapped instance. For alternative
+  * databases, cached instances are used as well.
+  */
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:128, org.eclipse.jgit/src/org/eclipse/jgit/lib/CachedObjectDatabase.java -> Why not just return this?
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:136, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> Style-nit:  Please add a blank line before the documentation and declaration of this new member.
+
+-------------------------------------

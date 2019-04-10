@@ -1,0 +1,166 @@
+DESCRIPTION
+
+ctf: alignment mask pre-cache
+
+Change-Id: I608fef2a55a9b184f164083f6b23946388901fe8
+Signed-off-by: Ivy Mitchell xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Ivy Mitchell
+date: 2013-11-20 20:05:25.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-20 20:37:44.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4052/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-20 21:29:19.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4052/ : SUCCESS
+
+-------------------------------------
+author: Jordon Obrien
+date: 2013-11-20 23:30:35.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+This API isn't conventional.
+
+Line:135, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/Definition.java -> I don't get why you take the alignmentMask.
+This is not a conventional API and make the rest of the code harder to follow.
+
+I don't believe the -1 will be an performance issue.
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-11-20 23:45:42.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:135, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/Definition.java -> The point is to pre-compute the ".getAlignment() -1" instead of calling it every single event.
+
+It does look a bit weird... would be "cleaner" if alignmentMask was a class field of Definition, unfortunately not all definition types have an alignment setting (like Structs, Enums, etc.)
+
+With separate patches it makes it easier to test the impact of each one individually (with ctf.core.tests.headless.ReadTrace for example, though you have to increase the number of loops). I'll try it tomorrow.
+
+-------------------------------------
+author: Tessa Dickson
+date: 2013-11-21 05:11:28.000000000
+
+Patch Set 2: Code-Review-1
+
+(1 comment)
+
+Makes the API ugly and error prone.
+No significant responsiveness improvement demonstrated.
+
+Line:135, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/Definition.java -> Before making an API ugly and error-prone, you'd better ensure there is a _very_ significant, measurable performance gain in doing so. Unless this significantly improves the reactiveness perceived by the end user, I'm against this change.
+
+You guys should probably focus on the algorithmic flaws in TMF rather than to try micro-optimizing those tiny details.
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2013-11-21 16:05:36.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:135, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/types/Definition.java -> alignread is done SEVERAL times for an event, I did benchmark it and it lowerd the read time consistently from 650 to 600 ns/event on average. I don't agree with the api either, however, this is significant. 
+
+That being said, this is a 10% gain on one component of many components. Also, as it is protected, it should not really be part of the main API, but I will of course respect the NAK.
+
+-------------------------------------
+author: Jordon Obrien
+date: 2013-11-21 16:11:25.000000000
+
+Patch Set 2:
+
+I'm surprised for the 10%. But, that means I should take a look on the way event are decoded.
+
+Do this only apply to CTF events decoded through an XML description?
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2013-11-21 16:29:03.000000000
+
+Patch Set 2:
+
+No clue. :) It applies just to my benchmark : readtrace.java in ctf tests headless. It reads a trace sequentially. Honestly it accelerates more if the first two patches didn't apply, and I don't notice the performance boost in real world traces, but I like taking optimisations to the point where they are no longer worth it to say that the exercise is complete.
+
+-------------------------------------
+author: Jordon Obrien
+date: 2013-11-21 16:32:58.000000000
+
+Patch Set 2:
+
+I found more issues with invalid seek into the traces (linear access) than decoding speed. Both are important for speed, but validating no useless work is done in the GUI may be better than speeding up the time to decode a single packet.
+
+I'll worth the effort when no other optimizations (bugs) are present.
+
+Thus, having a way to "trace" your own code base and visualize it into TMF seems to be a good way to track performance issues rather than a script on your own computer.
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2013-11-21 16:55:05.000000000
+
+Patch Set 2:
+
+From Etienne: Thus, having a way to "trace" your own code base and visualize it into TMF seems to be a good way to track performance issues rather than a script on your own computer.
+
+Reply from The Matthew: It's on the way, actually in gerrit. This is not btw a script on my computer, please take a peek at the testing facilities of tmf, they are moderately thorough. It downloads several traces and generates some, they are then in a test-bed. This test is in headless because it is a performance test and not a unit test. We run it though. 
+
+We will automate it, the main issue is getting a platform with consistent performance to test it on, the hudson server can have wild mood swings, we don't want to have to filter out noise because someone like me decided to run in parallel 18 instances of java cpu toast or what have you. once that issue is solved, I think we will work on an "are we fast yet" performance tracker.
+
+-------------------------------------
+author: Tessa Dickson
+date: 2013-11-21 16:56:38.000000000
+
+Patch Set 2:
+
+I notice that StructDeclaration maxAlign member is not final. This may have unfortunate optimisation effects. A nicer approach to try fixing your issue might be to have two sets of Declaration classes: a set of "template" classes, where you build your structure, adding each field one by one. Then, another class would be created with a constructor that takes the template class as parameter, and AFAIU should theoretically be able to have a final maxAlign member.
+
+This should theoretically allow performance improvements without hurting the API. However, I recommend going for user-perceivable gains before doing such micro-optimisations.
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2013-11-21 17:44:34.000000000
+
+Patch Set 2:
+
+Sounds great! patches are very welcome.
+
+-------------------------------------
+author: Jordon Obrien
+date: 2013-11-22 06:03:08.000000000
+
+Patch Set 2:
+
+I'm reading the code, maybe a patch will come soon.
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-01-17 22:57:35.000000000
+
+Abandoned
+
+Cleaning up old stuff
+
+-------------------------------------

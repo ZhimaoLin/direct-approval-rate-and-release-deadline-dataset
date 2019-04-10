@@ -1,0 +1,107 @@
+DESCRIPTION
+
+JCBC-544: Demonstrate how to handle errors in the views
+
+The server respose from the view request represented by ViewResult
+object, and we are using onError() callback only if there some
+unexpected runtime errors. Other errors, including missing design
+document or a view are expected from the server and safely wrapped into
+that object.
+
+The test checks that it properly fills in the error field of ViewResult
+when the design document is not exist.
+
+Change-Id: Ica5eebc638a0b31782f1680f898eacade4af3897
+
+
+COMMENTS
+
+author: Cory Peck
+date: 2014-09-11 20:58:53.234000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Jasmin Rangel
+date: 2014-09-11 20:58:53.634000000
+
+Patch Set 2:
+
+New patchset patch-id matches previous patchset, but commit message has changed.
+
+-------------------------------------
+author: Cory Peck
+date: 2014-09-11 22:01:56.060000000
+
+Patch Set 2:
+
+Michael, there is one question left, which stops me from propagating errors to onError() callback of Observable
+
+These is possible situation, when we might retrieve errors mixed with results. AFAIR it still probable, because of distributed view queries. And they looks like this:
+
+ {
+   "total_rows": 3,
+   "rows": [ {...}, {...}, {...} ],
+   "errors": [
+     {
+       "from": "127.0.0.1:5984",
+       "reason": "Design document `_design/testfoobar` missing in database `test_db_b`."
+     },
+     {
+       "from": "http:// localhost:5984/_view_merge/",
+       "reason": "Design document `_design/testfoobar` missing in database `test_db_c`."
+     }
+   ]
+ }
+
+At this moment I don't see how I can call onError() except to raise exception, but in this case I will not be able to return result object with partial result.
+
+Does it seem like enough for leaving it as is? Probably we should also document, why some errors returned in the result object? (becase there is some other useful information in this object)
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2014-09-12 01:07:12.710000000
+
+Patch Set 2:
+
+Hm that is a good question, I had no idea this is possible. 
+
+I think we have two following ways to handle that, and I'm not sure in general whats the best one - its tradeoffs:
+
+- If we keep the error and let the user decide we can cover all cases, but it is inconsistent with other APIS where we throw and it makes harder for the user to use the error handling features of observables.
+
+- If we throw its inline with the other code, but not as flexible and also probably we need to go a longer way to handle all error codes. But we can specialize from a generic exception which makes it easier. As a side not, I also don't like having a JSON object as the exception message, but we can't avoid that - or parse it out (specific parts) and log the rest.
+
+My gut feeling says that if we have an error, we should not return rows to the user, since there might be an issue anyway. What do you think?
+
+-------------------------------------
+author: Andreas Short
+date: 2014-09-12 01:11:47.960000000
+
+Patch Set 2:
+
+Generally I think the decision should be based on what we think the majority of people want to do when "something bad" happens.  I think for secondary index queries like this and how we defined the cluster interface (note the on_error parameter), it's best to document that application developers need to check for errors.
+
+The on_error will halt execution rather than try to return partial results, so there's an out.
+
+-------------------------------------
+author: Cory Peck
+date: 2014-09-12 05:36:27.564000000
+
+Patch Set 2:
+
+Okay. So I see this solution.
+
+When user specifies 'continue' for 'on_error', we will put it to the error property of the result, and he must check it as I've shown in the example in this patch
+
+When user specifies 'stop' (which I vote to make default), we will raise an exception, and he will get it in onError() callback of the Observable.
+
+-------------------------------------
+author: Andreas Short
+date: 2014-09-12 05:59:15.915000000
+
+Patch Set 2:
+
+Oh, that's an interesting idea.  I rather like it, but would like to see what Michael thinks.
+
+-------------------------------------

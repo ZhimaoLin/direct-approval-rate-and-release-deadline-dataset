@@ -1,0 +1,131 @@
+DESCRIPTION
+
+Unconditionally close repositories in RepositoryCache.clear()
+
+Earlier we tried to close the repository before removing it from the
+cache, so close only reduced refcount but didn't close it.
+
+Change-Id: I8b62cec6d8a3e88c096d1f37a1f7f5a5066c90a0
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+
+COMMENTS
+
+author: Douglas Trujillo
+date: 2016-10-11 13:46:21.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-10-11 13:46:27.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/9234/
+
+-------------------------------------
+author: Nick Kane
+date: 2016-10-11 13:54:58.000000000
+
+Patch Set 2: Code-Review+1
+
+(1 comment)
+
+Line:333, org.eclipse.jgit/src/org/eclipse/jgit/lib/RepositoryCache.java -> Is it intended that the repository is closed independent of the current refcount? Then this looks good to me.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-10-11 14:00:06.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/9234/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2016-10-11 19:08:19.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:333, org.eclipse.jgit/src/org/eclipse/jgit/lib/RepositoryCache.java -> yes, this I intended
+
+-------------------------------------
+author: Mitchell Griffith
+date: 2016-10-12 11:27:09.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:329, org.eclipse.jgit/src/org/eclipse/jgit/lib/RepositoryCache.java -> Now that we no longer leak usage count on purpose and the usage count is now ignored anyway, I think we can get rid of this.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2016-10-12 11:42:38.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:329, org.eclipse.jgit/src/org/eclipse/jgit/lib/RepositoryCache.java -> Done
+
+-------------------------------------
+author: Nick Kane
+date: 2016-10-12 11:56:36.000000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:329, org.eclipse.jgit/src/org/eclipse/jgit/lib/RepositoryCache.java -> Could you explain a bit more detailled what's the purpose of this loop? 
+
+Maybe I miss the bigger context: I haven't got the whole idea of how the cache intends to care about Repository refcount. Is it explained somewhere?
+
+Line:333, org.eclipse.jgit/src/org/eclipse/jgit/lib/RepositoryCache.java -> unregister() still removes the repository from the cache without closing it. Should behave differently then clear()?
+
+-------------------------------------
+author: Mitchell Griffith
+date: 2016-10-12 12:19:01.000000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:329, org.eclipse.jgit/src/org/eclipse/jgit/lib/RepositoryCache.java -> I will try to make a long story short. Before the time based eviction mechanism, the cache used to leak one usage count on purpose to prevent repositories from being evicted from the cache and rely on soft reference and JVM gc to evict repositories when running out of memory.
+
+This loop was closing repositories twice to bring back usage count to 0 and evict all repositories. This was not even working because it was only evicting unused repositories or repositories used by only one thread. All the repositories concurrently used by more than one thread were not cleared because usage count was greater than 2.
+
+There are many changes to understand the transition from the usage counter leak to the time based eviction:
+
+https://git.eclipse.org/r/#/c/55898/
+https://git.eclipse.org/r/#/c/55902/
+https://git.eclipse.org/r/#/c/56281/
+https://git.eclipse.org/r/#/c/74903/
+https://git.eclipse.org/r/#/c/74904/
+https://git.eclipse.org/r/#/c/81563/
+
+Line:333, org.eclipse.jgit/src/org/eclipse/jgit/lib/RepositoryCache.java -> Unregister allows users of the cache to unregister a repository without closing it.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2016-10-12 12:35:08.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:329, org.eclipse.jgit/src/org/eclipse/jgit/lib/RepositoryCache.java -> This loop predates the move of JGit to Eclipse so we have to dig in the old repository for explanations. This loop was introduced with the change introducing the RepositoryCache [1]. Though this commit doesn't explain why this loop is needed, I guess it was used to workaround the refcount problems in Repository which were fixed recently. I'll add Shawn as a reviewer, he wrote that code, maybe he can remember.
+
+[1] http://repo.or.cz/jgit/spearce.git/commit/02cca37fc880b86313345ebbabda43f0f93e32c9
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-10-13 22:01:11.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

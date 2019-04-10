@@ -1,0 +1,115 @@
+DESCRIPTION
+
+TMF: Refactor XML model code, using factories to re-use element parsers
+
+The same XML syntax (and thus parsing) can be used for many XML components'
+element, like state providers and views, but the behavior of each component
+may be different. We use a factory to define create the classes with the
+various behaviors.
+
+Change-Id: Iec5d54155b93a79b1ebc5ffeb8eaffef5e6569ca
+Signed-off-by: Aryana Jones xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Annalise Jimenez
+date: 2014-03-24 13:45:21.000000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-03-24 13:45:27.000000000
+
+Patch Set 6:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/6074/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-03-24 14:29:39.000000000
+
+Patch Set 6: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/6074/ : SUCCESS
+
+-------------------------------------
+author: Kaeden Tapia
+date: 2014-03-24 17:29:03.000000000
+
+Patch Set 6:
+
+Genevieve, did you check Matthew's comments as well?
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2014-03-24 17:55:55.000000000
+
+Patch Set 6:
+
+Actually, I did not notice your comments, Marc-André pointed them out to me :p
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2014-03-26 15:48:10.000000000
+
+Patch Set 6:
+
+replied late
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-03-26 21:37:36.000000000
+
+Patch Set 6: Code-Review-1
+
+(5 comments)
+
+a couple questions/comments
+
+Line:80, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/model/TmfXmlStateValue.java -> why not re-use ITmfStateValue.Type? Unsupported types can just fall-through to the default case. That was if we add more type in the future, it will remind us to come add support for those here.
+
+Line:430, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/model/TmfXmlStateValue.java -> You could mark those methods abstract to avoid the need for the supresswarning. It comes down to what should be the default behavior: do nothing, or ask the class what it wants to do.
+
+Line:48, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/model/ITmfXmlStateAttribute.java -> How does the event being handled can affect the quark that is returned?
+
+Line:27, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/model/ITmfXmlModelFactory.java -> I'm wondering if there is really a need for this interface. What other cases would we have other than read-write and read-only? It just feels like a lot of legislative overhead. We could have only one TmfXmlModelFactory, and when you get an instance you set the flag if you want read-only or not. And then the create* methods return you the appropriate element. 
+
+*or* we make a factory of factories! :O
+
+Line:152, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/model/TmfXmlStateAttribute.java -> the -AndAdd or not will depend on the implementation of the factory used underneath. I wouldn't put it in the method name (just getQuarkAbsolute, getQuarkRelative).
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2014-03-27 14:17:24.000000000
+
+Patch Set 6:
+
+(5 comments)
+
+Some answers.
+
+Also, please keep in mind that this plug-in's API is far from fixed. There will be a few more refactoring patches before the end! :D
+
+Line:80, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/model/TmfXmlStateValue.java -> Indeed I could do that.
+
+Line:430, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/model/TmfXmlStateValue.java -> I'll copy-paste the answer I gave Marc-Andre in patchset 5:
+
+No not astract. Some child classes may use this default nothingness behavior, for instance the read-only state value. But some extra refactoring will need to be done in the state value class. The base class is still too much state provider oriented.
+
+But I'll wait till I implement the more complex features of the view (texts in intervals, tooltips), that will make use of this class.
+
+Line:48, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/model/ITmfXmlStateAttribute.java -> In some mode (for example when executing the state provider), you use event field values, event name, event source, etc to get to the quark. Maybe filters will use it too, either in read-only or read-write, I have really no idea how that will be implemented.
+
+Line:27, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/model/ITmfXmlModelFactory.java -> 1- I do not know if any other cases will come up. There's still the filters to eventually implement, who knows what they'll use!
+
+I don't know about the overhead. I personnally prefer to have factory classes that definitely return classes than one factory with a flag and if then elses in every method.
+
+Line:152, lttng/org.eclipse.linuxtools.tmf.analysis.xml.core/src/org/eclipse/linuxtools/tmf/analysis/xml/core/model/TmfXmlStateAttribute.java -> Actually, situations like "query" state attribute, you never want to add the quark, while if you get a "constant", then, if in read-write, you want to add it otherwise not. 
+
+So if you just want to get the quark, you directly use ITmfStateSystem.getQuarkAbsolute method, while if you're in a situation you may want to add the quark, then use this method. The -AndAdd make it clear that it will be added if the context allows it.
+
+-------------------------------------

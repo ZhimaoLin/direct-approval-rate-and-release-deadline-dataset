@@ -1,0 +1,188 @@
+DESCRIPTION
+
+DFS: A storage layer for JGit
+
+In practice the DHT storage layer has not been performing as well as
+large scale server environments want to see from a Git server.
+
+The performance of the DHT schema degrades rapidly as small changes
+are pushed into the repository due to the chunk size being less than
+1/3 of the pushed pack size.  Small chunks cause poor prefetch
+performance during reading, and require significantly longer prefetch
+lists inside of the chunk meta field to work around the small size.
+
+The DHT code is very complex (>17,000 lines of code) and is very
+sensitive to the underlying database round-trip time, as well as the
+way objects were written into the pack stream that was chunked and
+stored on the database.  A poor pack layout (from any version of C Git
+prior to Junio reworking it) can cause the DHT code to be unable to
+enumerate the objects of the linux-2.6 repository in a completable
+time scale.
+
+Performing a clone from a DHT stored repository of 2 million objects
+takes 2 million row lookups in the DHT to locate the OBJECT_INDEX row
+for each object being cloned. This is very difficult for some DHTs to
+scale, even at 5000 rows/second the lookup stage alone takes 6 minutes
+(on local filesystem, this is almost too fast to bother measuring).
+Some servers like Apache Cassandra just fall over and cannot complete
+the 2 million lookups in rapid fire.
+
+On a ~400 MiB repository, the DHT schema has an extra 25 MiB of
+redundant data that gets downloaded to the JGit process, and that is
+before you consider the cost of the OBJECT_INDEX table also being
+fully loaded, which is at least 223 MiB of data for the linux kernel
+repository.  In the DHT schema answering a `git clone` of the ~400 MiB
+linux kernel needs to load 248 MiB of "index" data from the DHT, in
+addition to the ~400 MiB of pack data that gets sent to the client.
+This is 193 MiB more data to be accessed than the native filesystem
+format, but it needs to come over a much smaller pipe (local Ethernet
+typically) than the local SATA disk drive.
+
+I also never got around to writing the "repack" support for the DHT
+schema, as it turns out to be fairly complex to safely repack data in
+the repository while also trying to minimize the amount of changes
+made to the database, due to very common limitations on database
+mutation rates..
+
+This new DFS storage layer fixes a lot of those issues by taking the
+simple approach for storing relatively standard Git pack and index
+files on an abstract filesystem. Packs are accessed by an in-process
+buffer cache, similar to the WindowCache used by the local filesystem
+storage layer. Unlike the local file IO, there are some assumptions
+that the storage system has relatively high latency and no concept of
+"file handles". Instead it looks at the file more like HTTP byte range
+requests, where a read channel is a simply a thunk to trigger a read
+request over the network.
+
+The DFS code in this change is still abstract, it does not store on
+any particular filesystem, but is fairly well suited to the Amazon S3
+or Apache Hadoop HDFS. Storing packs directly on HDFS rather than
+HBase removes a layer of abstraction, as most HBase row reads turn
+into an HDFS read.
+
+Most of the DFS code in this change was blatently copied from the
+local filesystem code. Most parts should be refactored to be shared
+between the two storage systems, but right now I am hesistent to do
+this due to how well tuned the local filesystem code currently is.
+
+Change-Id: Iec524abdf172e9ec5485d6c88ca6512cd8a6eafb
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2011-10-27 03:38:45.000000000
+
+Uploaded patch set 7.
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-10-27 03:38:48.000000000
+
+Patch Set 7:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/947/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-10-27 03:42:00.000000000
+
+Patch Set 7: Build Successful
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/947/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-11-03 21:24:34.000000000
+
+Patch Set 7: Looks good to me, approved; IP review completed
+
+This change has been pending for a while. Unless there is an objection, I plan to submit this tomorrow.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2011-11-03 23:55:17.000000000
+
+Patch Set 7: (10 inline comments)
+
+This was a big patch of pretty clean code.
+More, questions than objection.
+
+Line:124, org.eclipse.jgit/src/org/eclipse/jgit/storage/dfs/LargePackedWholeObject.java -> Any particular reason for 8192 here?
+
+Line:377, org.eclipse.jgit/src/org/eclipse/jgit/storage/dfs/DfsInserter.java -> This ooks like a generally useful utility to me
+
+Line:239, org.eclipse.jgit/src/org/eclipse/jgit/storage/dfs/DfsBlockCache.java -> Is this an RFC patch?
+
+Line:273, org.eclipse.jgit/src/org/eclipse/jgit/storage/dfs/DfsBlockCache.java -> Define a final static int BILLION = 1000*1000*1000;
+and say 2*BILLION so we don't have to count zeroes. 
+
+Ever used the old Turkish Lira, counting the zeroes to figure out whether it was a million or ten million? 1000000 vs 10000000.
+
+Btw, zeroes or zeros?
+
+Line:324, org.eclipse.jgit/src/org/eclipse/jgit/storage/dfs/DfsBlockCache.java -> How about Exception, or even Throwable?
+Why not just call creditSpace within a finally block ?
+Or, since you don't handle all exceptions, a short comment on why.
+
+Line:457, org.eclipse.jgit/src/org/eclipse/jgit/storage/dfs/DfsBlockCache.java -> I think  a little more code is easier to read for cases like this. It make it clearer, why, you are doing this.
+
+long end = pos+ size;
+if (end > len)
+   end = len;
+
+Line:559, org.eclipse.jgit/src/org/eclipse/jgit/storage/dfs/DfsBlockCache.java -> You could have used just Object, but I actually like defining a class for this purpose.
+
+Line:53, org.eclipse.jgit/src/org/eclipse/jgit/storage/dfs/DfsPackKey.java -> Seems unnecessary. Why is the other value multiplied?
+
+Line:405, org.eclipse.jgit/src/org/eclipse/jgit/storage/dfs/DfsPackParser.java -> Could we have less magic constants for these things
+
+Line:59, org.eclipse.jgit/src/org/eclipse/jgit/storage/dfs/DfsConfig.java -> What TODO about this?
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2011-11-04 11:01:22.000000000
+
+Patch Set 7: (2 inline comments)
+
+
+
+Line:159, org.eclipse.jgit/src/org/eclipse/jgit/storage/dfs/DfsBlockCacheConfig.java -> how about moving these config keys to ConfigConstants ?
+
+Line:319, org.eclipse.jgit/src/org/eclipse/jgit/storage/dfs/DfsRefDatabase.java -> Eclipse raises "Javadoc: Invalid member type qualification" here and wants fully qualified org.eclipse.jgit.lib.Ref.Storage#NEW instead
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-11-04 14:16:03.000000000
+
+Patch Set 7: Do not submit
+
+Will address comments later today, don't want this to submit until I have had a chance to reply and/or make corrections.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-11-04 18:17:53.000000000
+
+Patch Set 7: (8 inline comments)
+
+
+
+Line:159, org.eclipse.jgit/src/org/eclipse/jgit/storage/dfs/DfsBlockCacheConfig.java -> Done
+
+Line:124, org.eclipse.jgit/src/org/eclipse/jgit/storage/dfs/LargePackedWholeObject.java -> Comment added.
+
+Line:239, org.eclipse.jgit/src/org/eclipse/jgit/storage/dfs/DfsBlockCache.java -> Its not RFC anymore. But I'm also not fixing this bug right now.
+
+Line:273, org.eclipse.jgit/src/org/eclipse/jgit/storage/dfs/DfsBlockCache.java -> Done. Defined as Integer.MAX_VALUE instead.
+
+Line:324, org.eclipse.jgit/src/org/eclipse/jgit/storage/dfs/DfsBlockCache.java -> Done
+
+Line:559, org.eclipse.jgit/src/org/eclipse/jgit/storage/dfs/DfsBlockCache.java -> Replaced with ReentrantLock.
+
+Line:59, org.eclipse.jgit/src/org/eclipse/jgit/storage/dfs/DfsConfig.java -> Storage of the configuration file is not currently specified. Hence it is not implemented.
+
+Line:319, org.eclipse.jgit/src/org/eclipse/jgit/storage/dfs/DfsRefDatabase.java -> Depends on Eclipse version I think. But done.
+
+-------------------------------------

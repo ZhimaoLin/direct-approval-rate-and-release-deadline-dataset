@@ -1,0 +1,84 @@
+DESCRIPTION
+
+Do not let PathFilter.create("a/b") match 'a' unless 'a' is a subtree
+
+PathFilter and PathFilterGroup form JGit's implementation of git's
+path-limiting feature in commands like log and diff.  To save time
+when traversing trees, a path specification
+
+	foo/bar/baz
+
+tells the tree walker not to traverse unrelated trees like qux/.  It
+does that by returning false from include when the tree walker is
+visiting qux and true when it is visiting foo.
+
+Unfortunately that test was implemented to be slightly over-eager: it
+doesn't only return true when asked whether to visit a subtree "foo"
+but when asked about a plain file "foo" as well.  As a result, diffs
+and logs restricted to some-file/non-existing-suffix unexpectedly
+match against some-file:
+
+ $ jgit log LICENSE/no-such-file
+ commit 629fd0d594d242eab26161b0dac34f7576fd4d3d
+ Author: Jaycee Hickman xxx@xxx.xxx
+ Date:   Fri Jul 02 14:52:49 2010 -0700
+
+     Clean up LICENSE file
+[...]
+ commit 1a6964c8274c50f0253db75f010d78ef0e739343
+ Author: Git Development Community xxx@xxx.xxx
+ Date:   Tue Sep 29 16:47:03 2009 -0700
+
+     Initial JGit contribution to eclipse.org
+[...]
+
+Fix it by checking against the entry's mode.
+
+Gitiles +log has the same bug and benefits from the same fix.
+
+Callers know not to worry about what subtrees are included in the tree
+walk because shouldBeRecursive() returns true in this case, so this
+behavior change should be safe.  This also better matches the behavior
+of C git:
+
+ $ empty=$(git mktree </dev/null)
+ $ git diff-tree --abbrev $empty HEAD -- LICENSE/no-such-file
+ $ git diff-tree --abbrev $empty HEAD -- tools/no-such-file
+ :000000 040000 0000000... b62648d... A  tools
+
+Bug: 484266
+Change-Id: Ib4d53bddd8413a9548622c7b25b338d287d8889d
+
+
+COMMENTS
+
+author: Eden Lin
+date: 2015-12-15 08:26:19.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-12-15 08:36:27.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7707/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-12-15 08:45:42.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7707/ : SUCCESS
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-12-16 17:09:49.000000000
+
+Change has been successfully merged into the git repository by Eden Lin
+
+-------------------------------------

@@ -1,0 +1,144 @@
+DESCRIPTION
+
+MB-4114 rotating data key
+
+introducing backupDataKey that is kept until the encryption_service
+receives a confirmation that config was successfully saved. that is
+to prevent secrets becoming unavailable if config save fails during
+the key rotation
+
+Change-Id: Id8377cd721adb1d8bf345691a74d25abf56578ee
+
+
+COMMENTS
+
+author: Philip Lara
+date: 2016-10-05 02:03:23.575000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Philip Lara
+date: 2016-10-05 02:04:35.800000000
+
+Patch Set 5: Verified+1
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2016-10-05 18:37:37.854000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:57, src/menelaus_web_secrets.erl -> So how does one complete the rotation if somehow Rotate gets executed, but not cleanup?
+
+Also, like I said yesterday, I don't particularly like do_when_not_saving, because it exposes ns_config implementation details. I think a better solution would be for encrypt to return some kind of key id that was used to encrypt the value. Then you can pass that id to maybe_clear_backup_key (in your on_save hook). Based on the id encryption_service would be able to tell when it's safe to drop the backup key.
+
+-------------------------------------
+author: Philip Lara
+date: 2016-10-05 18:47:16.119000000
+
+Patch Set 5:
+
+>> So how does one complete the rotation if somehow Rotate gets executed, but not cleanup?
+You can repeat data key rotation call. But if you don't the whole thing will work just fine regardless of the backup key being there or not.
+
+I specifically aimed at eliminating on_save hook because you said that you don't like it. 
+
+Not sure that I understand what's the point to have key id's, because cleanup always happens after the successful save, which guarantees that nothing is encrypted with backup key.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2016-10-05 18:54:54.102000000
+
+Patch Set 5:
+
+To me it seems that repeated attempts to rotate the key will fail with "rotation already in progress" error.
+
+func (s *encryptionService) cmdRotateDataKey() {
+	if s.lockKey == nil {
+		panic("Password was not set")
+	}
+	if s.backupDataKey != nil {
+		replyError("Data key rotation is in progress")
+		return
+	}
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2016-10-05 18:56:02.621000000
+
+Patch Set 5:
+
+> Not sure that I understand what's the point to have key id's, because cleanup always happens after the successful save, which guarantees that nothing is encrypted with backup key.
+
+I was tNathalie Landrying about a different way of solving the race condition in the original patch.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2016-10-05 18:57:52.101000000
+
+Patch Set 5:
+
+> I specifically aimed at eliminating on_save hook because you said that you don't like it. 
+
+I didn't like that we called babysitter node from inside ns_config. But we are already doing (multiple times) for encryption.
+
+-------------------------------------
+author: Philip Lara
+date: 2016-10-05 19:40:04.948000000
+
+Patch Set 5:
+
+>> To me it seems that repeated attempts to rotate the key will fail with "rotation already in progress" error.
+
+It will, but then the code in menelaus_web_secrets will do the cleanup and repeat the rotation
+
+-------------------------------------
+author: Philip Lara
+date: 2016-10-05 20:20:58.247000000
+
+Patch Set 5:
+
+Do I understand correctly that you suggest to allow rotating key in the middle of save and then do the cleanup on_save only if the same key was used to encrypt all fields?
+
+-------------------------------------
+author: Philip Lara
+date: 2016-10-05 20:58:53.037000000
+
+Patch Set 5:
+
+Another thing that could be done: send all the strings to encryption  service in one bulk, so the key could not be rotated in the middle
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2016-10-05 21:00:57.484000000
+
+Patch Set 5:
+
+(3 comments)
+
+Line:57, src/menelaus_web_secrets.erl -> This is still raceful. Consider to concurrent rotate requests.
+
+- initial state, data key is key1
+- first one rotates the key (current key is key2, backup is key1)
+- second comes in and gets an error from rotation and proceeds into the error clause, initiates resave and gets preempted
+- the first one wakes up, goes to the normal case, initiates its own resave and gets preempted
+- both resave calls get coalesced into a single save (the config is encrypted using key2)
+- the second request wakes up, calls Cleanup and Rotate; current key becomes key3, backup key becomes key2
+- now the first request wakes up and drops the backup key
+
+The end result is that current key is key3, whereas the config on disk is encrypted with key2. So if ns_config restarts, you get screwed.
+
+Line:75, src/menelaus_web_secrets.erl -> This works only if save succeeds, which is not necessarily the case.
+
+Line:960, src/ns_config.erl -> Blocking ns_config for potentially long periods of time is not the best idea.
+
+-------------------------------------
+author: Roselyn Villegas Code Review
+date: 2016-10-12 17:47:23.147000000
+
+Change has been successfully cherry-picked as fc9aa4169369f5a85eb346a46caacc29ea9d54e6 by Meghan Vazquez
+
+-------------------------------------

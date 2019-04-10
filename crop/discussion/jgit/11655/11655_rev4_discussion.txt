@@ -1,0 +1,114 @@
+DESCRIPTION
+
+Optimize DFS object reuse selection code
+
+Rewrite this complicated logic to examine each pack file exactly
+once. This reduces thrashing when there are many large pack files
+present and the reader needs to locate each object's header.
+
+The intermediate temporary list is now smaller, it is bounded to
+the same length as the input object list. In the prior version of
+this code the list contained one entry for every representation of
+every object being packed.
+
+Only one representation object is allocated, reducing the overall
+memory footprint to be approximately one reference per object found
+in the current pack file (the pointer in the BlockList). This saves
+considerable working set memory compared to the prior version that
+made and held onto a new representation for every ObjectToPack.
+
+Change-Id: I2c1f18cd6755643ac4c2cf1f23b5464ca9d91b22
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2013-04-04 21:22:10.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-04-04 21:59:56.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3294/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-04-04 22:05:16.000000000
+
+Patch Set 4: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3294/ : SUCCESS
+
+-------------------------------------
+author: Eden Lin
+date: 2013-04-04 22:38:35.000000000
+
+Patch Set 4: (3 inline comments)
+
+
+
+Line:505, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsReader.java -> What does this do?  Is otp's offset used?
+
+Line:515, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsReader.java -> Is this missing another loop over objects to see if any were unfound? How does the caller learn about missing objects?
+
+Line:446, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsPackFile.java -> Unrelated change? Harmless, though.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2013-04-04 23:01:03.000000000
+
+Patch Set 4: (3 inline comments)
+
+
+
+Line:505, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsReader.java -> otp.offset is initialized to 0 by PackWriter when it made the list of objects to pack. Here we overloaded it within this small block of code to store the offset from the source, to avoid allocating a new structure to contain the source's offset.
+
+During output PackWriter expects this to be 0 for an object that is not yet written. So we have to reset it back to 0 if we set it to non-0 above.
+
+Its a hack to reduce memory usage. We do this all over the place in ObjectToPack. There are many fields in ObjectToPack that have 2 or 3 different values in them during the process of creating a pack.
+
+Line:515, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsReader.java -> I don't think so. From reading PackWriter it appears to be legal to omit objects here that are not found. All that means is PackWriter can't reuse the existing byte stream, and instead will deflate the object onto the wire on the fly.
+
+So we just moved the not-found exception path from this early search phase into some much later downstream part. If delta compression is enabled it will discover the connectivity error trying to obtain the size of the object.
+
+If delta compression is disabled, the connectivity error will show up somewhere in the middle of the pack stream and the packer will just abort and break the stream at an object boundary, with no SHA-1 trailer.
+
+Line:446, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsPackFile.java -> Not really. I removed its only caller, so it made sense to also delete the method.
+
+-------------------------------------
+author: Eden Lin
+date: 2013-04-04 23:25:08.000000000
+
+Patch Set 4: Looks good to me, but someone else must approve
+
+(3 inline comments)
+
+
+
+Line:505, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsReader.java -> Thanks. Not about this patch, but some time it might be nice to list the overloaded meanings of each field in comments.
+
+Line:515, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsReader.java -> Ok, that makes sense. I agree that the simplification is probably worth it.
+
+Line:446, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsPackFile.java -> I guess I should have attached this comment to LargePackedWholeObject.java. :)
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2013-04-05 00:16:08.000000000
+
+Patch Set 4: Looks good to me, approved; IP review completed
+
+
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2013-04-05 00:16:10.000000000
+
+Change has been successfully merged into the git repository.
+
+-------------------------------------

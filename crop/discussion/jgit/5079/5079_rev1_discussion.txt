@@ -1,0 +1,91 @@
+DESCRIPTION
+
+Extract a "session" interface from ReceivePack
+
+The eventual goal is to allow Pre/PostReceiveHooks to execute in a
+separate process (still on top of the same git repository). Such hooks
+need access to many parts of ReceivePack, such as the underlying
+Repository and a mechanism for reporting errors to the user, but they do
+not and should not have direct access to things like the actual
+receiving mechanisms and underlying Input/OutputStreams.
+
+Change-Id: Ib3bd7b02ff9ce98866f629c62f70e2013b83bb4d
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2012-02-13 22:06:02.000000000
+
+Patch Set 1: (2 inline comments)
+
+
+
+Line:81, org.eclipse.jgit/src/org/eclipse/jgit/transport/PostReceiveHook.java -> This change is going to force the JGit project to bump its version to 2.0 in the next release, because its a public API signature change.
+
+I can't think of a way to avoid this without making too much pain for the project. Making the current ReceiveCommits an abstract base class with no wire protocol information is also a breaking change.
+
+I may prefer to just accept this change and break the API and force us to 2.0 in the next release. Its not that much work for a consumer application to adjust their linking to this one change. In aggregate though it might get to be a lot. :-\
+
+Line:80, org.eclipse.jgit/src/org/eclipse/jgit/transport/resolver/ReceivePackFactory.java -> Unnecessary change?
+
+-------------------------------------
+author: Santos Moore
+date: 2012-02-13 22:18:27.000000000
+
+Patch Set 1: (2 inline comments)
+
+
+
+Line:81, org.eclipse.jgit/src/org/eclipse/jgit/transport/PostReceiveHook.java -> I didn't realize this was going to be such a big deal. I will think a bit harder about whether I can avoid this by making more invasive changes to Gerrit (namely making ReceiveCommits not implement Pre/PostReceiveHook).
+
+Line:80, org.eclipse.jgit/src/org/eclipse/jgit/transport/resolver/ReceivePackFactory.java -> Done
+
+-------------------------------------
+author: Santos Moore
+date: 2012-02-13 22:55:59.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:81, org.eclipse.jgit/src/org/eclipse/jgit/transport/PostReceiveHook.java -> Upon further reflection, I think I can avoid changing the *Hook interfaces.
+
+In my prototype RPC implementation, I only needed to set a hook on the client side (that is, the frontline server speaking the git wire protocol with an end-user), which is where there is a real ReceivePack available. I still needed the interface, and the ability for com.google.gerrit.server.git.ReceiveCommits to accept different types of ReceiveSessions, but ReceiveCommits does *not* have to be a hook for my server-side RPC code to work.
+
+Here's another way of thinking about it: the whole point of having a pre-receive hook is to make one method call at a very specific point in the implementation of ReceivePack.receive(). Once you're talking about a ReceiveSession reconsituted from something sent over the wire in an RPC, you no longer have the idea of this specific wire protocol implementation, so there's no "natural" place where the hook belongs. Thus hooks don't really belong in the interface.
+
+-------------------------------------
+author: Santos Moore
+date: 2012-02-13 23:22:35.000000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:81, org.eclipse.jgit/src/org/eclipse/jgit/transport/PostReceiveHook.java -> Although I can get away with this, there is a downside, namely that it makes it so RPC server implementors have to modify *every* *Hook implementation to expose two public methods, one taking a ReceiveSession and one taking a ReceivePack to implement the hook interface.
+
+For a concrete example ReceiveCommits is going to have to change from this:
+
+ xxx@xxx.xxx
+  public void onPreReceive(final ReceivePack rp,
+      final Collection<ReceiveCommand> commands) {
+    <do work>
+  }
+
+to this:
+
+ xxx@xxx.xxx
+  public void onPreReceive(final ReceivePack rp,
+      final Collection<ReceiveCommand> commands) {
+    processCommands(rp, commands);
+  }
+
+  public void processCommands(final ReceiveSession rs,
+      final Collection<ReceiveCommand> commands) {
+    <do work>
+  }
+
+This is not so bad for one class, but it requires modifying *every* class that the server implementor wants to expose.
+
+-------------------------------------

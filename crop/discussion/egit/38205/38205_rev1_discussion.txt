@@ -1,0 +1,115 @@
+DESCRIPTION
+
+Decrease job startup delay for IndexDiffCache updates
+
+The fix for bug 417597 (https://git.eclipse.org/r/30261) can cause
+performance problems for slow workspaces where *lot* of changes were
+reported but the incremental index update is not fast enough.
+
+Because the changes are collected until the previous job is done, if the
+number of changes exceeds RESOURCE_LIST_UPDATE_LIMIT (1000) the full
+index update will be triggered which costs even more time.
+
+The proposed fix is to decrease the IndexDiffUpdateJob start delay from
+400 to 10 ms, with the hope that this will help slow workspaces to
+perform updates faster.
+
+Change-Id: Iffff9188510d763a00315661677e9386ca886b47
+Signed-off-by: Jayvion Booth xxx@xxx.xxx
+
+COMMENTS
+
+author: Jayvion Booth
+date: 2014-12-14 23:10:25.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-12-14 23:10:31.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/6550/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-12-14 23:50:40.000000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/6550/ : ABORTED
+
+-------------------------------------
+author: Bryanna Douglas
+date: 2014-12-15 06:14:41.000000000
+
+Patch Set 1:
+
+Maybe this one should be a little bit different when looking at https://git.eclipse.org/r/#/c/37880/ - it will remove the major needs for index update jobs anyway, as ignored resources no longer count towards the 1000 limit.
+
+Still I do think this is a good change to improve responsiveness - 400ms timeout is too long, but taking the other change into account, 10ms might be a little too fast? How about 100-200ms?
+
+-------------------------------------
+author: Jayvion Booth
+date: 2014-12-15 07:35:04.000000000
+
+Patch Set 1:
+
+Markus,
+
+I think we don't need 100 ms. As soon as the fist resource delta triggers update the next few will either be collected together with the first or will wait for the first update to be completed.
+
+The original fix eliminated the main reason for UI slowness - scheduling of hundreds of *parallel* running threads for jobs waiting on each other to complete. The delay was added just to avoid too many *small* incremental updates, but this was "nice to have". However adding extra wait times seem to affect such workspaces as yours, and so I think longer delay is not worth it.
+
+-------------------------------------
+author: Jayvion Booth
+date: 2014-12-15 07:36:19.000000000
+
+Patch Set 1:
+
+Markus, have you actually tried if the reduced delay helps you at all?
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-12-15 07:36:27.000000000
+
+Patch Set 1: -Verified
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/6552/
+
+-------------------------------------
+author: Bryanna Douglas
+date: 2014-12-15 07:40:00.000000000
+
+Patch Set 1:
+
+No, not yet ;) I'm OK with the 10ms, as it reduces latencies. I also don't think that either setting causes problems for us, as with the other change we're pretty much down to near zero  index updates without actually modifying files. And if we actually modify files by hand, pressing "save" take longer than that ;)
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-12-15 07:51:28.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/6552/ : SUCCESS
+
+-------------------------------------
+author: Bryanna Douglas
+date: 2014-12-15 08:04:02.000000000
+
+Patch Set 1:
+
+i tested the change and it seems to improve responsiveness without any other visible negative effects. As refactoring seems to batch delta processing anyway on eclipse side also, changing a lot of files still leads to only one update. perfect :)
+
+-------------------------------------
+author: Bryanna Douglas
+date: 2014-12-15 08:04:18.000000000
+
+Patch Set 1: Code-Review+1
+
+-------------------------------------

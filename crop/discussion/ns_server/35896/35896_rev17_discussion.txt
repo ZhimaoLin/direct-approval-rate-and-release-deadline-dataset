@@ -1,0 +1,159 @@
+DESCRIPTION
+
+MB-10086: cbcollect_info upload support.
+
+Created some new options that allows a user to upload the log directly:
+
+--upload
+--upload-host
+--customer
+--ticket
+
+Using the requests library to do the upload.
+
+Created --script to allow erlang to drive cbcollect.
+
+Change-Id: Ie2dcd0be2c45ac031e949be0f4c8564ef8fe9668
+
+
+COMMENTS
+
+author: Darian Blanchard
+date: 2014-05-02 13:53:24.398000000
+
+Uploaded patch set 17.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2014-05-02 14:00:17.228000000
+
+Patch Set 17: Code-Review+1
+
+-------------------------------------
+author: Nathalie Landry
+date: 2014-05-02 21:28:14.514000000
+
+Patch Set 17:
+
+what was the deal with that 3rd party dependency?
+
+-------------------------------------
+author: Nathalie Landry
+date: 2014-05-02 21:29:54.951000000
+
+Patch Set 17:
+
+I hope you guys are aware that this has to work with ancient python that's shipped with "enterprise" distros.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2014-05-02 21:36:12.498000000
+
+Patch Set 17:
+
+So python 2.4 must be supported. Hopefully it's not a problem but I have no idea. Never liked python.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2014-05-02 21:40:09.518000000
+
+Patch Set 17:
+
+it doesn't look like mmap as used here is going to work on windows. Can we avoid this crap ?
+
+Also I'd like us to verify that https (which I assume is exclusively used by s3) is really correctly verified. I recall reading somewhere that older http libs of python do not really do ssl host validation at all.
+
+-------------------------------------
+author: Alex Mcmahon
+date: 2014-05-02 21:41:45.214000000
+
+Patch Set 17: Verified-1
+
+(1 comment)
+
+I believe there are other issues as well.
+
+You have to verify compatibility with Python 2.4.
+
+Line:199, cbcollect_info -> context managers are not supported by Python 2.4.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2014-05-02 21:49:25.426000000
+
+Patch Set 17:
+
+>> it doesn't look like mmap as used here is going to work on windows. Can we avoid this crap ?
+
+By crap I refer to mmap which is hard to do portably. It's hard for me to believe that mmap cannot be avoided. Plus different platforms have different limits of how large files can be mmap-ped. Ideally we'd work regardless of that.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2014-05-06 08:37:06.770000000
+
+Patch Set 17:
+
+@Alk 
+
+> what was the deal with that 3rd party dependency?
+
+We've removed the dependancy on python-requests, and replaced with a urllib2 based implementation. Requests handled the HTTPS upload, including efficient streaming upload of the zip file, which is why the mmap() is in there, so save having to convert the entire file into an in-memory byte array.
+
+> > it doesn't look like mmap as used here is going to work on windows. Can we avoid this crap ?
+
+> By crap I refer to mmap which is hard to do portably. It's hard for me to believe that mmap cannot be avoided. Plus different platforms have different limits of how large files can be mmap-ped. Ideally we'd work regardless of that.
+
+Note that Python's mmap [1] *does* work on Windows, I believe it uses the Win32 equivalent of mmap() and not the standard POSIX function.
+
+The (python) mmap call isn't needed for functionality, so we can remove it if necessary, it'll just increase the amount of memory used by cbcollect_info when uploading by the size of the uploading zip file.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2014-05-06 08:38:21.318000000
+
+Patch Set 17:
+
+@Pavel @Alk
+
+> So python 2.4 must be supported. Hopefully it's not a problem but I have no idea. Never liked python.
+
+& 
+
+> You have to verify compatibility with Python 2.4.
+
+I wasn't aware of this requirement - thanks for pointing it out. I will work with Patrick to test and update as necessary.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2014-05-06 16:30:50.995000000
+
+Patch Set 17:
+
+Looking at api docs I see that 3rd argument of mmap is different on windows
+
+-------------------------------------
+author: Ashlee Kent
+date: 2014-05-06 17:20:04.663000000
+
+Patch Set 17:
+
+@Alk:
+
+> Looking at api docs I see that 3rd argument of mmap is different on windows
+
+This is true, however note we don't make use of that argument; instead there is a platform neutral `access` argument which abstracts away the platform differences and is used instead:
+
+ mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+
+-------------------------------------
+author: Nathalie Landry
+date: 2014-05-06 17:21:48.719000000
+
+Patch Set 17:
+
+>> This is true, however note we don't make use of that argument; instead there is a platform neutral `access` argument which abstracts away the platform differences and is used instead:
+ mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+
+Ok. Apparently I've missed that aspect.
+
+-------------------------------------

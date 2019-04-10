@@ -1,0 +1,142 @@
+DESCRIPTION
+
+CBIDXT-29 AtomicMutationQueue Implementation
+
+AtomicMutationQueue is a lock-free multi-queue with internal queue per
+vbucket for storing mutation references.
+
+This implementation uses Go "atomic" pkg to provide safe concurrent access
+for a single reader and writer per vbucket queue without using mutex locks.
+
+Change-Id: Ia3b633259e86b4d0af4f5e86b1112a5c011f7eec
+
+
+COMMENTS
+
+author: Maliyah Fischer
+date: 2014-04-21 12:10:28.215000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Leonel Abbott
+date: 2014-04-22 10:25:36.748000000
+
+Patch Set 3:
+
+(12 comments)
+
+Line:26, secondary/indexer/mutation_queue_atomic.go -> `Vbucket` field is part of mutation object, should we need an argument for that ?
+
+Line:29, secondary/indexer/mutation_queue_atomic.go -> Just a suggestion: May be we can pass both channels as arguments ?
+
+Line:31, secondary/indexer/mutation_queue_atomic.go -> May be we can pass the channel as argument ?
+Is this a blocking call ? Method comment seem to suggest that it is a blocking call.
+
+Line:33, secondary/indexer/mutation_queue_atomic.go -> What will happen if queue is empty for the `vbucket` ?
+
+Line:56, secondary/indexer/mutation_queue_atomic.go -> The data structure is modelled in such a way that size of `head`, `tail`, `free` is not going to change after it is constructed.
+Like wise, there won't be more than one outstanding call to Dequeue or Enqueue for the _same vbucket_.
+
+Is that correct ?
+
+In which, case should we use atomic primitives to manage the list ?
+
+Line:63, secondary/indexer/mutation_queue_atomic.go -> having size as type int might avoid typecasting.
+
+Line:67, secondary/indexer/mutation_queue_atomic.go -> q.numVbuckets is initialized ?
+
+Line:94, secondary/indexer/mutation_queue_atomic.go -> Little uncomfortable with this. If we have a high poll interval it will slow down upstream data path. If we have a low poll interval it will lead to lot of overhead on slow data path.
+
+Line:132, secondary/indexer/mutation_queue_atomic.go -> Creating a buffered channel might help performance.
+
+Line:148, secondary/indexer/mutation_queue_atomic.go -> Can we use `size` field instead of comparing head & tail ?
+
+Line:201, secondary/indexer/mutation_queue_atomic.go -> Can we use `size` field ?
+
+Line:272, secondary/indexer/mutation_queue_atomic.go -> Is there a separate code that will populate the free list ?
+
+-------------------------------------
+author: Maliyah Fischer
+date: 2014-04-22 17:59:10.634000000
+
+Patch Set 3:
+
+(12 comments)
+
+Line:26, secondary/indexer/mutation_queue_atomic.go -> My goal is to finally abstract a generic atomic multi-queue out of this so that other components can use it as well. So the first argument will change to interface{} and second to a generic name(e.g. slot, stream) so this becomes a generic multi-queue. DequeueUptoSeqno is the only non-generic method of this interface, which I would like be part of another interface on top of the generic queue. I'll do that once the interface matures a little more and I am sure this is all we are going to need from this queue.
+
+Line:29, secondary/indexer/mutation_queue_atomic.go -> The way I am using channels is that the "creator" of channel is the "owner" of the channel and that "owner" sends on that and more importantly is the only one who calls "close" on the channel. This is to avoid panic if someone tries to send on a closed channel. So I would like to keep mutation channel ownership with the library. But yes the Stop channel should get changed to an argument in the next patchset. The caller can "close" the stop channel to signal it doesn't want more mutations.
+
+Line:31, secondary/indexer/mutation_queue_atomic.go -> Same comment as above for channel. Its not a blocking call. I meant to suggest that the method will keep polling till it reaches the seqno specified.
+
+Line:33, secondary/indexer/mutation_queue_atomic.go -> nil is returned. I mentioned it in the comment before functions definition below. I'll add it here as well.
+
+Line:56, secondary/indexer/mutation_queue_atomic.go -> Atomic primitives are required even for a single enqueue and dequeue threadfor _same vbucket_. Please see issues highlighted in the link mentioned above.
+
+Line:63, secondary/indexer/mutation_queue_atomic.go -> ok
+
+Line:67, secondary/indexer/mutation_queue_atomic.go -> ah right, will add that.
+
+Line:94, secondary/indexer/mutation_queue_atomic.go -> Enqueue and Dequeue are non-blocking(there are no locks). So polling(for dequeue) should not affect the upstream data path(enqueue).
+
+Line:132, secondary/indexer/mutation_queue_atomic.go -> I want the next item to be dequeued when the previously dequeued item has been consumed by the caller (as there is no facility to enqueue an item again). So I am using the unbuffered channel for this synchronization.
+
+Line:148, secondary/indexer/mutation_queue_atomic.go -> Need to think more about this.
+
+Line:201, secondary/indexer/mutation_queue_atomic.go -> Same as above.
+
+Line:272, secondary/indexer/mutation_queue_atomic.go -> freelist gets created automatically as the head moves forward in dequeue.
+The comment needs to change though. There is no "lock".
+
+-------------------------------------
+author: Dominique Stanton
+date: 2014-04-22 18:39:28.207000000
+
+Patch Set 3:
+
+(3 comments)
+
+Line:114, secondary/indexer/mutation_queue_atomic.go -> Why not using CompareAndSwap()?
+
+Line:210, secondary/indexer/mutation_queue_atomic.go -> This has the same code with dequeueUptoSeqno.  Perhaps should do a minor refactoring to the two functions can share the same code.  Why this does not jsut call DequeueSingleElement()?
+
+Line:271, secondary/indexer/mutation_queue_atomic.go -> Should make it clear that there is a single writer.  This method is not thread-safe.
+
+-------------------------------------
+author: Dominique Stanton
+date: 2014-04-22 19:22:04.842000000
+
+Patch Set 3:
+
+(2 comments)
+
+Line:152, secondary/indexer/mutation_queue_atomic.go -> head.next can be null?
+
+Line:226, secondary/indexer/mutation_queue_atomic.go -> When do you return the node to the free list?
+
+-------------------------------------
+author: Maliyah Fischer
+date: 2014-04-23 06:17:07.290000000
+
+Patch Set 3:
+
+(5 comments)
+
+Line:114, secondary/indexer/mutation_queue_atomic.go -> As Enqueue is the only one modifying tail[vbucket], I can save on CompareAndSet().
+
+Line:152, secondary/indexer/mutation_queue_atomic.go -> If head!=tail (which means there is a single valid element), head.next cannot be null(head.next is the first element of queue, head is the sentinel).
+
+Line:210, secondary/indexer/mutation_queue_atomic.go -> dequeueUptoSeqno also checks the seqno "before" doing the dequeue.  I can call DequeueSingleElement() from here as these 2 are same. Will change this.
+
+Line:226, secondary/indexer/mutation_queue_atomic.go -> As head keeps moving forward to head->next, all the nodes from free pointer (which doesn't move till freelist is popped) to head pointer are the freelist. It doesn't need to be created separately.
+
+Line:271, secondary/indexer/mutation_queue_atomic.go -> Yes will clarify in the comment. Just to be on the same page, for single vbucket queue, only 1 reader and 1 writer are allowed. But there can be concurrent single reader/writer for all vbuckets.
+
+-------------------------------------
+author: Dominique Stanton
+date: 2014-04-23 15:24:02.311000000
+
+Patch Set 3: Code-Review+1
+
+-------------------------------------

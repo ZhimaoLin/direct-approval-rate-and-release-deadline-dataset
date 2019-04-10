@@ -1,0 +1,41 @@
+DESCRIPTION
+
+Untangle ddoc replication from capi_set_view_manager again.
+
+Initially they were melded together to avoid races of the following
+kind:
+
+  - ddoc_replicator deletes a document and sends an asynchronous
+    notification to the capi_set_view_manager
+
+  - meanwhile capi_set_view_manager serves some call involving the
+    deleted document
+
+So the capi_set_view_manager would have to expect that ddoc can be
+changed concurrently. Which complicated the code significantly.
+
+Now I need to have the replicator separated to be able to run it on
+non-kv node. So I capi_set_view_manager and newly introduced
+capi_ddoc_manager are synchronized via dedicated gen_event. When
+capi_ddoc_manager is about to update a ddoc, it sends a synchronous
+notification via the gen_event that tells capi_set_view_manager to
+suspend until the document is saved. Then after it's saved, an
+asynchronous notification is sent for capi_set_view_manager to
+continue its operations. On non-kv node there still be a
+capi_ddoc_manager and a corresponding gen_event. But there will be no
+capi_set_view_manager listening on the latter.
+
+Change-Id: If97c50b5da8f0994497dcee6a1f3054631f6f5be
+Reviewed-on: http://review.couchbase.org/48037
+Tested-by: Meghan Vazquez xxx@xxx.xxx
+Reviewed-by: Philip Lara xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Roselyn Villegas Code Review
+date: 2015-03-11 00:03:59.076000000
+
+Change has been successfully cherry-picked as 48ab562d61f5cec7fc1ee91ca8c2ba2a59be9222
+
+-------------------------------------

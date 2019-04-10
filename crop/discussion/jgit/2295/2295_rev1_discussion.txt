@@ -1,0 +1,57 @@
+DESCRIPTION
+
+RFC Store Git on any DHT
+
+jgit.storage.dht is a new storage provider implementation for JGit
+that permits storing the Git repository into a distributed hashtable,
+NoSQL system, or traditional database.  The actual underlying storage
+system is completely undefined, and can be plugged in by implementing
+7 small interfaces:
+
+  *  Database
+  *  RepositoryTable
+  *  RefTable (and RefTransaction)
+  *  ChunkTable
+  *  ObjectIndexTable
+  *  WriteBuffer
+
+The storage provider interface tries to assume very little about the
+underlying storage system, and requires only three key features:
+
+  *  key -> value lookup (a hashtable is suitable)
+  *  atomic updates on single rows
+  *  asynchronous operations (Java's ExecutorService is easy to use)
+
+Most NoSQL database products offer all 3 of these features in their
+clients, and so does any decent network based cache system like the
+open source memcache product.  Relying only on key equality for data
+retrevial makes it simple for the storage engine to distribute across
+multiple machines.  Traditional SQL systems could also be used with a
+(yet to be written) JDBC based spi implementation.
+
+Thus far I have implemented two storage systems for the spi layer:
+Apache Cassandra [1] and Google Bigtable.  Both systems weigh in with
+an spi layer around 1000 lines of code to implement the above 7
+interfaces.  This is a huge reduction in size compared to prior
+attempts to implement a new JGit storage layer.  As this package
+shows, a complete JGit storage implementation is closer to 7000 lines
+of relatively complex code.
+
+[1] https://github.com/spearce/jgit_cassandra
+
+Change-Id: I0aa4072781f5ccc019ca421c036adff2c40c4295
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2011-01-24 00:00:38.000000000
+
+Patch Set 1: Do not submit
+
+I'll be replacing this with a new patch set soon.  This code is broken, on Cassandra it crashes and cannot handle the linux-2.6 repository (but its OK with JGit, which is a whole lot smaller).
+
+I fixed the use of Inflater, but its still not counting objects as fast as is necessary to perform a clone of linux-2.6 from a DHT.  Local Cassandra is pretty quick, because the RPC latency is very low.  But going over a WAN (e.g. my desktop to a Cassandra server in another city) is far too slow.  Right now I suspect its because for linux-2.6 we are packing about 2200 commits per 1MB chunk, but we need to walk something like 200,000 commits just to count the commit objects (forget counting trees!).  That is 90 chunks; if the ping round-trip time is 100 ms we need at least 9 seconds just to ping Cassandra for each chunk sequentially.  Since the chunks have no links between them, its actually double that because we need to look for the object in the ObjectIndexTable first.  So its at least 18 seconds to load the commit list.  On local disk this occurs almost instantly.
+
+-------------------------------------

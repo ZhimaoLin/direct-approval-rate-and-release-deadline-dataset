@@ -1,0 +1,205 @@
+DESCRIPTION
+
+WIP MB-10086 [auto_collect]: basic manager and per-node processes
+
+Adds two new processes for cluster-wide log collection:
+collect_logs_manager and collect_logs_node.
+
+* collect_logs_manager: gen_server responsible for managing a user's
+  logs request, accepts requests for log collection and spawns a
+  collect_logs_node process on each cluster node which logs are
+  requested from, and aggregates their results.
+
+* collect_logs_node: gen_server responsible for running cbcollect_info
+  on a particular cluster node, and returning the result of that
+  process back to the manager.
+
+WIP: Currently can (with mock cbcollect_info) handle successful
+execution case (no upload) and report the status back via
+collect_logs_manager:get_status/0.
+
+Unit test using: make -j8 test T_WILDCARD=collect_logs*
+
+If whole cluster is spun up with ./cluster_run; example HTTP REST
+request (using http from httpie.org):
+
+    http -v --auth Administrator:asdasd localhost:9000/collectLogs/start from=allnodes upload:=true upload_host="https://customer.couchbase.com" customer="Example inc." ticket=12345
+
+TODO:
+* Handle collection with upload
+* Handle error cases
+* Publish status to tasks API.
+
+Change-Id: I6ef4c1b899a0519a317908f5e06b22170c71206f
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2014-04-10 17:20:41.641000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2014-04-10 17:38:34.908000000
+
+Patch Set 3:
+
+Adding initial reviewers. Note this isn't anywhere complete, but any early feedback would be appreciated!
+
+-------------------------------------
+author: Nathalie Landry
+date: 2014-04-11 01:04:46.523000000
+
+Patch Set 3:
+
+so anybody seeing this code will be able to span us with "cbcollectinfos" ?
+
+-------------------------------------
+author: Nathalie Landry
+date: 2014-04-11 01:04:54.494000000
+
+Patch Set 3:
+
+s/span/spam/
+
+-------------------------------------
+author: Darian Blanchard
+date: 2014-04-11 01:14:23.716000000
+
+Patch Set 3:
+
+Anyone reading our wiki can spam us with cbcollectinfo:
+
+http://www.couchbase.com/wiki/display/couchbase/Working+with+the+Couchbase+Technical+Support+Team
+
+In this case they need to know the host name at least.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2014-04-11 01:15:56.358000000
+
+Patch Set 3:
+
+Weird. And nobody cares?
+
+Also shipping program to spam logs IMHO increases odds of problems of this approach.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2014-04-11 01:39:30.146000000
+
+Patch Set 3:
+
+skimmed through the code.
+
+The will be tons of minor things closer toward ends. Like code formatting, trailing whitspace, division into commits, logging etc.
+
+In general looks like good first erlang code.
+
+Larger things I spotted so far:
+
+* there's potential for deadlock when parent shuts down child(s) when child does gen_server:call to parent. It won't happen unless child does trap_exit, but there's chance that it will trap_exit
+
+* shutting down childs should ideally terminate cbcollectinfo. Doing this portably from erlang is impossible. Suggest looking at how it's done between us and memcached/moxi. This is where you might use trap_exit.
+
+* I don't see any reason why we spawn those childs and then serially cbcollectinfo them. Either do those remote childs fully serially, or fully concurrently. Middle-ground looks like doing lots of work for no reason. Unless I'm missing something.
+
+* there's no reason to do rpc:block_call
+
+-------------------------------------
+author: Ashlee Kent
+date: 2014-04-11 07:58:33.844000000
+
+Patch Set 3:
+
+@Alk - thanks for the comments, much appreciated. This is very much a WIP so I know there's a bunch of cleanup required, just wanted to ensure I was going in the right direction. Responses:
+
+> so anybody seeing this code will be able to span us with "cbcollectinfos" ?
+
+Nope - the user must specify a host to upload. I took out the hardcoded "couchbase customer upload host" in response to your comment on the spec [1].
+
+> Larger things I spotted so far:
+> there's potential for deadlock when parent shuts down child(s) when child does gen_server:call to parent. It won't happen unless child does trap_exit, but there's chance that it will trap_exit
+shutting down childs should ideally terminate cbcollectinfo. Doing this portably from erlang is impossible. Suggest looking at how it's done between us and memcached/moxi. This is where you might use trap_exit.
+
+Thanks. I could instead use a cast from the child -> parent which I think would solve this, at the cost of the parent potentially not getting the async message, but in such a shutdown situation that might be ok. Thoughts?
+
+> I don't see any reason why we spawn those childs and then serially cbcollectinfo them. Either do those remote childs fully serially, or fully concurrently. Middle-ground looks like doing lots of work for no reason. Unless I'm missing something.
+
+Spawning all the children up front means I can (somewhat naively) check that no other auto-collect is in flight. I was also being somewhat conservative with only starting one cbcollect at once, we have seen issues in the past with multiple cbcollect_infos causing node failover. I *believe* these may be fixed in 2.5.1 and so we may be able to relax this and run in parallel, but I'd like to test with the complete code. Doing it this way (spawning all the processes at once, but idle) should make it trivial to experiment with a parallel approach.
+
+> there's no reason to do roc:block_call
+
+I found I needed to use rpc:block_call (instead of rpc:call) as when I started a collect_logs_node process on a remote note, when I later tried to make a call to it (using the returned pid the call failed with a timeout. I believe that when rpc:call was used it was creating an intermediate process on the remote node (which was killed after the call) and the manager process was getting it's pid, and not the node process. Changing to rpc:block_call fixed this. 
+
+As the init/1 of collect_logs_node is pretty minimal I don't think there's a problem in making a blocking call to start it up.
+
+[1]: https://docs.google.com/document/d/1cPHNNIonFT33IfS5ae4_jsknjazP-gCEK69-qr9E4k8/edit#heading=h.e07q6r2ept40
+
+-------------------------------------
+author: Nathalie Landry
+date: 2014-04-11 17:49:12.998000000
+
+Patch Set 3:
+
+regarding rpc:block_call, indeed I missed that aspect. But that actually means that you're doing wrong thing anyways.
+
+Your remote start_link will link child process to it's local rpc process, not to parent.
+
+You may want to look at how we remotely start linked processes in ebucketmigrator_srv
+
+-------------------------------------
+author: Ashlee Kent
+date: 2014-04-14 09:18:43.371000000
+
+Patch Set 3:
+
+re: rpc:block_call, I did originally try to use the mechanism used by bucketmigrator_srv (misc:start_link) but I couldn't get it to successfully start a gen_server (i.e. collect_logs_node). As far as I could tell gen_server:start_link didn't like being started via start, so the only way I could get gen_server to work with a remote start was rpc:block_call.
+
+For reference, code change I tried to use misc:start_link:
+
+diff --git a/src/collect_logs_node.erl b/src/collect_logs_node.erl
+index 5484575..793dd0e 100644
+--- a/src/collect_logs_node.erl
++++ b/src/collect_logs_node.erl
+@@ -49,8 xxx@xxx.xxx
+ 
+ %% Start the server on the given node, with the given Upload options.
+ start_link(Node, Upload) ->
+-    rpc:block_call(Node, gen_server, start_link,
+-             [{local, ?MODULE}, ?MODULE, [Upload], []]).
++    misc:start_link(Node, gen_server, start,
++                    [{local, ?MODULE}, ?MODULE, [Upload], []]).
+ 
+ %% Cancel log collection (whereever or not we are already collecting,
+ %% and terminate the process.
+@@ -76,8 xxx@xxx.xxx collect(Pid) ->
+ init([Upload]) ->
+     ?log_info("At ~p:~p, initializing with Upload: ~p~n", [node(), self(), Upload] ),
+     process_flag(trap_exit, true),
++    proc_lib:init_ack({ok, self()}),
+     State = #state{status = idle, upload=Upload},
+-    {ok, State}.
++    gen_server:enter_loop(?MODULE, [], State, {local, ?MODULE}).
+ 
+ handle_call(cancel, _From, State) ->
+     {stop, normal, cancelled, State};
+
+
+But this gave a somewhat cryptic error - the child process is getting terminated somehow:
+
+[ns_server:info,2014-04-14T10:18:05.659,nonode@nohost:collect_logs_node<0.95.0>:collect_logs_node:init:77]At xxx@xxx.xxx initializing with Upload: [{bin_dir,
+                                                       "../install/bin"},
+                                                      {cbcollect_name,
+                                                       "cbcollect_info_mock"},
+                                                      {extra_args,
+                                                       ["--mock_output=status: collected\nartifact: /tmp/node-01.zip",
+                                                        "--mock_result=0"]}]
+
+[ns_server:error,2014-04-14T10:18:05.659,nonode@nohost:collect_logs_manager<0.93.0>:collect_logs_manager:handle_call:110]begin_collection: Failed to successfully start all children: xxx@xxx.xxx
+                                                               {error,
+                                                                normal}}]
+
+-------------------------------------

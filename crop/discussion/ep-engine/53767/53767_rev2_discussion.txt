@@ -1,0 +1,132 @@
+DESCRIPTION
+
+Use simple array for cachedVBStates in kvstores
+
+The usage of cachedVBStates is that of a simple array and
+no advantages of vectors are used. So simplifying the data
+structure can help detect and prevent races and also
+slightly speed up code due to absence of iterators.
+
+Change-Id: I11bf7b6c061ec85bbe17c52a11db3a599a91104c
+
+
+COMMENTS
+
+author: Ellie Kidd
+date: 2015-07-27 22:33:06.924000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-07-27 22:33:14.237000000
+
+Patch Set 2:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/626/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-07-27 23:02:59.493000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/626/ : SUCCESS
+
+-------------------------------------
+author: Abby Duran
+date: 2015-07-27 23:35:50.555000000
+
+Patch Set 2: Code-Review-1
+
+(1 comment)
+
+Line:108, src/forest-kvstore/forest-kvstore.cc -> A minor thing, please use static_cast for initialization.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-07-28 10:08:37.243000000
+
+Patch Set 2: Code-Review-1
+
+(5 comments)
+
+I don't really see the value of this change - IMHO is seems like a backward step, not a forwards one.
+
+Could you perhaps explain in more detail the rationale behind this?
+
+Line:298, src/couch-kvstore/couch-kvstore.cc -> If you stick with std::vector you can just do: cachedVBState.resize(numDbFiles, nullptr);
+
+Line:354, src/couch-kvstore/couch-kvstore.cc -> A better solution would be to use a std::vector<>  templated on unique_ptr<vbucket_state> > - then as soon as you remove anything from the vector it will have it's descructor called on it. Then this whole method would simplify to:
+
+ CouchKVStore::~CouchKVStore() {
+     close();
+ }
+
+as you can rely on the normal compiler descructor chaining handling your memory.
+
+Line:12, /COMMIT_MSG -> This seems like somewhat of a premature optimisation. 
+
+std::vector is exactly the same speed as a C-style array (a std::vector::iterator is just a pointer), but std::vector has the advantage of knowing how large it is.
+
+I also don't see what races you avoid here - given that you never resize the vector after creating it, no iterators would be invalidated and hence I cannot see any concurrency issues. Note that STL containers are generally pretty thread-safe, certainly std::vector is no less safe than a C-style array - see the "Thread Safety" section at http://en.cppreference.com/w/cpp/container for details.
+
+Line:108, src/forest-kvstore/forest-kvstore.cc -> As previous, you can take this out of the loop and just do a cachedVBState.resize(maxVBuckets, nullptr);
+
+Line:144, src/forest-kvstore/forest-kvstore.cc -> Same as couch-kvstore
+
+-------------------------------------
+author: Ellie Kidd
+date: 2015-07-28 18:58:02.115000000
+
+Patch Set 2:
+
+Dave, just wanted to avoid bugs like MB-15653 in the future and given that all the memory was being managed externally anyway, it felt like it might make it simpler to just an array. At runtime, with current usage, we would get absolutely no benefit from use of vectors.
+But I supposed it might be better to move to a vector of unique_ptrs. I will upload a new patchset shortly.
+thanks
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-07-29 08:29:35.675000000
+
+Patch Set 2:
+
+> Dave, just wanted to avoid bugs like MB-15653 in the future and
+ > given that all the memory was being managed externally anyway, it
+ > felt like it might make it simpler to just an array. At runtime,
+ > with current usage, we would get absolutely no benefit from use of
+ > vectors.
+ > But I supposed it might be better to move to a vector of
+ > unique_ptrs. I will upload a new patchset shortly.
+ > thanks
+
+Hey Sundar,
+
+No worries - I'm all in favour of avoiding bugs :) - hence suggesting we use a container which prevents there being any possibility of not freeing memory (i.e a smart ptr).
+
+Arguably an even cleaner solution would be change the container to hold concrete objects (instead of pointers to them) and use say state==DEAD or similar to indicate ones which should be skipped. This would remove any dynamic memory allocation once initialised.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-07-29 08:30:26.881000000
+
+Patch Set 2:
+
+> Arguably an even cleaner solution would be change the container to
+ > hold concrete objects (instead of pointers to them) and use say
+ > state==DEAD or similar to indicate ones which should be skipped.
+ > This would remove any dynamic memory allocation once initialised.
+
+Just to clarify; I'm not requesting you make this change now; just a thought for a possible different implementation in future.
+
+-------------------------------------
+author: Ellie Kidd
+date: 2015-12-09 18:02:50.454000000
+
+Abandoned
+
+superseded by smart pointers.
+
+-------------------------------------

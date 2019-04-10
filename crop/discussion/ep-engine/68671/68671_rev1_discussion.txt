@@ -1,0 +1,239 @@
+DESCRIPTION
+
+[Ephemeral Bucket]: Create an abstract base class KVMemoryStore
+
+Currently “EventuallyPersistentStore” is the class that engineers the
+Piper Jefferson bucket behavior in the kv-engine. It
+(i) handles get/set requests, any spl requests defined in our protocol,
+(ii) spawns tasks like flusher, bgfetcher, pager, access scanner etc
+(iii) sets up config params for DCP, HT, Vbucket
+(iv) interactions with KV store (say forestdb or couchstore) for
+     persistence, vb snapshotting, rollback etc and many more
+
+Ephemeral bucket is a new bucket type and it has some similar but
+many distinct features w.r.t Piper Jefferson bucket. For example we
+(i) do not need flusher, bgfetcher tasks
+(ii) handle get/sets differently as we do not have anything called
+     full eviction/value eviction and hence no bloom filters
+(iii) No KV store (storage) interactions
+(iv) use modified HT+ skiplist structures to store/get items.
+
+Hence it is a good idea to derive “EphemeralStore” and
+“EventuallyPersistentStore” as peer subclasses from the base class
+“KVMemoryStore”.
+
+This commit just creates the abstract base class and makes the
+the clients of EventuallyPersistentStore which are expected to be
+clinets of EphemeralStore as well to use base class KVMemoryStore.
+
+Change-Id: Ia1e403b4c718d8ee8abd84316287d58743397cf8
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2016-10-13 01:51:41.786000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-13 01:51:48.288000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1528/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-13 02:00:54.849000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/327/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-13 02:03:11.184000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1425/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-13 02:13:07.034000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1211/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-10-13 02:18:53.957000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1425/ : FAILURE
+
+ThreadSanitizer issue: data race on vptr (ctor/dtor vs virtual call) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/ep.cc:561 EventuallyPersistentStore::~EventuallyPersistentStore()  ( http://cv.jenkins.couchbase.com//job/ep-engine-threadsanitizer-master/1425/ )
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/1425/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/327/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1211/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1528/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-10-13 09:24:29.551000000
+
+Patch Set 1: Code-Review-1
+
+(4 comments)
+
+Mostly looks good. I'd like to have some more discussion on what a good name for this new abstract base class is tho...
+
+Line:59, src/kvshard.cc -> Dynamic cast is a bit of a code smell (IMHO) for this kind of thing. Given we are going to have a different backend for Ephemeral buckets, I'd suggest moving this into the "couchdb" and "forestdb" if cases (when we have an "ephemeral" backend).
+
+I'm ok for you doing this temporarily to bootstrap development, but I suggest you add a TODO to remove it when we have the ephemeral backend.
+
+Line:27, /COMMIT_MSG -> I'm trying to think if there's a better name for this... 
+
+"KVMemoryStore" kinda feels wrong to me, as EPStore is ultimately backed by disk (and hence the "Memory" part feels incorrect).
+
+"KVStore" would be the obvious choice, but we already use that for the storage level of the system. (KVStore, CouchKVStore, ForestKVStore).
+
+What do you think about "AbstractKVStore" ? I'm open to other suggestions if anyone has something better...
+
+Line:86, src/checkpoint_remover.cc -> Don't worry about keeping them lined up; they quickly end up misaligned when lengths change. Note also that the ptr (*) should go with the type, not the variable.
+
+Line:184, src/backfill.cc -> Whatever we decide on the base class name, I think it would be better to keep this shorter (given we write it all the time).
+
+Maybe just `getStore()` ?
+
+-------------------------------------
+author: Keira Washington
+date: 2016-10-13 10:21:38.794000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:27, /COMMIT_MSG -> I think any name with both 'KV' and 'Store' in it would be a confusing choice.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2016-10-13 18:22:18.254000000
+
+Patch Set 1:
+
+(4 comments)
+
+Line:59, src/kvshard.cc -> Ok I will move it into "couchdb" and "forestdb".
+But, I was thinking of using EventuallyPersistentStore in Flusher and Flusher class creation. For that will have to use dynamic_cast for down casting. Can I avoid that somehow ?
+
+Line:27, /COMMIT_MSG -> How about not using store at all ?
+I was thinking of KVBucket as well. Because this engineers bucket behavior.
+AbstractKVStore will not help us differentiate easily from KVStore, CouchKVStore, ForestKVStore.
+
+Line:86, src/checkpoint_remover.cc -> Will do
+
+Line:184, src/backfill.cc -> Ok
+
+-------------------------------------
+author: Keira Washington
+date: 2016-10-13 22:13:33.116000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:27, /COMMIT_MSG -> I like 'Bucket', my only issue with 'Bucket' is that's the purpose of EventuallyPersistentEngine
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2016-10-13 22:58:37.564000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:27, /COMMIT_MSG -> Well actually both EventuallyPersistentEngine and EventuallyPersistentStore both define the bucket properties. 
+EventuallyPersistentEngine is more of an interface.
+It does initialize other classes and configuration.
+
+In our case we, though we call "Ephemeral Bucket" and "Couchbase bucket", we have most properties same, except for how we store items. 
+(MAYBE we could have called Piper Jefferson bucket with no persistence)
+
+So there is no one perfect name. Either we use "bucket" in the name or use "Store".
+
+i) "KVMemoryStore" is not very wrong because EPStore though ultimately persists the data, it does store items in memory (HT).
+ii) "AbstractKVStore" is also good.
+iii) "KVBucket" I agree this may cause confusions like isn't EventuallyPersistentEngine the bucket
+
+I am open for any of the 3 names or any other name.
+
+P.S: I am thinking of using EphemeralStore as the name of the derived class (the peer of today's EventuallyPersistentStore). Please give your feedback on this name as well
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-10-14 13:19:12.400000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:27, /COMMIT_MSG -> I generally like Bucket (partly because we don't explicitly use it anywhere in the code currently), but I do agree that the EPEngine is kinda the "bucket" abstraction and so maybe isn't ideal.
+
+Having said all that, of the proposed options I think something "bucket" related - e.g. KVBucket - is the best option here.
+
+I don't want this to turn into bikeshedding, so unless anyone has an /extremely/ good reason to not use this (or an awesome other suggestion) I say we use KVBucket.
+
+re: the derived class names - assuming we go with KVBucket I'd say EphemeralBucket and EPBucket as the two subclasses (I already think EventuallyPersistentStore is /far/ too long - EventuallyPersistentBucket is even worse!)
+
+-------------------------------------
+author: Keira Washington
+date: 2016-10-14 13:39:47.114000000
+
+Patch Set 1:
+
+> assuming we go with KVBucket I'd say EphemeralBucket and EPBucket as the two subclasses
+
+EP short for EPhemeral?
+
+In all seriousness, despite my singular complaint about KVBucket it's still a far better suggestion than anything else and is already a massive improvement over the usual naming standards. I would vote for KVBucket.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-10-14 14:02:47.967000000
+
+Patch Set 1:
+
+> > assuming we go with KVBucket I'd say EphemeralBucket and EPBucket
+ > as the two subclasses
+ > 
+ > EP short for Ephemeral?
+
+- EphemeralBucket for the new subclass
+- EPBucket for the current EventuallyPersistentStore.
+
+(if we're going to rename this stuff I'd like to keep some symmetry and rename EventuallyPersistentStore to something ending in 'Bucket').
+
+ > 
+ > In all seriousness, despite my singular complaint about KVBucket
+ > it's still a far better suggestion than anything else and is
+ > already a massive improvement over the usual naming standards. I
+ > would vote for KVBucket.
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-10-20 20:34:43.676000000
+
+Change has been successfully cherry-picked as a7b5e9c998f82377c7a9aec75d035ec03834cb19 by Adrianna Holmes
+
+-------------------------------------

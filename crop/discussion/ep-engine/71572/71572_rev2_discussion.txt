@@ -1,0 +1,286 @@
+DESCRIPTION
+
+[Refactor]: Move completeBGFetchForSingleItem() go from KVBucket to VBucket
+
+Change-Id: Ib474a3773fa1f0cf80b14eacfa6881a55839f999
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2017-01-06 00:58:22.983000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-06 00:58:30.479000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1375/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-06 00:58:30.615000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2195/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-06 00:58:30.753000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2552/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-06 00:58:30.882000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/2691/ (4/4)
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-01-06 01:01:24.280000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:85, src/vbucket.h -> Prefer to return NotifyIOComplete in VBNotifyCtx.
+
+How about not throwing an exception here and just logging ?
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-06 01:11:16.953000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2195/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2552/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1375/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/2691/ : SUCCESS
+
+-------------------------------------
+author: Keira Washington
+date: 2017-01-06 04:20:58.149000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:1658, src/kv_bucket.cc -> why is all this code duplicated?
+
+Line:1690, src/kv_bucket.cc -> why is all this code duplicated?
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-01-06 08:50:51.507000000
+
+Patch Set 2:
+
+As a general comment - try not to perform a rebase *and* address code comments in a single commit - it makes it very hard to perform incremental reviews (i.e. "What has Manu changed since I last reviewed this")
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-01-06 08:57:34.266000000
+
+Patch Set 2: Code-Review-1
+
+(4 comments)
+
+Line:910, src/vbucket.cc -> Still have the comment on the validity of this pointer.
+
+Line:927, src/vbucket.cc -> Given the only thing wantDeleted is used for here is to select between returning v or a nullptr, it would be cleaner to just remove that parameter entirely, always return v (if we have one) and let the caller make the decision about what to do with deleted items.
+
+I also suspect that will fit better with Sriram's XATTR changes.
+
+Line:1690, src/kv_bucket.cc -> Agreed - the whole point of me creating completeBGFetchForSingleItem a while back was to unify as much of the Single / Multi code as possible. You should at least be able to move this into a helper function if nothing else.
+
+Line:85, src/vbucket.h -> Given that if we can't notify when we should, that's basically a broken front-end operation (it'll hang forever). Logging doesn't seem sufficient there.
+
+As per my previous comment, it would be better if this case wasn't physically possible. I didn't follow why we would never need to notify twice (i.e. why we'd hit the exception case) - can you explain, or refactor so e don't need this? We never previously had to check for multiple notifies did we?
+
+-------------------------------------
+author: Keira Washington
+date: 2017-01-06 16:18:15.697000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:939, src/vbucket.cc -> If this clause came first then the clauses currently before and after it could be combined.
+
+Line:92, src/vbucket.h -> Again with pushing the invariant down as far as possible. This looks a lot like the perfect use case for std::optional. Now unfortunately we don't have std::optional yet and implementing it with our version of MSVC is awkward to say the least, but if nothing else we could have a version which supports trivially constructible objects (like ENGINE_ERROR_CODE):
+
+    namespace cb {
+
+    struct in_place_t {
+        explicit in_place_t() = default;
+    };
+    inline const in_place_t in_place{};
+
+    class bad_optional_access : public std::logic_error {
+    }
+
+    template <typename T>
+    class optional {
+    public:
+        static_assert(std::is_trivially_constructible<T>::value,
+                      "This `optional` implementation is incomplete"
+                      " and only works for trivially constructible types");
+
+        optional() {
+        }
+
+        optional(T&& v)
+            : _has_value(true),
+              _value(std::forward<T>(v)) {
+        }
+
+        optional(const optional<T>& other)
+            : _has_value(other._has_value),
+              _value(other._value) {
+        }
+
+        template <typename... Args>
+        optional(cb::in_place_t, Args&&... args)
+            : _has_value(true),
+              _value(std::forward<Args>(args)...) {
+        }
+
+        optional<T>& operator=(const optional<T>& other) {
+            _has_value = other._has_value;
+            _value = other._value;
+            return *this;
+        }
+
+        T& operator*() {
+            return _value;
+        }
+
+        const T& operator*() const {
+            return _value;
+        }
+
+        T& value() {
+            if (!_has_value) {
+                throw cb::bad_optional_access("optional::value:"
+                                              " Does not contain a value");
+            }
+            return **this;
+        }
+
+        const T& value() const {
+            if (!_has_value) {
+                throw cb::bad_optional_access("optional::value:"
+                                              " Does not contain a value");
+            }
+            return **this;
+        }
+
+        template<typename U> 
+        T value_or(U&& default_value) const {
+            return bool(*this) ? **this : static_cast<T>(std::forward<U>(default_value));
+        }
+
+        bool has_value() const {
+            return _has_value;
+        }
+
+        explicit operator bool() const {
+            return has_value();
+        }
+
+        void reset() {
+            _has_value = false;
+        }
+
+        void swap(optional<T>& other) {
+            std::swap(_has_value, other._has_value);
+            std::swap(**this, **other);
+        }
+
+        template<typename... Args> 
+        void emplace(Args&&... args) {
+            _has_value = true;
+            _value = T(std::forward<Args>(args)...);
+        }
+
+    private:
+        bool _has_value = false;
+        T _value;
+    };
+
+    } // namespace cb
+
+You could then just replace `notifyIOStatus` and `notifyIOComplete` with `cb::optional<ENGINE_ERROR_CODE> notifyIOStatus` (assuming if as DaveR says you don't need to maintain a multiple assignment invariant). This also has the plus side that it's harder to use wrong, someone using this class could accidentally use getNotifyIOStatus() without checking getNotifyIOComplete() first.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-01-08 02:04:41.813000000
+
+Patch Set 2:
+
+(4 comments)
+
+Line:910, src/vbucket.cc -> This is valid because the HT lock sis grabbed when this func is called.
+I will pass the lock to this func.
+
+Line:927, src/vbucket.cc -> Should I just drop/break this function ?
+
+It should be ht.unlocked_find() +  handle expired StoredValue from ht.unlocked_find()
+
+Line:1690, src/kv_bucket.cc -> will do
+
+Line:85, src/vbucket.h -> This check is to ensure that we wrongly do not overwrite notifyIOStatus in VBNotifyCtx.
+Initially we never passed back the VBNotifyCtx. We just used to notify directly from KVBucket class.
+
+If this check is needed to flag an exception, do we still go with std::optional equivalent ?
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-01-09 12:56:39.086000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:927, src/vbucket.cc -> Sure, if that simplifies things.
+
+Line:85, src/vbucket.h -> I'm not sure I follow what you're asking. Let me try to re-phase:
+
+Is it possible (valid) for a single call into VBucket::queueDirty() to trigger two notifyIOComplete calls?
+
+1. I would have thought "No", as otherwise we'd be overwriting the status of the first notify (back in the front-end) with the second. If this assumption is correct, then we should aim to structure the code so it's not (statically) possible to have two notifyIOComplete callbacks.
+
+2. If the answer is "Yes" - maybe it's ok for the "second" notifyIOcomplete to overwrite the first - then instead we could just make the notifyIOComplete "saturate" - i.e. a second call will merge in and replace the status code.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-01-09 16:39:34.699000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:85, src/vbucket.h -> The answer is no. But, what if (say now or in future) someone makes an error in writing the code statically ? Thats why I was raising that logic_error exception to catch that
+
+-------------------------------------
+author: Tate Garrett
+date: 2017-01-13 21:56:19.536000000
+
+Change has been successfully cherry-picked as 606a8c7c3041d5fed4309b0c8794ac8edf40f560 by Adrianna Holmes
+
+-------------------------------------

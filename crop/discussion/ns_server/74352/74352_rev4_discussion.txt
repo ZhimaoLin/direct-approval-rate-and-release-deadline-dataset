@@ -1,0 +1,67 @@
+DESCRIPTION
+
+MB-22909: Support XATTR replication.
+
+In order to support replication of XATTRs we need to negotiate
+the XATTR feature on the target node when we are setting up the
+DCP proxy. If the XATTR feature is enabled on the target node
+then we need to set the XATTR bit while issuing an open conn
+DCP command.
+
+In the mixed mode, the expectation is that a client is not
+allowed to set XATTRs and any attempt to do so will result in
+a failure.
+
+Change-Id: Ibd9aacedd6028516eafa5d76edf5a26bd635a013
+
+
+COMMENTS
+
+author: Noe Perry
+date: 2017-03-01 17:39:22.806000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Noe Perry
+date: 2017-03-01 17:42:32.559000000
+
+Patch Set 4: Verified+1
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2017-03-01 19:01:10.613000000
+
+Patch Set 4:
+
+I don't think it's dcp_proxy's job to subscribe to config events. It's hard to predict what the potential corner cases could be. And then, I also don't think it's safe to just kill the dcp connection. dcp_consumer_conn, for example, keeps quite a bit of state that becomes invalid once you kill the connection.
+
+-------------------------------------
+author: Noe Perry
+date: 2017-03-01 19:30:47.329000000
+
+Patch Set 4: -Verified
+
+Initially I thought of adding the subscription for ns_config_events in the dcp_replicator module and enable XATTRs on the consumer & producer conns. But I thought a similar scheme would be needed for dcp-notifier too? Hence I moved it into dcp_proxy. But I agree that it's not very clean.
+
+And for the re-connection would it be ok the restart the dcp_replicator. I haven't thought this through.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2017-03-01 23:23:22.749000000
+
+Patch Set 4:
+
+You can ignore dcp_notifier. It's only used in the old xdcr, which is disabled when entire cluster is on spock.
+
+I described to you the way I'd approach it. dcp_replicator restarting in an unfortunate moment can probably result in rebalance failure. And by making the decision to switch on a per-replicator basis, you are exploding the number of states your system can be in.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2017-03-01 23:31:30.187000000
+
+Patch Set 4:
+
+You don't necessarily need to change the apply_bucket api. But I think this should be orchestrated globally, similar to how we addressed the tap to dcp upgrade.
+
+-------------------------------------

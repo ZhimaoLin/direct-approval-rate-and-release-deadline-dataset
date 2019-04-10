@@ -1,0 +1,95 @@
+DESCRIPTION
+
+MB-17766: Incorrect ordering of messages during ActiveStream's takeover-send phase
+
+A race between the step() and ActiveStreamCheckpointProcessorTask
+can cause mutations to be queued into the readyQ after the
+setVBucketState(active) message.
+
+Here's the scenario in chronology (T: Front-end thread, BT: IO thread):
+1. T1: ActiveStream::setVBucketStateAckRecieved()
+2. T1: transitionState(takeoverSend) => schedules ActiveStreamCheckpointProcessorTask
+3. BT1: manageConnections() notifies memcached about specific conn (max idle time: 5s)
+4. BT2: ActiveStreamCheckpointProcessorTask runs, gets all Items For Cursor
+5. T1: step() -> takeoverSendPhase() -> readyQ is empty
+        => nextCheckpointItem() return false, as getNumItemsForCursor returns 0
+        => setVbucketState(active) added to readyQ
+6. BT2: ActiveStreamCheckpointProcessorTask continues, adds mutations acquired into readyQ
+        -> Note the mutations were acquired in step 4
+        => Notified memcached connections
+7. T1: step() .. ships messages in incorrect order
+
+On the new master, the vbucket is promoted to active state and then more
+mutations are received from the old master. If there were front end ops
+at this time, there could be an inconsistency in highSeqno or in worst
+cases crashes in checkpoint manager due to highSeqno not belonging in
+the designated range.
+
+The fix: Add an atomic flag that is also checked for along with
+getNumItemsForCursor in nextCheckpointItem(). This flag is set before
+retrieving all items for a cursor (getAllItemsForCursor) and unset after
+all the retrieved items have been added to the ready queue of the stream.
+
+Change-Id: I5c04d47cc99c7dd3b2d87cb68dd30d36473226e5
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2016-02-10 10:37:29.795000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-10 10:37:34.849000000
+
+Patch Set 4:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/369/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-10 10:37:37.470000000
+
+Patch Set 4: Well-Formed+1
+
+Permission granted to commit to restricted branch
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-02-10 10:39:47.362000000
+
+Patch Set 4: Code-Review+1
+
+I've split the original patch into two - one for the nextCheckpointItemTask() refactor to allow testing, and the second with your actual fix in.
+
+This is conceptually a +2 from me, but given this is modified by me, only giving +1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-10 10:51:39.233000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/369/ : SUCCESS
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-02-10 16:37:55.694000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:705, src/dcp-stream.cc -> There is no need to call notifyProducerReady in this scenario.
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-02-10 19:05:35.194000000
+
+Change has been successfully cherry-picked as ba305c4f083b3910d12f470bf9b39b3f4c2f2b97
+
+-------------------------------------

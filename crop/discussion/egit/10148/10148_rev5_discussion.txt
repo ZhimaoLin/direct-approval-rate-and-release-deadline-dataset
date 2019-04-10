@@ -1,0 +1,177 @@
+DESCRIPTION
+
+GitFileHistory should return the full history of its target.
+
+When using GitFileHistoryProvider.getFileHistoryFor(IResource,...), a
+user expects the full history of the target resource to be returned,
+except if the SINGLE_REVISION or SINGLE_LINE_OF_DESCENT flags are
+positioned.
+
+The SINGLE_REVISION flag is properly handled, however when no flags are
+set, EGit previously returned only the commits descending from HEAD,
+without considering the history that exists on other branches or
+references.
+
+This adds specific tests to make sure of the behavior when either no
+flag or the SINGLE_REVISION flag are set.
+
+The history's "getTarget" and "getContributors" methods are tested to
+return respectively all direct children or all direct parents of the
+given commit.
+Both now support some of Team's quirks, such as the synchronize view
+returning its own implementations of IFileRevisions instead of the
+supplied CommitFileRevisions. This required opening GitRemoteResource as
+API (previously package-protected) so that we could adapt the file
+revisions into a format known by EGit.
+
+Bug: 398982
+Change-Id: Id596d4501cdca815e9563a1f7f4a1d58bc3920c9
+
+
+COMMENTS
+
+author: Gustavo Green
+date: 2013-02-28 15:29:39.000000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-02-28 15:29:45.000000000
+
+Patch Set 5:
+
+Build Started https://hudson.eclipse.org/sandbox/job/egit.gerrit/4238/ 
+
+-------------------------------------
+author: Gustavo Green
+date: 2013-02-28 15:33:24.000000000
+
+Patch Set 5:
+
+I had a need for getTargets() and getContributors() ... and thus tried to test them without the "timing" restriction I previously had.
+
+This new patch set reverts some of the changes made by the previous (namely, we use KidWalk anew now that I properly understand what getTargets() is supposed to do).
+
+However, it also needs the opening of a new API: GitRemoteResource was package-protected, I changed it to public. Is that acceptable? Should it remain in its current package (exported as API), or should I move it to an internal namespace?
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-02-28 15:51:41.000000000
+
+Patch Set 5: I would prefer that you didn't submit this
+
+Build Unstable 
+
+https://hudson.eclipse.org/sandbox/job/egit.gerrit/4238/ : UNSTABLE
+
+-------------------------------------
+author: Gustavo Green
+date: 2013-03-01 15:49:38.000000000
+
+Patch Set 5:
+
+Hum... is the test failure something caused by this patch? Or is it one of the "random" failures? I must admit I do not really see why it could fail.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2013-03-04 13:40:30.000000000
+
+Patch Set 5: I would prefer that you didn't submit this
+
+(9 inline comments)
+
+at the current size this change will need a CQ and a formal IP review by the legal team
+
+-------------------------------------
+author: Gustavo Green
+date: 2013-03-05 15:47:35.000000000
+
+Patch Set 5: (9 inline comments)
+
+Done for most, though testing through Team APIs has highlighted a number of complicated issues. see next patch set and associated comment
+
+Line:169, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/storage/GitFileHistory.java -> This (comment included) was copied from GitHistoryPage. I left the code exactly as-is to have an easier time searching for duplicates. I can log the exception if you think it is valuable here.
+
+Line:182, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/storage/GitFileHistory.java -> see my comment on patch set 6
+
+Line:189, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/storage/GitFileHistory.java -> The code did not seem obvious to me (I have a commit; let's use a RevWalk to re-parse it instead of using it directly : GitRemoteResource#getCommitId() returns a RevCommit). Still, I removed the comment in the next patch set.
+
+Line:196, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/storage/GitFileHistory.java -> These markers were meant for me (create and externalize an error message), it was not meant to remain in the contribution. Sorry about that.
+
+Line:212, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/storage/GitFileHistory.java -> These two only differ in that one fetches children while the other retrieves parents. The first half is strictly identical ... but I need two variables as output of that "half".
+
+I did not factorize this out since I see no real way to improve readability. The only option I saw was to create two methods, this is what's reflected in the next patch set.
+
+Line:34, org.eclipse.egit.core.test/src/org/eclipse/egit/core/test/HistoryTest.java -> The other test seems to focus more on the IFileRevisions' content, while this one focuses on their hierarchy. Merging them seems feasible, but I am not confident enough with the test harness to try and get two distinct IProjects under tests (or to merge one of the two in the other and reproduce exactly the tests.
+
+Line:123, org.eclipse.egit.core.test/src/org/eclipse/egit/core/test/HistoryTest.java -> Done
+
+Line:158, org.eclipse.egit.core.test/src/org/eclipse/egit/core/test/HistoryTest.java -> Switched to a single test method, the only variable is the target file, which I changed into a nested loop.
+
+Line:183, org.eclipse.egit.core.test/src/org/eclipse/egit/core/test/HistoryTest.java -> Done
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2013-03-04 13:40:29.000000000
+
+MISMATCHED INLINE COMMENT
+Line:169, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/storage/GitFileHistory.java -> we should log an error here but not stop rendering the history
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2013-03-04 13:40:29.000000000
+
+MISMATCHED INLINE COMMENT
+Line:182, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/storage/GitFileHistory.java -> this execution branch isn't covered by any test
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2013-03-04 13:40:29.000000000
+
+MISMATCHED INLINE COMMENT
+Line:189, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/storage/GitFileHistory.java -> this comment isn't necessary
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2013-03-04 13:40:29.000000000
+
+MISMATCHED INLINE COMMENT
+Line:196, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/storage/GitFileHistory.java -> what's the TODO here ?
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2013-03-04 13:40:29.000000000
+
+MISMATCHED INLINE COMMENT
+Line:212, org.eclipse.egit.core/src/org/eclipse/egit/core/internal/storage/GitFileHistory.java -> the implementation of this method seems to be an identical copy of getContributors(IFileRevision) so it seems this could be factored out
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2013-03-04 13:40:29.000000000
+
+MISMATCHED INLINE COMMENT
+Line:34, org.eclipse.egit.core.test/src/org/eclipse/egit/core/test/HistoryTest.java -> there is an another test class with the same name in package org.eclipse.egit.core.test.internal.mapping, would it make sense to merge these classes both testing history ?
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2013-03-04 13:40:29.000000000
+
+MISMATCHED INLINE COMMENT
+Line:123, org.eclipse.egit.core.test/src/org/eclipse/egit/core/test/HistoryTest.java -> I think you should factor out the common code this test shares with the previous one
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2013-03-04 13:40:29.000000000
+
+MISMATCHED INLINE COMMENT
+Line:158, org.eclipse.egit.core.test/src/org/eclipse/egit/core/test/HistoryTest.java -> I think you should factor out the common code this test shares with the previous one
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2013-03-04 13:40:29.000000000
+
+MISMATCHED INLINE COMMENT
+Line:183, org.eclipse.egit.core.test/src/org/eclipse/egit/core/test/HistoryTest.java -> we don't use braces around single line blocks, many more occurrences in this patch
+
+-------------------------------------

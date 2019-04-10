@@ -1,0 +1,64 @@
+DESCRIPTION
+
+Increase core.streamFileThreshold default to 50 MiB
+
+Projects like org.eclipse.mdt contain large XML files about 6 MiB
+in size.  So does the Android project platform/frameworks/base.
+Doing a clone of either project with JGit takes forever to checkout
+the files into the working directory, because delta decompression
+tends to be very expensive as we need to constantly reposition the
+base stream for each copy instruction.  This can be made worse by
+a very bad ordering of offsets, possibly due to an XML editor that
+doesn't preserve the order of elements in the file very well.
+
+Increasing the threshold to the same limit PackWriter uses when
+doing delta compression (50 MiB) permits a default configured
+JGit to decompress these XML file objects using the faster
+random-access arrays, rather than re-seeking through an inflate
+stream, significantly reducing checkout time after a clone.
+
+Since this new limit may be dangerously close to the JVM maximum
+heap size, every allocation attempt is now wrapped in a try/catch
+so that JGit can degrade by switching to the large object stream
+mode when the allocation is refused.  It will run slower, but the
+operation will still complete.
+
+The large stream mode will run very well for big objects that aren't
+delta compressed, and is acceptable for delta compressed objects that
+are using only forward referencing copy instructions.  Copies using
+prior offsets are still going to be horrible, and there is nothing
+we can do about it except increase core.streamFileThreshold.
+
+We might in the future want to consider changing the way the delta
+generators work in JGit and native C Git to avoid prior offsets once
+an object reaches a certain size, even if that causes the delta
+instruction stream to be slightly larger.  Unfortunately native
+C Git won't want to do that until its also able to stream objects
+rather than malloc them as contiguous blocks.
+
+Change-Id: Ief7a3896afce15073e80d3691bed90c6a3897307
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-09-17 14:20:05.000000000
+
+Patch Set 1: Looks good to me, but someone else must approve; IP review completed
+
+(1 inline comment)
+
+
+
+Line:76, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/WindowCacheConfig.java -> I'm kind of on the fence about this.
+
+All of the other changes in PackFile make sense, when we run out of memory and cannot complete the allocation we can still try to limp along and process the object as a stream.  But increasing our default to 50 MiB seems high if the JVM heap default is only 64 MiB on a system.  :-)
+
+I really wish I had a better method for handling random access to the delta base, but the pack file format doesn't allow us to do random access to a whole object, and neither does the loose object format.  I tried setting compression to 0 when we stream a delta back out as a loose object to cache it, but zlib still inserts these headers every 64k to denote its a stored literal block.  Since the headers can appear at any length (it depends on the buffer size of the deflater, which is defined down inside of the C code and is not visible to Java), its very hard to do random access within the file even if compression is disabled.
+
+We could implement our own object cache on disk, where we deflate the file as individual small segments, so we can do random access and inflate only near the target.  But then we have to write our own cache management for this area on disk, and native Git won't know to clean it up during `git gc`.
+
+Its a tough problem and I don't have a good solution yet.  *sigh*  But this change is probably better than what we have right now.
+
+-------------------------------------

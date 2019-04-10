@@ -1,0 +1,116 @@
+DESCRIPTION
+
+Batch reference updates together for storage
+
+clone, fetch and push can all update multiple references in a single
+command invocation. Rather than performing sequential iteration
+of each reference change inside of the application code, push this
+down into the reference database where the implementation can take
+advantage of the batch size and optimize itself.
+
+For the local filesystem implementation the obvious optimization
+is to write a packed-refs file when the repository is completely
+empty. The initial clone, fetch or push into the destination may
+have hundreds of new references. Writing all of these as loose
+files is not efficient.
+
+To make the API changes simple, define the BatchRefUpdate type and
+implementation using the existing sequential behavior.
+
+Change-Id: I8e1674f091e05e24e3ff56ccbc687a6d18a6a61e
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2012-03-05 23:53:42.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1518/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-03-05 23:58:00.000000000
+
+Patch Set 1: Verified
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1518/ : SUCCESS
+
+-------------------------------------
+author: Santos Moore
+date: 2012-03-06 18:31:38.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(14 inline comments)
+
+
+
+Line:72, org.eclipse.jgit/src/org/eclipse/jgit/lib/BatchRefUpdate.java -> s/updated/updates/
+
+I would probably also clarify that this is at least one forced update.
+
+Line:99, org.eclipse.jgit/src/org/eclipse/jgit/lib/BatchRefUpdate.java -> As per above, perhaps hasForceUpdates()?
+
+Line:104, org.eclipse.jgit/src/org/eclipse/jgit/lib/BatchRefUpdate.java -> s/the/a/
+
+Line:108, org.eclipse.jgit/src/org/eclipse/jgit/lib/BatchRefUpdate.java -> s/codde/code/
+
+Line:133, org.eclipse.jgit/src/org/eclipse/jgit/lib/BatchRefUpdate.java -> Does this need to be final? (Perhaps I'm forgetting the style in this corner of the world.)
+
+Line:149, org.eclipse.jgit/src/org/eclipse/jgit/lib/BatchRefUpdate.java -> I see that this gets set by the value of appendStatus in setRefLogMessage, but IMHO this method name is completely inscrutable.
+
+Line:220, org.eclipse.jgit/src/org/eclipse/jgit/lib/BatchRefUpdate.java -> addCommand(Arrays.asList(cmd))?
+
+Line:249, org.eclipse.jgit/src/org/eclipse/jgit/lib/BatchRefUpdate.java -> Is it worth clarifying that classification will be aborted, so the results after an exception won't necessarily be accurate?
+
+I'm picturing a caller that chooses to ignore this exception and go ahead and call execute() with the expectation that the same commands that failed here will fail there, when in reality there might be some unexpected REJECTED_NONFASTFORWARDS in there due to this aborting early.
+
+Line:251, org.eclipse.jgit/src/org/eclipse/jgit/lib/BatchRefUpdate.java -> Considering the javadoc and private variable name, why not classifyUpdates?
+
+Line:271, org.eclipse.jgit/src/org/eclipse/jgit/lib/BatchRefUpdate.java -> Is chaining actually useful for this method?
+
+Line:345, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceiveCommand.java -> s/status/result/?
+
+Line:1201, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceivePack.java -> Is JGit style to omit braces on blocks only for one-liners, or wherever possible? Including single-statement blocks whose statement is itself a block, like this one.
+
+Line:1203, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceivePack.java -> This is a behavior change, isn't it? ISTM previously these would have been left as NOT_ATTEMPTED if one of the cmd.execute()s threw an IOException.
+
+Line:15, /COMMIT_MSG -> After reading this I was surprised to find that this obvious optimized implementation was not in this change.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2012-05-22 23:47:51.000000000
+
+Patch Set 1: (12 inline comments)
+
+
+
+Line:72, org.eclipse.jgit/src/org/eclipse/jgit/lib/BatchRefUpdate.java -> Clarified, this is actually the isAllowNonFastForwards() from BaseReceivePack which has nothing to do with whether or not there is a force update in the command set.
+
+Line:99, org.eclipse.jgit/src/org/eclipse/jgit/lib/BatchRefUpdate.java -> renamed isAllowNonFastForwards matching BaseReceivePack
+
+Line:104, org.eclipse.jgit/src/org/eclipse/jgit/lib/BatchRefUpdate.java -> Done
+
+Line:108, org.eclipse.jgit/src/org/eclipse/jgit/lib/BatchRefUpdate.java -> Done
+
+Line:133, org.eclipse.jgit/src/org/eclipse/jgit/lib/BatchRefUpdate.java -> No. Its OK to be non-final.
+
+Line:220, org.eclipse.jgit/src/org/eclipse/jgit/lib/BatchRefUpdate.java -> Done
+
+Line:249, org.eclipse.jgit/src/org/eclipse/jgit/lib/BatchRefUpdate.java -> Method deleted.
+
+Line:271, org.eclipse.jgit/src/org/eclipse/jgit/lib/BatchRefUpdate.java -> No. Return void.
+
+Line:345, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceiveCommand.java -> Done
+
+Line:1201, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceivePack.java -> Done
+
+Line:1203, org.eclipse.jgit/src/org/eclipse/jgit/transport/ReceivePack.java -> No. cmd.execute() doesn't throw IOException. It catches it internally and sets it to REJECTED_OTHER_REASON with a message.
+
+Line:15, /COMMIT_MSG -> Yea, well, I just didn't feel like writing the packed-refs version because its not that obvious in the face of locking. You don't really want another concurrent writer attempt to create a reference you have chosen to put into packed-refs.
+
+-------------------------------------

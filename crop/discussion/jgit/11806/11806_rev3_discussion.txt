@@ -1,0 +1,78 @@
+DESCRIPTION
+
+Correct distribution of allowed delta size along chain length
+
+Nicolas Pitre discovered a very simple rule for selecting between two
+different delta base candidates:
+
+  - if based whole object, must be <= 50% of target
+  - if at end of a chain, must be <= 1/depth * 50% of target
+
+The rule penalizes deltas near the end of the chain, requiring them to
+be very small in order to be kept by the packer.  This favors deltas
+that are based on a shorter chain, where the read-time unpack cost is
+much lower.  Fewer bytes need to be consulted from the source pack
+file, and less copying is required in memory to rebuild the object.
+
+Junio Hamano explained Nico's rule to me today, and this commit fixes
+DeltaWindow to implement it as described.
+
+When no base has been chosen the computation is simply the statements
+denoted above.  However once a base with depth of 9 has been chosen
+(e.g.  when pack.depth is limited to 10), a non-delta source may
+create a new delta that is up to 10x larger than the already selected
+base.  This reflects the intent of Nico's size distribution rule no
+matter what order objects are visited in the DeltaWindow.
+
+With this patch and my other patches applied, repacking JGit with:
+
+  [pack]
+    reuseObjects = false
+    reuseDeltas = false
+    depth = 50
+    window = 250
+    threads = 4
+    compression = 9
+
+  CGit (all) 5,711,735 bytes; real 0m13.942s user 0m47.722s [1]
+  JGit heads 5,718,295 bytes; real 0m11.880s user 0m38.177s [2]
+       rest      9,809 bytes
+
+The improved JGit result for the head pack is only 6.4 KiB larger than
+CGit's resulting pack.  This patch allowed JGit to find an additional
+39.7 KiB worth of space savings.  JGit now also often runs 2s faster
+than CGit, despite also creating bitmaps and pruning objects after the
+head pack creation.
+
+[1] time git repack -a -d -F --window=250 --depth=50
+[2] time java -Xmx128m -jar jgit debug-gc
+
+Change-Id: I5caec31359bf7248cabdd2a3254c84d4ee3cd96b
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2013-04-12 15:13:17.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-04-12 15:23:17.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3365/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-04-12 15:28:52.000000000
+
+Patch Set 3: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3365/ : SUCCESS
+
+-------------------------------------

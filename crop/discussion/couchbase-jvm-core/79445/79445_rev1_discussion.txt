@@ -1,0 +1,71 @@
+DESCRIPTION
+
+JVMCBC-431 Add support for AddDoc and accessDeleted in subdoc doc flags
+
+wip
+
+Change-Id: I7e228a9e0cef3418c6d7a717ff77bfbf791c94b8
+
+
+COMMENTS
+
+author: Marques Ellis
+date: 2017-06-13 23:52:48.147000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Carmen Buckley
+date: 2017-08-07 22:42:16.022000000
+
+Patch Set 1:
+
+(5 comments)
+
+Line:117, src/integration/java/com/couchbase/client/core/cluster/SubdocumentDocumentFlagsTests.java -> assertEquals(ResponseStatus.SUCCESS, response.status());
+
+so the test fails correctly when built-in assertions are not enabled.
+
+Ditto the other usages of "assert" later in the code.
+
+Line:192, src/main/java/com/couchbase/client/core/endpoint/kv/KeyValueHandler.java -> 0x3 is the union of the "mkdoc" and "add" flags (0x1 | 0x2). Is this intentional, or should the "access deleted" flag be a single bit?
+
+Line:646, src/main/java/com/couchbase/client/core/endpoint/kv/KeyValueHandler.java -> NIT: more concise to just write
+    extrasLength++;
+
+Line:648, src/main/java/com/couchbase/client/core/endpoint/kv/KeyValueHandler.java -> Instead of writing an additional byte, does it make sense to treat the existing byte as a bitfield ( https://en.wikipedia.org/wiki/Bit_field ) and OR all the relevant flags together, like:
+
+----
+byte flags = 0;
+if (req.xattr())) {
+    flags |= SUBDOC_FLAG_XATTR_PATH;
+}
+if (req.accessDeleted()) {
+    flags |= SUBDOC_DOCFLAG_ACCESS_DELETED;
+}
+extras.writeByte(flag);
+----
+
+This approach would require each of the bitmask values to be a power of two (that is, each mask value would only have one bit set). Hence my question about the bitmask value of 0x3 (which has two bits set).
+
+Line:48, src/main/java/com/couchbase/client/core/message/kv/subdoc/BinarySubdocMultiLookupRequest.java -> Since this is a public API, do you want to define an enum with all the flags, and have this method return an EnumSet?
+
+-------------------------------------
+author: Marques Ellis
+date: 2017-08-23 01:32:59.564000000
+
+Patch Set 1:
+
+(5 comments)
+
+Line:117, src/integration/java/com/couchbase/client/core/cluster/SubdocumentDocumentFlagsTests.java -> Will fix, thanks
+
+Line:192, src/main/java/com/couchbase/client/core/endpoint/kv/KeyValueHandler.java -> It is the server side implementation
+
+Line:646, src/main/java/com/couchbase/client/core/endpoint/kv/KeyValueHandler.java -> Sure will change, wanted it to be explicit that it is of size 1
+
+Line:648, src/main/java/com/couchbase/client/core/endpoint/kv/KeyValueHandler.java -> The two flags are different, written in sequence, extras section -> |flags|docflags|
+
+Line:48, src/main/java/com/couchbase/client/core/message/kv/subdoc/BinarySubdocMultiLookupRequest.java -> Hrm it is public in way that the internal specifications does not need to be known to the developer
+
+-------------------------------------

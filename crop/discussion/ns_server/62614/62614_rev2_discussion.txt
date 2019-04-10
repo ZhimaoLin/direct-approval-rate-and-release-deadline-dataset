@@ -1,0 +1,193 @@
+DESCRIPTION
+
+Periodically purge orphaned memcached buckets
+
+Buckets may be orphaned if delete bucket in memcached fails for some
+reason. Periodically check for buckets in memcached that are not
+defined in ns_server, and delete them.
+
+Change-Id: I453c26f9c1fcf664b26b6cd9a586c2c46fd7f414
+
+
+COMMENTS
+
+author: Leah Mcdaniel
+date: 2016-04-14 22:51:27.249000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Leah Mcdaniel
+date: 2016-04-14 22:51:59.951000000
+
+Patch Set 2: Verified+1
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2016-04-19 00:32:11.597000000
+
+Patch Set 2:
+
+First of all, this doesn't solve all the problems (if some of the nodes fail to return bucket list, they are just ignored).
+
+Second, I feel it's too complicated. Especially the part where the purger would call the orchestrator to just get called back.
+
+Third, backward compat needs to be dealt with.
+
+Fourth, you still just delete a logical bucket from memcached but don't delete the files.
+
+I still believe that it will be much simpler to have the deletion performed by the ns_bucket_sup in one way or another. Yes, care needs to be taken not to block all buckets by one slow bucket deletion, but I don't think it's hard to achieve. It would allow us to remove the check from ns_orchestrator (buckets could be created even if they are not yet fully deleted).
+
+One more thing to think of. Let's say we start deleting a bucket but memcached crashes and restarts. At this point there will not be a bucket from memcached perspective. But the files will still be on disk. And we still need to delete those. What complicates things, is that since the old days we support a recovery procedure where users just put vbucket files in the right places and those get picked up by the server. We need to be able to distinguish between these two cases.
+
+So it seems that we shouldn't rely on the list_buckets output. Instead we should have our own state indicating that we started deleting a bucket, but haven't finished doing so. We have other similar situations (like bucket flush). You can grep for misc:create_marker to see the examples.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2016-04-19 00:37:13.486000000
+
+Patch Set 2:
+
+On the second thought, maybe we don't support this recovery procedure that I mentioned anymore. Because as we do delete stale bucket files just prior to bucket creation. Is it's been broken for quite a while and that probably means that nobody is using this (mis)feature. But the rest of my comment still applies: we shouldn't leave stale files even if memcached crashes.
+
+-------------------------------------
+author: Leah Mcdaniel
+date: 2016-04-20 16:41:22.582000000
+
+Patch Set 2:
+
+> First of all, this doesn't solve all the problems (if some of the
+ > nodes fail to return bucket list, they are just ignored).
+ 
+I figured it does not matter since it will get retried automatically the
+next time the purger runs.
+
+ > Second, I feel it's too complicated. Especially the part where the
+ > purger would call the orchestrator to just get called back.
+ 
+Yes, it got a bit convoluted, but it seemed necessary to avoid the
+race with bucket creation, while still minimizing the time the other
+bucket create or bucket delete operations are blocked.
+ 
+ > Third, backward compat needs to be dealt with.
+ 
+Right
+ 
+ > Fourth, you still just delete a logical bucket from memcached but
+ > don't delete the files.
+
+I had discussed this with Dave and I got the impression that You
+had agreed the it was not necessary to delete the files.
+I will add it.
+
+ > It would allow us
+ > to remove the check from ns_orchestrator (buckets could be created
+ > even if they are not yet fully deleted).
+ 
+How would this work?
+Just delay the creation of the bucket on the node with the orphan,
+until it has been deleted?
+
+ > So it seems that we shouldn't rely on the list_buckets output.
+ > Instead we should have our own state indicating that we started
+ > deleting a bucket, but haven't finished doing so.
+
+I was considering this, my thought was to add a flag in the bucket config
+but it felt to risky.
+
+ > We have other
+ > similar situations (like bucket flush). You can grep for
+ > misc:create_marker to see the examples.
+
+I rework again with this.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2016-04-20 17:49:51.720000000
+
+Patch Set 2:
+
+> I had discussed this with Dave and I got the impression that You had agreed the it was not necessary to delete the files.
+
+I thought that there might be much more severe consequences if files are not deleted (data being resurrected in newly created bucket). That's not the case, because prior to creating bucket we do ensure that there are no leftover files. But it's still a bug to not reclaim disk space when bucket is deleted.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2016-04-20 17:52:30.718000000
+
+Patch Set 2:
+
+>  I figured it does not matter since it will get retried automatically the next time the purger runs.
+
+ns_orchestrator would proceed to create the bucket without giving purger a chance to run. Or at least that's my read of the code.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2016-04-20 17:59:41.855000000
+
+Patch Set 2:
+
+> How would this work? Just delay the creation of the bucket on the node with the orphan, until it has been deleted?
+
+Yes, that's what I meant. I haven't thought through all the details, but it seems feasible. 
+
+Currently once bucket is created ns_orchestrator triggers ns_Harley Martinitor run. The latter would enable traffic to the bucket only once it's created on all nodes. This logic might need to be adapted.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2016-04-20 18:04:25.164000000
+
+Patch Set 2:
+
+> Yes, it got a bit convoluted, but it seemed necessary to avoid the race with bucket creation, while still minimizing the time the other bucket create or bucket delete operations are blocked.
+
+It doesn't seem necessary to me. Though I might be missing something. We should strive to minimize number of follower to orchestrator dependencies because it forces us to preserve old apis (like purge_buckets) when we want to change something.
+
+Also you always need to block bucket creation if the old still exists. You cannot get any better than this. And it seems to be doable without this complex interaction with the orchestrator.
+
+-------------------------------------
+author: Leah Mcdaniel
+date: 2016-04-20 18:07:05.925000000
+
+Patch Set 2:
+
+> ns_orchestrator would proceed to create the bucket without giving
+ > purger a chance to run. Or at least that's my read of the code.
+
+If ns_memcached:mc_buckets gets an error from memcached it crashes, so that node gets in FailedNodes, and then the test on ns_orchestrator line 623 checks that there where no FailedNodes. So It should work, but it doesn't matter since I will change this again.
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2016-04-20 18:11:01.382000000
+
+Patch Set 2:
+
+It will only result in a log message:
+
+http://src.couchbase.org/source/xref/watson/ns_server/src/ns_orchestrator.erl#615
+
+-------------------------------------
+author: Leah Mcdaniel
+date: 2016-04-20 18:12:22.049000000
+
+Patch Set 2:
+
+> And it seems to be
+ > doable without this complex interaction with the orchestrator.
+
+Agreed, as I already mentioned I will rewrite this using misc:create_marker, so
+it should get much simpler.
+
+-------------------------------------
+author: Leah Mcdaniel
+date: 2016-04-20 18:16:17.040000000
+
+Patch Set 2:
+
+> It will only result in a log message:
+ > 
+ > http://src.couchbase.org/source/xref/watson/ns_server/src/ns_orchestrator.erl#615
+
+Thats strange, when I tested it I couldn't create a bucket if there existed an orphaned bucket.
+
+-------------------------------------

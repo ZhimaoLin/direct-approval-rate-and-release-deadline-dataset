@@ -1,0 +1,127 @@
+DESCRIPTION
+
+Add command identifiers for [gs]et with meta
+
+Note: the sequence number is NOT persisted to couch!
+
+Change-Id: Id5c34465ed1165bf715b2e84b8de729aeb3b0222
+
+
+COMMENTS
+
+author: Asher Vang
+date: 2011-09-19 20:24:03.530000000
+
+Uploaded patch set 18.
+
+-------------------------------------
+author: Tatiana Sheppard
+date: 2011-09-19 21:45:00.008000000
+
+Patch Set 18: (3 inline comments)
+
+
+
+Line:251, stored-value.hh -> I could be missing something here...
+
+It seems like this function gets called from set(), add(), insert() and setWithMeta(). In the case of set(), add() and insert() we want to increment seqno but in the case of setWithMeta() we want to preserve the seqno. Right?
+
+If so, wouldn't it be simpler semantically if the set(), add() and insert() functions incremented seqno before calling this function? Then this function wouldn't have to care about whether the seqno needs to be preserved or not since all it's doing is translating the Item data structure to a StoredValue.
+
+Line:1897, ep_engine.cc -> decodeMeta() should always return true here. This is because regardless of whether the revid is set explicitly by the user or assigned by ep-engine, every item that's TAP-replicated _should_ have a revid.
+
+This is also true in the middle of a rolling upgrade because we will never have a TAP connection between 2.0 and pre-2.0 nodes due to revid incompatibility.
+
+So, I think we should assert() that the return value of decodeMeta() here is always true and not handle the case where it's false.
+
+Line:1910, ep_engine.cc -> We should never have to call set(). We should always call setWithMeta().
+
+-------------------------------------
+author: Asher Vang
+date: 2011-09-20 05:43:56.934000000
+
+Patch Set 18: (2 inline comments)
+
+
+
+Line:251, stored-value.hh -> I prefer to do the increment in _ONE_ place only, so that it won't be forgotten if we add another place. Ideally I'd like to assign the CAS here as well, but I didn't want to mess up the changeset with completely unrelated changes..
+
+Line:1910, ep_engine.cc -> Are we sure we won't allow a rolling upgrade from 1.7 to 2.0? From what I heard in during the 1.7 release frame was that we're going to support rolling upgrades in the future...
+
+-------------------------------------
+author: Tatiana Sheppard
+date: 2011-09-20 05:55:44.290000000
+
+Patch Set 18: (1 inline comment)
+
+
+
+Line:251, stored-value.hh -> Ok. I was thrown off because we were not handling CAS updates in the same way as the seqno. Based on your explanation, though, it looks alright.
+
+-------------------------------------
+author: Tatiana Sheppard
+date: 2011-09-20 09:07:17.913000000
+
+Patch Set 18: Verified; Looks good to me, approved
+
+Looks good. I've also verified that the unit tests pass.
+
+If other reviewers are also fine with the changes, let's merge it, so we can start regression tests.
+
+-------------------------------------
+author: Noah Dean
+date: 2011-09-20 17:37:10.528000000
+
+Patch Set 18: I would prefer that you didn't submit this
+
+This takes sizes from 64 bytes to 88 bytes.  You can get it down to at most 80 by rearranging the order of the fields slightly.  I think that might be worth it.
+
+-------------------------------------
+author: Noah Dean
+date: 2011-09-20 17:37:25.028000000
+
+Patch Set 18:
+
+Er, *item* sizes.  Sorry.
+
+-------------------------------------
+author: Asher Vang
+date: 2011-09-20 19:06:08.925000000
+
+Patch Set 18:
+
+Sure, we could strip the size back down again. But remember that this is the temporary object going between the front-end and the backend, so we're not going to have that many of them around at the same time. I'll take a stab at rearranging it's content (we could push this through and do that as a separate commit later on if you're in a hurry to run regression tests)
+
+-------------------------------------
+author: Noah Dean
+date: 2011-09-20 21:04:39.245000000
+
+Patch Set 18: No score
+
+Ah, right.  Temp object.  I'll +1 my -1 now.  Thanks.  :)
+
+-------------------------------------
+author: Abby Duran
+date: 2011-09-21 05:14:41.245000000
+
+Patch Set 18: Looks good to me, approved
+
+Overall, looks great and I think we all agreed on it :)
+
+-------------------------------------
+author: Asher Vang
+date: 2011-09-21 07:31:02.368000000
+
+Patch Set 18: Verified
+
+Make tests pass on debian
+
+-------------------------------------
+author: Tate Garrett
+date: 2011-09-21 07:31:04.934000000
+
+Your change could not be merged due to a path conflict.
+
+Please merge (or rebase) the change locally and upload the resolution for review.
+
+-------------------------------------

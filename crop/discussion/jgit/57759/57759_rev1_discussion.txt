@@ -1,0 +1,134 @@
+DESCRIPTION
+
+Limit the range of commits for which bitmaps are created.
+
+A bitmap index contains bitmaps for a set of commits in a pack file.
+Creating a bitmap for every commit is too expensive, so heuristics
+select the most "important" commits. The most recent commits are the
+most valuable. To clone a repository only those for the branch tips are
+needed. When fetching, only commits since the last fetch are needed.
+
+The commit selection heuristics generally work, but for some
+repositories the number of selected commits is prohibitively high. One
+example is the MSM 3.10 Linux kernel. With over 1 million commits on
+2820 branches, the current heuristics resulted in +36k selected commits.
+Each uncompressed bitmap for that repository is ~413k, making it
+difficult to complete a GC operation in available memory.
+
+The benefit of creating bitmaps over the entire history of a repository
+like the MSM 3.10 Linux kernel isn't clear. For that repository, most
+history for the last year appears to be in the last 100k commits.
+Limiting bitmap commit selection to just those commits reduces the count
+of selected commits from ~36k to ~10.5k. Dropping bitmaps for older
+commits does not affect object counting times for clones or for fetches
+on clients that are reasonably up-to-date.
+
+This patch defines a new "bitmapCommitRange" PackConfig parameter to
+limit the commit selection process when building bitmaps. The range
+starts with the most recent commit and walks backwards. A range of 10k
+considers only the 10000 most recent commits. A range of zero creates
+bitmaps only for branch tips. A range of -1 (the default) does not limit
+the range--all commits in the pack are used in the commit selection
+process.
+
+Change-Id: Ied92c70cfa0778facc670e0f14a0980bed5e3bfb
+Signed-off-by: Ariel Sawyer xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Ariel Sawyer
+date: 2015-10-08 22:18:43.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-10-08 22:18:49.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7227/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-10-08 22:28:15.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7227/ : SUCCESS
+
+-------------------------------------
+author: Eden Lin
+date: 2015-10-08 22:33:08.000000000
+
+Patch Set 1:
+
+(3 comments)
+
+Line:13, /COMMIT_MSG -> I don't understand this sentence. Is the idea that there should be a bitmap on a nearby ancestor to the previous value of the ref so that computing the set of objects
+
+  old..new
+
+is fast?
+
+Line:18, /COMMIT_MSG -> do you mean 36k+ or >36k?
+
+Line:31, /COMMIT_MSG -> When bitmaps were introduced, part of the strategy used was to space out bitmaps more as you go further back in history, so that the time to list ancestors of even a pretty-old commit is not too long (which allowed any code that wants to get the history of an older commit, such as fetches from a machine that hasn't fetched in a while, to find that operation still not too expensive). But the spacing was capped. This was considered ok because the size of the generated bitmap file was still not too large.
+
+The repository you're talking about has a lot of heads, meaning more bitmaps, which is causing bitmap generation to be expensive. I don't think the previous analysis looked into the cost of bitmap generation as a significant factor (it focused instead of the size of the bitmap file).
+
+Would it work to e.g. increase that cap instead of eliminating the bitmaps on old history altogether? Is there some way to determine what a good set of bitmap commits is, balancing the size of the bitmap file, cost of generating it, and cost of generating the in-memory bitmap of an arbitrary commit? Are there measurements that could confirm what the right thing to do is?
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2015-10-09 00:12:36.000000000
+
+Patch Set 1:
+
+(3 comments)
+
+Line:13, /COMMIT_MSG -> Yes, exactly. I'm having trouble phrasing it better. Does "only those at or near the old..new commits are needed" work?
+
+Line:18, /COMMIT_MSG -> 36k+
+
+Line:31, /COMMIT_MSG -> For the repository in question, the size of the bitmap index file may be a problem. We haven't succeeded in generating a bitmap index for full history. I did succeed in generating a bitmap index for only branch tips, it contained 2404 bitmaps and was 193MB on disk. (For contrast, the size of the bitmap index for the combined chromium repo appears to be 18M). In JGit the bitmap index file is pulled into memory so if we want to support really large indices there will be work to do to just read in portions of the index.
+
+The spacing between commits was capped at 5k. From the original documentation (this hasn't changed):
+* the most recent 100 commits are all bitmapped
+* the next 19,000 commits have a bitmaps every 100 commits
+* all remaining have bitmaps every 5000 commits
+
+If all 1M commits were in a single branch, then the count of selected bitmaps would be 100+190+196 < 500. However this selection is happening for every branch. Many of the branches represent release points and there is not a lot of overlap in the 100 most recent commits of those branches.
+
+Given that topology, further spacing out the older commits isn't going to help much. Removing older commits from consideration (but forcing branch tips to be in the set) has a much better property of providing a good set of "recent" commits for active branches and a single "tip" commit for stale/abandoned branches.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-10-10 16:04:23.000000000
+
+Patch Set 1: Code-Review+2
+
+(1 comment)
+
+Line:894, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> Consider adding this same sort of metric to DfsGarbageCollector in a followup CL?
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-10-10 16:04:25.000000000
+
+Change has been successfully merged into the git repository by Yoselin Hanna
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2015-10-12 15:27:14.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:894, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/GC.java -> Currently DfsGarbageCollector and this class employ PackWriter to do all the work, so surfacing this here is enough to get test coverage to make sure future tweaks to the commit selection algorithm behave as expected. If we want to do monitoring of repositories that cause poor GC performance, we could surface this statistic in DfsGarbageCollector, but those repositories are already easy to identify due to the JVM GC thrashing they cause.
+
+-------------------------------------

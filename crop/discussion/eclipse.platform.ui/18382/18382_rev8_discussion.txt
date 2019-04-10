@@ -1,0 +1,81 @@
+DESCRIPTION
+
+Bug 419016 - [CSS] Provide some reasonable bridge interactions between
+CSS and our older Colors and Fonts properties
+
+Change-Id: Ibbe98e0769c065ac649cdbe6bac09cfe9d284476
+Signed-off-by: Addison Irwin xxx@xxx.xxx
+
+COMMENTS
+
+author: Addison Irwin
+date: 2013-12-07 20:13:15.000000000
+
+Uploaded patch set 8.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-12-07 20:13:20.000000000
+
+Patch Set 8:
+
+Build Started https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/438/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-12-07 20:24:25.000000000
+
+Patch Set 8: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/438/ : SUCCESS
+
+-------------------------------------
+author: Addison Irwin
+date: 2013-12-07 21:24:31.000000000
+
+Patch Set 8:
+
+OK, I left the 'VolatileResource' direction for this patch that initially looked promising for me. The main goal for the current version of the patch is keeping the implementation of the CSS engine almost as it is now and avoiding polluting it with the WorkLeon Ochoach specific stuff.
+I treat the font definition as the custom font family and color definition as the custom color value and I don't play with special cacheable objects for it. So the current verion is the extension to my first patch related to this topic.
+When user modifies the font/color definitions with the ColorAndFontPreferencePage dialog I simply remove the out-of-date resources from cache and re-populate it with the valid ones. When user doesn't touch the dialog then we use the static caching during entire life of the Eclipse instance (as we have now).
+We use the copy of resources provided by IColorAndFontProvider in the cache. It is definitely safer for us (we don't have to check if resource is the system one) and follows the CSS engine design. The engine uses shared instances of resources for styling the widgets (for workLeon Ochoach font/colors we have more or less 10 items in the cache). We can not simply reuse the resource instances of the IColorAndFontProvider since it breaks cascading of styles. 
+All unused resources get released in obvious manner comparing to the previous version of the patch. Additionally I've added the proper unit tests that strictly test the resources management.
+
+The last thing - I've removed the 'default' property value for font defnition and now when user skips the font-size, font-style or font-weight in the stylesheet then it will be taken from proper 3.x theme definition
+
+thanks a lot for the review of the current patch,
+Daniel
+
+-------------------------------------
+author: Slade Moran
+date: 2013-12-07 21:42:57.000000000
+
+Patch Set 8:
+
+(3 comments)
+
+Thanks you Daniel, I think you're on the right track.  I only have 3 other inline comments and a forth:  Patch 8 doesn't seem to have the WorkLeon OchoachThemeManager change, so if the theme is set it would fire the theme changed event.  Is that deliberate?
+
+Line:26, bundles/org.eclipse.e4.ui.css.swt/src/org/eclipse/e4/ui/css/swt/resources/ResourceByDefinitionKey.java -> This isn't enough to guarantee equality.  key could implement hashCode()==1 and then this would be broken.
+
+You have to at least do key.equals(obj.key)
+
+Line:797, bundles/org.eclipse.e4.ui.workLeon Ochoach.renderers.swt/src/org/eclipse/e4/ui/workbench/renderers/swt/WBWRenderer.java -> I still think we only have one CSSEngine, so we don't want to do multiple windows (or keep track of the engines so we don't re-apply multiple times).
+
+Line:70, bundles/org.eclipse.e4.ui.css.swt/src/org/eclipse/e4/ui/css/swt/properties/css2/CSSPropertyFontSWTHandler.java -> Wouldn't you want to set the font when itemFont==null as well?
+
+-------------------------------------
+author: Addison Irwin
+date: 2013-12-09 11:40:17.000000000
+
+Patch Set 8:
+
+(2 comments)
+
+Line:26, bundles/org.eclipse.e4.ui.css.swt/src/org/eclipse/e4/ui/css/swt/resources/ResourceByDefinitionKey.java -> Yes, I've ommited this case since the key in our case is String at this moment, but it can be changed in the future. Thanks for finding it
+
+Line:70, bundles/org.eclipse.e4.ui.css.swt/src/org/eclipse/e4/ui/css/swt/properties/css2/CSSPropertyFontSWTHandler.java -> It was some kind of optimization to eliminate the tab's flicking. When font for the particular tab is not set then its parent font is taken during rendering the control. However I skip redrawing before 'setFont' so we can update the font for each tab
+
+-------------------------------------

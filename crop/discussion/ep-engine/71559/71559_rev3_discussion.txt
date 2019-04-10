@@ -1,0 +1,144 @@
+DESCRIPTION
+
+MB-22082: Improve logging of connections marked as "want to disconnect"
+
+Rebalance failure issues such as the one in the referenced MB are often
+due to connections being forcably closed.  Furthermore these issues
+can be hard to reproduce, and therefore it is important to be able to
+debug from the logs.
+
+Therefore this patch improves the logging for when we close a
+connection by recording when we mark a connection as "want to
+disconnect".
+
+Change-Id: I122e685484557a96c36a61c16787bfcf0adf767f
+
+
+COMMENTS
+
+author: Kymani Ramirez
+date: 2017-01-04 17:16:09.068000000
+
+Uploaded patch set 3: Commit message was updated.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-04 17:16:15.622000000
+
+Patch Set 3:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/2590/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-04 17:16:15.754000000
+
+Patch Set 3:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1297/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-04 17:16:15.966000000
+
+Patch Set 3:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2117/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-04 17:16:16.100000000
+
+Patch Set 3:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2469/ (4/4)
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-01-04 17:26:51.184000000
+
+Patch Set 3: Code-Review-1
+
+(2 comments)
+
+Line:79, src/dcp/dcpconnmap.cc -> Probably worth making this more explicit that we are going to disconnect this as a result (unless subsequent log messages say this)?
+
+Having said that - even if a later log message says we're disconnecting, it'll be easier to read if a log message is "standalone". How about something like:
+
+ "Disconnecting existing Dcp Consumer %p as it has the same name as a new connection %p"
+
+I'd also use the connection name (which has the hostname:port of source/dest) in the log message of the existing and new connections - again to aid debugging.
+
+Line:259, src/dcp/dcpconnmap.cc -> Check how often this fires - particulary for the view engine which creates and disconnects every 10s).
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-04 17:27:23.752000000
+
+Patch Set 3: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/2590/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2117/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2469/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1297/ : SUCCESS
+
+-------------------------------------
+author: Kymani Ramirez
+date: 2017-01-04 18:45:42.527000000
+
+Patch Set 3:
+
+(2 comments)
+
+Line:79, src/dcp/dcpconnmap.cc -> Happy to use your statement- it reads better than mine :)
+However the connection name here does not contains hostname:port (which is why we can do a compare to see if duplicate).
+I think you may be thinking of when memcached prints out the connection using the following function:
+http://src.Piper Jefferson.org/source/xref/trunk/memcached/daemon/connection.cc#286
+
+But for completeness will include name once as follows:
+
+"Disconnecting existing Dcp Consumer %p as it has the same "
+                "name (%s) as a new connection %p",
+                cookie, conn_name.c_str(), cookieToConn.first);
+
+Line:259, src/dcp/dcpconnmap.cc -> Could you advise which test would be a good one to run?
+
+Its worth noting that we currently print out every time we
+- create a stream
+- mark a stream as closing
+- set stream to dead state
+
+I expect the "Removing connection" message will be significantly less. 
+
+As an example I ran my test example of a single node cluster containing the beer sample.  Add 2 new nodes and rebalanced.  The number of occurrences after completion of the rebalance on the original single node are as follows:
+
+Removing Connection - 332 times
+
+Creating stream - 2728 times
+Creating takeover stream - 1364 times
+Stream closed - 2280 times
+Stream closing - 3408 times
+Attempting to add   stream - 684 times
+
+-------------------------------------
+author: Kymani Ramirez
+date: 2017-01-05 10:20:54.514000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:79, src/dcp/dcpconnmap.cc -> Actually probably better to print the logHeader (as in the Removing connection case).
+
+-------------------------------------
+author: Tate Garrett
+date: 2017-01-05 17:51:34.778000000
+
+Change has been successfully cherry-picked as c221d2ea15df2242f08b2821a0ed7dbef222a8e2 by Ashlee Kent
+
+-------------------------------------

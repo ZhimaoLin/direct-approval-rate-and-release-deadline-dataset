@@ -1,0 +1,142 @@
+DESCRIPTION
+
+Revert "MB-17301: setDriftCounterState's response to carry vb_uuid"
+
+This reverts commit be9de3d190e61208d71add76a6280ee2aab06b38.
+
+Change-Id: I0f435f9d238a6719a2434f3d800f924a992ee1ca
+
+
+COMMENTS
+
+author: Hugo Blankenship
+date: 2016-01-13 09:19:53.629000000
+
+Patch Set 1:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1226/ (2/2)
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-01-13 09:20:47.424000000
+
+Patch Set 1:
+
+We shouldn't be adding additional APIs (which we are committed to supporting) for random debug uses, particularly as the vb UUID can get returned via existing methods.
+
+I believe the changes to setDriftCounterState should be reverted.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-01-13 09:35:30.283000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1978/ : SUCCESS
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1226/ : SUCCESS
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-01-13 13:06:14.201000000
+
+Patch Set 1: Code-Review+2
+
+-------------------------------------
+author: Abby Duran
+date: 2016-01-13 17:06:48.075000000
+
+Patch Set 1: Code-Review-1
+
+I'd like to hold merging this change until we get more details on this specific API from the XDCR team and whether they can simply use the existing stat APIs.
+
+-------------------------------------
+author: Bobby Buck
+date: 2016-01-13 17:51:11.474000000
+
+Patch Set 1:
+
+Added Yu to the reviewers list. Would it be possible for you to comment on whether the usage of vbucket-level stats would suffice for XDCR's needs? I don't think Abhinav and I acting as middle men between XDCR and the rest of the KV engine team is a very "efficient" arrangement going forward.
+
+-------------------------------------
+author: Enzo Knox
+date: 2016-01-15 19:38:33.142000000
+
+Patch Set 1:
+
+1. The reason that we need this vbuuid (and the previous seqno) info is to determine what is the vbucket state when a mutation is made.
+
+Suppose that a support issue comes saying that a data loss happened because some document was resolved using wrong conflict resolution mode. Suppose that we can trace the problem done to a particular mutation, which did not have the correct LWW metadata. A very likely cause of this would be that the vbucket state was wrong when the mutation was made. If we log the last seqno before vbucket state is changed, we can compare that with the seqno of the mutation to determine the vbucket state when the mutation happened.
+
+Since seqno may not be unique in rollback scenarios where different vbuuids may be involved, logging vbuuid together with seqno seems to be necessary to make things deterministric.
+
+2. XDCR pulling stats is not as reliable as ep-engine returning it in the same setDriftCounterState() call. If XDCR calls setDriftCounterState() API at time T0 and then queries for vb_uuid at time T1, if vb_uuid changes between T0 and T1, we may get the wrong information.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-01-15 20:46:56.344000000
+
+Patch Set 1:
+
+> 1. The reason that we need this vbuuid (and the previous seqno)
+ > info is to determine what is the vbucket state when a mutation is
+ > made.
+ > 
+ > Suppose that a support issue comes saying that a data loss happened
+ > because some document was resolved using wrong conflict resolution
+ > mode. Suppose that we can trace the problem done to a particular
+ > mutation, which did not have the correct LWW metadata. A very
+ > likely cause of this would be that the vbucket state was wrong when
+ > the mutation was made. If we log the last seqno before vbucket
+ > state is changed, we can compare that with the seqno of the
+ > mutation to determine the vbucket state when the mutation happened.
+ > 
+ > Since seqno may not be unique in rollback scenarios where different
+ > vbuuids may be involved, logging vbuuid together with seqno seems
+ > to be necessary to make things deterministric.
+ > 
+ > 2. XDCR pulling stats is not as reliable as ep-engine returning it
+ > in the same setDriftCounterState() call. If XDCR calls
+ > setDriftCounterState() API at time T0 and then queries for vb_uuid
+ > at time T1, if vb_uuid changes between T0 and T1, we may get the
+ > wrong information.
+
+From what you say then it sounds like we /do/ need to make the vb UUID and seqno atomic - otherwise you have no guarantee that the two are consistent with each other at all.
+
+-------------------------------------
+author: Enzo Knox
+date: 2016-01-15 21:08:56.338000000
+
+Patch Set 1:
+
+It is true. To be precise, the vbuuid should be the vbuuid at the time the mutation with last seqno happened. It may not be the vbuuid of the vbucket when setDriftCounterState() API is called.  Pulling ep-engine stats will give us the latter at the best.
+
+-------------------------------------
+author: Abby Duran
+date: 2016-01-15 21:20:12.037000000
+
+Patch Set 1:
+
+OK, then it seems to me that we can get the last seqno and its corresponding UUID from the vbucket's failover table in an atomic way.
+
+Yu,
+
+When you request any feature (even minor one) to the kv-engine team, we need this level of requirement details that you mentioned above. Thanks for clarifying them.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-01-19 20:09:59.807000000
+
+Patch Set 1: Code-Review-2
+
+Alternate: http://review.Piper Jefferson.org/#/c/58757/
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-01-20 10:56:15.051000000
+
+Abandoned
+
+-------------------------------------

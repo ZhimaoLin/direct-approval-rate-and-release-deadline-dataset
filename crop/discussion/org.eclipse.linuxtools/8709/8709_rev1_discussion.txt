@@ -1,0 +1,104 @@
+DESCRIPTION
+
+lttng/o.e.l.ftm.ui/TimeGraphControl.java: disable zoom on selection when a menuListener is registered
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2012-11-15 09:07:53.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/sandbox/job/linuxtools/564/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-11-15 09:22:31.000000000
+
+Patch Set 1: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/linuxtools/564/ : SUCCESS
+
+-------------------------------------
+author: Bryce Kline
+date: 2012-11-19 17:18:22.000000000
+
+Patch Set 1: Looks good to me, but someone else must approve; IP review completed
+
+
+
+-------------------------------------
+author: Luciana Barry
+date: 2012-11-19 21:16:37.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(4 inline comments)
+
+
+
+Line:7, /COMMIT_MSG -> ftm => tmf
+
+Line:1085, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/widgets/TimeGraphControl.java -> } else if (DRAG_ZOOM == _dragState && Math.max(_dragX, _dragX0) > nameSpace && _dragX != _dragX0) {
+
+Line:1641, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/widgets/TimeGraphControl.java -> Instead of disabling completely mouse drag zooming when menu listeners are present, I would prefer to disable the menu popup if the mouse right button is currently being used to drag zoom. The menu would appear only if the right mouse button is clicked without moving. See code below in menuDetected(). What do you think?
+Optionally, we could also prevent the drawing of the vertical drag zoom selection lines when the mouse has not moved from the original position. This prevents a flashing vertical line on right mouse click for menu popup. See code above in paint().
+
+Line:2027, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/widgets/TimeGraphControl.java -> if (_dragState == DRAG_ZOOM && _dragX != _dragX0) {
+    return;
+}
+
+-------------------------------------
+author: Bryce Kline
+date: 2012-11-29 13:40:39.000000000
+
+Patch Set 1: No score; No score
+
+(1 inline comment)
+
+
+
+Line:1641, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/widgets/TimeGraphControl.java -> > [...] disable the menu popup if the mouse right button is currently being used to drag zoom [...]
+
+behaviour of menuDetected() method is platform-dependant:
+- on Windows, menuDetected() is called after mouseDown(). In this case, your proposal is OK.
+- Unfortunately, on Linux, menuDetected() is called before mouseDown(). In other words when menuDetected() method is called, we do not know whether the user wants to display popup menu or zoom in graph with drag gesture (_dragState is always Zero).
+
+I'm afraid we can't use your proposal.
+
+-------------------------------------
+author: Luciana Barry
+date: 2012-11-29 22:29:32.000000000
+
+Patch Set 1: (4 inline comments)
+
+
+
+Line:110, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/widgets/TimeGraphControl.java -> private MenuDetectEvent fPendingMenuDetectEvent = null;
+
+Line:1641, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/widgets/TimeGraphControl.java -> And my colleagues wonder why I still use Windows... In the words of the immortal Samir Nagheenanajar, "This is the suck!".
+Fortunately, there is a way to trick Linux (and every platform) into behaving like Windows does, and handle menuDetected just before mouseUp. See additional code in mouseUp() and menuDetected().
+
+Line:1652, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/widgets/TimeGraphControl.java -> if (fPendingMenuDetectEvent != null && e.button == 3) {
+    menuDetected(fPendingMenuDetectEvent);
+}
+
+Line:2029, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/widgets/TimeGraphControl.java -> if (e.detail == SWT.MENU_MOUSE) {
+    if (fPendingMenuDetectEvent == null) {
+        /* Feature in Linux. The MenuDetectEvent is received before mouseDown.
+         * Store the event and trigger it later just before handling mouseUp.
+         * This allows for the method to detect if mouse is used to drag zoom.
+         */
+        fPendingMenuDetectEvent = e;
+        return;
+    }
+    fPendingMenuDetectEvent = null;
+    if (_dragState != DRAG_ZOOM || _dragX != _dragX0) {
+        return;
+    }
+}
+
+-------------------------------------

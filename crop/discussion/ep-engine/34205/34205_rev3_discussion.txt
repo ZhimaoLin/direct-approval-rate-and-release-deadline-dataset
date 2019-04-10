@@ -1,0 +1,67 @@
+DESCRIPTION
+
+Close a stream if the vbucket state changes
+
+This change is needed for two reasons. The first is that upr
+consumers should get a notification that a stream is closed if
+the state of the vbucket changes. The second is that since a
+vbucket might be accessed by a stream during shutdown we need
+to notify the upr connection that the vbucket is no longer
+valid so that the stream can be closed. Otherwise we might
+access invalid objects.
+
+Change-Id: I1ef72b7488976a058af001afb085a73cd484edc7
+
+
+COMMENTS
+
+author: Kenny Maynard
+date: 2014-03-06 01:18:24.497000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2014-03-06 04:23:54.655000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-300/230/ : SUCCESS
+
+-------------------------------------
+author: Abby Duran
+date: 2014-03-07 00:02:53.733000000
+
+Patch Set 3: Code-Review-1
+
+(3 comments)
+
+One clarification question:
+
+i think we don't support the chain replication anymore. This means that when a given active vbucket is changed to replica, then it has to close all the streams because the replica vbucket won't stream its items to the other replicas. Is this correct?
+
+Line:397, src/upr-stream.cc -> What does END_STREAM_STATE mean? I think this is used for the first time. Can you give it a single line of comment?
+
+Line:375, src/ep.cc -> Can we move this to the same place where we close all TAP connections?
+
+Line:888, src/ep.cc -> Is it okay to notify the change even before changing its state below?
+
+-------------------------------------
+author: Kenny Maynard
+date: 2014-03-07 22:13:18.482000000
+
+Patch Set 3:
+
+(3 comments)
+
+Right we won't support replication chaining. Also you comment above is correct. Another reason for this is that it makes it easier for clients to immediately become aware of changes in the cluster topology.
+
+Line:397, src/upr-stream.cc -> I added comments to the enum
+
+Line:375, src/ep.cc -> We need to close all of the streams here because we will remove the vbucket map. If the streams try to access the vbuckets after this happens then it creates problems. One of the things I've been thinking about is how to make this easier to manage, but I haven't thought of anything good yet. I plan on trying to figure out something in the next week or so.
+
+Line:888, src/ep.cc -> It should be okay. I don't see any reason why doing it right before or right after would make a difference. If you want me to move this statement after setting the vbucket state let me know.
+
+-------------------------------------

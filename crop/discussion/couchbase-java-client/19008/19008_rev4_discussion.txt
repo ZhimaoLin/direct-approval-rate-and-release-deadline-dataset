@@ -1,0 +1,67 @@
+DESCRIPTION
+
+JCBC-88: Fix resubscr by not waiting long and asynch subscribing.
+
+It was found during autofailover testing that the client
+did not recover well.  The problem was that we completed the
+resubscription on one of the callers threads.  The subscription
+can take upward of 700ms, but if the caller adjusts their timeout
+for operations to be lower, we don't complete the resubscription.
+
+This change does a couple of things:
+1) doesn't allow the connection for any individual HTTP request
+   (non-streaming) to take longer than 500ms to establish for
+   purposes of faster failover
+2) changes resubscription to occur in a thread temporarily
+   spawned by the CouchbaseConnectionFactory, so it can complete
+   even if the caller's request times out.
+
+This has been tested to show autofailover working correctly.
+
+Change-Id: I87582b99fa872530a62a336b3144fefc60b63f6e
+
+
+COMMENTS
+
+author: Andreas Short
+date: 2012-07-30 14:42:27.158000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Andreas Short
+date: 2012-07-30 14:57:58.812000000
+
+Patch Set 4: Verified
+
+
+
+-------------------------------------
+author: Jeffrey Roth
+date: 2012-07-30 15:20:21.649000000
+
+Patch Set 4: Looks good to me, approved
+
+(1 inline comment)
+
+A clarification, but, should not affect approval
+
+Line:343, src/main/java/com/couchbase/client/vbucket/ConfigurationProviderHTTP.java -> Is this 1100 or 500?
+
+-------------------------------------
+author: Jeffrey Roth
+date: 2012-07-30 15:20:22.023000000
+
+Change has been successfully cherry-picked as 7e4339aeed7a0e240c75717ebc5250bb47279343.
+
+-------------------------------------
+author: Andreas Short
+date: 2012-07-30 15:25:04.142000000
+
+Patch Set 4: (1 inline comment)
+
+
+
+Line:343, src/main/java/com/couchbase/client/vbucket/ConfigurationProviderHTTP.java -> This is different than the timer for slowing the rate of reconfig.  This is just a connect timeout.  If we can't connect to the node within 500 ms, then we give up.  The default would be the TCP default, and that's something like 20 seconds!
+
+-------------------------------------

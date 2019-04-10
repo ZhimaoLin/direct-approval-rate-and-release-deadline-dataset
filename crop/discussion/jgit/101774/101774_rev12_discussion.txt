@@ -1,0 +1,192 @@
+DESCRIPTION
+
+reftable: file format documentation
+
+Some repositories contain a lot of references (e.g. android at 866k,
+rails at 31k). The reftable format provides:
+
+- Near constant time lookup for any single reference, even when the
+  repository is cold and not in process or kernel cache.
+- Near constant time verification a SHA-1 is referred to by at least
+  one reference (for allow-tip-sha1-in-want).
+- Efficient lookup of an entire namespace, such as `refs/tags/`.
+- Support atomic push `O(size_of_update)` operations.
+- Combine reflog storage with ref storage.
+
+Change-Id: I29d0ff1eee475845660ac9173413e1407adcfbf2
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2017-08-11 00:12:58.000000000
+
+Uploaded patch set 12.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-08-11 00:13:12.000000000
+
+Patch Set 12:
+
+Build Started https://ci.eclipse.org/jgit/job/jgit.gerrit/10950/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-08-11 00:38:21.000000000
+
+Patch Set 12: Verified+1
+
+Build Successful 
+
+https://ci.eclipse.org/jgit/job/jgit.gerrit/10950/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-08-12 14:55:40.000000000
+
+Patch Set 12: Code-Review-1
+
+(13 comments)
+
+Line:31, Documentation/technical/reftable.md -> s/a SHA1/if a SHA1/ ?
+
+Line:121, Documentation/technical/reftable.md -> why plural here, for ref_index you use singular ?
+I guess * means [0..n] occurrences ?
+
+same question for obj_blocks and log_blocks
+
+Line:140, Documentation/technical/reftable.md -> I don't get how blocks are defined here. If there is no padding after the header of a log-only file doesn't that mean that the first block contains the header and log entries until the first block boundary ?
+
+Line:209, Documentation/technical/reftable.md -> this seems to not match the ref block format given above which says there can only be padding after restart_count
+
+Line:244, Documentation/technical/reftable.md -> I guess suffix_length is also the length of the suffix. Or can the suffix be longer than the number of bytes to copy to complete the reference name ?
+
+Line:258, Documentation/technical/reftable.md -> references
+
+Line:276, Documentation/technical/reftable.md -> can it also exceed the max block_size which can be stored in uint24 ?
+
+Line:283, Documentation/technical/reftable.md -> require
+
+Line:315, Documentation/technical/reftable.md -> I guess padding is done using NULs ?
+
+Line:402, Documentation/technical/reftable.md -> by
+
+Line:431, Documentation/technical/reftable.md -> reduce
+
+Line:572, Documentation/technical/reftable.md -> it's
+
+Line:750, Documentation/technical/reftable.md -> reduce
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2017-08-12 18:19:08.000000000
+
+Patch Set 12:
+
+(13 comments)
+
+Thanks for the review Matthias!
+
+Line:31, Documentation/technical/reftable.md -> Done
+
+Line:121, Documentation/technical/reftable.md -> Correct, * means [0..n] occurrences. At some point in later drafts ref_index? was changed to ref_index* as there can be multiple index blocks for a multi-level index. You see that in the current version.
+
+Line:140, Documentation/technical/reftable.md -> Yes, your interpretation is correct. log blocks aren't really blocks, they are more chunks of data stored without block alignment. I just reused the term block for lack of a better term. Maybe changing to log_chunk would help?
+
+Line:209, Documentation/technical/reftable.md -> Done
+
+Line:244, Documentation/technical/reftable.md -> Its the length of the suffix, suffix cannot be longer than suffix_length. I've clarified this by rewriting as:
+
+  The `suffix_length` value provides the number of bytes available in
+  `suffix` to copy from `suffix` to complete the reference name.
+
+Line:258, Documentation/technical/reftable.md -> No, I meant "reference-like". Here is being used as an adjective.
+
+Line:276, Documentation/technical/reftable.md -> No. Clarified this section by making it explicit each index block must stay within the file format's max block size of 15.99 MiB.
+
+Line:283, Documentation/technical/reftable.md -> Done
+
+Line:315, Documentation/technical/reftable.md -> Yes, Done
+
+Line:402, Documentation/technical/reftable.md -> Done
+
+Line:431, Documentation/technical/reftable.md -> Done
+
+Line:572, Documentation/technical/reftable.md -> Done
+
+Line:750, Documentation/technical/reftable.md -> Done
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2017-08-15 22:49:17.000000000
+
+Patch Set 12:
+
+(1 comment)
+
+Line:140, Documentation/technical/reftable.md -> That interacts badly with the DfsBlockCache and how our DFS system at $DAY_JOB works. Easier to say it starts at 0 and includes the file header.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2017-08-14 18:31:18.000000000
+
+MISMATCHED INLINE COMMENT
+Line:121, Documentation/technical/reftable.md -> Fixed to be singular, thanks.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-08-12 23:48:32.000000000
+
+MISMATCHED INLINE COMMENT
+Line:121, Documentation/technical/reftable.md -> I think the following would look more consistent as both ref_block and ref_index have cardinality *:
+
+first_block {
+  header
+  first_ref_block
+}
+ref_block*
+ref_index*
+obj_block*
+obj_index*
+log_block*
+log_index*
+footer
+
+i.e. always use terms in singular form and express cardinality using *
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-08-14 18:43:23.000000000
+
+MISMATCHED INLINE COMMENT
+Line:140, Documentation/technical/reftable.md -> I didn't mean to consume a complete block for the header, couldn't the first block start after the fixed size 24 byte header ?
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-08-12 23:48:32.000000000
+
+MISMATCHED INLINE COMMENT
+Line:140, Documentation/technical/reftable.md -> ok 
+
+So all blocks use the fixed block size given in the header except log_blocks which use a variable block size. Maximum log block size is also 16777215 since length has type uint24. Fixed size blocks are padded with NULs, variable size blocks don't use padding.
+
+The fixed-size footer is appended after the last block, maybe the fixed-size header could be treated in the same way and come before the first block ? This would simplify the format description since we would no longer need to differentiate between first_ref_block and ref_block and no additional explanations would be needed for log-only files. The file format would then look like this:
+
+header (24 byte)
+ref_block* (fixed block size, NUL padded)
+ref_index* (fixed block size, NUL padded)
+obj_block* (fixed block size, NUL padded)
+obj_index* (fixed block size, NUL padded)
+log_block* (variable block size, no padding)
+log_index*  (fixed block size, NUL padded)
+footer (68 byte)
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2017-08-14 18:31:18.000000000
+
+MISMATCHED INLINE COMMENT
+Line:140, Documentation/technical/reftable.md -> Unfortunately no, I don't want the fixed size header to occupy an entire 64 KiB when I am using a 64 KiB block size. Its better to account for it as part of the first block.
+
+-------------------------------------

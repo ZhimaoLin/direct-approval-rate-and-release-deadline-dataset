@@ -1,0 +1,127 @@
+DESCRIPTION
+
+Fix RevWalkUtils.findBranchesReachableFrom not finding some branches
+
+The "cut off" optimization causes it to not include branches that
+contain the specified commit but happen to share commits with a branch
+that does not contain the commit.
+
+An example:
+
+      -B foo
+        \
+    -A---C master
+
+findBranchesReachableFrom for commit A with both branches as input may
+not return master (depending on the order of the input). The reason is
+that A is not contained in foo, and therefore the old code would put B
+in the cutOff set. When then walking the master commits and B is
+checked, it is found in the cutOff set and the walk is aborted, causing
+master not to be returned even though it should.
+
+Bug: 425674
+Change-Id: I2c0c406ce5fcc9a03538b483473af930d4895d30
+Signed-off-by: Danika Greer xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2014-01-14 16:31:45.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/egit/job/jgit.gerrit/4433/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-01-14 16:44:53.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/jgit.gerrit/4433/ : SUCCESS
+
+-------------------------------------
+author: Juliet Cantu
+date: 2014-01-16 22:01:21.000000000
+
+Patch Set 1:
+
+Performance is the reason for the cut-off thingy so the method can be used with thousands of branches in an interactive environment like EGit. 
+
+Obviously it should be correct too.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2014-01-16 22:42:21.000000000
+
+Patch Set 1: Code-Review-1
+
+Doesn't work. The reason I believe is that isMergedInto requires the commit being examined requires the commit to come from the same RevWalk
+
+With this patch the history view in EGit shows no matching branches.
+
+-------------------------------------
+author: Carlie Harper
+date: 2014-01-17 11:46:20.000000000
+
+Patch Set 1: Code-Review-1
+
+If I understand correctly I think that in gerrit the same problem was solved in a quite performant way:
+https://gerrit-review.googlesource.com/#/c/47350/
+
+I wonder why it was done in Gerrit and not in JGit.
+
+Could you please check if that code would solve the problem?
+
+-------------------------------------
+author: Danika Greer
+date: 2014-01-17 12:43:33.000000000
+
+Patch Set 1: Code-Review-2
+
+> Doesn't work. The reason I believe is that isMergedInto requires the commit being examined requires the commit to come from the same RevWalk
+
+Good catch. Wasn't shown in the test because they use the same RevWalk.
+
+> I wonder why it was done in Gerrit and not in JGit.
+
+Yeah :/.
+
+> Could you please check if that code would solve the problem?
+
+Code looks better (couldn't try it out yet). The question is: Can we copy it? Could you talk to Christian Grail? Looks like he also works for SAP..
+
+-------------------------------------
+author: Carlie Harper
+date: 2014-01-17 13:08:28.000000000
+
+Patch Set 1:
+
+> Code looks better (couldn't try it out yet). The question
+> is: Can we copy it? Could you talk to Christian Grail?
+> Looks like he also works for SAP..
+
+I'll ask him later...
+
+-------------------------------------
+author: Juliet Cantu
+date: 2014-01-18 11:04:12.000000000
+
+Patch Set 1:
+
+I added a parseCommit() call, whereafter the code works and seems fast enough. The commit time cut-off may be the reason. Also, I have SSD now which may be the reason why it performs ok.
+
+-------------------------------------
+author: Carlie Harper
+date: 2014-01-21 09:37:54.000000000
+
+Patch Set 1:
+
+Unfortunately Christian is currently moving to Palo Alto so I couldn't ask him until now. I spoke with Dillon Cross, one of the Gerrit maintainers, and he would be willing to port the code down to JGit. 
+
+But until we have asked Christian and ported the code down I would propose to submit this fix (together with the parseCommit() call).
+
+-------------------------------------

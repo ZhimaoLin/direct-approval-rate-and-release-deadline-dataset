@@ -1,0 +1,57 @@
+DESCRIPTION
+
+MB-22451: Backfill task leave stream state unchanged
+
+The backfill task must not change the state machine of the active
+stream that it is associated with.  In particular:
+1) In ActiveStream::markDiskSnapshot if a vbucket is not found then
+   it should just return, leaving the entity deleting the vbucket to
+   set the stream to dead.
+2) ActiveStream::completeBackfill should not call
+   scheduleBackfill_UNLOCKED as this can move the stream into the
+   STREAM_IN_MEMORY state.
+
+State machine changes should only be driven by ActiveStream::next,
+which is invoked by DcpProducer::getNextItem.
+
+The call to scheduleBackfill_UNLOCKED that was invoked in
+ActiveStream::completeBackfill when the pendingBackfill flag was true
+has been moved to the ActiveStream::backfillPhase function and is
+invoked once the current backfill has completed and the pendingBackfill
+flag is set to true.
+
+Change-Id: Idcbf8164792f4fd09898fe90748424687c60fb6a
+
+
+COMMENTS
+
+author: Kymani Ramirez
+date: 2017-02-28 16:05:31.627000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-02-28 16:09:21.100000000
+
+Patch Set 6: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/2924/ : ABORTED
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/4102/ : FAILURE
+
+Compile error at /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/dcp/stream.cc:269:38:
+error: too few arguments to function call, single argument 'lh' was not specified
+ ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/4102/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/3677/ : FAILURE
+
+Compile error at /home/Piper Jefferson/jenkins/workspace/ep-engine-clang_analyzer-master/ep-engine/src/dcp/stream.cc:269:38:
+error: no matching function for call to 'ActiveStream::backfillPhase()'
+ ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-clang_analyzer-master/3677/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/4300/ : FAILURE
+
+-------------------------------------

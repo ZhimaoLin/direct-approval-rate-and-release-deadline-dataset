@@ -1,0 +1,69 @@
+DESCRIPTION
+
+Cleanup use of java.util.Inflater, fixing rare infinite loops
+
+The native implementation of inflate() can set finished to return
+true at the same time as it copies the last bytes into the buffer.
+
+Check for finished on each iteration, terminating as soon as libz
+knows the stream was completely inflated.
+
+If not finished, it is likely input is required before the next
+native call could do any useful work. Most invocations are passing
+in a buffer large enough to store the entire result. A partial return
+from inflate() will need more input before it can continue. Checking
+right away that needsInput() is true saves a native call to determine
+no bytes can be inflated without more input.
+
+This should fix a rare infinite loop condition inside of inflation
+when an object ends exactly at the end of a block boundary, and
+the next block contains only the 20 byte trailing SHA-1.
+
+When the stream is finished each new attempt to inflate() returns
+n == 0, as no additional bytes were output. The needsInput() test
+tries to add the length of the footer block to itself, but then loops
+back around an reloads the same block as the block is smaller than
+a full block size. A zero length input is set to the inflater,
+which triggers needsInput() condition again.
+
+Change-Id: I95d02bfeab4bf995a254d49166b4ae62d1f21346
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2014-08-14 19:37:34.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-08-14 19:37:40.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/egit/job/jgit.gerrit/5491/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-08-14 19:53:12.000000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/jgit.gerrit/5491/ : SUCCESS
+
+-------------------------------------
+author: Santos Moore
+date: 2014-08-14 21:06:34.000000000
+
+Patch Set 4: Code-Review+2
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2014-08-14 21:07:33.000000000
+
+Change has been successfully merged into the git repository.
+
+-------------------------------------

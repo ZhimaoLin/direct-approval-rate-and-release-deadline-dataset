@@ -1,0 +1,173 @@
+DESCRIPTION
+
+Add SubscribeConnection implementation
+
+Add the client-side subscribe implementation for sending subscribe
+commands and ref state to a Publisher, and receive packed updates
+into multiple repositories.
+
+Change-Id: I6c70f45160d0417f2973e13bb0b99d984dc02481
+
+
+COMMENTS
+
+author: Karlee Dorsey
+date: 2012-07-10 22:16:20.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Santos Moore
+date: 2012-07-11 18:08:53.000000000
+
+Patch Set 4: Looks good to me, but someone else must approve
+
+
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2012-07-11 19:43:47.000000000
+
+Patch Set 4: I would prefer that you didn't submit this
+
+(15 inline comments)
+
+
+
+Line:94, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> I think this is pointless and should be omitted from the protocol.
+
+Line:101, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> Use a new string for the last pack. This means space will then be valid in a restart token. So instead say:
+
+  "resume $TOKEN"
+  "last-pack $PACK"
+
+To keep the protocol readable we often include an LF at the end of strings written with writeString().
+
+I think "resume" or just "restart" is better command name then fast-restart. We probably made a mistake calling it fast restart.
+
+Line:107, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> I don't like the abbreviation repo. repository?
+
+Line:110, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> We could also call this "want".
+
+Line:112, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> "stop"?
+
+Line:118, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> you mean send the ref name the server knows the ref as?
+
+Line:124, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> These should be sent as part of the earlier block, maybe do:
+
+  "want $REF_NAME $SHA1\n"
+
+when the client already has the ref and:
+
+  "want $REF_NAME\n"
+
+when the client doesn't?
+
+Line:134, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> why not "reconnect".equals(line)?
+
+Line:139, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> Maybe instead "ACK\n"?
+
+I would integrate the restart token code into the loop below. That way the server can rotate the token over time if it wants to by just making a new token, sending it down the wire, and maybe giving the client a short grace period where it can use either token before the old token is invalid and the new one must be used to resume successfully.
+
+Line:153, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> There shouldn't be a flush packet here. Just heartbeat, continue.
+
+Like changing the restart token, I think the server should be able to tell you its ideal heartbeat window. Let the server decide how often it will send out these empty heartbeat messages to clients. Clients can then set their timeouts around the server's current heartbeat period.
+
+Line:160, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> line.substring("update ".length()) ?
+
+Line:176, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> line.substring("sequence ".length())
+
+Line:177, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> This shouldn't need a flush packet.
+
+Line:181, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> This should be at the top of the loop so that heartbeat pings still trigger this check.
+
+Line:192, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> Use BaseReceivePack so you can avoid the status reporting stuff that exists in ReceivePack?
+
+-------------------------------------
+author: Karlee Dorsey
+date: 2012-07-12 02:19:09.000000000
+
+Patch Set 4: (10 inline comments)
+
+Some comments on the protocol-level changes, I'm going to hold off on the other changes until this is agreed upon.
+
+Line:94, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> It can be removed at the expense of dirtying some of the publisher code by joining the stream parsing functions readFastRestart/readSubscribeSpecs together.
+
+Line:101, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> Ok
+
+Line:107, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> Ok
+
+Line:110, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> That seems like mixing terminology with the fetch protocol. "want" here means something different than "want" during a fetch. What's wrong with "subscribe"?
+
+Line:118, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> Yes. The sha1 of refs/pubsub/origin/heads/master is being sent with the name refs/heads/master.
+
+Line:124, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> This won't work because subscribe specs can have wildcards that cover 1 or more refs.
+
+  "want refs/heads/* ???"
+
+I could see this as a possibility:
+
+  repository android
+  subscribe refs/heads/*
+  subscribe refs/tags/*
+  have refs/heads/master 01234...
+  have refs/heads/branch1 56789...
+
+Line:139, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> Why would the server want/need to change the token? Allowing two valid tokens at a time will make the server code uglier for no visible benefit.
+
+Line:153, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> Ok.
+
+Line:181, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> Ok.
+
+Line:192, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> Ok.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2012-07-12 20:23:39.000000000
+
+Patch Set 4: (2 inline comments)
+
+
+
+Line:124, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> Ack, I forgot about that problem. What about:
+
+  repository android
+  want refs/heads/*
+  want refs/tags/*
+  have 01234... refs/heads/master
+  have 56789... refs/heads/branch1
+  [flush-pkt]
+  repository kernel
+  want refs/heads/master
+  [flush-pkt]
+  done
+
+Line:139, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> Maybe the token includes the server IP and port number. And the current server knows it is about to terminate. So it sends the session's data to another server in the cluster. And it wants the client to get the new token that names the new server. So it sends an updated token to the client, and the client can use that when it restarts after this connection is broken by this server.
+
+I would rather build some flexibility into the protocol than to assume that someone would never ever want to change the token.
+
+-------------------------------------
+author: Karlee Dorsey
+date: 2012-07-12 21:12:05.000000000
+
+Patch Set 4: (8 inline comments)
+
+
+
+Line:94, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> Replaced with an [END] packet after the restart section.
+
+Line:112, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> Done
+
+Line:124, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> Done.
+
+Line:134, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> Done
+
+Line:139, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> Ok, added the ability for the server to send "change-restart-token".
+
+Line:160, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> Done
+
+Line:176, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> Done
+
+Line:177, org.eclipse.jgit/src/org/eclipse/jgit/transport/BasePackSubscribeConnection.java -> Done
+
+-------------------------------------

@@ -1,0 +1,123 @@
+DESCRIPTION
+
+Connection library for mutation streams.
+
+- Includes a server that publishes mutations and error back to application.
+- Includes a client that can push mutation to downstream endpoint via one or
+  more connections.
+- Includes test case and benchmarking.
+
+Change-Id: Ib3b4901f49fcfd1e3434fb5ff5af56f982ae91da
+
+
+COMMENTS
+
+author: Leonel Abbott
+date: 2014-04-08 06:25:08.080000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Leonel Abbott
+date: 2014-04-10 11:12:29.848000000
+
+Patch Set 1:
+
+This is a very basic implementation of connection stream between router and indexer. Will add more patch-sets that will handle fault and reconnection.
+
+-------------------------------------
+author: Dominique Stanton
+date: 2014-04-10 23:31:49.462000000
+
+Patch Set 1:
+
+(13 comments)
+
+Line:34, secondary/indexer/streamd.go -> This needs to coming from a config file.  Perhaps it is good to have a placeholder function that hardcode the value now and the change the implementation to read from config later.  In this case, you will not forget.
+
+Line:63, secondary/indexer/streamd.go -> The daemon terminates on any error?
+
+Line:66, secondary/indexer/streamd.go -> Does this mean that there is a single receiver thread?
+
+Line:104, secondary/indexer/streamd.go -> If we receive an error on a channel, and the loop continues, then could it mean that we could miss a mutation?   How would the downstream code know a mutation is missed on a vbucket?
+
+Line:130, secondary/indexer/streamd.go -> In streamc.go,you concatenate len,flag, data.  And then you wirte them out, persuming in one packet.  But when reading, you make 3 separate conn.Read(), without specifying how much to read.  Can you explain a bit more how the bytes map between sender and receiver?
+
+Line:1, secondary/indexer/streamc.go -> What is a stream server? StreamServer is the server that "consumes" a stream?  Why you would call it a server?
+
+Line:22, secondary/indexer/streamc.go -> It would be nice to have a few more words to specify the contract with the caller.  For example, data for the same vbucket will be serialized, independent of 'n'.
+
+Line:48, secondary/indexer/streamc.go -> What is the error code that this function will return?  Is it possible that this method will partially left some bits on the wire when there is an error?
+
+Line:55, secondary/indexer/streamc.go -> flags is 0.   Just a place holder for now?
+
+Line:58, secondary/indexer/streamc.go -> Do you know if c.conns.Write() is blocking or non-blocking?
+
+Line:59, secondary/indexer/streamc.go -> 1) For log(), is there a way to specify severity (TRACE, WARNING, ERROR, FATAL).   
+
+2) Also, how about have a standard format for log message, say starting with package name, function name, and the log message.   Or somehow the log package will do that for you?
+
+3) Is there way to put in an if-stmt around the log message such that it can skip printing (io overhead) unless admin wants to trace a particular severity level.  For example, the admin set the trace level to WARNING so the system only print out log with severity level WARNING and above.
+
+Line:73, secondary/indexer/streamc.go -> Just curious, why you would check c.conns != null in Stop(), but not in this function?   Since closeConnections() is the real function that uses c.conns, would it better if closeConnections does the checking?  I know that today only Stop() uses closeConnections(), but what if this private function is being used in some other methods?
+
+Line:74, secondary/indexer/streamc.go -> Can conn.Close() panic?  If so, not all conn will be closed?
+
+-------------------------------------
+author: Leonel Abbott
+date: 2014-04-11 08:57:56.944000000
+
+Patch Set 2: Patch Set 1 was rebased
+
+-------------------------------------
+author: Leonel Abbott
+date: 2014-04-11 13:34:30.314000000
+
+Patch Set 1:
+
+(12 comments)
+
+Line:34, secondary/indexer/streamd.go -> Done
+
+Line:63, secondary/indexer/streamd.go -> Yes, It is sending the error back to application. If we don't, I don't know how to recover from this error. May be it better to allow the app. to make the call.
+
+Line:66, secondary/indexer/streamd.go -> one thread for each connection from router.
+
+Line:104, secondary/indexer/streamd.go -> My original plan:
+Since doReceive() communicates the error back to app. (downstream) I was expecting the app to close the connections.
+
+Now these things will change due to reconnection strategy (based on the mail discussion) and rebalance abstractions with downstream.
+
+Line:130, secondary/indexer/streamd.go -> In golang this is my understanding,
+
+conn.Read() accepts a slice of byte reference and reads len of that slice bytes from socket, populates the slice and returns back number of bytes read and error.
+
+Eg,
+
+buf := make([]byte, 100)
+
+buf might refer to mem-address 0x2000, length 100 and capacity 100.
+
+slice := buf[1:10]
+
+slice _will_ refer to mem-address 0x2001, length 9 and capacity 9.
+
+Line:1, secondary/indexer/streamc.go -> // client API to push mutation messages to the other end.
+
+Line:22, secondary/indexer/streamc.go -> Done
+
+Line:48, secondary/indexer/streamc.go -> Done
+
+Line:55, secondary/indexer/streamc.go -> Yes.
+
+Line:58, secondary/indexer/streamc.go -> Is blocking.
+
+Reference:
+
+https://groups.google.com/forum/#!searchin/golang-nuts/non-blocking$20sockets/golang-nuts/LL9fvORhVS0/B7a8j1uYTSgJ
+
+Line:73, secondary/indexer/streamc.go -> Done
+
+Line:74, secondary/indexer/streamc.go -> Done
+
+-------------------------------------

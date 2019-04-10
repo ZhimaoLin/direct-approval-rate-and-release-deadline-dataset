@@ -1,0 +1,88 @@
+DESCRIPTION
+
+Fix endless loop of GenerateHistoryJob
+
+The GenerateHistoryJob was scheduled over and over when the following
+precondiations were met:
+
+ - The preference "Team > Git > History > Maximum number of commits to 
+   show" has to be set to a numer smaller than the number of commits
+   in a repository
+ - The history of the repository is fully loaded into the History view
+ - The user scrolls down to the end or
+ - The user selects a reference which is not yet loaded into the 
+   History view
+
+Scrolling triggers the event listener added in the constructor of 
+CommitGraphTable (This is done to implement incremental loading).
+The event listener calls the method loadItem of GitHistory Page to load
+a given commit specified by its index. This method asks the 
+GenerateHistoryJob if the commit is less than BATCH_SIZE / 2 away from 
+the end, and if so, triggers a new GenerateHistoryJob.
+
+After loading the commits the GenerateHistoryJob wrongly computed the
+value of the incomplete variable. It did not check if all commits of 
+the history were loaded. Because of that the updateUI method did render
+the UI again leading to another call of the event listener above.
+
+This commit adds a check if all commits are loaded. 
+This is unfortunately not easily done with the SWTCommitList.
+
+So we check if no new commits were loaded in the current invocation of 
+the GenerateHistoryJob and in that case step out of the loop before 
+the check for incomplete is done. Then the method updateUI in 
+GenerateHistoryJob will not render the UI again and not start the 
+endless loop anymore.
+
+But the updateUI method has to render the UI once more after all 
+commits are loaded. This is ensured by the new field
+forcedRedrawsAfterListIsCompleted.
+
+The case that a certain commit should be selected but is not found is 
+handled differently. The UI is not drawn again, but the incomplete
+warning is updated.
+
+Bug: 425691
+Change-Id: Ice8c59d537156a52acb80c8e004e838e279cdbe3
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+
+COMMENTS
+
+author: Douglas Trujillo
+date: 2014-01-31 14:13:04.000000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-01-31 14:13:09.000000000
+
+Patch Set 5:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/5501/
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2014-01-31 14:13:36.000000000
+
+Patch Set 5: Verified+1 Code-Review+2 IP-Clean+1
+
+rebased
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2014-01-31 14:13:37.000000000
+
+Change has been successfully merged into the git repository.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-01-31 14:26:51.000000000
+
+Patch Set 5:
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/5501/ : SUCCESS
+
+-------------------------------------

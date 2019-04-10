@@ -1,0 +1,211 @@
+DESCRIPTION
+
+Save a cached state of vbucket in active stream
+
+Do not attempt to check vbucket state everytime
+while processing data in an active stream. Instead,
+save a cached copy of the vbucket state acquired
+during creation.
+
+This change is to avert potential deadlocks due to
+lock inversion that will be induced by upcoming changes,
+here's the scenario:
+    In case of a set operation, vbucket state lock is
+    acquired and then stream lock is acquired for
+    notification. During markDiskSnapshot (for example),
+    the stream lock is acquired before the vbucket state
+    lock is acquired.
+
+Change-Id: Iddb518b5e94a4595c62026f797ff17ba790d180c
+
+
+COMMENTS
+
+author: Hugo Blankenship
+date: 2016-01-14 23:13:26.433000000
+
+Patch Set 14:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1280/ (2/2)
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-01-14 23:17:10.770000000
+
+Patch Set 14:
+
+The inversion that I am trying to address here (explained in commit message) doesn't even involve the lock - DcpProducer::streamsMutex. So DaveR's suggestion wouldn't completely fix the problem.
+
+Its the streamMutex (from DcpStream) that is acquired after vb_state_lock in case of EventuallyPersistentStore::set, and the vb_state_lock which is acquired after the streamMutex in functions like markDiskSnapshot, that is the potential deadlock scenario.
+
+I however did adopt your suggestion in patch 9, and these are all the inversion deadlocks that thread sanitizer caught: http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1268/console
+
+Patch 14 falls back to my older approach.
+
+And like I mentioned before, I still haven't got a good reason as to why you oppose the cached vbucket state idea, the vbucket state is flipped only after closing all the streams outbound from the vbucket as seen here:
+https://github.com/Piper Jefferson/ep-engine/blob/master/src/ep.cc#L1293...#L1296
+
+Thread sanitizer approves of this.
+So i’d appreciate it, if you could take a look at this change a little more thoroughly again.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-01-14 23:53:44.029000000
+
+Patch Set 14: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2043/ : FAILURE
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1280/ : FAILURE
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-01-15 00:24:26.708000000
+
+Removed the following votes:
+
+* Code-Review-2 by Jim WNathalie Landryer <Shayna xxx@xxx.xxx Jefferson.com>
+
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-01-15 00:57:33.221000000
+
+Patch Set 14: -Verified
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1282/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-01-15 01:36:56.509000000
+
+Patch Set 14: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2044/ : ABORTED
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1282/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-01-15 01:37:08.487000000
+
+Patch Set 14: -Verified
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2045/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-01-15 02:20:43.431000000
+
+Patch Set 14: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1282/ : SUCCESS
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2045/ : SUCCESS
+
+-------------------------------------
+author: Abby Duran
+date: 2016-01-15 03:01:32.741000000
+
+Patch Set 14: Code-Review-1
+
+Abhinav,
+
+As you mentioned, if a given vbucket state is always flipped only after all of that vbucket's streams are notified and closed (seems to me that it does), then I would rather simply fix this lock inversion issue by removing the vb state's reader lock in ActiveStream's functions and put some comments there to explain the reason.
+
+I prefer to not introduce any other changes such as cached vbucket state to address this issue.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-01-15 09:46:55.818000000
+
+Patch Set 14:
+
+For clarify / reference, could you include the threadSanitizer error output you see without this patch?
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-01-15 09:48:03.829000000
+
+Patch Set 14:
+
+> For clarify / reference, could you include the threadSanitizer
+ > error output you see without this patch?
+
+I *think* I found it here: http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1225/console
+
+Could you confirm, and if so include in the commit message?
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-01-15 10:02:11.349000000
+
+Patch Set 14: Code-Review-2
+
+In my merge the other day I saw this TSAN failure which I thought this patch was addressing?
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1257/testReport/junit/(root)/projectroot/ep_engine_engine_tests/
+
+That is an inversion error with the producer's writerlock on stream map and the vbucket state reader lock.
+
+The original comments still stand? It would just be good practice regardless to move the stream construction (Active and Notifier) outside of the steamsMutex writer lock scope.
+
+ > > For clarify / reference, could you include the threadSanitizer
+ > > error output you see without this patch?
+ > 
+ > I *think* I found it here: http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1225/console
+
+
+ > 
+ > Could you confirm, and if so include in the commit message?
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-01-15 16:33:20.273000000
+
+Patch Set 14:
+
+@Chiyoung: Caching a vbstate this way helps to avoid fetching the vbucket from the vbucket map everytime.
+
+@Dave: http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1225/console, I believe shows the inversion between streamsMutex, streamMutex and stateLock - this is one inversion that will need addressing. I believe this (http://factory.couchbase.com/job/ep-engine-threadsanitizer-master/1268/console) shows the lock inversion mentioned in the commit message. I'll include links to all of these in the commit message.
+
+@Jim: I'll upload a new patch by removing the stream construction from within the streamsMutex context.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-01-15 16:36:47.447000000
+
+Patch Set 14:
+
+xxx@xxx.xxx Caching a vbstate this way helps to avoid fetching the
+ > vbucket from the vbucket map everytime.
+ > 
+
+So the issue I have (can't speak for Chiyoung) is that we add more complexity - people have to now note that the vBucket state is cached and hence potentially stale. As we've found a few times there's no shortage of existing complexity, and I'd say this adds even more.
+
+ xxx@xxx.xxx http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1225/console,
+ > I believe shows the inversion between streamsMutex, streamMutex and
+ > stateLock - this is one inversion that will need addressing. I
+ > believe this (http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1268/console)
+ > shows the lock inversion mentioned in the commit message. I'll
+ > include links to all of these in the commit message.
+
+Ah, thanks for confirming - too many patch versions!
+
+ > 
+ xxx@xxx.xxx I'll upload a new patch by removing the stream construction
+ > from within the streamsMutex context.
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-01-18 17:24:14.696000000
+
+Change has been successfully cherry-picked as ec5dbdc3f35743ff885d55c0efe455446141243f
+
+-------------------------------------

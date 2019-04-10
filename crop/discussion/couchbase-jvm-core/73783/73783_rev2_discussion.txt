@@ -1,0 +1,39 @@
+DESCRIPTION
+
+Avoid concurrent modification/reading of bucketConfigs map.
+
+Motivation:
+-----------
+When opening a bucket, the `ClusterConfig` will be modified before performing
+`RequestHandler.reconfigure`, which reconfigures all buckets by flatMapping
+over an `Observable` that iterates through the `HashMap` in `ClusterConfig`.
+
+This is especially a problem when buckets are opened concurrently, as the
+`reconfigure` operation can overlap with the modifications due to opening the
+other buckets, leading to a `ConcurrentModificationException` being thrown from
+RxJava. Since the modifications aren't synchronised at all, there could
+theoretically (though this might be unlikely) be additional problems with
+corrupting the internal structure of the HashMap if multiple actual
+modifications happen at the same time.
+
+Modifications:
+--------------
+The `Map` field in `DefaultClusterConfig` is changed to hold a
+`ConcurrentHashMap` instead of a `HashMap`.
+
+Results:
+--------
+No more `ConcurrentModificationException` on reconfiguration, not possible to
+have multiple threads modifying a particular `HashMap` at the same time.
+
+Change-Id: Ic72150f5830f15e8ee93d1602b1b220f574a91ea
+
+
+COMMENTS
+
+author: Lewis Roach
+date: 2017-02-27 23:58:55.811000000
+
+Uploaded patch set 2.
+
+-------------------------------------

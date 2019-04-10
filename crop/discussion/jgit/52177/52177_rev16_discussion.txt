@@ -1,0 +1,112 @@
+DESCRIPTION
+
+Support LFS protocol and a file system based LFS storage
+
+Implement LfsProtocolServlet handling the "Git LFS v1 Batch API"
+protocol [1]. Add a simple file system based LFS content store and the
+debug-lfs-store command to simplify testing.
+
+Introduce a LargeFileRepository interface to enable additional storage
+implementation while reusing the same protocol implementation.
+
+At the client side we have to configure the lfs.url, specify that
+we use the batch API and we don't use authentication:
+
+  [lfs]
+	  url = http://host:port/lfs
+	  batch = true
+  [lfs "http://host:port/lfs"]
+	  access = none
+
+the git-lfs client appends the "objects/batch" to the lfs.url.
+
+Hard code an Authorization header in the FileLfsRepository.getAction
+because then git-lfs client will skip asking for credentials. It will
+just forward the Authorization header from the response to the
+download/upload request.
+
+The FileLfsServlet supports file content storage for "Large File
+Storage" (LFS) server as defined by the Github LFS API [2].
+
+- upload and download of large files is probably network bound hence use
+  an asynchronous servlet for good scalability
+- simple object storage in file system with 2 level fan-out
+- use LockFile to protect writing large objects against multiple
+  concurrent uploads of the same object
+- to prevent corrupt uploads the uploaded file is rejected if its hash
+  doesn't match id given in URL
+
+The debug-lfs-store command is used to run the LfsProtocolServlet and,
+optionally, the FileLfsServlet which makes it easier to setup a
+local test server.
+
+[1]
+https://github.com/github/git-lfs/blob/master/docs/api/http-v1-batch.md
+[2] https://github.com/github/git-lfs/tree/master/docs/api
+
+Bug: 472961
+Change-Id: I7378da5575159d2195138d799704880c5c82d5f3
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+Signed-off-by: Dillon Cross xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Dillon Cross
+date: 2016-02-04 17:14:59.000000000
+
+Uploaded patch set 16: Patch Set 15 was rebased.
+
+-------------------------------------
+author: Dillon Cross
+date: 2016-02-04 17:16:38.000000000
+
+Patch Set 16: Code-Review+2
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-02-04 17:34:53.000000000
+
+Patch Set 16:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/8033/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-02-04 17:51:08.000000000
+
+Patch Set 16: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/8033/ : SUCCESS
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-02-04 21:08:43.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------
+author: Dillon Cross
+date: 2016-03-02 14:12:05.000000000
+
+Patch Set 16:
+
+(1 comment)
+
+Line:86, org.eclipse.jgit.lfs.server/src/org/eclipse/jgit/lfs/server/fs/FileLfsServlet.java -> Assuming this servlet will be xxx@xxx.xxx we will only have one instance of the FileLfsRepository in use.... However, the FileLfsRepository doesn't seem to be thread safe, because it has:
+
+  private AtomicObjectOutputStream out;
+
+as an instance member. It two thread would be uploading (large) files they would both set the single out instance.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2016-03-02 15:28:26.000000000
+
+Patch Set 16:
+
+ouch, we need to fix this and make FileLfsRepository thread-safe. Also we should document in the javadoc that implementations of the interface LargeFileRepository must be thread-safe
+
+-------------------------------------

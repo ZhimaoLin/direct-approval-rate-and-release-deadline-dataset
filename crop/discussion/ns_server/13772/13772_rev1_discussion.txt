@@ -1,0 +1,81 @@
+DESCRIPTION
+
+Add checkpointing support to xdcr
+
+We leverage Couch's native replication checkpointing support which
+works as follows: At the beginning of replication, the source and
+destination are looked up to check whether a previous checkpointing
+document exists. This is done to determine the sequence number at
+which to start replication. While replication is going on,
+checkpointing is done at regular intervals by a separate process.
+Each time, a new checkpointing record (consisting of, among other
+things, the last replicated sequence number and the session id) is
+created and and appended to the history, and the document is sent for
+an update to both the source and the destination.
+
+Given this scheme of things, the following approach for xdcr
+checkpointing seems to work best i.e., one involving the least changes
+to the existing Couch replicator code (this may change in the future
+if we decide to adopt a different approach).
+
+We bypass ep-engine for opening and updating checkpoint documents. In
+order to make this safe (since there's no coordination between Couch
+and ep-engine), we store the documents in the master database instead
+the individual vbucket databases. We also prepend the document id with
+the vbucket id to avoid conflicts.
+
+Opening a checkpoint doc is no different from opening a regular doc.
+Updating a checkpoint doc requires us to wait for the in-memory items
+(as of the time of receiving the doc) to be persisted to Couch before
+updating the doc itself. This is a little conservative as the wait
+times may end up being longer for nodes with slow disks. It is,
+however, the simplest approach right now. Later, we can evaluate
+whether we need another approach.
+
+Change-Id: I8ba141cefc54e368071e1326ac0bb81e24c72d07
+
+
+COMMENTS
+
+author: Tatiana Sheppard
+date: 2012-03-05 18:20:35.719000000
+
+Patch Set 1: Verified
+
+
+
+-------------------------------------
+author: Porter Oconnor
+date: 2012-03-06 16:09:08.022000000
+
+Patch Set 1: Looks good to me, but someone else must approve
+
+(1 inline comment)
+
+
+
+Line:138, src/capi_frontend.erl -> I think the return value of ?log_warning is 'ok'. Don't know if you really want to return 'ok' when the timeout happens.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-03-07 23:52:03.898000000
+
+Patch Set 1:
+
+waiting for num_items_for_persistence is incorrect. Because flusher decrements it before actually writing mutations.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-03-08 21:02:45.071000000
+
+Patch Set 1: Verified; Looks good to me, approved
+
+looks ok and doesnt break other stuff
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-03-08 21:02:47.504000000
+
+Change has been successfully cherry-picked as 4e23f66cb49723f6fe45f69a5c1b55843d20c9ca.
+
+-------------------------------------

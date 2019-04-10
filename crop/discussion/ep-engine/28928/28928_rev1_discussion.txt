@@ -1,0 +1,136 @@
+DESCRIPTION
+
+CBD-1038 Compression of in-memory doc
+
+Apply Snappy compression to item value when putting
+items into hashtable and uncompression when getting
+items from hashtable. This process happens between client
+and hashtable. Doc remains compressed when going to
+couchstore so couchstore doesn't need to do compression.
+Nor is uncompression needed when fetched from couchstore.
+
+Added config parameter "compress_value". default: false
+Added test case "test_compression".
+
+Change-Id: I3e4539e2b4bea5fa38c115ef2e01ee5b28a42df6
+
+
+COMMENTS
+
+author: Andreas Short
+date: 2013-10-29 20:29:33.231000000
+
+Patch Set 1: Code-Review-1
+
+Before we add this, can we have a more comprehensive discussion about how this should work with the cluster and clients?  Trond had initially had some proposals about how to use the datatype byte such that ep-engine would work well with client side compression and this is going in as a bit of a (good) surprise.  I'd like to make the best benefit out of it by coordinating if we can.
+
+-------------------------------------
+author: Abby Duran
+date: 2013-10-29 20:55:39.161000000
+
+Patch Set 1:
+
+This change was mainly for experimenting the benefits of in-memory doc compression as part of heavy DGM support. At this time, we don't have any plans to merge this for our March release, and didn't discuss it widely with other teams because we don't yet finalize our plan for the data filed and compression support.
+
+-------------------------------------
+author: Asher Vang
+date: 2014-01-09 06:54:13.873000000
+
+Patch Set 1:
+
+I haven't looked at the change yet (will do soon, so this comment is only from reading the commit message). I don't think we should compress the items as we put them into the hashtable, because that is running it the frontend thread. What I did in the old days is that I updated the hashtable entry with the compressed one when the flusher was writing the dirty objects to disk (and that old patch would then inflate the object upon serving it bakc to the client becasuse we didn't have support for sending the compressed item back at that time).
+
+I'm looking forward to looking at this change later on today.
+
+-------------------------------------
+author: Abby Duran
+date: 2014-01-09 07:46:37.528000000
+
+Patch Set 1:
+
+Trond,
+
+As I mentioned above, this change is not related to our data_field support with compressed data, but rather the experimental change to see the tradeoff between computation overhead (frontend ops/sec) and memory saving. At this time, we don't have any plan to merge this into 3.0 release as we have a different way of supporting client-side data compression through data field.
+
+-------------------------------------
+author: Abby Duran
+date: 2014-01-09 07:50:34.391000000
+
+Patch Set 1:
+
+Btw, I agree with you that if we want to support the server-side compression, we should rather let the flusher do the compression and update the hash table with a compressed value when it is written into disk.
+
+-------------------------------------
+author: Asher Vang
+date: 2014-01-09 08:25:23.024000000
+
+Patch Set 1:
+
+Cool. What was the outcome of the test? (I guess it depends on the input data on how well that compress..) Btw. with http://review.Piper Jefferson.org/#/c/31673/ memcached will automatically inflate snappy compressed documents when received by an "old" client not supporting the compressed retrivals..
+
+-------------------------------------
+author: Abby Duran
+date: 2014-01-09 08:50:46.884000000
+
+Patch Set 1:
+
+David did some perf measurements with this change.
+
+David, can you share the performance results? I remembered that you observed up to 20% of frontend ops/sec degradation with X (I don't remember  it) % of memory saving with 1 ~ 2KB JSON documents
+
+-------------------------------------
+author: Asher Vang
+date: 2014-01-09 08:57:15.842000000
+
+Patch Set 1:
+
+I would expect an impact on the frontend while doing the deflation in the access threads since the deflation is the "slow" part of snappy (and inflation is supposed to be fast). To me the biggest win will be when we can have the clients support deflate/inflate of the objects, and we may just pass them directly down to the persistence layer without touching them (and keeping them in memory deflated. and the case where we try to access an item with a client that don't support compression we may inflate it on the fly. thats what I was hoping we could get out of the "datatype feature" in the binary protocol. Other extensions should go through new command opcodes to ensure backwards compatibility on the wire..)
+
+-------------------------------------
+author: Miley Adams
+date: 2014-01-09 19:30:42.750000000
+
+Patch Set 1:
+
+Here is the link to pert test that Abhinav did:
+http://qa.hq.northscale.net/job/litmuses-graph-loop/321/
+
+It looks like CPU is 10% higher than baseline but operations per second stays the same and resident ration is about 15% higher.
+
+-------------------------------------
+author: Andreas Short
+date: 2014-01-09 22:17:24.601000000
+
+Patch Set 1: -Code-Review
+
+Removing my -1, since I have a better idea of what's going on here now.
+
+@david, thanks for the pointer to the data.  
+
+I agree with Trond that the ultimate endpoint is this all happens on the client side, which is closer to "free".
+
+Also, it looks like it's more than 15% win, since the replica resident ratio seems closer to 25% higher.  The resident ratio for non-replica is effectively at 100% because we keep only up to high_wat, right?  Hmmm, but the confusing thing is, I thought we prefer active to replica data.  Okay, now maybe I don't know how to interpret the chart.
+
+It'd be a lot easier to read these graphs with a linear regression in the chart.
+
+-------------------------------------
+author: Abby Duran
+date: 2014-02-26 21:25:40.306000000
+
+Abandoned
+
+Abandon it as we have the client-side compression support in our next major release.
+
+-------------------------------------
+author: Andreas Short
+date: 2014-02-26 22:55:55.085000000
+
+Patch Set 1:
+
+Isn't this still valid in the event that the client doesn't do the compression?  Some will not based on capabilities.
+
+Also, note that the datatype compression, I think, currently is only about JSON objects.  Frequently compression for other objects is done by the client, but not always.
+
+Happy to discuss further if needed.
+
+-------------------------------------

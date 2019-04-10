@@ -1,0 +1,94 @@
+DESCRIPTION
+
+Simple dumb HTTP server for Git
+
+This is a horribly simple HTTP server which provides only the
+server side support required for dumb transport clients.  We
+produce the info/refs and objects/info/packs file on the fly
+from the local repository state, but otherwise serve data as
+raw files from disk.
+
+We could better optimize the Sender class and those that use
+it to take advantage of direct file to network APIs in more
+advanced servlet containers like Jetty.  This is left for a
+future improvement to the code.
+
+Change-Id: Ia0f1a425d07d035e344ae54faf8aeb04763e7487
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2009-10-09 01:05:36.000000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Blake Oneal
+date: 2009-10-09 01:24:23.000000000
+
+Patch Set 5: No score
+
+I have no idea what's changed since the last time, and I really don't want to step through each file again to see if it's what I expect. If the only change is that we're using the constants defined in HttpSupport, then that's fine; if there's anything else, please let me know so that I can review.
+
+-------------------------------------
+author: Blake Oneal
+date: 2009-10-10 09:07:59.000000000
+
+Patch Set 5: Looks good to me, but someone else must approve
+
+OK, using the 'show patch history' allowed me to set the compare against that and the previous, and then I was able to step through them individually whilst still maintaining the same diff setting. That was quicker than doing the lot again :-)
+
+So, all changes good. I sent a mail to egit-dev "Smart HTTP Git server general observations" on the 9th at 09:27 GMT+1 which suggested that instead of InfoServlet and RefServlet being subclasses of Servlet, we in fact use a separate abstract class hierarchy Gitlet for these things, then have the GitServlet map calls onto that Gitlet for processing. That means we don't accidentally end up with any HTTP stuff in the Gitlet, and also means that in the future we'd be able to add new Gitlets to handle different paths.
+
+The other observation that comes out is that we should be able to define the RegEx that we match against URLs in the Gitlet itself so that the bind operation knows nothing about specific subclasses. The bind would take an instance of the gitlet, and the gitlet would announce what regexs it knows about. For example:
+
+public abstract class Gitlet {
+  public abstract String regex();
+  public abstract void serve(req, res, body);
+}
+and then in the repositoryservlet:
+
+public class RepositoryServlet extends HttpServlet {
+  public void init() { bind(InfoGitlet.INSTANCE), ... }
+  public void doGet() { router.get(path).serve(req,res,true) }
+  public void doHead() { router.get(path).serve(req,res,false) }
+}
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2009-10-10 18:53:53.000000000
+
+Patch Set 5: No score; No score
+
+Based on my C git series there will still need to be a few revisions to the JGit code before we can submit it.  The protocol isn't set in stone yet and I had to make a few changes to it to make it easier to implement within the context of C git.
+
+Regarding the Gitlet proposal:  If the serve method of a Gitlet takes the servlet request/response then its still tied to the servlet API, just as much as if it was subclassing HttpServlet.  I'm not sure what removing that parent class gets us.  This isn't a portal system where we are going to want to include output from many different Gitlets to form a complete HTTP response.  Most of these responses are specific content meant for machine consumption in a well defined format.
+
+I also really dislike the idea of putting the regex inside of each Gitlet because it makes it very hard to see the complete routing map for the server.  One of the hardest things to maintain within a web application is the mapping of URL to implementation.  The more concisely you can describe that mapping in as few locations as possible, the easier it is to maintain the application long term.
+
+The RepositoryRouter and ServletDefinition were designed to allow me to bind servlets to URLs in a fashion similar to the way that Guice servlet works.  Of all of the Java web frameworks, I think the Guice servlet approach is the most concise-yet-flexible mapping I have seen.
+
+We also have very few URLs we need to respond to for the HTTP based transport.  If we wanted to also support writing from older dumb WebDAV clients we could, probably with just what we already have defined.  If/when we ever implement a gitweb style interface we may very well want a lot more web framework than HttpServletRequest offers, and may want to put that into a different project entirely to compartmentalize the dependencies.
+
+So, basically, my opinion is this Gitlet idea isn't worth the effort right now because I don't think the future will require it.
+
+-------------------------------------
+author: Dillon Cross
+date: 2009-11-06 17:12:18.000000000
+
+Patch Set 5: Looks good to me, but someone else must approve
+
+
+
+-------------------------------------
+author: Dillon Cross
+date: 2010-03-10 05:19:08.000000000
+
+MISMATCHED INLINE COMMENT
+Line:51, org.eclipse.jgit.http.server/src/org/eclipse/jgit/http/server/WrappedRequest.java -> This class seems to do some kind of path rewriting?
+Would it make more sense to name it something like PathRewritingRequest?
+It achieves path rewriting by wrapping the original request but naming it WrappedRequest tells more about its implementation details than about its intention.
+
+-------------------------------------

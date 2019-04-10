@@ -1,0 +1,170 @@
+DESCRIPTION
+
+WIP: Port push certificates
+
+push certs have been part of git-core for a few months now. Let's try
+to support that feature.
+
+This is not complete and is lacking the actual function to validate
+the signature for now
+
+Change-Id: I249869cadb2d55aef016371b9311b8583591b9cf
+Signed-off-by: Beau Terry xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Beau Terry
+date: 2015-01-20 23:34:26.000000000
+
+Uploaded patch set 10.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-01-20 23:34:32.000000000
+
+Patch Set 10:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/5923/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-01-20 23:42:27.000000000
+
+Patch Set 10: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/5923/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-01-27 08:18:52.000000000
+
+Patch Set 10:
+
+(23 comments)
+
+Line:57, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificate.java -> These constants are not defined. :)
+
+Maybe this should be an enum?
+
+Line:68, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificate.java -> Comments like this on the fields are better in the public getter methods where callers can better know what to expect in the returned strings.
+
+Line:281, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> Maybe if we pass the Repository to the NonceGenerator, it can pull out the directory?
+
+DFS implementations could then supply a different NonceGenerator that can pull out getRepositoryName.
+
+Line:282, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> nit: use db here
+
+Line:74, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateParser.java -> Consider an enum:
+
+  enum NonceStatus {
+    UNSOLICITIED, BAD, MISSING, OK, SLOP
+  }
+
+Line:122, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateParser.java -> nonceGenerator is null here, as you initialize it a few lines down. Maybe you mean to move this into getAdvertiseNonce()?
+
+Line:146, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateParser.java -> save the nonce here in sentNonce?
+
+Line:163, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateParser.java -> This doesn't quite work. You need to call matches() before you can access the group:
+
+  Matcher m = versionPattern.matcher(pckIn.readStringRaw());
+  if (!m.matches()) {
+    throw new IOException(... invalid cert ...)
+  }
+  String version = m.group(1);
+
+This is one reason we don't bother with regex. Especially for simple patterns like this. It can be easier to just say:
+
+  private static final String VERSION = "version ";
+
+  String s = pckIn.readStringRaw();
+  if (!s.startsWith(VERSION))
+    throw ...
+  String version = s.substring(VERSION.length());
+
+Line:195, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateParser.java -> Here line can contain a trailing LF. So you need to test for it in the loop condition.
+
+Line:196, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateParser.java -> -\n" ?
+
+Line:227, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateParser.java -> Yes. !isBiDirectionalPipe() in BaseReceivePack.
+
+Line:231, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateParser.java -> hmac sha1 code you supplied doesn't follow this format :)
+
+Line:258, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateParser.java -> I think its awkward to reparse "now" out of the nonce string. Instead this should all be a new method inside of the NonceGenerator interface, so a generator is a pair of methods:
+
+  generate
+  verify
+
+and its left up to the generator how to check for OK/BAD/SLOP, and if its reasonable slop.
+
+Line:291, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateParser.java -> This is a git-core implementation detail we should not replicate in JGit on every operation. Instead I think we make the certificate available as a byte[] or something and allow callers to write the object if they are connecting it to a graph.
+
+Line:62, org.eclipse.jgit/src/org/eclipse/jgit/transport/HMACSHA1NonceGenerator.java -> Pass a specific character encoding here, probably "ISO-8859-1".
+
+Line:63, org.eclipse.jgit/src/org/eclipse/jgit/transport/HMACSHA1NonceGenerator.java -> seed
+
+Line:65, org.eclipse.jgit/src/org/eclipse/jgit/transport/HMACSHA1NonceGenerator.java -> nit: do not assign null to mac; leave the variable unset in its declaration.
+
+Line:74, org.eclipse.jgit/src/org/eclipse/jgit/transport/HMACSHA1NonceGenerator.java -> key.getBytes("UTF-8")
+
+Line:75, org.eclipse.jgit/src/org/eclipse/jgit/transport/HMACSHA1NonceGenerator.java -> return ...
+
+There is no need for the hexString variable here
+
+Line:75, org.eclipse.jgit/src/org/eclipse/jgit/transport/HMACSHA1NonceGenerator.java -> nonce needs to include seconds before hmac?
+
+Line:46, org.eclipse.jgit/src/org/eclipse/jgit/transport/NonceGenerator.java -> create
+
+Line:55, org.eclipse.jgit/src/org/eclipse/jgit/transport/NonceGenerator.java -> directory
+
+Line:61, org.eclipse.jgit/src/org/eclipse/jgit/transport/NonceGenerator.java -> when does this throw?
+
+-------------------------------------
+author: Beau Terry
+date: 2015-01-27 20:24:59.000000000
+
+Patch Set 10:
+
+(19 comments)
+
+Line:57, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificate.java -> Done
+
+Line:68, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificate.java -> Done
+
+Line:281, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> The path was chosen as it is unique for each repository. I'd personally not put any logic into the nonce generator, but treat the nonce generator as a replaceable black box which is given a unique string for each repository. So probably the PushCertificateParser is the right place to come up with the logic whether to getDirectory or getRepositoryName?
+
+Line:282, org.eclipse.jgit/src/org/eclipse/jgit/transport/BaseReceivePack.java -> Done
+
+Line:74, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateParser.java -> Done
+
+Line:122, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateParser.java -> Done
+
+Line:146, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateParser.java -> Done
+
+Line:163, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateParser.java -> Done
+
+Line:195, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateParser.java -> Done
+
+Line:196, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateParser.java -> Done
+
+Line:231, org.eclipse.jgit/src/org/eclipse/jgit/transport/PushCertificateParser.java -> yeah I messed that up, should be fixed.
+
+Line:63, org.eclipse.jgit/src/org/eclipse/jgit/transport/HMACSHA1NonceGenerator.java -> I seem to have switched key and input here. :/
+
+Line:65, org.eclipse.jgit/src/org/eclipse/jgit/transport/HMACSHA1NonceGenerator.java -> Done
+
+Line:74, org.eclipse.jgit/src/org/eclipse/jgit/transport/HMACSHA1NonceGenerator.java -> Why do we need to use a different encoding than above? I'd rather go with both UTF-8.
+
+Line:75, org.eclipse.jgit/src/org/eclipse/jgit/transport/HMACSHA1NonceGenerator.java -> Done
+
+Line:75, org.eclipse.jgit/src/org/eclipse/jgit/transport/HMACSHA1NonceGenerator.java -> Done
+
+Line:46, org.eclipse.jgit/src/org/eclipse/jgit/transport/NonceGenerator.java -> Done
+
+Line:55, org.eclipse.jgit/src/org/eclipse/jgit/transport/NonceGenerator.java -> Done
+
+Line:61, org.eclipse.jgit/src/org/eclipse/jgit/transport/NonceGenerator.java -> In HMACSHA!NonceGenerator there are the three exceptions InvalidKeyException, NoSuchAlgorithmException and UnsupportedEncodingException, which I think should not occur during normal operation. The algorithm as well as the encoding is hard coded, so if it works once, it works anytime. If it stops working, the IllegalStateException is the best I could find which comes close to describe the error I'd expect.
+
+-------------------------------------

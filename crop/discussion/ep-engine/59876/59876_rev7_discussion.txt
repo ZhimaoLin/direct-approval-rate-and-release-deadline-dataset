@@ -1,0 +1,87 @@
+DESCRIPTION
+
+MB-17653 (2/2): Calculate ActiveStream::getItemsRemaining() correctly
+
+Fix the calculation of getItemsRemaining() to actually return how many
+items which are still to be sent for the given stream.
+
+The previous code was based around sequence numbers, which doesn't
+take into account de-duplicaiton of items by the CheckpointManager.
+
+New algorithm counts the number of (non-meta) items still in
+Checkpoints (which the Stream's cursor hasn't advanced to yet), plus
+the number of non-meta items in the Streams' ready queue.
+
+Note this does require us to take a lock on the CheckpointManager (for
+getNumItemsForCursor); I have yet to measure if this has any
+performance impact.
+
+Change-Id: I9e4eaeafa4e8d71eff881d011c31f61a22794a92
+
+
+COMMENTS
+
+author: Hugo Blankenship
+date: 2016-02-22 17:36:26.733000000
+
+Patch Set 7:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1901/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-22 17:52:42.377000000
+
+Patch Set 7: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1901/ : SUCCESS
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2648/ : SUCCESS
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-02-23 09:21:22.055000000
+
+Patch Set 7: Code-Review+2
+
+-------------------------------------
+author: Abby Duran
+date: 2016-02-23 18:40:59.435000000
+
+Patch Set 7:
+
+(1 comment)
+
+Line:1008, src/dcp/stream.cc -> Given this function is periodically (every sec) invoked by the ns-server for every vbucket for stats collection, It might have some performance impact when the background checkpoint snapshot task grabs the checkpoint lock to push checkpoint items (possibly a large number of backlogs) to the DCP queue. During this period, one of the memcached worker threads serving a stats request would be blocked. However, we don't know the degree of its performance impact.
+
+I suggest to get some data points through micro-benchmark at least to understand the performance impact.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-02-24 08:51:06.124000000
+
+Patch Set 7:
+
+(1 comment)
+
+Line:1008, src/dcp/stream.cc -> Agreed. Given the nature of DCP/Stream performance I was planning on relying on the system-level tests (as a number of clients may be affected - see the recent view engine investigations), but I can put together a μbenchmark to try and expose any impact. The caveat is that we may not see the real effect there...
+
+-------------------------------------
+author: Abby Duran
+date: 2016-02-24 17:41:47.171000000
+
+Patch Set 7: Code-Review+2
+
+(1 comment)
+
+Line:1008, src/dcp/stream.cc -> Yeah, we might not see the impact from the micro benchmark, and the system tests should be required. Let's get it merged and see the results of the system-level perf tests.
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-02-24 17:41:50.838000000
+
+Change has been successfully cherry-picked as 45d755a2a23bfe2acff0eea5392efe9f8c6d6faf
+
+-------------------------------------

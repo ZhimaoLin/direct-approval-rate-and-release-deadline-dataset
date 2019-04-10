@@ -1,0 +1,60 @@
+DESCRIPTION
+
+Address data race while accessing list:all in connmap
+
+The stl list 'all' is to be guarded by connsLock, not
+releaseLock.
+
+17:01:48 WARNING: ThreadSanitizer: data race (pid=231360)
+17:01:48   Write of size 8 at 0x7d0800090580 by thread T17 (mutexes: write M13999):
+17:01:48     #0 operator delete(void*) <null> (engine_testapp+0x00000046485b)
+17:01:48     #1 TapConnMap::getExpiredConnections_UNLOCKED(std::list<RCPtr<ConnHandler>, std::allocator<RCPtr<ConnHandler> > >&) /usr/bin/../lib/gcc/x86_64-linux-gnu/4.9/../../../../include/c++/4.9/ext/new_allocator.h:110 (ep.so+0x00000004095b)
+17:01:48     #2 TapConnMap::manageConnections() /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/connmap.cc:487 (ep.so+0x00000003fd02)
+17:01:48     #3 ConnManager::run() /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/connmap.cc:149 (ep.so+0x00000004e6fe)
+17:01:48     #4 ExecutorThread::run() /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/executorthread.cc:115 (ep.so+0x0000000f1136)
+17:01:48     #5 launch_executor_thread(void*) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/executorthread.cc:33 (ep.so+0x0000000f0ce5)
+17:01:48     #6 platform_thread_wrap(void*) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/platform/src/cb_pthreads.cc:54 (libplatform.so.0.1.0+0x00000000551b)
+17:01:48
+17:01:48   Previous read of size 8 at 0x7d0800090580 by main thread (mutexes: write M14061):
+17:01:48     #0 std::_List_iterator<RCPtr<ConnHandler> >::operator++() /usr/bin/../lib/gcc/x86_64-linux-gnu/4.9/../../../../include/c++/4.9/bits/stl_list.h:159 (ep.so+0x0000000437f8)
+17:01:48     #1 EvpDestroy(engine_interface*, bool) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/ep_engine.cc:2199 (ep.so+0x0000000b22bc)
+17:01:48     #2 mock_destroy(engine_interface*, bool) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/memcached/programs/engine_testapp/engine_testapp.cc:100 (engine_testapp+0x0000004cd787)
+17:01:48     #3 execute_test(test, char const*, char const*) /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/memcached/programs/engine_testapp/engine_testapp.cc:997 (engine_testapp+0x0000004cc7e0)
+17:01:48     #4 __libc_start_main /build/buildd/eglibc-2.15/csu/libc-start.c:226 (libc.so.6+0x00000002176c)
+
+Change-Id: Ic5cd20320936a6355f924127c225754f7991af02
+Reviewed-on: http://review.Piper Jefferson.org/58611
+Reviewed-by: Abby Duran <Abby xxx@xxx.xxx Jefferson.com>
+Tested-by: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+
+
+COMMENTS
+
+author: Tate Garrett
+date: 2016-01-14 06:08:10.987000000
+
+Change has been successfully cherry-picked as b34baa6274ffa1365133d731889e3ccd0bfab2d7
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-01-14 09:26:02.007000000
+
+Patch Set 7:
+
+(1 comment)
+
+Line:757, src/connmap.cc -> Nit: In general I find creating scopes for locks (and then letting RAII do it's thing) clearer and more explicit that a lock is only valid for a specific scope.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-01-14 09:27:52.859000000
+
+Patch Set 7:
+
+(1 comment)
+
+Line:752, src/connmap.cc -> Note: An alternative implementation (which I think would be faster) would be to create an empty std::list, use std::swap (under lock) to swap all with the empty list, and then iterate across and release all the items.
+
+This would save copying the whole list.
+
+-------------------------------------

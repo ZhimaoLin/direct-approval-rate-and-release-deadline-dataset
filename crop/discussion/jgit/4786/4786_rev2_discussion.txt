@@ -1,0 +1,79 @@
+DESCRIPTION
+
+Support more of AutoCRLF
+
+This patch introduces CRLF handling to the DirCacheCheckout and
+WorkingTreeIterator supporting the AutoCRLF for add, checkout
+reset and status and hopefully some other places that depende
+on the underlying logic of the affected API's.
+
+The patch includes test cases for the Status command provided by
+Clay Cameron for bug 353867.
+
+The core.eol and core.safecrlf options are not yet supported.
+
+Bug: 301775
+Bug: 353867
+Change-Id: I2280a2dc0698829475de6a662a6c6e80b1df7663
+
+
+COMMENTS
+
+author: Juliet Cantu
+date: 2011-12-12 21:51:05.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-12-12 21:51:08.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1195/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-12-12 21:54:23.000000000
+
+Patch Set 2: Build Successful
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1195/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2011-12-13 09:01:06.000000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:169, org.eclipse.jgit/src/org/eclipse/jgit/util/io/AutoCRLFOutputStream.java -> It's a shame. We already processed every little byte of the content up to know. We should have enough info to decide whether the file is binary or not. But now we have to call RawText.isBinary() which will read all the bytes again. Ok, it will read from memory and it can stop on the first 0 byte. But isn't there a chance that we incrementally ask RawText about binary/not-binary when we are processing the bytes in write(int b)? Then we could also stop buffering when RawText tells us its binary.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2011-12-13 22:17:43.000000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:169, org.eclipse.jgit/src/org/eclipse/jgit/util/io/AutoCRLFOutputStream.java -> We could, but I'm not sure how much it buys us, considering possible future support for e.g. UTF-16 as text, but most importantly we also need to buffer data and this keeps our logic a tiny bit simpler, which usually translates to faster code, though I have no proof whatsoever that is the case here.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2011-12-20 10:01:54.000000000
+
+Patch Set 2: (1 inline comment)
+
+
+
+Line:169, org.eclipse.jgit/src/org/eclipse/jgit/util/io/AutoCRLFOutputStream.java -> With your attempt you are always reading the first 8000 bytes in a buffer, even if the already the first byte is null. And then, after you have buffered the first 8000 bytes you again process them (up to the first null).
+
+I suggest a solution which buffers everything up to the first null byte or the 8000th byte - whatever comes first (so potentially we buffer much smaller amount of data). And whenever you detect the first binary artefact (a decision which should be taken by RawText) you can stop doing the buffering & conversion for the rest of the stream.
+
+But I see one problem with what I suggest: We would have to have a method RawText.isBinary(byte) (so we can ask RawText for every single byte we get). Do you expect that (e.g. with UTF-16 support) we come into a situation where RawText can't decide on binary/not-binary by looking at a single byte? If yes, then I agree that it's better to stay with your approach.
+
+-------------------------------------

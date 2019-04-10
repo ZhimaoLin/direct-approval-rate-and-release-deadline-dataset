@@ -1,0 +1,110 @@
+DESCRIPTION
+
+Added tap client
+
+The tap client currently supports doing tap backfill as well as
+being able to specify custom tap streams. Unit tests are included
+to test backfill functionality.
+
+Change-Id: I214d39b2c16ea68867f42a3c75aac565d36e8c21
+
+
+COMMENTS
+
+author: Kenny Maynard
+date: 2011-06-09 20:58:34.185000000
+
+Uploaded patch set 7.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2011-06-13 17:00:17.491000000
+
+Patch Set 7: Verified
+
+
+
+-------------------------------------
+author: Andreas Short
+date: 2011-06-15 18:28:19.905000000
+
+Patch Set 7: (12 inline comments)
+
+partial review.  I need to come back and do more.  Big commit, but looks pretty good!
+
+Line:39, src/main/java/net/spy/memcached/TapClient.java -> it's less about vbucket awareness, right?  It's more about cluster aware.  Would prefer:
+
+Creates a TapClient against the specified servers.
+
+This type of TapClient will TAP the specified servers, but will not be able to react to changes to changes in the number of cluster nodes.  Using the constructor which bootstraps itself from the cluster REST interface is preferred.
+
+Line:64, src/main/java/net/spy/memcached/TapClient.java -> javadoc?
+
+Line:88, src/main/java/net/spy/memcached/TapClient.java -> would be really nice to have this implemented in another method which allows a param of int and TimeUnit.  What if I want to wait longer than a second.  Less than a second?
+
+if you add that method, it should have some minimum threshold like 1ms and should document that 2500ms is a recommended minimum.  I'd actually prefer this be 2500ms by default.  As you pointed out when doing all of the timeout work, a single TCP retransmit may suck up more than 1 second.
+
+Line:128, src/main/java/net/spy/memcached/TapClient.java -> typo
+
+Line:176, src/main/java/net/spy/memcached/TapClient.java -> doc inconsistency.
+
+Line:185, src/main/java/net/spy/memcached/TapClient.java -> Is it correct for this to be public?  I think addOp is not really public, so not sure why this is public.
+
+Line:199, src/main/java/net/spy/memcached/TapClient.java -> in seconds?  minutes?  hours?  if it's an integer, I'd expect a TimeValue param as well to follow or some description of the units.
+
+Line:240, src/main/java/net/spy/memcached/TapClient.java -> looks like you intend seconds.  you can just bring that integer and TimeValue down here.
+
+Line:264, src/main/java/net/spy/memcached/TapClient.java -> Could this block forever, or should it have a timeout equivalent?
+
+I don't want to block in someones finally() forever.
+
+Line:236, src/main/java/net/spy/memcached/OperationFactory.java -> There is no such thing as a "namenode" in the world of TAP.  Documentation for TAP refers to this as "name" and ep-engine puts it in tap stats.  I'd just call the id param the "TAP connection name"
+
+I'd also put the uses of that name above the @param, don't put too much in xxx@xxx.xxx  I'd probably do it like this:
+
+TAP connection names are optional, but allow for momentary interruptions in connection to automatically restart.  TAP connection names also appear in TAP stats from the given server.
+
+@param id The name for the TAP connection
+
+Line:238, src/main/java/net/spy/memcached/OperationFactory.java -> Perhaps this whole documentation section should point to 
+http://www.couchbase.org/wiki/display/membase/TAP+Protocol
+
+Concern on this param is that it implies I can specify an arbitrary date.  Perhaps add the following to the description above:
+
+Note that according to the protocol, TAP backfill dates are advisory and the protocol guarantees at least data from specified date forward, but earlier mutations may be received.
+
+Line:247, src/main/java/net/spy/memcached/OperationFactory.java -> !namenode
+
+-------------------------------------
+author: Kenny Maynard
+date: 2011-06-15 20:59:57.313000000
+
+Patch Set 7: (12 inline comments)
+
+
+
+Line:39, src/main/java/net/spy/memcached/TapClient.java -> Changed to match you comments on both non-cluster aware client constructors.
+
+Line:64, src/main/java/net/spy/memcached/TapClient.java -> Done
+
+Line:88, src/main/java/net/spy/memcached/TapClient.java -> I added the method, but I disagree here on the timeout values. Getting null should be expected by the user no matter what the timeout is. Since with tap we don't cancel the tap connection when we don't see an item for the timeout 1 second is ok. Even specifying 1 nanosecond is ok (It will just eat up cpu).
+
+Line:128, src/main/java/net/spy/memcached/TapClient.java -> Done
+
+Line:176, src/main/java/net/spy/memcached/TapClient.java -> Not sure what you are tNathalie Landrying about here.
+
+Line:185, src/main/java/net/spy/memcached/TapClient.java -> Yes, this is how we create a backfill tap stream.
+
+Line:199, src/main/java/net/spy/memcached/TapClient.java -> Added a timeunit parameter.
+
+Line:240, src/main/java/net/spy/memcached/TapClient.java -> Added a timeunit parameter and convert whatever the timeunit/runtime is to milliseconds.
+
+Line:264, src/main/java/net/spy/memcached/TapClient.java -> I don't think this can block forever. Unless MemcachedConnection's shutdown can block forever.
+
+Line:236, src/main/java/net/spy/memcached/OperationFactory.java -> Your suggestion is now in the javadocs.
+
+Line:238, src/main/java/net/spy/memcached/OperationFactory.java -> Added the note at the bottom of your comment to the javadocs for this function. Also added a link to the tap documentation to each tap functions javadocs.
+
+Line:247, src/main/java/net/spy/memcached/OperationFactory.java -> Your suggestion above is now in the javadocs here.
+
+-------------------------------------

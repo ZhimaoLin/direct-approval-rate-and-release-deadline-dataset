@@ -1,0 +1,257 @@
+DESCRIPTION
+
+allow cluster_run redirect
+
+adds stdout/stderr params for Popen when starting ns_servers
+
+Change-Id: I9f45fcad1fbd0c34c2b9df050c7593fff6def2cb
+
+
+COMMENTS
+
+author: Titus Ho
+date: 2014-05-08 18:46:19.183000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2014-05-08 20:29:02.954000000
+
+Patch Set 1:
+
+Not sure what exactly it's going to do
+
+-------------------------------------
+author: Titus Ho
+date: 2014-05-08 20:45:18.451000000
+
+Patch Set 1:
+
+provides the equivalent of:
+ python ./cluster_run --nodes=1  2>&1 cluster_run.log
+
+does nothing by default, only if
+if you pass in file object will the console logs get redirected.
+
+I could've written a more concise expression of:
+
+params['stdout'] = params['stderr'] = stdout
+
+-------------------------------------
+author: Nathalie Landry
+date: 2014-05-08 21:57:58.862000000
+
+Patch Set 1:
+
+Does it? Isn't stdout = None ?
+
+-------------------------------------
+author: Titus Ho
+date: 2014-05-08 22:08:00.743000000
+
+Patch Set 1:
+
+yes, by setting None as default value for the stdout Popen will continue to behave as usual:
+https://docs.python.org/2/library/subprocess.html#subprocess.Popen
+
+by overriding stdout with a file object from an external caller, Popen will redirect it's output/stderr to the passed in file object.
+..as demonstrated In a separate change (c/36847/2/)
+
+-------------------------------------
+author: Nathalie Landry
+date: 2014-05-08 23:26:09.542000000
+
+Patch Set 1: Code-Review-1
+
+Ok, but I cannot understand that part about making stdout an argument of function that's never used.
+
+-------------------------------------
+author: Titus Ho
+date: 2014-05-09 12:55:51.592000000
+
+Patch Set 1:
+
+I'm using this function externally by importing this cluster_run module and calling start_cluster with a redirect to log file.  I don't think it's something that needs to be exposed at the cli level since you can do your own redirects at that point.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2014-05-09 17:30:08.839000000
+
+Patch Set 1:
+
+Externally, you can simply do something like dup2 of stderr fd into stdout fd without introducing weird code into cluster_run at all.
+
+I cannot merge code that makes no sense as a standalone commit.
+
+-------------------------------------
+author: Asher Vang
+date: 2014-05-14 20:34:32.114000000
+
+Patch Set 1:
+
+Should the code in cluster_run be refactored to be better suited for included in other projects? To me it seems like a bad idea to have to "duplicate" logic from one repository to another because they have different needs (it is guaranteed to diverge at some point and then we'll have all of the fun trying to figure out why things are working in one place and not the other).
+
+I believe our testsuites are probably one of the biggest consumer of being able to start/stop/monitor clusters these ways so it would be nice to have a single common way to do it on all platforms..
+
+-------------------------------------
+author: Titus Ho
+date: 2014-05-16 15:12:47.835000000
+
+Patch Set 1:
+
+@Nathalie Landry, also since we're using popen to start each node process it gets it's own stdout/stderr that external consumers cannot redirct:
+
+https://docs.python.org/2/library/sys.html#sys.stdout
+(Changing these objects doesn’t affect the standard I/O streams of processes executed by os.popen(), os.system() or the exec*() family of functions in the os module.)
+
+python probably could've done this better, but as it is ns logs are always going to go to stdout tries to consume this method.
+
+-------------------------------------
+author: Titus Ho
+date: 2014-05-16 15:14:10.727000000
+
+Patch Set 1:
+
+* going to go to stdout 'whenever external modules' try to consume this method
+
+-------------------------------------
+author: Nathalie Landry
+date: 2014-05-16 16:37:42.922000000
+
+Patch Set 1:
+
+here's what I was able to do just now (which I believe should work on windows too):
+
+# python
+Python 2.7.6 (default, Mar 22 2014, 17:40:27) 
+[GCC 4.8.2] on linux2
+Type "help", "copyright", "credits" or "license" for more information.
+>>> import sys
+>>> f = open("/tmp/stuff","w")
+>>> os.dup2(f.fileno(), sys.stderr.fileno())
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+NameError: name 'os' is not defined
+>>> import os
+>>> os.dup2(f.fileno(), sys.stderr.fileno())
+>>> import subprocess
+>>> subprocess.call("echo asdasd >&2", shell = True)
+0
+>>> subprocess.call("echo asdasd >&1", shell = True)
+asdasd
+0
+
+But most importantly, I cannot promise you anything about stable internal APIs. Importing cluster_run is IMHO bad idea. You should be able to do whatever you need by spawning it. And if you need to add some flags or environment variables or whatever to control it's behavior, feel free to do so.
+
+-------------------------------------
+author: Asher Vang
+date: 2014-05-16 18:25:18.019000000
+
+Patch Set 1:
+
+Alk: Is there a documented public description on how to start "ns_server" outside out installer? (so that QE may build their own module to start, stop and monitor such a cluster for our tests?
+
+-------------------------------------
+author: Nathalie Landry
+date: 2014-05-16 18:27:23.784000000
+
+Patch Set 1:
+
+outside is what?
+
+What you need documented? Spawning program should be simple no?
+
+-------------------------------------
+author: Asher Vang
+date: 2014-05-16 18:33:16.079000000
+
+Patch Set 1:
+
+If I wanted to do the equivalent of cluster_run just from my own program which would have a stable API so that I can build a test framework for a cluster. 
+
+At some point we would need to have a documented and stable API, or a _SINGLE_ place where this is located. If "cluster_run" can't be looked upon as such a program I may use (or import), we would need to create it and maintain it somewhere else.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2014-05-16 18:34:31.635000000
+
+Patch Set 1:
+
+Your words do not help my understand what you need. Can you please elaborate what you need from me ?
+
+-------------------------------------
+author: Asher Vang
+date: 2014-05-16 18:42:01.879000000
+
+Patch Set 1:
+
+The test framework needs to be able to start and run a cluster. You said it is a bad idea to include cluster_run as a module and it can't be a standard API. WHat I need is exactly that. The functionality that cluster_run provides as a standard API. It may be the command line interface to start erlang and have it start and initialize ns_server, or it may be a "portable program" which wraps the invocation of erlang (with a stable command line interface), or a python "library" that may be called in order to do so.
+
+We could "copy out" cluster_run into the the QE test framework to make it easy for them to integrate in how the tests is being executed, BUT by doing so it will possibly break whenever the logic the current cluster_run is using is changed (since its a copy it won't be updated). 
+
+Being able to make sure that we can run all of the tests easy (and on all platforms) will hopefully help us improve the overall quality of our product and that all of us are running the tests on all platforms instead of the usual: "oh, I don't know how to do it on platform X" or "oh, you can't run run the tests on platform Y, you need to invoke them through the nightly build scripts etc"
+
+-------------------------------------
+author: Nathalie Landry
+date: 2014-05-16 18:45:09.595000000
+
+Patch Set 1:
+
+It does look like couple things are getting conflated here.
+
+cluster_run is _only_ able to start developer's build. If you need to start something from the package then things differ a lot between windows and GNU/Linux and osex. On GNU systems you use couchbase-server.sh script.
+
+-------------------------------------
+author: Asher Vang
+date: 2014-05-16 18:51:48.386000000
+
+Patch Set 1:
+
+I want to be able to do the exact same thing on _windows_. Running our "simple-test" that we're supposed to do before pushing through code currently use cluster_run to start a 4 node cluster on our servers. This has to work on Windows as well. 
+
+My problem is that I need a _SINGLE_ authoritative place where all of the startup options we need to pass to erlang (or files/directory that needs to exists etc). I don't care if that is a document, script or a library, but it has to be defined as a "cross-component" API that can't be changed without notice (so that we may update the test framework)
+
+-------------------------------------
+author: Nathalie Landry
+date: 2014-05-16 18:52:57.058000000
+
+Patch Set 1:
+
+Ok. Then why spawning cluster_run and passing it flags are not exactly the stable API you're seeing ?
+
+-------------------------------------
+author: Asher Vang
+date: 2014-05-16 18:58:04.832000000
+
+Patch Set 1:
+
+It is if the options is considered stable. I guess I misinterpreted one of your commands earlier ;-) I thought you said cluster_run wasn't considered stable, but now that i read through it one more time you said "importing it" was a bad idea and it should be spawned. Sorry for not seeing that immediately. We should most likely be able to achieve everything that's needed :) thanks
+
+-------------------------------------
+author: Nathalie Landry
+date: 2014-05-16 18:59:53.226000000
+
+Patch Set 1:
+
+Just keep in mind that it won't help testing _packages_.
+
+And keep in mind that we're _willing_ to add whatever flags are necessary and make sense.
+
+-------------------------------------
+author: Asher Vang
+date: 2014-05-16 19:05:18.871000000
+
+Patch Set 1:
+
+Sure. Being able to iron out the easiest bugs from the command line locally without having to bring up a lot of nodes while developing will (hopefully) boost productivity.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2014-06-09 16:07:47.814000000
+
+Abandoned
+
+apparently dead and not needed anymore
+
+-------------------------------------

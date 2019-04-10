@@ -1,0 +1,199 @@
+DESCRIPTION
+
+Bug 489382 - [Databinding] Provide a composite ISideEffect
+
+Change-Id: Ia10cc2baf6f978a3d6a41e3a54338615236a5338
+Also-By: Kelly Potter xxx@xxx.xxx
+Signed-off-by: Krista Shepherd xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Kelly Potter
+date: 2016-04-13 05:31:29.000000000
+
+Uploaded patch set 21.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-04-13 05:31:35.000000000
+
+Patch Set 21:
+
+Build Started https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/9079/
+
+-------------------------------------
+author: Kelly Potter
+date: 2016-04-13 05:39:48.000000000
+
+Patch Set 21: Code-Review+1
+
+-------------------------------------
+author: Brock Pruitt
+date: 2016-04-13 05:58:27.000000000
+
+Patch Set 21:
+
+(6 comments)
+
+Hasn't have time to give this change enough consideration. Here are few shallow observations.
+
+Line:58, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/internal/databinding/observable/SideEffect.java -> Please explain why SideEffect is disposed by default.
+
+Line:85, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/internal/databinding/observable/SideEffect.java -> Consider renaming to pauseDepth.
+
+Line:148, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/internal/databinding/observable/SideEffect.java -> It looks like semantics of the resume method has changed. Does javadoc need to be updated?
+
+Line:34, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/databinding/observable/sideeffect/ICompositeSideEffect.java -> This interface looks problematic to me because semantics of some methods, for example isDisposed is unclear.
+
+Line:29, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/internal/databinding/observable/sideeffect/SideEffectFactory.java -> Unnecessary blank line.
+
+Line:36, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/databinding/observable/sideeffect/ISideEffectFactory.java -> There seems to be a lot of duplication between methods of this interface and static methods of ISideEffect. Do we really need two sets of similar methods? If so, what are the use cases for each set?
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-04-13 06:10:41.000000000
+
+Patch Set 21: Code-Review-1
+
+Build Unstable 
+
+https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/9079/ : UNSTABLE
+
+-------------------------------------
+author: Kelly Potter
+date: 2016-04-13 16:05:15.000000000
+
+Patch Set 21:
+
+(3 comments)
+
+Line:58, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/internal/databinding/observable/SideEffect.java -> This is the singleton NO-OP side effect instance. It never executes or retains any references no observables and callers can rely upon this, so it should return true from isDisposed().
+
+Line:34, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/databinding/observable/sideeffect/ICompositeSideEffect.java -> A disposed side-effect will never execute again and doesn't retain any references to other observables. A non-disposed observable has some possibility of executing again and retaining references to other observables. Is it the contract that seems vague or the way we documented it in ISideEffect?
+
+Line:36, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/databinding/observable/sideeffect/ISideEffectFactory.java -> They do essentially the same thing except that when you invoke them on a factory, the factory itself takes some responsibility for disposing the side-effects. However, when you invoke the static methods, the caller takes this responsibility.
+
+Another possibility would be to delete the existing static methods on ISideEffect and just have a single one that returns a factory. The factory can take the place of the statics.
+
+That results in a cleaner interface, but I couldn't think of a nice way to document the responsibilities for disposal since the whose responsibility it is to invoke dispose would depend upon which factory instance you're using.
+
+Now that you bring it up, though, it may still be better to do it that way than to duplicate all these methods.
+
+-------------------------------------
+author: Kelly Potter
+date: 2016-04-13 18:19:16.000000000
+
+Patch Set 21:
+
+(3 comments)
+
+Line:85, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/internal/databinding/observable/SideEffect.java -> Done
+
+Line:148, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/internal/databinding/observable/SideEffect.java -> Done
+
+Line:29, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/internal/databinding/observable/sideeffect/SideEffectFactory.java -> The databinding plugins generally follow the convention of always including a blank line immediately after a class declaration. Omitting it here would make this class inconsistent.
+
+-------------------------------------
+author: Brock Pruitt
+date: 2016-04-13 18:23:20.000000000
+
+Patch Set 21:
+
+(20 comments)
+
+Line:46, bundles/org.eclipse.jface.databinding/src/org/eclipse/jface/databinding/swt/WidgetSideEffects.java -> Would it be simpler and more convenient to use to have methods for creation of individual side effects instead of factory?
+
+Line:47, bundles/org.eclipse.jface.databinding/src/org/eclipse/jface/databinding/swt/WidgetSideEffects.java -> Use of ICompositeSideEffect looks like an overkill in this code. The useful logic contained in ICompositeSideEffect can be inlined in this class.
+
+Line:58, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/internal/databinding/observable/SideEffect.java -> This should be explained in a comment.
+
+Line:34, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/databinding/observable/sideeffect/ICompositeSideEffect.java -> It's not clear whether dispose() called on ICompositeSideEffect disposes all ISideEffects added to it or not.
+
+Line:35, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/databinding/observable/sideeffect/ICompositeSideEffect.java -> Unnecessary blank line.
+
+Line:38, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/databinding/observable/sideeffect/ICompositeSideEffect.java -> The second sentence seems contradictory. Should "is not" be changed to "is already a"?
+
+Line:46, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/databinding/observable/sideeffect/ICompositeSideEffect.java -> What happens if the side effect is not a part of the composite?
+
+Line:61, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/databinding/observable/sideeffect/ICompositeSideEffect.java -> Unnecessary blank line.
+
+Line:180, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/databinding/observable/ISideEffect.java -> Add -> Adds
+
+Line:182, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/databinding/observable/ISideEffect.java -> time -> time when
+
+Line:191, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/databinding/observable/ISideEffect.java -> Remove -> Removes
+
+Line:33, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/internal/databinding/observable/sideeffect/SideEffectFactory.java -> Trivial statement.
+
+Line:38, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/internal/databinding/observable/sideeffect/SideEffectFactory.java -> Unnecessary blank line.
+
+Line:37, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/databinding/observable/sideeffect/ISideEffectFactory.java -> Unnecessary blank line.
+
+Line:85, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/databinding/observable/sideeffect/ISideEffectFactory.java -> Need a reference to and explanation of differences with a similar method in ISideEffect.
+
+The same applies to other methods that have ISideEffect equivalents.
+
+Line:258, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/databinding/observable/sideeffect/ISideEffectFactory.java -> Unnecessary blank line.
+
+Line:30, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/internal/databinding/observable/sideeffect/CompositeSideEffect.java -> Unnecessary blank line.
+
+Line:81, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/internal/databinding/observable/sideeffect/CompositeSideEffect.java -> Redundant Javadoc.
+
+Line:100, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/internal/databinding/observable/sideeffect/CompositeSideEffect.java -> Redundant Javadoc.
+
+Line:150, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/internal/databinding/observable/sideeffect/CompositeSideEffect.java -> Pausing on add is an undocumented behavior.
+
+-------------------------------------
+author: Kelly Potter
+date: 2016-04-14 01:48:52.000000000
+
+Patch Set 21:
+
+(19 comments)
+
+Line:46, bundles/org.eclipse.jface.databinding/src/org/eclipse/jface/databinding/swt/WidgetSideEffects.java -> That would make it hard to add new creation methods since they would have to be added to each type of factory (and we're already planning several).
+
+Line:47, bundles/org.eclipse.jface.databinding/src/org/eclipse/jface/databinding/swt/WidgetSideEffects.java -> If this was the only type of factory, yes... but Nevaeh Wu is also working on one other for managing side-effects at the part scope (and I can think of a couple more we'd want).
+
+Line:58, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/internal/databinding/observable/SideEffect.java -> Done
+
+Line:34, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/databinding/observable/sideeffect/ICompositeSideEffect.java -> Done
+
+Line:35, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/databinding/observable/sideeffect/ICompositeSideEffect.java -> This is standard practice in this plugin.
+
+Line:38, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/databinding/observable/sideeffect/ICompositeSideEffect.java -> Done
+
+Line:46, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/databinding/observable/sideeffect/ICompositeSideEffect.java -> Done
+
+Line:61, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/databinding/observable/sideeffect/ICompositeSideEffect.java -> Done
+
+Line:180, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/databinding/observable/ISideEffect.java -> Done
+
+Line:182, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/databinding/observable/ISideEffect.java -> Done
+
+Line:191, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/databinding/observable/ISideEffect.java -> Done
+
+Line:33, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/internal/databinding/observable/sideeffect/SideEffectFactory.java -> Done
+
+Line:38, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/internal/databinding/observable/sideeffect/SideEffectFactory.java -> Done
+
+Line:37, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/databinding/observable/sideeffect/ISideEffectFactory.java -> The databinding plugins all use the convention of a blank line immediately after a class/interface declaration.
+
+Line:85, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/databinding/observable/sideeffect/ISideEffectFactory.java -> Done
+
+Line:258, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/databinding/observable/sideeffect/ISideEffectFactory.java -> Done
+
+Line:81, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/internal/databinding/observable/sideeffect/CompositeSideEffect.java -> Done
+
+Line:100, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/internal/databinding/observable/sideeffect/CompositeSideEffect.java -> Done
+
+Line:150, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/internal/databinding/observable/sideeffect/CompositeSideEffect.java -> Added documentation to ICompositeSideEffect.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-04-20 22:10:47.000000000
+
+Change has been successfully merged into the git repository by Krista Shepherd
+
+-------------------------------------

@@ -1,0 +1,77 @@
+DESCRIPTION
+
+Bug 459833 - ConcurrentModificationException in ServiceLocator.dispose
+
+To avoid complicated locking inside
+activate/deactivate/dispose/disposeServices and register methods, change
+the type of servicesToDispose from HashMap to ConcurrentHashMap. This
+will avoid still possible ConcurrentModificationException in
+activate/deactivate/disposeServices methods.
+
+Changed "disposed" and "e4Context" fields to volatile to
+avoid wrong values being used in different threads.
+
+Changed registerService() to log an IllegalStateException with
+additional information about service/implementor types if the locator
+instance was already disposed.
+
+Changed activate/deactivate/disposeServices to use SafeRunner.
+
+Change-Id: If34128da2c9677fe9b12bbcb0cfab0ab45f991c5
+Signed-off-by: Jayvion Booth xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Jayvion Booth
+date: 2016-08-05 14:48:55.000000000
+
+Uploaded patch set 7.
+
+-------------------------------------
+author: Jayvion Booth
+date: 2016-08-05 15:09:55.000000000
+
+Patch Set 7: Verified+1
+
+Hodson silently told us all tests were OK.
+
+-------------------------------------
+author: Teagan Marsh
+date: 2016-08-05 21:05:43.000000000
+
+Patch Set 7:
+
+(3 comments)
+
+A few other points.  We could just refuse to stash the new service in registerService() when we're being disposed, couldn't we?
+
+Line:177, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/services/ServiceLocator.java -> By using ConcurrentHashMap, I think we can avoid this copy. Since ConcurrentHashMap#values() is backed by the map, services added in the middle of the iteration should actually show up in the iteration.  If fact, we could just use the iterator and remove() the services as we dispose of them.
+
+Line:191, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/services/ServiceLocator.java -> I'd just print out `iDisposable.getClass().getName()` since it may be in an invalid state.
+
+Line:283, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/services/ServiceLocator.java -> We could just return here, right?  Pretend it never happened?
+
+-------------------------------------
+author: Jayvion Booth
+date: 2016-08-08 07:46:48.000000000
+
+Patch Set 7:
+
+(3 comments)
+
+Line:177, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/services/ServiceLocator.java -> Done
+
+Line:191, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/services/ServiceLocator.java -> Done
+
+Line:283, bundles/org.eclipse.ui.workLeon Ochoach/Eclipse UI/org/eclipse/ui/internal/services/ServiceLocator.java -> My mistake, I've forgot to add return after replacing "throw" with "log".
+
+It doesn't make sense to do anything if we know we are already disposed.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-08-08 16:12:53.000000000
+
+Change has been successfully merged into the git repository by Jayvion Booth
+
+-------------------------------------

@@ -1,0 +1,67 @@
+DESCRIPTION
+
+DirCache: Buffer TREE extension to $GIT_DIR
+
+Increase the in-memory buffer for the TREE extension to 5 MiB, and
+overflow to $GIT_DIR instead of /tmp.  Using a larger buffer reduces
+the chances a repository will overflow and need to spool the extension
+to disk.  Using $GIT_DIR allows the TREE extension contents to have
+the same file system protections as the final $GIT_DIR/index.
+
+Change-Id: I8f871181a4689e3ebf0cdd4fd1769333cf7546c3
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2014-11-25 04:08:19.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-11-25 04:08:25.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/5761/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-11-25 04:19:28.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/5761/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2014-11-25 09:10:24.000000000
+
+Patch Set 1: Code-Review+1
+
+Looks good to me.
+
+Have you thought about the following:
+- there are a few more places in JGit where we use "new LocalFile()" which creates files in the default place for temporary files. That would again be outside gitDir and filesystem access protection you may put on gitDir. Do we have to tackle these places also?
+- I learned that deleting files (as in TemporaryBuffer.java.474) can be complicated on files stored on NFS [1]. Some users may run gerrit with the git folder symlinked into NFS space. Is it problematic if the files are not deleted in TemporaryBuffer.java.474 but only during shutdown?
+
+[1] http://nfs.sourceforge.net/#faq_d2
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2014-11-25 09:26:57.000000000
+
+Patch Set 1: Code-Review-1
+
+I don't see now TemporaryBuffer.LocalFile is an issue on NFS. The code only deletes the file after it is finished being used. We never delete the in-use file.
+
+But you did catch a bug in DirCache. LocalFile must have destroy() called, otherwise the temporary overflow file is never removed from the filesystem. The whole block needs to be wrapped in a try/finally.
+
+And I didn't even think to look at other callers of LocalFile. I forgot now why I got into this section of DirCache, but I thought it odd we were using system tmp with a small 1M buffer, so I quickly put this together.
+
+Obviously it needs to be more thought out, as the destroy() was missed. And we probably missed it on some other LocalFile users.
+
+-------------------------------------

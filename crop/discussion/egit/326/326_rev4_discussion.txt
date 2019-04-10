@@ -1,0 +1,173 @@
+DESCRIPTION
+
+Add compatibility with gitignore specifications
+
+Sorry to keep spamming like this, I kept finding new special cases
+to take care of. I believe everything is up-to-spec now, though.
+
+Created class IgnoredResources.
+
+Method from this class is called in IgnoredAction, supplmenting
+the call to Team.isIgnoredHint.
+
+Currently, to check if a file is ignored:
+- Calls Team.isIgnoredHint
+- Checks .gitignore, behaviour consistent with git's own behaviour
+
+From what I can see, there are two places in the code that check
+Team.isIgnoredHint: IgnoredAction and DecoratableResourceAdapter.
+I've only added a call to the new isIgnored to the IgnoredAction for
+now. Can be tested by right click -> Add to .gitignore.
+
+If file successfully ignored, nothing will change. Otherwise the
+file will be added to the .gitignore list for its parent directory.
+Ignoring a directory will also ignore all children of that
+directory, just like command-line git does.
+
+Compatibility tests will be updated on my Eclipse Wiki talk page:
+http://wiki.eclipse.org/User_talk:Charley.wang.gmail.com
+
+Change-Id: I5c40e237275f2d9031b2b56591ba98c5ce166008
+
+
+COMMENTS
+
+author: Reese Nunez
+date: 2010-03-10 15:17:07.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Rocco Fowler
+date: 2010-03-11 12:15:52.000000000
+
+Patch Set 4: I would prefer that you didn't submit this; No score
+
+I wonder if this should be extended to some project-wide ignore cache. A resource listener could be added that listens for resource changes to a project's .gitignore files and updates it internal state. This should give much better performance.
+
+Also you should not read ".gitignore" files using java.io.File but using the Eclipse resource API. This should also take a project's charset into account. It is actually possible to set a custom charset for ".gitignore" files in Eclipse.
+
+The next step would be to extend the usage to various other places in EGit (eg. label decorations, commit dialogs, add action, etc.).
+
+-------------------------------------
+author: Reese Nunez
+date: 2010-03-11 14:56:59.000000000
+
+Patch Set 4: No score
+
+Good morning :)
+
+I'll take a look at using the Resource API and implementing a .gitignore cache. Is memory a concern? I.E. if I built a tree with a data node for each file/folder in the project that is ignored, would that be too much memory consumption? I wouldn't think so, but thought I'd ask :)
+
+Extension to other places in EGit: I think I know where to make the change (there's only one other place that calls Team.isIgnoredHint, iirc), I'll take a look after I get files being ignored properly.
+
+I'd also like to add a 'Remove from .gitignore' action -- parse all .gitignore files (because I might have /grandpa/pa/file.ext in the grandpa .gitignore), searching for exact matches only, then either remove an exact match if one is found or add !/path/to/file.ext if no exact match is found. The action should only be valid if the file in question is ignored.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-04-11 15:18:09.000000000
+
+Patch Set 4: I would prefer that you didn't submit this; No score
+
+The ignore logic should be mostly in JGit, with
+hooks that EGit can use.
+
+The current ignore handling was a quick-fix because it
+was very easy to implement and .gitignore is hard to implement.
+
+There is a reason we don't have .gitignore yet. Doing it properly is hard and we don't want it if it doesn't 
+work exactly as the C Git version, hence we don't support it at all (for the time being), which is better than having an incompatible implementation.
+
+The complexity means we need proper unit tests for it. I do like the structured approach for definiing the test cases, which means implementing unit tests should be rather straightforward.
+
+There have beens some attempts that were rejected. They are pre-git and the mails can be found in the GITM archives. Search for JGit / EGit and ignore
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-04-11 15:19:20.000000000
+
+Patch Set 4:
+
+Implementing this in JGit of course means using the File API, at least until JGit gets an IO abstraction that can utilize the Eclipse resource API.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-04-11 15:19:20.000000000
+
+Patch Set 4:
+
+Implementing this in JGit of course means using the File API, at least until JGit gets an IO abstraction that can utilize the Eclipse resource API.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-04-11 15:19:21.000000000
+
+Patch Set 4:
+
+Implementing this in JGit of course means using the File API, at least until JGit gets an IO abstraction that can utilize the Eclipse resource API.
+
+-------------------------------------
+author: Reese Nunez
+date: 2010-04-19 16:43:27.000000000
+
+Patch Set 4:
+
+Hi,
+
+What are the GITM archives? I found one mention of gitignore in egit-dev, no mention of unaccepted suggestions to learn from.
+
+Sorry to keep asking questions, but I want to make sure I'm on the same frequency. You require a .gitignore handler that:
+
+1. Exists in JGit
+2. Implements a project-wide ignore cache
+3. Uses resource listeners to determine when the cache needs to be updated
+4. Has rigorous unit tests to ensure it behaves exactly the same as C Git
+5. (Implied) Documents compatibility tests
+
+I'd be happy to do this, if that's what you want :) I still have somewhere the test harness I used to make test results, would be a good start for JUnit tests. If not, what have I misunderstood?
+
+Thanks!
+-Charley
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2010-04-19 20:59:49.000000000
+
+Patch Set 4: No score; No score
+
+Robin meant the git mailing list which was used for EGit and JGit developer discussions before the projects moved to Eclipse:
+http://dir.gmane.org/gmane.comp.version-control.git
+
+you may try a query like :
+http://search.gmane.org/?query=%2Bgitignore+%2Bjgit&group=gmane.comp.version-control.git
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-04-19 22:57:09.000000000
+
+Patch Set 4:
+
+Charley: Your 5 points are basically it, but resource listeners is a separate thing. I think the implementation in JGit could be done completely without it. An extra layer in EGit could use resource listeners as an optimization if that is necessary. I'm happy that someone is willing to tackle this issue.
+
+-------------------------------------
+author: Reese Nunez
+date: 2010-05-11 01:34:03.000000000
+
+Patch Set 4:
+
+I can't seem to git push review... I've attached the patches to bring ignore into jgit on the Eclipse bug, along with tests: https://bugs.eclipse.org/bugs/show_bug.cgi?id=303925
+
+Please let me know if there are any inefficiencies I should clean up. Should I commit the EGit changes that use the new JGit patch at the same time?
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2010-05-12 20:10:49.000000000
+
+Patch Set 4:
+
+Have a look at http://dev.eclipse.org/mhonarc/lists/egit-dev/msg01127.html maybe this helps to solve your gerrit push problem.
+
+Add a note to the commit message of your egit change that it depends on the jgit change Iebd7e5bb534accca4bf00d25bbc1f561d7cad11b
+Then we know that this change has to wait for the other one.
+
+-------------------------------------

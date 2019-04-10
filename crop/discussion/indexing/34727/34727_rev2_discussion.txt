@@ -1,0 +1,94 @@
+DESCRIPTION
+
+Bootstrap sequence writeup and diagram
+
+Change-Id: Ife062092ee1324b537aa2dd7df9b4a4aeb44a6ff
+
+
+COMMENTS
+
+author: Leonel Abbott
+date: 2014-03-24 10:39:56.666000000
+
+Patch Set 2: Verified+1 Code-Review+1
+
+-------------------------------------
+author: Dominique Stanton
+date: 2014-03-24 17:43:14.808000000
+
+Patch Set 2:
+
+(4 comments)
+
+Line:24, secondary/docs/design/markdown/bootstrap.md -> If projector/router process is co-located inside KV, then the assumption is that they will be up when KV node is being bootstrap by ns_server.     Is this step a new step that brings the projector/router up or you are referring to the fact that projector/router will be brought up by ns_server (not necessarily after index coordinator have been initialized).
+
+Line:25, secondary/docs/design/markdown/bootstrap.md -> When projectors/routers bootstrap, it can register itself to ns_server and the registration can be replicated across the clusters.    Index Coordinator knows all projectors are up when there is at least one projector being responsible for a vbucket.   We can have a module that sits between coordinator and ns_server to provide the mapping from projectors to vbucket and vice versa.
+
+Line:29, secondary/docs/design/markdown/bootstrap.md -> It will be nice that each indexer will be boostrap'ed by ns_server independently.     But they can wait to proceed until the coordinator is up and ready.  But it may complicate the boostrap design a little bit.
+
+Line:31, secondary/docs/design/markdown/bootstrap.md -> In addition, the indexers will need to send its topology to the coordinator for verificaiton.
+
+-------------------------------------
+author: Maliyah Fischer
+date: 2014-03-25 09:22:29.991000000
+
+Patch Set 2:
+
+(4 comments)
+
+Line:24, secondary/docs/design/markdown/bootstrap.md -> I was thinking that projector/router does not need to run inside KV always, if no "secondary indexing" is running e.g. KV/Cache only use-cases. Once a node gets added/designated as an index node and ns_server successfully elects a Coordinator, it can start projector/router.
+
+Line:25, secondary/docs/design/markdown/bootstrap.md -> It can be a separate module or as ns_server is doing the projector/router bootstrap and it knows the vb_map, it can provide both to coordinator.
+
+Line:29, secondary/docs/design/markdown/bootstrap.md -> ns_server bootstraps indexers once it has completed the bootstrap for coordinator master/replica. So it is expected that indexers don't need to wait (unless index coordinator dies).
+
+Line:31, secondary/docs/design/markdown/bootstrap.md -> Once the indexer gets the topology from Coordinator in Step12, it will verify if that matches with its local copy. If not, it updates the local copy. If it makes more sense for this verification to be done by coordinator, will change that.
+
+-------------------------------------
+author: Dominique Stanton
+date: 2014-03-25 17:12:16.218000000
+
+Patch Set 2:
+
+(4 comments)
+
+Line:24, secondary/docs/design/markdown/bootstrap.md -> 1) But the first statement says "brings up Projector/Router" on all KV nodes, so it makes reader think that they run inside KV nodes.  
+2) If there is no index, then there will be no UPR connection being created.  This means that even if the projector process is up, it will be mainly idle.   Do you know how much resource it will consume for an idle admin channel (in Go)?    
+3) If customer uses cache-only case, then should we just have a config flag that skip the whole bootstrap sequence?
+
+Line:25, secondary/docs/design/markdown/bootstrap.md -> I want to encapsulate "physical" KV topology information from coordinator.   The coordinator should know about projector, but we don't want coordinator to know the deployment topology of the projectors onto the cluster.
+
+Line:29, secondary/docs/design/markdown/bootstrap.md -> 1) Indexer can be deployed on KV node as well
+2) If you let indexer bootstrap itself, then it is the same steps as how indexer restart itself.  It is also the same steps as how you add new indexer node to the cluster.  But I think your flow here is tailored towards system-level bootstrap.
+
+Line:31, secondary/docs/design/markdown/bootstrap.md -> During bootstrap, isn't the local indexer should have the latest partitioning metadata for that particular node?   It is the coordinator that needs to do the verification.
+
+-------------------------------------
+author: Maliyah Fischer
+date: 2014-03-25 18:06:12.758000000
+
+Patch Set 2:
+
+(4 comments)
+
+Line:24, secondary/docs/design/markdown/bootstrap.md -> 1) Sorry my last comment was not clear. I meant projector/router don't need to keep running inside KV if indexing is not going to be used. 
+2) Will need to check that(don't expect it to be of any significant value). Plus there would be some overhead for ns_server to watchdog these.
+3) Yes that's a good idea.
+
+Line:25, secondary/docs/design/markdown/bootstrap.md -> ok. sounds good.
+
+Line:29, secondary/docs/design/markdown/bootstrap.md -> Regarding 2), my understanding here is that as ns_server is the process watchdog, its the one restarting the indexer in case it goes down. I totally agree that bootstrap and restart should be the same for a component.
+
+Line:31, secondary/docs/design/markdown/bootstrap.md -> If indexer enters a bootstrap due to restart, index coordinator may have done some topology changes which this indexer doesn't have locally. I expect coordinator to be the source of truth for partitioning metadata.
+
+-------------------------------------
+author: Dominique Stanton
+date: 2014-03-25 18:19:20.423000000
+
+Patch Set 2: Code-Review+1
+
+(1 comment)
+
+Line:31, secondary/docs/design/markdown/bootstrap.md -> Correct.
+
+-------------------------------------

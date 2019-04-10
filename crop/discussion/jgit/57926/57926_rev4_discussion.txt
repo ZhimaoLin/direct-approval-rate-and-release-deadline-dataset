@@ -1,0 +1,78 @@
+DESCRIPTION
+
+Do not decrement repository usage counter if it is already at zero
+
+If close() was executed more times as incrementOpen(), next pairs of
+calls to incrementOpen() and close() will not close repository as
+expected, leaving repository "closed" state undefined (below zero).
+
+To prevent this, do not further decrement usage counter if it is already
+at zero.
+
+Bug: 479253
+Change-Id: I66aadc971fb4b5c429326fe20754ba7ec784b7fb
+Signed-off-by: Jayvion Booth xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Jayvion Booth
+date: 2015-10-22 05:15:28.000000000
+
+Uploaded patch set 4: Patch Set 3 was rebased.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-10-22 05:21:26.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7286/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-10-22 05:29:41.000000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7286/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-10-22 07:03:54.000000000
+
+Patch Set 4: Code-Review-1
+
+(1 comment)
+
+Line:816, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> Do this to fix the bug I think:
+
+  for (;;) {
+    int v = useCnt.intValue();
+    if (v == 0) {
+      break;
+    } else if (useCnt.compareAndSet(v, v - 1)) {
+       if (v == 1) {
+        doClose();
+      }
+      break;
+    }
+  }
+
+It won't go negative, but like before once it hits zero its going to close the repository. While its closing someone else better not call incrementOpen(). :)
+
+-------------------------------------
+author: Jayvion Booth
+date: 2015-10-22 07:27:50.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:816, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> I see the point, but the code make sense only if we remove synchronize blocks (otherwise no one will be able to change the counter anyway).
+
+So do you also propose to remove the synchronized() blocks here and in incrementOpen()?
+
+-------------------------------------

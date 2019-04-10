@@ -1,0 +1,166 @@
+DESCRIPTION
+
+MB-21568: Reconcile hashtable with disk following rollback
+
+After rolling back the disk store to the requested seqno a scan of the
+vbuckets hashtable must occur to ensure mutations in the hashtable
+which were written with a seqno above the rollback seqno are fixed up.
+
+This means some StoredValues will be set to a previous value or
+deleted.
+
+Some checks and fixes to the rollback code have also been made.
+* A missing close is addressed by using a wrapper class that will
+  RAII close each db.
+* A check for mid-checkpoint rollbacks is made, the current code allows
+  data-loss if a mid-checkpoint rollback were to be requested.
+
+Change-Id: Iabe43f59ed40931c1c97b65147b7a414d4ff7cc5
+
+
+COMMENTS
+
+author: Jim WNathalie Landryer
+date: 2016-11-09 12:09:42.840000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-09 12:09:51.556000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/1548/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-09 12:09:51.725000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/1757/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-09 12:09:51.868000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/1345/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-09 12:09:52.010000000
+
+Patch Set 2:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-watson/373/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-09 12:21:46.289000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/1757/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-watson/373/ : FAILURE
+
+Failure of a CTest test  ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-addresssanitizer-watson/373/ )
+
+AddressSanitizer issue: 452 byte(s) leaked in 12 allocation(s). ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-addresssanitizer-watson/373/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/1345/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/1548/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-11-09 16:23:26.066000000
+
+Patch Set 2: Code-Review-1
+
+(3 comments)
+
+Have you managed to determine what the requirements / expected behaviour is for mid-checkpoint rollback?
+
+Line:492, src/couch-kvstore/couch-kvstore.h -> Worth explicitly deleting the copy/move/assignment operators?
+
+Line:3897, src/ep.cc -> Comment needs updating.
+
+Line:3913, src/ep.cc -> I'm not sure how easy it is, but have you considered using the checkpoint manager to iterate over the items which have been modified and hence need rolling back?
+
+I know rollback should be a  rare operation, but with this callback we'll need to visit every element in the hashtable, as opposed to just visiting the subset in the checkpoint manager of what hasn't been persisted.
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-11-09 16:27:25.876000000
+
+Patch Set 2:
+
+> (3 comments)
+ > 
+ > Have you managed to determine what the requirements / expected
+ > behaviour is for mid-checkpoint rollback?
+
+As said on MB, this is currently very drafty!  
+
+Mid-point rollbacks will induce data loss, unless all keys between the rollback disk header and the mid-point are re-written.  I've disabled a mid-point rollback in this commit (forces rollback to 0)
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2016-11-09 17:30:28.781000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:3913, src/ep.cc -> If you go the chkmgr way, then rollback will have to register a cursor with chkmgr and also ensure that cursor is not dropped.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-11-09 17:33:36.758000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:3913, src/ep.cc -> Well, we could basically "clone" the persistence cursor at the point of the rollback request - we wouldn't necessary need to maintain it beforehand.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2016-11-09 22:31:16.120000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:3926, src/ep.cc -> Shouldn't it be unlocked_del like http://src.Piper Jefferson.org/source/xref/watson/ep-engine/src/ep.cc#3925 ?
+Why soft delete ?
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-11-14 10:18:55.152000000
+
+Change could not be merged due to a path conflict.
+
+Please rebase the change locally and upload the rebased commit for review.
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-11-16 16:57:14.775000000
+
+Change could not be merged due to a path conflict.
+
+Please rebase the change locally and upload the rebased commit for review.
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-11-16 18:02:44.693000000
+
+Change has been successfully cherry-picked as b20aeb6170dd9092e97c5e9346125747f3312a39 by Ashlee Kent
+
+-------------------------------------

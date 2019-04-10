@@ -1,0 +1,170 @@
+DESCRIPTION
+
+Add support for custom merge drivers into JGit
+
+This extracts all "text only" logic from the ResolveMerger into a
+separate TextMergeDriver.
+
+Custom drivers will be contributed through the
+MergeDriverRegistry added by this commit, though the new
+TextMergeDriver is not contributed through it since it is used
+as a default when no custom driver is registered for a given file.
+
+Bug: 418149
+Signed-off-by: Gustavo Green xxx@xxx.xxx
+Change-Id: I1841dce144480822cf16b5b1100feffe40c6f907
+
+
+COMMENTS
+
+author: Gustavo Green
+date: 2014-03-06 09:00:55.000000000
+
+Uploaded patch set 9.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-03-06 09:16:43.000000000
+
+Patch Set 9:
+
+Build Started https://hudson.eclipse.org/egit/job/jgit.gerrit/4794/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-03-06 09:28:49.000000000
+
+Patch Set 9: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/jgit.gerrit/4794/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2014-06-25 16:22:27.000000000
+
+Patch Set 9: Code-Review-1
+
+(20 comments)
+
+Line:566, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> Previously this method processEntry() was not dealing directly with content merges. It did all non-content-merge operations direclty in this method and factored out everything dealing with content merge (File I/O, Streams) into own methods. 
+
+You now inlined reading and writing content into this method making it eaven bigger. I suggest that you factor out all content merge topics into own methods? One method triggering the content merge (finding the right driver, opening closing content streams) and one writing the merge result.
+
+Line:574, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> the javadoc about TreeWalk.getPathString() warns about the bad performance of this method and that it shouldn't be called more then once for the same path. The old code failed to do so and was calling getPathString() often. Now you introduced a variable to store this. Maybe you can add this to the beginning of processEntry() and let all other calls to getPathString use this.
+
+Line:578, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> That will create internally an array with initially 32 bytes. The array will be increased as need with costly copy operations. I would help java and specify a size when creating the ByteArrayOutputStream. 1.5*max(len(ours), len(theirs)) or something like that.
+
+Line:649, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> I agree.
+
+Line:655, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> I would give another name to the mergeAlgorithm variable. It hides a field and maybe other readers of this code get confused in the later parts of the code and think you still use the mergeAlgorithm from the field
+
+Line:692, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> same argument as in the other isWorkTreeDirty method. Please choose a different parameter name.
+
+Line:703, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> That's tricky. You introduced a new parameter to this method but choosed a parameter name which matches a field name. So the parameter hides the field. I would make it more explicit that you don't want to work with the field by choosing a different name.
+
+Line:793, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> Why do you need parameters repository,ours,theirs,base? You only need the path to find the right driver.
+
+Line:899, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> Right. Returning merge results is becoming more complicated by introducing merge drivers. There may be no good generic way to return it from a resolve merge.
+On the other hand: do you really think that a resolve merger using textual merge should not somehow be able to present his merge results also on chunk-level. In file A.txt I found a conflict beginning at line X in the common ancestor. Ours wants to add "xxx", theirs want "y".
+
+But you are right, maybe it should be the responsibilty of the Mergers to present low-level merge results.
+
+Line:139, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/MergeDriverTest.java -> Maybe you can add a test where ask the registry for multiple pathes and get back different MergeDrivers. I would like to see that I get ours for one path and theirs for another.
+
+Line:171, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/MergeDriverTest.java -> interesting test case. I was expecting that if both sides add a file then git would consider this as "tivial merge".Learned something.
+
+Line:246, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/MergeDriverTest.java -> No test for a driver throwing a IOException?
+
+Line:54, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeDriverRegistry.java -> please remove the trailing blank
+
+Line:57, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeDriverRegistry.java -> This registry works with static methods. An application using jgit may want to deal with multiple repositories. With your code we have only one big registry for merge drivers regardless with how many git repositories I am dealing. Can this work? I thought that the registry for merge drivers must be something specific for a repository. I would have expected a registry to be retriveable from a Repository object.
+
+E.g. in my Java App I do
+
+   Git.open("/git/a");
+   Git.open("/git/b");
+
+But the config /git/a/.git/config contains a different merge driver for "*.txt" than the one in /git/b/.git/config . How can my java program find out which driver is there for /git/b ?
+
+Line:114, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeDriverRegistry.java -> And if not? I would say "... or null if no driver was registered ..."
+
+Line:115, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeDriverRegistry.java -> Can I associate a pattern explicitly with the default merge driver? E.g. I write a merge driver for everything but java files. For *.java files I would like to use the default merge driver. If you would allow to specify a "default driver" then I could say
+
+  associate("*", "myDriver");
+  associate("*.java", DEFAULT);
+
+Line:146, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeDriverRegistry.java -> If the given path contains "/" then you completely ignore everything before the last "/". You only take the last segment of the path into account and give it to the PathMatcher. How will PathMatcher be able to differentiate between "src1/a.txt" and "src2/a.txt". This code will handle "src1/a.txt" in the same manner as "src2/a.txt" and this can't be intendet, or?
+
+Look at this test which fails where he shouldn't:
+
+		MergeDriverRegistry.clear();
+		MergeDriverRegistry.associate("src1/*.txt", ours.getName());
+		MergeDriverRegistry.associate("src2/*.txt", theirs.getName());
+		MergeDriverRegistry.associate("**/*.bin", failing.getName());
+		assertSame(failing, MergeDriverRegistry.findMergeDriver("src1/a.bin"));
+		assertSame(ours, MergeDriverRegistry.findMergeDriver("src1/a.txt"));
+		assertSame(theirs, MergeDriverRegistry.findMergeDriver("src2/a.txt"));
+
+Line:54, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeDriver.java -> trailing whitespace!
+
+Line:61, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeDriver.java -> What is if both versions have changed but they have the same content. Then we will also not call this merge driver, or?
+
+Line:98, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeResult.java -> But what do we do if the MergeResult is created for merging two empty sequences? This is definitly no conflict and still sequences is empty.
+
+I would suggest to add an explict setter for containsConflicts. Optionally we could also add a constructor which takes "containsConflicts" as parameter.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2014-10-29 06:32:55.000000000
+
+Patch Set 9:
+
+Ping
+
+What is the status on this change and the changes depending on it? Is it still needed? Talked with Mikael yesterday about it. But it's not clear to me which of the changes are still active
+
+-------------------------------------
+author: Gustavo Green
+date: 2014-10-29 13:03:16.000000000
+
+Patch Set 9:
+
+(4 comments)
+
+Hi Christian,
+
+The last review on this change, though legitimate, requires too much rework on the patch (the mistake I made in MergeDriverRegistry preventing multiple repository to provide different merge drivers for the same glob). I already have a good dozen reviews pending on egit and maintaining these with the occasional rebase is proving much of a headache already. Furthermore, we are more interested in the work on support for git attributes (review 35377) and commit hooks (still a wip) and have switched our resources on that for the moment.
+
+This work on the merge drivers has been put on hold on our side since we'd rather see other reviews submitted. It can serve as an implementation basis for someone else that would want to introduce drivers into jgit... which might even be made easier once we support the gitattributes.
+
+The in-line comments I add with this review I actually wrote a few months ago. I leave them in since they might have some useful info for a future implementer taking this task back up.
+
+Line:171, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/MergeDriverTest.java -> I think the basis on this decision was that in the case of "one deleted, one changed", there can be no data loss in taking the "changed" side... whereas in the case of "both added", there _is_ a loss of data, except if both added files are binary identical, but I doubt that the decision making tests that far :).
+
+Line:246, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/MergeDriverTest.java -> Hummm, looking at this now, did I even test this failure? We need to add tests for both this driver and one throwing an IOE.
+
+Line:57, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeDriverRegistry.java -> You are totally right... This needs to be revised...
+
+Line:61, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeDriver.java -> _If_ I am correct, the decision making doesn't test the content before deciding to call the drivers. We should probably add a test to check and enforce whichever behavior feels the best (IMHO, the merge driver should be called in such a case : it is its decision to conclude for a pseudo conflict and what to do in such cases).
+
+-------------------------------------
+author: Zachary Orozco
+date: 2014-11-02 21:55:18.000000000
+
+Patch Set 9:
+
+(1 comment)
+
+Line:61, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeDriver.java -> Interesting question: I tried it out. The merge algorithm (e.g. recursive-merge) will decide whether a content merge is needed (and therefore a custom merger driver should be called). To decide he will also look at the content. If two branches change a file to the same content and you merge these branches then already the merge algorithm sees that there is no need for content merge. I tried it out with native git: no merge driver is called if both sides changed a file to the same content.
+
+-------------------------------------
+author: Gustavo Green
+date: 2015-02-10 08:56:20.000000000
+
+Abandoned
+
+Abandonned as per discussion on http://dev.eclipse.org/mhonarc/lists/jgit-dev/msg02821.html
+
+-------------------------------------

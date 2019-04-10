@@ -1,0 +1,99 @@
+DESCRIPTION
+
+Bug 500230 - The org.eclipse.egit.ui plugin always starts in the UI thread
+
+Change-Id: I65e3c5fb1bf371983fc98f4664e2436f6424f9b4
+Signed-off-by: Lucia Hendrix xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Lucia Hendrix
+date: 2016-08-24 18:26:22.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-08-24 18:26:28.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/8995/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-08-24 18:32:22.000000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/8995/ : FAILURE
+
+-------------------------------------
+author: Jayvion Booth
+date: 2016-08-24 18:58:42.000000000
+
+Patch Set 1: Code-Review-2
+
+I've asked dor some details on the bug. Right now it is not clear from the commit message and from bug which problem this patch is supposed to solve.
+
+-------------------------------------
+author: Isis Velasquez
+date: 2016-09-01 16:04:29.000000000
+
+Patch Set 1: Code-Review-1
+
+(2 comments)
+
+This seems to be the right direction, but this patch needs a few improvements and some important verification of whether asynchronous initialization is acceptable here.
+
+Line:6223, org.eclipse.egit.ui/plugin.xml -> I don't think the specific extensions should be changed. The Activator is IMO the only thing that requires change.
+
+Line:302, org.eclipse.egit.ui/src/org/eclipse/egit/ui/Activator.java -> I believe introducing asynchronism here is a the right approach. However, are we sure it won't cause problem to EGit?
+Also, rather than using untrackable asyncExec, it would be better to use a (non-UI) job so we can easily track it and bind it to a progress monitor if necessary.
+
+-------------------------------------
+author: Lucia Hendrix
+date: 2016-09-01 20:26:56.000000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:6223, org.eclipse.egit.ui/plugin.xml -> I think the issue happens because the services ext. point isn't implemented properly. The ext. point starts its plugin in the UI thread during the initialization of the workbench.
+
+Line:302, org.eclipse.egit.ui/src/org/eclipse/egit/ui/Activator.java -> JFaceResources.getResources has to be run in the UI thread. The egit.ui plugin expects that it will be always started in the UI thread which is, probably, a bad assumption.
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-09-07 22:16:01.000000000
+
+Patch Set 1:
+
+(2 comments)
+
+Line:302, org.eclipse.egit.ui/src/org/eclipse/egit/ui/Activator.java -> I don't think using asyncExec is the right fix. Instead I'd use code like
+
+  if (Display.getCurrent() != null) {
+    resourceManager = new LocalResourceManager(JFaceResources.getResources(Display.getCurrent()));
+  } else {
+    resourceManager = new LocalResourceManager(JFaceResources.getResources(PlatformUI.getWorkbench().getDisplay()));
+  }
+
+And maybe it's even best to create this lazily in getResourceManager() below instead of here.
+
+Line:336, org.eclipse.egit.ui/src/org/eclipse/egit/ui/Activator.java -> I'm entirely unsure about this one. For me, it's still not proven that we're doing long-running operations here. Also, I'm not sure this won't cause other problems, for instance bug 460018, bug 364569, bug 336689. All of which should be a non-issue for EGit currently as a side effect of registering the RepositorySourceProvider via plugin.xml. (Which admittedly was an unintended side-effect, but which -- as long this activator doesn't do long-running operations -- should not be a problem either.) And finally I'm worried about not having any real control over when exactly this asyncExec runs.
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-09-12 06:00:43.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:302, org.eclipse.egit.ui/src/org/eclipse/egit/ui/Activator.java -> See https://git.eclipse.org/r/#/c/80882/
+
+-------------------------------------

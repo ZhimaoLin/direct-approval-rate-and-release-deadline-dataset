@@ -1,0 +1,77 @@
+DESCRIPTION
+
+Index Definition Life Cycle
+- Use projector idempotent API for boostrap
+- Update index topology (deployment plan) upon index creation/deletion
+- Stream Manager listens to index topology for finding out new index
+- Stream Manager notifies projector on index deployment changes using projector API
+- Clean up event manager implementation
+- Fix bugs on timer, topology
+- Add/Improve stream_test
+
+Change-Id: I23eb1919dd2f1212671d33a97980e8eb58a7306b
+
+
+COMMENTS
+
+author: Dominique Stanton
+date: 2014-12-01 20:30:41.679000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Leonel Abbott
+date: 2014-12-02 07:25:48.294000000
+
+Patch Set 1:
+
+(13 comments)
+
+Line:160, secondary/manager/stream_mgr.go -> Is it possible that StreamManager.Close() is called after the above code executes but before starting s.run() routine ?
+Maybe it okay to avoid this check ?
+
+Line:270, secondary/manager/stream_mgr.go -> What if len(allInstances) == 0 ? Especially when topic-stream is yet to be started.
+
+Line:878, secondary/manager/stream_mgr.go -> Not sure whether this loop needs to monitor whether feed has started SUCCESSFULLY.
+
+Line:938, secondary/manager/stream_mgr.go -> This is folded into ConnectionError, if feed is configured to prevent slow indexer node behaviour cascade into upstream then the connection will be closed to slow indexer.
+
+Line:43, secondary/manager/stream_admin.go -> Yes.
+
+Line:49, secondary/manager/stream_admin.go -> This allowed.
+
+remove instance - DelInstance()
+deactive vbucket - ShutdownVbuckets()
+restart vbucket - RestartVbuckets() 
+repair connection - RepairEndpoints()
+
+Line:52, secondary/manager/stream_admin.go -> is the above map is bucketname->timestamps ? If so should we need an array of timestamps ?
+
+Line:60, secondary/manager/stream_admin.go -> For `streamId` can use the topic-name that was supplied to projector while starting the feed ?
+topic-name is expected to be unique.
+
+Line:150, secondary/manager/stream_admin.go -> This timeout may not be required because <-donech will block anyway.
+
+Line:164, secondary/manager/stream_admin.go -> Should we kill the other workers ?
+
+Line:174, secondary/manager/stream_admin.go -> Can we do a retry on the failed set of workers ? We can also do a retry on full set of workers and most likely it will end up as NOOP.
+
+Btw, I remember discussing the following -
+//   - Before attempting a retry, caller should cross-check with cluster
+//     manager (eg. ns_server) for,
+//     * bucket's sanity
+//     * latest VBMap
+
+I am assuming that AddIndexToStream could be called with empty set of instances but with a new sub-set of request timestamp.
+
+Line:492, secondary/manager/stream_admin.go -> May be we should check for bucket sanity and vbmap here ?
+
+Line:760, secondary/manager/stream_admin.go -> Is there a guarantee that a bucket will be hosted by the same set of nodes as any other bucket in KV ? If so we can just return the list of nodes as ([]string, error)
+
+-------------------------------------
+author: Leonel Abbott
+date: 2014-12-02 07:26:07.235000000
+
+Patch Set 1: Code-Review+1
+
+-------------------------------------

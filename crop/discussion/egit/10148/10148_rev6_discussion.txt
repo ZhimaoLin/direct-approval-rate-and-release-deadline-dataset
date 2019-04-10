@@ -1,0 +1,85 @@
+DESCRIPTION
+
+GitFileHistory should return the full history of its target.
+
+When using GitFileHistoryProvider.getFileHistoryFor(IResource,...), a
+user expects the full history of the target resource to be returned,
+except if the SINGLE_REVISION or SINGLE_LINE_OF_DESCENT flags are
+positioned.
+
+The SINGLE_REVISION flag is properly handled, however when no flags are
+set, EGit previously returned only the commits descending from HEAD,
+without considering the history that exists on other branches or
+references.
+
+This adds specific tests to make sure of the behavior when either no
+flag or the SINGLE_REVISION flag are set.
+
+The history's "getTarget" and "getContributors" methods are tested to
+return respectively all direct children or all direct parents of the
+given commit.
+Both now support some of Team's quirks, such as the synchronize view
+returning its own implementations of IFileRevisions instead of the
+supplied CommitFileRevisions. This required opening GitRemoteResource as
+API (previously package-protected) so that we could adapt the file
+revisions into a format known by EGit.
+
+DRAFT: the current implementation exhibits a lot of issues when
+exerted through pure team APIs. A specific test aimed at that is in a
+failing, draft status.
+
+Bug: 398982
+Change-Id: Id596d4501cdca815e9563a1f7f4a1d58bc3920c9
+
+
+COMMENTS
+
+author: Gustavo Green
+date: 2013-03-05 15:47:42.000000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-03-05 15:47:47.000000000
+
+Patch Set 6:
+
+Build Started https://hudson.eclipse.org/sandbox/job/egit.gerrit/4241/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-03-05 15:51:50.000000000
+
+Patch Set 6: Fails
+
+Build Failed 
+
+https://hudson.eclipse.org/sandbox/job/egit.gerrit/4241/ : FAILURE
+
+-------------------------------------
+author: Gustavo Green
+date: 2013-03-05 16:01:51.000000000
+
+Patch Set 6: (2 inline comments)
+
+This reverts to the state of draft, since testing this through pure Team APIs exhibits a number of problematic points. Please see inline comments for information on critical issues with this contribution. Namely:
+
+- would it be acceptable to have discouraged accesses on Team (such as what's features by CVSSyncTreeSubscriber)?
+- this change will most likely be dependant on change 10654 ( https://git.eclipse.org/r/#/c/10654 ) for the returned information to be accurately tested.
+
+Line:348, org.eclipse.egit.core.test/src/org/eclipse/egit/core/test/HistoryTest.java -> The file revision returned here is a ResourceVariantFileRevision. It has no timestamp, no author, no comment... in other words most information is missing from there. This could be improved through GitResourceVariantTreeSubscriber#getDiff(), by using our own SyncInforConverter instead of the default, Team one. That is what's done by CVS (see CVSSyncTreeSubscriber and CVSSyncInfoToDiffConverter), though this change would require discouraged access on Team's SyncInfoConverter.
+
+Line:351, org.eclipse.egit.core.test/src/org/eclipse/egit/core/test/HistoryTest.java -> We expect "commit1" as the common ancestor of our comparison. However, this is not what EGit tells us. It gives us "branchCommit1" as the common ancestor of "branchCommit1" and "masterCommit3", which is obviously wrong. Merging change https://git.eclipse.org/r/#/c/10654/2 makes it a lot better: EGit then tells us that the common ancestor is masterCommit2, which is indeed the branching point... but not our expected ancestor: this is a Diff for File1, the common ancestor "should" be masterCommit1. I'll try and see if that can be improved through the aforementionned change 10654.
+
+-------------------------------------
+author: Gustavo Green
+date: 2013-03-15 10:49:41.000000000
+
+Patch Set 6: Abandoned
+
+This change is not up-to-date with its dependency, I23e0f1e75b9c6d476f8ed5a24deac7cc7b64dd42 .
+
+I'll update a new version with proper dependencies a updated code once cleaned up.
+
+-------------------------------------

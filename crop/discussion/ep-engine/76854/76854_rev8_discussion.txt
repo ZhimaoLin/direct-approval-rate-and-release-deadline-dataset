@@ -1,0 +1,86 @@
+DESCRIPTION
+
+MB-23936: Use Threadlocal variables to accumulate stats
+
+Currently when we allocate/deallocate memory, we update the per bucket
+variable `totalMemory`. Mutiple threads contend on this variable heavily
+as mem allocation/deallocation happen often. The primary idea of
+this commit is to maintain threadlocal mem counters for each bucket and
+merge it to the `totalMemory` once the local counter reaches a threshold
+either based on size or no.of times the local counter has been updated.
+This does show a notable increase in overall performance.
+
+Limitations:
+-----------
+- We create one thread local variable per bucket. Different OS'es seem
+  to enforce different limits on the no.of tlv. Although we have a hard
+  limit of 10 buckets, I'm noting this here for future reference.
+  -> [NetBSD:256 Linux:1024 OSX:512 Windows:1088]
+
+- Windows does not seem to provide an api for releasing the mem
+  allocated for a thread-local on thread exit in a way like pthreads do.
+  So there will be a small leak of about (3*long) on every bucket
+  unload.
+
+- Valgrind might say that the unit tests have leaks on the
+  threadlocals. This is because, in the tests, bucket init happens on
+  the main thread & when main thread exits the program it does not
+  call pthread_exit, so the dtors are not called.
+
+Change-Id: Id14ced2776a29afae18831b372140dd028136b32
+
+
+COMMENTS
+
+author: Trace Williamson
+date: 2017-04-24 18:45:22.424000000
+
+Uploaded patch set 8.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-04-24 19:11:57.548000000
+
+Patch Set 8: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4738/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/5960/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5440/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6214/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/16.04-ep-engine-addresssanitizer-master/16/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-25 09:49:41.733000000
+
+Patch Set 8:
+
+(1 comment)
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-25 09:50:34.762000000
+
+Patch Set 8: Code-Review-1
+
+Still needs the documentation (dpcs/stats.org) updating, and some quantitative numbers adding to the commit message.
+
+-------------------------------------
+author: Trace Williamson
+date: 2017-04-25 18:41:32.151000000
+
+Patch Set 8:
+
+I'm adding the some perf data to the commit message. Had a discussion with Rigby today & here is why I was  hesitant to add perf numbers to a commit message. xxx@xxx.xxx Pope & others]
+
+- The tests were done 2-3 weeks back after which the master has moved. I felt that it would be difficult  to guarantee that this change would give the same numbers over  the master at the time of merge.
+
+- Any sort of benchmark is tied to the machine/network spec/setup  in which it is done. We being opensource I thought it would be difficult for external devs to reproduce the result to show precise numbers.
+
+-------------------------------------

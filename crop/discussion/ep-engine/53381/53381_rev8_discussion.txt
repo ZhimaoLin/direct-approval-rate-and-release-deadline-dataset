@@ -1,0 +1,159 @@
+DESCRIPTION
+
+Fix ThreadSanitizer race. Move to hrtime in Scheduler
+
+Use hrtime instead of timeval for the global thread pool
+This has small improvements in memory and cpu usage.
+Also fixes several ThreadSanitizer races from unit tests.
+
+Change-Id: I78fdddb832251fc062058c04f75f8d22c4c2f68d
+
+
+COMMENTS
+
+author: Ellie Kidd
+date: 2015-07-23 00:21:10.976000000
+
+Uploaded patch set 8.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-07-23 00:21:18.085000000
+
+Patch Set 8:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/593/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-07-23 01:07:12.254000000
+
+Patch Set 8: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/593/ : FAILURE
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-07-23 08:02:13.456000000
+
+Patch Set 8: -Verified
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/598/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-07-23 08:12:01.235000000
+
+Patch Set 8: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/598/ : FAILURE
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-07-23 08:26:26.557000000
+
+Patch Set 8: Code-Review-1
+
+(11 comments)
+
+I like the new approach - thanks!
+
+Most of the comments are pretty minor / stylistic, but the issues with hrtime_t being treated as micoseconds instead of nanoseconds need fixing.
+
+Line:49, src/tasks.cc -> Nit: C++ style would be:
+
+ waketime = hrtime_t(-1);
+
+Line:56, src/tasks.cc -> As previous, hrtime_t is nanoseconds so we need another 1e3 multiplication here.
+
+I'd also suggest using a C++ style conversion:
+
+ waketime += hrtime_t(secs * 1000000000);
+
+Line:89, src/taskqueue.cc -> Careful - hrtime_t is actually nanoseconds, not microseconds. I think some additional conversion is required here.
+
+Line:109, src/taskqueue.cc -> Nit: C++ style would be:
+
+ t.waketime = hrtime_t(-1);
+
+Line:208, src/taskqueue.cc -> Nit: C++ style preferred:
+
+ waktime = hrtime_t(-1);
+
+Line:247, src/taskqueue.cc -> Might was well declare and initialise on the same line - you can make it const then.
+
+Line:157, src/access_scanner.cc -> Nit: You can move _waketime down to ~line 190 as it's not used before then.
+
+Line:216, src/access_scanner.cc -> Given this is the same sequence of code as in the constructor; perhaps refactor into a helper method - updateAlogTime() or similar?
+
+Line:116, src/executorthread.h -> Both of these can be marked as const methods.
+
+Line:537, src/executorpool.cc -> It looks like most of the uses of SyncObject::wait(const struct timeval &tv) have been removed; and we are now using the (much simpler!) SynbObject::wait(double) version. If we have removed them all can we delete SyncObject::wait(const struct timeval &tv)? IMHO it's a pretty nasty API and would be great if we could delete it.
+
+You could also consider changing the SyncObject::wait(double) to  SyncObject::wait(hrtime_t), or if we still use the double version elsewhere add a spearer hrtime_t. That will remove the need for a lot of the seconds <-> nanoseconds conversion in the code, and int <-> float conversion also.
+
+Line:700, src/executorpool.cc -> Nit: IMHO it can be confusing to reuse a variable (abstime) for a different task than it was originally created for. Why not just define a new const uint64_t curTime variable?
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2015-07-23 10:03:44.379000000
+
+Patch Set 8: Code-Review-1
+
+(3 comments)
+
+Line:89, src/taskqueue.cc -> That's correct, gethrtime will return nanoseconds.
+
+Is there any risk on systems with low (erm high) clock duration that snooze_usecs will be 0? I.e. the events were so fast they could not be measured by gethrtime. On windows we have issues where gethrtime duration is 100, so fast events cannot be observed very well. We've addressed these issue before by adding in the gethrtime_period()
+
+Line:199, src/taskqueue.cc -> Is it possible to put the missing 'e' in i.e. hrtime_t wakeTime; (camel case appears to be the style here)
+
+Line:67, src/executorthread.h -> static_cast or hrtime_t(-1)
+
+-------------------------------------
+author: Ellie Kidd
+date: 2015-07-23 17:30:35.080000000
+
+Patch Set 8:
+
+(13 comments)
+
+Thanks Dave, Jim for the insightful comments. Its great to be working on master branch where 'big' changes to core components are acceptable.
+
+Line:49, src/tasks.cc -> Done
+
+Line:56, src/tasks.cc -> Done
+
+Line:89, src/taskqueue.cc -> Thanks Dave, Jim. If the snooze time is zero the thread simply wakes up and does another polling round before trying to go back to sleep. So spurious wakes are not as much a problem as indefinite sleeps.
+
+Line:109, src/taskqueue.cc -> Done
+
+Line:199, src/taskqueue.cc -> Done
+
+Line:208, src/taskqueue.cc -> Done
+
+Line:247, src/taskqueue.cc -> Done
+
+Line:157, src/access_scanner.cc -> Done
+
+Line:216, src/access_scanner.cc -> Done
+
+Line:67, src/executorthread.h -> Thanks Jim
+
+Line:116, src/executorthread.h -> Done
+
+Line:537, src/executorpool.cc -> I totally agree with your suggestion, will fix it in the next patchset!
+
+Line:700, src/executorpool.cc -> No problem, thanks Dave!
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-07-23 23:14:54.730000000
+
+Change has been successfully cherry-picked as 5f3eb257e5a1ab1426de6fb3b37deb742c3616fe
+
+-------------------------------------

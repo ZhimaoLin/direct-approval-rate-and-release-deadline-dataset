@@ -1,0 +1,172 @@
+DESCRIPTION
+
+[Ephemeral Buckets]: Add a class that stores ordered sequence of items in memory
+
+This commit adds an abstract base class 'SequenceList' that provides apis
+to store ordered sequence of items in memory.
+
+'BasicLinkedList' is a concrete class derived from 'SequenceList' that
+implements in-memory ordered seq of items stored in our multi-threaded,
+monotonically increasing seq model. 'BasicLinkedList' uses a boost intrusive
+doubly linked list. It is essentially a linked list of 'StoredValues'.
+
+'BasicLinkedList' works in tandem with already existing 'HashTable'
+to achieve O(1) writes/updates and O(1) reads. Range read is also
+implemented which is necessary for an in-memory DCP backfill. Range reads
+provide point-in-time snapshots which is essential for our incremental DCP.
+
+'BasicLinkedList' is NOT heavily multi-threaded. Writer threads and
+'cleanStaleItems' threads block each other. (Stale items are a consequence
+of point-in-time snapshots).
+
+Since 'HashTable' and 'SequenceList' must work in tandem, some of the
+functionalities that occur in 'HashTable' during a write have been moved
+to 'VBucket' and a new class 'EphemeralVBucket' has been derived from
+'derived' to do things differently in an Ephemeral Bucket.
+
+This code is integrated with EPBucket for set() and is yet to be
+integrated for the ephemeralBucket.
+
+Finally a module test 'ephemeral_vb_test' has been added as a module test.
+
+Note: This is still not fully integrated with the kv-engine.
+
+Change-Id: I31bde3ea25509504fa8cc23a5506e7b14fa16bc8
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2016-11-30 02:53:35.419000000
+
+Uploaded patch set 11.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-30 02:53:44.416000000
+
+Patch Set 11:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1893/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-30 02:53:44.594000000
+
+Patch Set 11:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/749/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-30 02:53:44.783000000
+
+Patch Set 11:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1974/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-30 02:53:44.979000000
+
+Patch Set 11:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1583/ (4/4)
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2016-11-30 02:54:57.758000000
+
+Patch Set 11:
+
+Split commits coming soon
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-11-30 03:06:04.724000000
+
+Patch Set 11: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1893/ : ABORTED
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1974/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/749/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/1583/ : SUCCESS
+
+-------------------------------------
+author: Keira Washington
+date: 2016-11-30 03:36:39.803000000
+
+Patch Set 11:
+
+(10 comments)
+
+Line:486, src/vbucket.h -> The number of arguments here looks slightly (very) ridiculous and would be completely unreadable if anyone tried to set the `generateCas` argument
+
+Line:88, tests/module_tests/ephemeral_vb_test.cc -> You can avoid the below check if you dereference before the dynamic_cast. ie:
+
+     auto& mockLL = dynamic_cast<MockBasicLinkedList&>(*seqList.get());
+
+As dynamic cast will throw if you're casting a reference and it fails
+
+Line:90, tests/module_tests/ephemeral_vb_test.cc -> This should be an assert, you'll segfault if it the check fails
+
+Line:164, tests/module_tests/ephemeral_vb_test.cc -> std::vector supports the == operator (and seqno_t is a pod) so you should be able to do just do:
+
+    EXPECT_EQ(expSeqno, actualSeqno);
+
+Line:34, src/seqlist.h -> Here and in other places, prefer using over typedef (http://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rt-using)
+
+Line:99, src/seqlist.h -> Seems quite an important job, have you got an MB to track it? (and if so you should stick it here)
+
+Line:194, src/seqlist.cc -> Remove debug
+
+Line:233, src/seqlist.cc -> You should make your mutexes mutable so you can make this method const
+
+Line:33, src/hash_table.h -> Prefer enum class: http://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Renum-class
+
+Line:53, src/hash_table.h -> ditto
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2016-11-30 07:46:36.060000000
+
+Patch Set 11:
+
+(3 comments)
+
+Line:486, src/vbucket.h -> Agree this looks ugly. But again, this is legacy stuff, will change as part of code cleanup in future
+
+Line:33, src/hash_table.h -> This requires some amount of refactoring in entire ep-engine.
+Will do as part of a clean up in another commit, but not in this commit
+
+Line:53, src/hash_table.h -> This requires some amount of refactoring in entire ep-engine.
+Will do as part of a clean up in another commit, but not in this commit
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2016-11-30 08:17:17.861000000
+
+Patch Set 11:
+
+(7 comments)
+
+Line:88, tests/module_tests/ephemeral_vb_test.cc -> Cool
+
+Line:90, tests/module_tests/ephemeral_vb_test.cc -> Done
+
+Line:164, tests/module_tests/ephemeral_vb_test.cc -> Done
+
+Line:34, src/seqlist.h -> Done
+
+Line:99, src/seqlist.h -> MBs not created for Ephemeral buckets yet. We are still in development phase.
+
+Line:194, src/seqlist.cc -> Done
+
+Line:233, src/seqlist.cc -> Done
+
+-------------------------------------

@@ -1,0 +1,99 @@
+DESCRIPTION
+
+Added merge support to CommitCommand
+
+The CommitCommand should take care to create a merge commit if the file
+$GIT_DIR/MERGE_HEAD exists. It should then read the parents for the merge
+commit out of this file. It should also take care that when commiting
+a merge and no commit message was specified to read the message from
+$GIT_DIR/MERGE_MSG.
+Finally the CommitCommand should remove these files if the commit
+succeeded.
+
+Change-Id: 	I4e292115085099d5b86546d2021680cb1454266c
+Signed-off-by: Zachary Orozco xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Zachary Orozco
+date: 2010-05-20 14:27:35.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-05-20 15:44:01.000000000
+
+Patch Set 3: Looks good to me, but someone else must approve; IP review completed
+
+rebased to current master and externalized strings
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-05-20 16:50:33.000000000
+
+Patch Set 3: I would prefer that you didn't submit this; No score
+
+
+
+Line:30, org.eclipse.jgit/resources/org/eclipse/jgit/JGitText.properties -> Trailing whitespace
+
+Line:1375, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> See my note on ps2 again about an empty MERGE_HEAD file being a form of corruption.  But you may also be able to shorten the code up a bit here:
+
+  File mergeHeadFile = new File(gitDir, Constants.MERGE_HEAD);
+  byte[] raw;
+  try {
+    raw = IO.readFully(mergeHeadFile);
+  } catch (FileNotFoundException notFound) {
+    return new LinkedList<ObjectId>();
+  }
+
+  if (raw.length == 0)
+    throw new IOException("MERGE_HEAD file empty: " + mergeHeadFile);
+
+  LinkedList<ObjectId> heads = new LinkedList<ObjectId>();
+  for (int p = 0; p < raw.length; ) {
+    heads.add(ObjectId.fromString(raw, p));
+    p = RawParseUtils.nextLF(raw, p + Constants.OBJECT_ID_STRING_LENGTH);
+  }
+  return heads;
+
+Hmm, its not that much shorter (~5 lines?).  But the behavior matches C git better.  IIRC C git reads the first 40 characters from the line and ignores the rest of it.  Which is exactly what are doing above by using nextLF.
+
+Line:155, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> This test is actually unnecessary.  If parents is empty, we'll alloc an empty array, pass it down, and Commit will clone the empty array.  We can leave it in, or drop it.  I think the code reads cleaner without the test, and its really not much slower in the (really quite rare) initial commit case.
+
+Line:161, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> I would defer this cleanup until after the reference is updated.  If the update fails, the commit will be discarded.  Taking out the MERGE_HEAD file means we can't retry.
+
+Line:165, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> I wouldn't bother with the exists test.  These files are highly likely to exist, because that's how we determined the state earlier in this method... by testing for their existence.  Just delete them.  If the delete fails because its already gone, it returns false, and is therefore harmless.
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-05-20 17:52:47.000000000
+
+Patch Set 3: No score; No score
+
+
+
+Line:1361, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> Is there a real reason for this to happen, other than someone
+performing a merge in another process?
+
+Line:85, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> Use javadoc for commenting classes/fields/methods
+
+Line:170, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> Is it ok if delete() fail?. delete doesn't throw exceptions
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-05-20 17:56:15.000000000
+
+MISMATCHED INLINE COMMENT
+Line:1361, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> The MERGE_MSG file isn't really that important.  If MERGE_MSG wasn't written out, it just means the user needs to supply a commit message to us at commit time.  I wouldn't call that a fatal condition.  Its fine to ignore it when its not found.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-05-20 17:56:15.000000000
+
+MISMATCHED INLINE COMMENT
+Line:170, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> Robin, see my comment above on line 165.  Yes, its OK if the delete fails.  But only after the ref has been updated.
+
+-------------------------------------

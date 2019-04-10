@@ -1,0 +1,162 @@
+DESCRIPTION
+
+MB-23714: Make VBucketPtr deletion schedule the delete of the VBucket
+
+Using the std::shared_ptr Deleter this patch hooks into the deletion
+of the VBucket so that a specific AUXIO (for persistent buckets) or a
+NONIO (for ephemeral buckets) task performs the removal of VBucket
+resources. This to ensure that no front-end thread runs the removal of
+memory and more specifically the deletion of the disk data.
+
+The aim of this commit is also to ensure there's no "race" between a
+background task deleting the VB disk file when the VB has itself been
+recreated. This is achieved now by having the creation of a VB to
+increment the revision of the file and ensuring a delete can only
+delete the older revision of the VB.
+
+This has a few subtle changes, as only compaction or creation are
+moving the revision forward, no code paths move the revision back.
+
+1. A flush of the bucket which calls KVStore::reset would previously
+return all vbucket to a revision of 1. Again to ensure a delete task
+cannot delete a "live" file, the flush doesn't reset the revision
+number. So a flush of the bucket will result in deleted data, but
+with x.couch.4 etc...
+
+2. A delete of an individual vbucket has the same change. Previously
+after a delete, the revision was reset to 1. This is no longer the
+case and after the delete completes the revision is left unchanged.
+
+Change-Id: I40d2f5fd658d9f8dd28a671028544831518a90d0
+
+
+COMMENTS
+
+author: Jim WNathalie Landryer
+date: 2017-04-24 09:23:28.243000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-04-24 09:53:09.246000000
+
+Patch Set 5: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4719/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/5941/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5421/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6192/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-24 12:33:30.506000000
+
+Patch Set 5: Code-Review-1
+
+(12 comments)
+
+Code looks good. Mostly minor comments / documentation things.
+
+Line:234, src/ep_bucket.cc -> Prefer make_shared (ensures the control block is allocated with the object). 
+
+If there were issues with the type returned, I think you should be able to do something like:
+
+ return VBucketPtr(make_shared<EPVBucket>(...));
+
+Line:76, src/vbucketmap.h -> What do you think to making this also a bit more explicit - say something like dropVBucketAndPrepareDeferredDeletion (or something snappier along those lines?)
+
+Line:391, src/couch-kvstore/couch-kvstore.cc -> Is there any potential race here (I don't see a lock being acquired in this function - maybe some external locking?)
+
+Might be safer to increment first and then delete the old revision?
+
+Line:25, /COMMIT_MSG -> vbuckets ?
+
+Line:77, src/vbucketdeletiontask.cc -> I know you just moved this from elsewhere, but it would be nice if this used the newer std::chrono -based ProcessClock code (which is type-safe for the units).
+
+Line:1178, src/vbucket.h -> "we schedule the deletion?"
+
+Line:1178, src/vbucket.h -> triggered ?
+
+Line:1645, src/vbucket.h -> Probably worth documenting this.
+
+Line:2410, src/vbucket.cc -> As discussed, might be more explicit if this was renamed to something like "isDeferredDeletion()" / "isBackgroundDeletion" or similar - and then for unit tests which choose not to do this it's clearer what's happening.
+
+Line:449, src/couch-kvstore/couch-kvstore.h -> Maybe expand on what this results in.
+
+Line:65, src/vbucketdeletiontask.h -> Maybe mention this is used by Persistent (EP) buckets?
+
+Line:80, src/hash_table.cc -> As an aside, this is pretty nasty - can we now just rely on the ref-counted shared_ptr (conceptually visitor tasks should have a ref)?
+
+Maybe one for a follow-up patch?
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2017-04-25 08:17:09.400000000
+
+Patch Set 5:
+
+(9 comments)
+
+Line:234, src/ep_bucket.cc -> can't specify the deleter with make_shared
+
+http://stackoverflow.com/questions/34243367/how-to-pass-deleter-to-make-shared
+
+Line:391, src/couch-kvstore/couch-kvstore.cc -> the bucket's vb_mutexes provides locking for kvstore
+
+Line:77, src/vbucketdeletiontask.cc -> Done
+
+Line:1178, src/vbucket.h -> Done
+
+Line:1178, src/vbucket.h -> Done
+
+Line:1645, src/vbucket.h -> Done
+
+Line:2410, src/vbucket.cc -> Done
+
+Line:65, src/vbucketdeletiontask.h -> Done
+
+Line:80, src/hash_table.cc -> will look into it MB-24075
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2017-04-25 09:05:24.083000000
+
+Patch Set 5:
+
+(2 comments)
+
+Line:234, src/ep_bucket.cc -> but looking at allocate_shared
+
+Line:449, src/couch-kvstore/couch-kvstore.h -> Done
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-25 13:08:51.404000000
+
+Patch Set 5:
+
+(3 comments)
+
+Line:234, src/ep_bucket.cc -> Ah ok - didn't realise deleted couldn't be specified. If we need to stick with `new` then so be it - we don't actually have that many of these objects (and they are large), so allocating the object and control block together probably doesn't matter /too/ much.
+
+Line:391, src/couch-kvstore/couch-kvstore.cc -> Thanks for confirming.
+
+Line:80, src/hash_table.cc -> Cheers
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2017-04-26 09:43:35.327000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:76, src/vbucketmap.h -> Done
+
+-------------------------------------

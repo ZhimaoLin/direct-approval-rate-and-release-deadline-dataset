@@ -1,0 +1,100 @@
+DESCRIPTION
+
+JVMCBC-105: parse dp4 responses in QueryHandler
+
+Motivation
+----------
+Between DP4 and DP3, response format was modified and enriched.
+
+Modifications
+-------------
+Added new parsing steps for the new possible response sections :
+ - signature
+ - results (instead of resultset, still an array of json objects)
+ - warnings (array of error objects)
+
+ Modified initial parsing and GenericQueryReponse to include streams of
+ errors (instead of putting them in info), an observable for the status
+ that can only come once all rows have been processed and for IDs (with
+ a requestId and a clientContextId).
+
+ Modified parsing of existing steps to accomodate changes:
+  - resultset is now "results"
+  - info section is now "metrics", with a fixed schema (named fields,
+  not a generic structure)
+  - errors can be multiple (same format as warnings)
+
+ Modified test data to reflect changes in response format, modified
+ and added tests.
+
+ Note: clients (the java SDK) should be updated to take these changes
+ into account:
+  - ResponseStatus is not definite (there still could be execution
+  errors, one has to also look at queryStatus())
+  - errors (and warnings) could be multiple, and are fed into errors()
+  - info() now contains a single element with named metric fields
+
+Result
+------
+QueryHandler now can parse DP4 responses. Tests pass.
+
+Change-Id: Ia38e7db2676ec2c0319412219ee4fe92b2ef17df
+
+
+COMMENTS
+
+author: Estrella Humphrey
+date: 2014-12-30 17:22:34.986000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Estrella Humphrey
+date: 2014-12-30 17:23:19.259000000
+
+Patch Set 1: Verified+1
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2014-12-30 17:46:20.380000000
+
+Patch Set 1:
+
+(7 comments)
+
+some initial comments, need to do more thorough review tomorrow
+
+Line:201, src/main/java/com/couchbase/client/core/endpoint/query/QueryHandler.java -> can we make this more flexible to read to the next "terminal character", so that if the length changes we don't break?
+
+Line:207, src/main/java/com/couchbase/client/core/endpoint/query/QueryHandler.java -> what is the 27? maybe add static variables with docblocks as explanations? otherwise magic numbers are hard to read
+
+Line:2, src/test/resources/com/couchbase/client/core/endpoint/query/shortClientId.json -> underscore naming?
+
+Line:1, src/test/resources/com/couchbase/client/core/endpoint/query/withEscapedQuotes.json -> also use _ naming instead of camel case to be consistent?
+
+Line:76, src/main/java/com/couchbase/client/core/message/query/GenericQueryResponse.java -> if this is opaque, should we be also sending a request id? (that is generated automatically in the generic request and used in the handler?)
+
+Line:1, src/test/resources/com/couchbase/client/core/endpoint/query/noPretty.json -> underscore naming
+
+Line:2, src/test/resources/com/couchbase/client/core/endpoint/query/noClientId.json -> underscore naming
+
+-------------------------------------
+author: Estrella Humphrey
+date: 2014-12-30 18:08:02.178000000
+
+Patch Set 1:
+
+(4 comments)
+
+as told in a recent email, request_id became requestID so the camel casing is consistent with latest version of query engine
+see https://docs.google.com/document/d/1Uyv4t06DNGq7TxJjGI_T_MbbEYf8Er-imC7yzTY0uZw/edit#
+
+Line:201, src/main/java/com/couchbase/client/core/endpoint/query/QueryHandler.java -> good idea, not even sure that the UUID is guaranteed to be fixed size now that I think of it (not explicit in spec)
+
+Line:207, src/main/java/com/couchbase/client/core/endpoint/query/QueryHandler.java -> definitely agree. it is in fact the window in which the optional attribute "clientContextID" can be present (size of the attribute name + spaces, separators, etc...
+
+Line:76, src/main/java/com/couchbase/client/core/message/query/GenericQueryResponse.java -> the client (sdk user) should be able to set one himself, only the server can truncate it (it truncates to 64 bytes worth of UTF8 characters)
+
+Line:2, src/test/resources/com/couchbase/client/core/endpoint/query/noClientId.json -> in latest code, they changed that to camelCase (see mail we received yesterday) so requestID is consistent ;)
+
+-------------------------------------

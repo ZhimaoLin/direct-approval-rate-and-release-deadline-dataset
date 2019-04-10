@@ -1,0 +1,113 @@
+DESCRIPTION
+
+Fix potenial deadlock around Connmap::relaseLock / connLock
+
+As reported by ThreadSanitizer (see below), we have a lock inversion
+creating a potential deadlock in Connmap, related to how we shutdown
+connections:
+
+There exists a cycle in lock order graph:
+
+ M2176 (Connmap::releaseLock in ConnMap::notifyPausedConnection() connmap.cc:235) =>
+   M128093 (mock_server::conn_struct::mutex) =>
+     M2177 (Connmap::connsLock in TapConnMap::shutdownAllConnections(), connmap.cc:770) =>
+       M2176 (Connmap::releaseLock in TapConnMap::shutdownAllConnections(), connmap.cc:777) DEADLOCK!
+
+The problem appears to be that in TapConnMap::shutdownAllConnections()
+we first acquire {connsLock}, then acquire {releaseLock}; all while
+holding the cookie lock.
+
+Fix is to drop releaseLock in shutdownAllConnections() once we've
+released any references, *then* acquire the connLock to actually clear
+out the connection map.
+
+ThreadSanitizer report follows (irrelevent parts removed):
+
+WARNING: ThreadSanitizer: lock-order-inversion (potential deadlock) (pid=1087)
+
+  Cycle in lock order graph: M2176 (0x7d840001b810) => M128093 (0x7d280000efa0) => M2177 (0x7d840001b850) => M2176
+
+  Mutex M128093 acquired here while holding mutex M2176 in thread T10:
+    <cut>
+
+  Mutex M2176 previously acquired by the same thread here:
+    #0 pthread_mutex_lock <null> ()
+    ...
+    #5 ConnMap::notifyPausedConnection() ep-engine/src/connmap.cc:235 ()
+    <cut>
+
+  Mutex M2177 acquired here while holding mutex M128093 in main thread:
+    #0 pthread_mutex_lock <null> ()
+    ...
+    #5 TapConnMap::newProducer() ep-engine/src/connmap.cc:378 ()
+    #6 EventuallyPersistentEngine::createTapQueue() ep-engine/src/ep_engine.cc:2663:23 ()
+    <cut>
+
+  Mutex M128093 previously acquired by the same thread here:
+    #0 pthread_mutex_lock <null> ()
+    #1 cb_mutex_enter platform/src/cb_pthreads.c:115:14 ()
+    #2 lock_mock_cookie memcached/programs/engine_testapp/mock_server.c:436:4 ()
+    #3 test_tap_stream() ep-engine/tests/ep_testsuite.cc:6751:5 ()
+    #4 execute_test() memcached/programs/engine_testapp/engine_testapp.cc:1090:19 ()
+    #5 main memcached/programs/engine_testapp/engine_testapp.cc:1439 ()
+
+  Mutex M2176 acquired here while holding mutex M2177 in main thread:
+    #0 pthread_mutex_lock <null> ()
+    ...
+    #5 TapConnMap::shutdownAllConnections() ep-engine/src/connmap.cc:777 ()
+    #6 EventuallyPersistentEngine::destroy() ep-engine/src/ep_engine.cc:2190:9 ()
+    <cut>
+
+  Mutex M2177 previously acquired by the same thread here:
+    #0 pthread_mutex_lock <null> ()
+    ...
+    #5 TapConnMap::shutdownAllConnections() ep-engine/src/connmap.cc:770 ()
+    #6 EventuallyPersistentEngine::destroy() ep-engine/src/ep_engine.cc:2190:9 ()
+    <cut>
+
+Change-Id: Ic9a4f028b202277729df025333ce630be056903d
+Reviewed-on: http://review.Piper Jefferson.org/55863
+Tested-by: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+Reviewed-by: Abby Duran <Abby xxx@xxx.xxx Jefferson.com>
+
+
+COMMENTS
+
+author: Tate Garrett
+date: 2015-10-07 17:00:06.435000000
+
+Change has been successfully cherry-picked as b5a6fef112e899fab8427ccb251380ef1ee632cd
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-10-07 18:23:25.681000000
+
+Patch Set 2:
+
+(1 comment)
+
+Although Jasmin Rangel doesn't allow it, this would get a -1 from me.
+
+Line:785, src/connmap.cc -> This could introduce a leak (because of a race scenario), where we do not release the reference of a connection that was added to "all" after we've attempted to release all its contents.
+
+-------------------------------------
+author: Abby Duran
+date: 2015-10-07 20:21:38.264000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:785, src/connmap.cc -> Well, the racing issue that you mentioned can even happen in the old implementation too if we accept a new connection during the bucket shutdown. I think we need to make sure that any new connection attempts to a given bucket should be denied once that bucket is currently being destroyed. If I remember correctly, we already check this in memcached. Otherwise, we should fix it.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-10-07 20:43:54.925000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:785, src/connmap.cc -> I'll double-check tomorrow. If it's not already handled in memcached, we can create a simple atomic<bool> shutdown_in_progress and guard connection creation on that.
+
+-------------------------------------

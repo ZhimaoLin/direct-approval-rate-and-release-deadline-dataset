@@ -1,0 +1,97 @@
+DESCRIPTION
+
+Fix missing deltas near type boundaries
+
+Delta search was discarding discovered deltas if an object appeared
+near a type boundary in the delta search window. This has caused JGit
+to produce larger pack files than other implementations of the packing
+algorithm.
+
+Delta search works by pushing prior objects into a search window, an
+ordered list of objects to attempt to delta compress the next object
+against. (The window size is bounded, avoiding O(N^2) behavior.)
+
+For implementation reasons multiple object types can appear in the
+input list, and the window. PackWriter commonly passes both trees and
+blobs in the input list handed to the DeltaWindow algorithm. The pack
+file format requires an object to only delta compress against the same
+type, so the DeltaWindow algorithm must stop doing comparisions if a
+blob would be compared to a tree.
+
+Because the input list is sorted by object type and the window is
+recently considered prior objects, once a wrong type is discovered in
+the window the search algorithm stops and uses the current result.
+
+Unfortunately the termination condition was discarding any found
+delta by setting deltaBase and deltaBuf to null when it was trying
+to break the window search.
+
+When this bug occurs, the state of the DeltaWindow looks like this:
+
+                                 current
+                                  |
+                                 \ /
+  input list:  tree0 tree1 blob1 blob2
+
+  window:      blob1 tree1 tree0
+                / \
+                 |
+              res.prev
+
+As the loop iterates to the right across the window, it first finds
+that blob1 is a suitable delta base for blob2, and temporarily holds
+this in the bestDelta/deltaBuf fields. It then considers tree1, but
+tree1 has the wrong type (blob != tree), so the window loop must give
+up and fall through the remaining code.
+
+Moving the condition up and discarding the window contents allows
+the bestDelta/deltaBuf to be kept, letting the final file delta
+compress blob1 against blob0.
+
+The impact of this bug (and its fix) on real world repositories is
+likely minimal. The boundary from blob to tree happens approximately
+once in the search, as the input list is sorted by type. Only the
+first window size worth of blobs (e.g. 10 or 250) were failing to
+produce a delta in the final file.
+
+This bug fix does produce significantly different results for small
+test repositories created in the unit test suite, such as when a pack
+may contains 6 objects (2 commits, 2 trees, 2 blobs).  Packing test
+cases can now better sample different output pack file sizes depending
+on delta compression and object reuse flags in PackConfig.
+
+Change-Id: Ibec09398d0305d4dbc0c66fce1daaf38eb71148f
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2017-02-08 22:32:46.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-02-08 22:32:54.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/9765/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-02-08 22:42:10.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/9765/ : SUCCESS
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2017-02-08 23:22:27.000000000
+
+Change has been successfully merged into the git repository by Yoselin Hanna
+
+-------------------------------------

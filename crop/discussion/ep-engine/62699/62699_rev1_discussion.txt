@@ -1,0 +1,137 @@
+DESCRIPTION
+
+MB-19153: Break circular dependency while deleting bucket
+
+As part of unregistering the last bucket, when stopTaskGroup
+is invoked, all the running threads will cancelled. In this
+issue reported, when DcpBackfill was closed, the ref count of
+the DcpProducer whose reference it was holding on to became
+zero, causing its destructor to be invoked. In the DcpProducer's
+destructor, an attempt was made to cancel the checkpoint creator
+task which needed to acquire the executorpool's tMutex that
+unregisterBucket had already acquired.
+
+Reproduction steps:
+<delete_bucket> --> <unregister_bucket> --> <stop_task_group>
+    --> <acquire tMutex> --> .. --> <cancel DcpBackfill> -->
+    --> <destroy DcpBackfill> --> <destroy DcpProducer>
+    --> <cancel Checkpoint creator task> --> [tries to acquire tMutex]
+
+The fix here would be to not attempt to kill the task within
+the DcpProducer's destructor, but to do so when the producer is
+being disconnected.
+
+Change-Id: Ia3c0597e3d8f85a1b40ef56e251e38339023b471
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2016-04-12 01:38:17.712000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-12 01:38:26.115000000
+
+Patch Set 1:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/423/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-12 01:38:32.438000000
+
+Patch Set 1: Well-Formed-1
+
+Branch restricted. PLEASE READ this URL: 
+
+http://server.jenkins.Piper Jefferson.com/job/restricted-branch-check/11696/artifact/restricted.html : FAILURE
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-04-12 01:39:11.075000000
+
+Patch Set 1:
+
+check approval
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-12 01:39:20.810000000
+
+Patch Set 1: Well-Formed+1
+
+Permission granted to commit: 
+
+http://server.jenkins.Piper Jefferson.com/job/restricted-branch-check/11697/artifact/restricted.html : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-04-12 01:53:52.628000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/423/ : SUCCESS
+
+-------------------------------------
+author: Abby Duran
+date: 2016-04-12 02:23:07.010000000
+
+Patch Set 1: Code-Review-1
+
+(2 comments)
+
+Line:1059, src/connmap.cc -> I think we can consolidate clearCheckpointProcessorTaskQueues() and cancelCheckpointCreatorTask() into one function like "cancelCheckpointProcessorTask()", as they can be treated as a single cleanup function.
+
+Line:1094, src/connmap.cc -> Ditto.
+
+-------------------------------------
+author: Abby Duran
+date: 2016-04-12 02:41:13.752000000
+
+Patch Set 1:
+
+I t think we can think of the following case for the unit test:
+
+1) Create a DCP producer
+2) Load some items (probably not small number of items) into active vbuckets, to make the DCP producer's checkpointing task active
+3) Destroy the bucket
+
+-------------------------------------
+author: Abby Duran
+date: 2016-04-12 02:52:38.794000000
+
+Patch Set 1:
+
+We can spawn a separate thread for a bucket deletion while the main thread is still loading items into active vbuckets.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-04-12 03:05:18.578000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:1059, src/connmap.cc -> Done
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-04-12 04:01:37.128000000
+
+Patch Set 1:
+
+So the way bucket deletion is mocked in unit tests, is with test termination.
+I was able to reproduce the hang at a unit test level however.
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-04-12 18:34:28.340000000
+
+Change has been successfully cherry-picked as 3bd9fa40f9cc597ffc6b4f9743c75bf4f8f6e4d6
+
+-------------------------------------

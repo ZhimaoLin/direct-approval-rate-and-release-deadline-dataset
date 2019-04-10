@@ -1,0 +1,55 @@
+DESCRIPTION
+
+Fix infinite loop in IndexPack
+
+A programming error using the Inflater API led to an infinite
+loop within IndexPack, caused by the Inflater returning 0 from
+the inflate() method, but it didn't want more input.  This happens
+when it has reached the end of the stream, or has reached a spot
+asking for an external dictionary.  Such a case is a failure for us,
+and we should abort out.
+
+Bug: 317416
+Change-Id: I34120482375b687ea36ed9154002d77047e94b1f
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Blake Oneal
+date: 2010-07-03 07:47:44.000000000
+
+Patch Set 1:
+
+The problem with this is we have 3 almost identical methods, each of which does subtly different things, and they're already diverging. there's a mixture of int n and long n, and some arguments have final size and the others don't.
+
+The only difference appears to be whether we write it into a temporary buffer, and what method gets called in the middle of the loop (fillInFromFile, fillInFromStream). We could parameterise that to the same function and delegate based on a switch (e.g. fillInFrom(FILE), fillInFrom(STREAM) and then code if( from==FILE)fillInFromFile() else (if from = STREAM) fillInFromStream() so we only need this implementation once. Or, we could pass in a class (FillInSource) and have that delegated to.
+
+Either way, I think the duplicate looping logic should be removed so that when there's a future error, we only do it once, and it can be detected appropriately (and means we only have one place to fix in the future).
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-07-03 09:16:11.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(2 inline comments)
+
+T
+
+Line:963, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> -I'm sliightly allergic to exceptions without some information.
+-Throw the corrupt stream exception right 
+
+(same thing in the "copies" of this code
+
+Line:975, org.eclipse.jgit/src/org/eclipse/jgit/transport/IndexPack.java -> This leads to the wrong stack trace
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2010-07-16 17:11:54.000000000
+
+Your change could not be merged due to a path conflict.
+
+Please merge (or rebase) the change locally and upload the resolution for review.
+
+-------------------------------------

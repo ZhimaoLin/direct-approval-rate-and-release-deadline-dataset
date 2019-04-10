@@ -1,0 +1,141 @@
+DESCRIPTION
+
+Tmf: Add the concept of module source to the Analysis API
+
+This allows for other ways to define analysis modules than having to describe
+them in the plugin.xml file.  For example, an XML file can be the source of an
+analysis module.
+
+The source itself needs to be described in the plugin.xml, using another
+element of the analysis extension point.
+
+Each module source will typically have its matching helper class to create the
+instance of a module when required and to be able to access available modules
+for different trace types before the trace is instantiated.
+
+A default implementation of the IAnalysisModuleSource interface and its helper
+are provided for the modules advertised through the extension point: the
+TmfAnalysisModuleSourceConfigElement and TmfAnalysisModuleHelperConfigElement.
+
+Change-Id: Ia2c7142704aa6b2a326bba9d2bf0734954427b7e
+Signed-off-by: Aryana Jones xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Annalise Jimenez
+date: 2014-01-03 19:38:10.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-01-03 19:38:16.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4899/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-01-03 20:11:54.000000000
+
+Patch Set 4: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4899/ : FAILURE
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-01-03 20:22:34.000000000
+
+Patch Set 4: -Verified
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4904/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-01-03 21:01:58.000000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4904/ : SUCCESS
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-01-07 22:33:35.000000000
+
+Patch Set 4: Code-Review-1
+
+(6 comments)
+
+Exposing a Map is a very wide API, we do it in many places where we probably should not. Plus there's always a risk of having the implementer not use unmodifiableMap, so we end up exposing a writer API where we might not want to.
+
+Line:78, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/TmfAnalysisManager.java -> If you change the IAnalysisModuleSource.getAnalysisModules(), this won't work anymore. But perhaps this here too should not be exposing the map directly, instead exposing a get(String key) and an Iterable (and maybe even not the single-getter at all, if it's not needed).
+
+Line:70, lttng/org.eclipse.linuxtools.tmf.core.tests/stubs/org/eclipse/linuxtools/tmf/tests/stubs/analysis/AnalysisModuleTestHelper.java -> You should instead use
+  return "";
+
+It would avoid creating new objects everytime the method is called, since all "" refer to the same object (string literals get internalized).
+
+Or you can have a private static final String EMTPY_STRING = ""; in your class and use that instead, if you use a lot of them in the same file.
+
+Line:75, lttng/org.eclipse.linuxtools.tmf.core.tests/stubs/org/eclipse/linuxtools/tmf/tests/stubs/analysis/AnalysisModuleTestHelper.java -> idem
+
+Line:32, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/analysis/TmfAnalysisModuleSources.java -> To ensure the class does not get instantiated (to have a "static" class), you can add a private empty constructor:
+
+ private TmfAnalysisModuleSources() {}
+
+Line:48, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/analysis/TmfAnalysisModuleSources.java -> Minor thing, here there is no need to expose this as a List object (getSources().get(1) won't mean anything), so the return type could be a Collection<IAnalysisModuleSource>
+
+Line:36, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/IAnalysisModuleSource.java -> A Map should not be exposed here either. For example, in AnalysisModuleSourceStub, you put the values in a map just to fit in the API.
+
+It should be split in:
+  IAnalysisModuleHelper getAnalysisModule(String key);
+  Iterable<IAnalysisModuleHelper> getAnalysisModules();
+
+In the implementation, if you use Map.values() for the second method, don't forget to wrap it in an unmodifiableCollection(), as I assume we want it to be read-only here.
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-01-08 18:10:02.000000000
+
+Patch Set 4:
+
+(2 comments)
+
+Line:48, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/analysis/TmfAnalysisModuleSources.java -> In fact, it's perhaps simpler to just return an Iterable<IAnalysisModuleSource>, as that interface does not have any writer method, so no need to wrap the return in an unmodifiableSomething
+
+Line:36, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/IAnalysisModuleSource.java -> Iterable doesn't have writer methods, so no need for unmodifiableCollection, FWIU
+
+-------------------------------------
+author: Annalise Jimenez
+date: 2014-01-08 19:48:36.000000000
+
+Patch Set 4:
+
+(3 comments)
+
+OK, I'll change this patch to not expose maps anymore. I'll do it for the rest of the analyis API in another patch though.
+
+Line:78, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/TmfAnalysisManager.java -> For now, I'll just modify the map exposition for the module source specific stuff. I'll change the API of the analysis manager in another patch.
+
+Line:70, lttng/org.eclipse.linuxtools.tmf.core.tests/stubs/org/eclipse/linuxtools/tmf/tests/stubs/analysis/AnalysisModuleTestHelper.java -> And I have been told one to use new String() instead of "" to avoid // NON_NLS :p
+oh well
+
+Line:36, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/IAnalysisModuleSource.java -> Ok for the Iterable. Anyway, module helpers have their own ids so no need for a map to get it.
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-01-08 22:52:36.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:78, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/TmfAnalysisManager.java -> Yes of course, the getAnalysisModules() method here would be another patch.
+
+-------------------------------------

@@ -1,0 +1,114 @@
+DESCRIPTION
+
+Implement _random API to pick a random document from CouchDB
+
+forwards _random requests to _all_docs on the first
+vbucket on this server, is compatible with same paramters
+as _all_docs (include_docs)
+
+Change-Id: I60b89135ead14a474092b26d261ce20bf4030b0d
+
+
+COMMENTS
+
+author: Julianne Schultz
+date: 2011-07-22 23:38:03.116000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2011-07-23 11:30:22.620000000
+
+Patch Set 5: I would prefer that you didn't submit this
+
+a) this needs to be careful about using active vbuckets only. State checking/document reading race is unavoidable but harmless. We just need to ensure that vbucket was active recently.
+
+b) race between listing vbuckets/picking some of them and deleting vbucket needs to be handled. We simply need to retry if database open attempt failed.
+
+c) Handling 0 count will be confusing to user. Somebody will upload few docs and will be really puzzled when _random will return 404. Same applies to multiple nodes in cluster. If there are no local documents we might need to access remote nodes.
+
+d) FoldFun needs to handle deleted=true case before handling  0 skip records left case.
+
+e) we should think about doing proper CRUD get for chosen document because reading stale data seems confusing
+
+-------------------------------------
+author: Julianne Schultz
+date: 2011-07-24 18:43:05.587000000
+
+Patch Set 5:
+
+a) this needs to be careful about using active vbuckets only. State checking/document reading race is unavoidable but harmless. We just need to ensure that vbucket was active recently.
+
+the original version picked up from vbucket map which you said wouldnt be good enough as it may be "out of date", whats the difference between a client read on an out of date vbucket vs this?
+
+b) race between listing vbuckets/picking some of them and deleting vbucket needs to be handled. We simply need to retry if database open attempt failed.
+
+Or it could just crash and the client can handle 500
+
+c) Handling 0 count will be confusing to user. Somebody will upload few docs and will be really puzzled when _random will return 404. Same applies to multiple nodes in cluster. If there are no local documents we might need to access remote nodes.
+
+Sure it shouldnt block this though
+
+d) FoldFun needs to handle deleted=true case before handling 0 skip records left case.
+
+it already does, doc count exludes deleted items
+
+e) we should think about doing proper CRUD get for chosen document because reading stale data seems confusing
+
+Yeh I can add a sync in there
+
+-------------------------------------
+author: Nathalie Landry
+date: 2011-07-24 18:56:27.672000000
+
+Patch Set 5:
+
+>> the original version picked up from vbucket map which you said wouldnt be good enough as it may be "out of date", whats the difference between a client read on an out of date vbucket vs this?
+
+Same. You can return very stale document. How bad is that is another matter.
+
+>> Or it could just crash and the client can handle 500
+
+Or client can perform _any_doc logic without server-side help. But is that good enough ?
+
+>> Sure it shouldnt block this though
+
+Well. Maybe not this commit. But it surely blocks this story from being Finished.
+
+>>>> d) FoldFun needs to handle deleted=true case before handling 0 skip records left case
+>> it already does, doc count exludes deleted items
+
+Would be glad to be wrong. But deleted elements exclusion (if it's needed at all here) seems too late. And first case (0 docs to skip left) is checked first which leads me to believe that this may return deleted document (because in this case nobody does deleted flag check)
+
+-------------------------------------
+author: Julianne Schultz
+date: 2011-07-24 20:28:50.521000000
+
+Patch Set 5:
+
+>> Same. You can return very stale document. How bad is that is another matter.
+
+Then I should revert the change and use possibly stale vbucket, the semantics of the api should be the same, we shouldnt be making up error handling mechanisms for each case, they should be consistent.
+
+
+>> Would be glad to be wrong. But deleted elements exclusion (if it's needed at all here) seems too late. And first case (0 docs to skip left) is checked first which leads me to believe that this may return deleted document (because in this case nobody does deleted flag check)
+
+the btree contains references to deleted documents but the doc_count exludes deleted items, I check the deleted flag during the fold and just ignore deleted items, there is an offbyone error (skip should be 0 based)
+
+-------------------------------------
+author: Julianne Schultz
+date: 2011-07-24 20:28:54.807000000
+
+Patch Set 5:
+
+>> Same. You can return very stale document. How bad is that is another matter.
+
+Then I should revert the change and use possibly stale vbucket, the semantics of the api should be the same, we shouldnt be making up error handling mechanisms for each case, they should be consistent.
+
+
+>> Would be glad to be wrong. But deleted elements exclusion (if it's needed at all here) seems too late. And first case (0 docs to skip left) is checked first which leads me to believe that this may return deleted document (because in this case nobody does deleted flag check)
+
+the btree contains references to deleted documents but the doc_count exludes deleted items, I check the deleted flag during the fold and just ignore deleted items, there is an offbyone error (skip should be 0 based)
+
+-------------------------------------

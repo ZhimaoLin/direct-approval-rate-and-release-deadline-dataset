@@ -1,0 +1,132 @@
+DESCRIPTION
+
+TMF: added support for process filter in the TimeGraphFilterDialog.
+
+On top of the filter dialog a text field enables filtering over the
+tree of process names.
+
+A node of the tree is shown if:
+- the node matches with the search pattern
+- one of the children of the node matches with the search pattern
+- one of the parents of the node matches with the search pattern
+
+The buttons check-all and check-subtree check only the visible items.
+The button uncheck-subtree unchecks all the children (the hidden
+children too, since it makes no sense a checked child with an unchecked
+parent).
+The button uncheck-all unchecks everything, except the hidden roots
+(and corresponding subtrees).
+
+Change-Id: I517f3333bb7b6da9fd14eaaac90e7b914671479e
+Signed-off-by: Eduardo Navarro xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Eduardo Navarro
+date: 2014-09-04 15:59:24.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-09-04 15:59:30.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/8713/
+
+-------------------------------------
+author: Eduardo Navarro
+date: 2014-09-04 16:14:05.000000000
+
+Patch Set 2:
+
+Thank you for the hints.
+
+I followed your suggestions and I wrapped the CheckboxTreeViewer in a FilteredTree. Then, in order to reuse the PatternFilter, I modified the TreeLabelProvider so that it implements ILabelProvider.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-09-04 16:51:09.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/8713/ : SUCCESS
+
+-------------------------------------
+author: Luciana Barry
+date: 2014-09-04 22:09:50.000000000
+
+Patch Set 2:
+
+(5 comments)
+
+Line:91, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/dialogs/FilteredCheckboxTree.java -> Obviously we would prefer to not extend xxx@xxx.xxx class, I am sure you would too, but I guess we haven't found a nice way to do it yet...
+
+Line:209, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/dialogs/FilteredCheckboxTree.java -> Would we want instead to store and preserve the expanded state of every item like we do for the checked state?
+
+Line:530, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/dialogs/TimeGraphFilterDialog.java -> I noticed a behavior that I am not sure is correct or not. If you apply a filter, then uncheck a parent in the filtered result, it will uncheck all children of this parent, even those that are not currently visible due to the filter. If that is not what we want, a possible solution would be to: 1) here only uncheck the visible children 2) when the filter is cleared, recompute the check state so that the parent will regain its checked state because it now has visible checked children. What is your opinion about the intended behavior?
+
+Line:426, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/views/timegraph/AbstractTimeGraphView.java -> xxx@xxx.xxx 3.1
+
+Line:431, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/views/timegraph/AbstractTimeGraphView.java -> xxx@xxx.xxx 3.1
+
+-------------------------------------
+author: Eduardo Navarro
+date: 2014-09-05 15:13:46.000000000
+
+Patch Set 2:
+
+(5 comments)
+
+Line:91, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/dialogs/FilteredCheckboxTree.java -> Indeed, extending xxx@xxx.xxx class is not nice at all :)
+
+I think I have found a better way to do it. Basically I still wrap the CheckboxTreeViewer in the FilteredCheckboxTree, but I keep track of the check state no more *inside* the viewer (extending it), but *outside* it, within the FilteredCheckboxTree. All the functionalities related to check/uncheck would be therefore accessible to the client (the dialog in this case), via the FilteredCheckboxTree. The check state and the expand state of the tree are set/restored adding a IJobChangeListener to the FilteredTree refresh job and overriding the done() method. 
+
+I'll push this solution in the text patch for review.
+
+Line:209, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/dialogs/FilteredCheckboxTree.java -> In my opinion it is more intuitive to expand the whole tree after the application of the filter, since it shows to the user that something is actually going on and it puts in evidence the result of filtering.
+
+For example, if the filter matches only some node currently not expanded, the user is not able to see immediately the result he is looking for, and he is obliged to expand manually the nodes, to see where the result is.
+
+The point behind the filter, in my opinion, is to put in evidence what we are looking for.
+
+By the way, I am open on this topic, and I would like to better understand the benefits of restoring the expand state too in a filtered tree.
+
+Line:530, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/dialogs/TimeGraphFilterDialog.java -> The behavior you noticed is actually what I intended to obtain, since I consider it more intuitive for a user. 
+
+In my opinion all the "uncheck" operations should act on:
+- all that is visible
+- all that is child of what is visible (even if such a child is not visible)
+
+On the contrary all the "check" operations should act only on what is visible.
+
+The rationale behind this different behavior is that, in the process hierarchy, we can have parents without one or more children, but it is impossible to have children without parent. So if a user deliberately unchecks a parent, he should know that none of its children will be present at the end..
+
+Indeed, unchecking and then re-checking a parent as you propose could be a 
+solution to this issue, but I am not sure about the intuitiveness for the user.
+
+Line:426, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/views/timegraph/AbstractTimeGraphView.java -> Done
+
+Line:431, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/views/timegraph/AbstractTimeGraphView.java -> Done
+
+-------------------------------------
+author: Luciana Barry
+date: 2014-09-05 20:37:55.000000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:209, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/dialogs/FilteredCheckboxTree.java -> It makes sense to expand after applying a filter.
+
+I was thinking of the opposite, if there is a root you don't care about, you collapse it, then you apply a filter (that matches something else), and when you clear the filter your uninteresting root is expanded again.
+
+But I don't feel strongly about it. We can keep the expand all.
+
+Line:530, lttng/org.eclipse.linuxtools.tmf.ui/src/org/eclipse/linuxtools/tmf/ui/widgets/timegraph/dialogs/TimeGraphFilterDialog.java -> I'm OK with your reasoning.
+
+-------------------------------------

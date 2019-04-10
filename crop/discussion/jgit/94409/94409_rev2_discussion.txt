@@ -1,0 +1,165 @@
+DESCRIPTION
+
+Support creating Mergers without a Repository
+
+All that's really required to run a merge operation is a single
+ObjectInserter, from which we can construct a RevWalk, plus a Config
+that declares a diff algorithm. Provide some factory methods that don't
+take Repository.
+
+Change-Id: Ib884dce2528424b5bcbbbbfc043baec1886b9bbd
+
+
+COMMENTS
+
+author: Santos Moore
+date: 2017-04-04 19:04:33.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-04-04 19:04:40.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/10103/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-04-04 19:26:18.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/10103/ : SUCCESS
+
+-------------------------------------
+author: Eden Lin
+date: 2017-04-04 19:26:33.000000000
+
+Patch Set 2: Code-Review-1
+
+(7 comments)
+
+Main comment is in ResolveMerger.
+
+Line:117, org.eclipse.jgit/src/org/eclipse/jgit/merge/Merger.java -> nit: NullPointerException?
+
+Line:107, org.eclipse.jgit/src/org/eclipse/jgit/merge/StrategyOneSided.java -> nit: this can be package-private. (also applies to the other constructor, so if you want to keep this "protected" for consistency then that's fine with me.)
+
+Line:93, org.eclipse.jgit/src/org/eclipse/jgit/merge/ThreeWayMerger.java -> Should this xxx@xxx.xxx 4.8? (I honestly don't know --- I know that stable-4.7 was branched but don't know if it's had its last merge from master yet. Please forgive my ignorance.)
+
+Line:120, org.eclipse.jgit/src/org/eclipse/jgit/merge/RecursiveMerger.java -> would also use 4.8 if the others do.
+
+Line:273, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> optional: Can these be imported statically? I think that would make it easier to read.
+
+Line:311, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> this would also use 4.8 if the others do
+
+Line:829, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> Does this assertion hold? The only caller is updateIndex, which certainly wants an index. The caller of updateIndex is processEntry. processEntry is called by mergeTreeWalk, which is called by mergeTrees. I don't see anything preventing this code from triggering in the no-repo case.
+
+-------------------------------------
+author: Eden Lin
+date: 2017-04-04 19:28:44.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:829, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> To clarify: updateIndex writes to the index builder 'builder'. In the no-index case it uses DirCache.newInCore() and works fine.
+
+So I think this just needs to have a fallback place to write temporary files when there is no repository.
+
+-------------------------------------
+author: Santos Moore
+date: 2017-04-04 20:00:00.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:829, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> Good catch.
+
+So, you're right that it's currently possible to call updateIndex when inCore == true. But to get there *also* requires setting workingTreeIterator != null. If it's null:
+
+* We never do the 4th addTree call on line 1038.
+* Thus mergeTreeWalk calls processEntry with a null WorkingTreeIterator. (Why processEntry takes work as an argument instead of using the instance field is beyond me.)
+
+I think we should instead explicitly reject setWorkingTreeIterator(non-null) when inCore == true. This would be more consistent with the javadoc (and spirit) of inCore anyway.
+
+I suspect this has never bitten us in Gerrit because we never call setWorkingTreeIterator on our mergers (because our repos are bare).
+
+-------------------------------------
+author: Santos Moore
+date: 2017-04-04 20:08:34.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:829, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> (Also beyond me: why do you have to explicitly call setWorkingTreeIterator if you have already given it a non-bare repo? But at least in this case it's making my life easier.)
+
+-------------------------------------
+author: Santos Moore
+date: 2017-04-04 20:16:46.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:829, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> On further inspection, TemporaryBuffer.LocalFile is happy to take a null directory arg, so this can just be:
+
+ repo != null ? repo.getDirectory() : null
+
+This also works in the DFS case where getDirectory always returns null.
+
+After doing that, ensuring workingTreeIterator == null when inCore == true is no longer related to this change.
+
+-------------------------------------
+author: Santos Moore
+date: 2017-04-04 21:31:47.000000000
+
+Patch Set 2:
+
+(5 comments)
+
+Line:117, org.eclipse.jgit/src/org/eclipse/jgit/merge/Merger.java -> Done
+
+Line:107, org.eclipse.jgit/src/org/eclipse/jgit/merge/StrategyOneSided.java -> It was for consistency, yes.
+
+Line:93, org.eclipse.jgit/src/org/eclipse/jgit/merge/ThreeWayMerger.java -> No, pom.xml says 4.7-SNAPSHOT, and there are no instances of xxx@xxx.xxx 4.8" at head.
+
+Line:273, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> Done
+
+Line:829, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> Done, with moar tests.
+
+-------------------------------------
+author: Elise Key
+date: 2017-04-04 23:47:13.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:93, org.eclipse.jgit/src/org/eclipse/jgit/merge/ThreeWayMerger.java -> It should be 4.8.  stable-4.7 was already branched out and Matthias is in the process of releasing 4.7.
+
+It looks like the step to bump the version on master has not yet been done.
+
+-------------------------------------
+author: Santos Moore
+date: 2017-04-05 13:45:52.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:93, org.eclipse.jgit/src/org/eclipse/jgit/merge/ThreeWayMerger.java -> I see. Done.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2017-04-05 21:54:46.000000000
+
+Change has been successfully merged into the git repository by Eden Lin
+
+-------------------------------------

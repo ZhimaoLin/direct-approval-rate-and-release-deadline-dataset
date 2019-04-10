@@ -1,0 +1,80 @@
+DESCRIPTION
+
+[PROTOTYPE] Delta-DCP (ep-engine)
+
+Prototype of Delta-DCP.
+
+Components:
+
+* ep-engine changes (this patch)
+* memcached changes (Change-Id: I29211c7435434ec1729d907c3266bef8a1a68153)
+* ns_server changes ()
+
+Overview:
+
+1. Upon a set / update in the frontend of an existing item, track the
+   previous (ancestor) Blob and seqno, associating it with the
+   queued_item in the checkpoints.
+
+2. When adding an item to a checkpoing which has an old version of
+   that key, ensure the old version's ancestor is moved to the new value.
+
+3. At the point of retrieving items from a checkpoint for DCP to send
+   out, if an ancestor is available then create a DCP_DELTA_MUTATION
+   message instead of the normal DCP_MUTATION message.
+
+4. The producer will encode a DELTA_MUTATION message (by memcached,
+   see sibling patch) by calcuating the binary difference between the
+   ancestor and the new value, using open-vcdiff[1]. Assuming this is
+   fewer bytes than the new value, send the diff over the wire, along
+   with the seqno of the ancestor (previous) value.
+
+5. On the consumer, a DELTA_MUTATION is decoded by validating that the
+   ancestor seqno matches the seqno held locally, and then by applying
+   the binary diff in the payload to the current value the consumer
+   has.
+
+Working:
+
+* Successfully detects set operations which the previous (ancestor)
+  value is known, and encodes them on the wire as DCP_DELTA_MUTATION
+  packets.
+* Successfully decodes at the consumer and reconstructs
+  the new value from the old value and delta in the payload.
+* Works for any type of SET operation - tested with vanilla SET and
+  SUBDOC_SET.
+
+Issues:
+
+* Very little policy at present - the producer will *always* send a
+  DELTA_MUTATION if it can, whereas we actually need to only send when
+  we know the consumer has the previous sequence number - for example
+  either by the consumer advertising what the oldest sequence number
+  it has is, or by DeltaDCP only sending deltas for ancestors which
+  have already been transmitted in this session.
+
+* At high op/s rates (~20,000) there's an issue where the ancestor
+  seqno in the DCP_DELTA_MUTATION packet doesn't match what the
+  consumer has in it's hashtable:
+
+    2015-09-11T16:09:36.728478+01:00 WARNING 42: Delta mutation: ancestor seqno (which is 1384) does not equal current item seqno (which is 1466)
+
+[1]: https://code.google.com/p/open-vcdiff/
+
+Change-Id: I76bc111b4fb2ab1293b2f5924aeb9abde131b232
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2015-09-11 16:45:10.025000000
+
+Uploaded patch set 2: Commit message was updated.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-01-05 12:19:11.265000000
+
+Abandoned
+
+-------------------------------------

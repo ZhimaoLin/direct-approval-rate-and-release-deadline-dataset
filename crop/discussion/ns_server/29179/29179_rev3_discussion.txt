@@ -1,0 +1,58 @@
+DESCRIPTION
+
+MB-9154 wait for ns_stats_event from the correct node
+
+- menelaus_stats_gatherer gen_server delegates stats gathering
+  from the web server node to the FirstNode. this guarantees
+  that we will wait for the ns_stat_event on the node
+  we getting our first samples from
+
+Backward compatibility:
+- if the FirstNode has version less than 3.0 we will
+  keep the current faulty behavior which will be fixed
+  by the code from the following commit:
+  MB-9154 ensure that stats rest api returns the same number of samples
+
+Why it was broken:
+- in case if stats are requested from the specific node
+  (other than current node) menelaus_stats was waiting for
+  ns_stats_event from the current node and then was retrieving
+  samples from the node for which stats were requested.
+  this doesn't guarantee that at least one sample that
+  is later than ClientTStamp will be retrieved
+
+- in this particular bug this led to different number of samples
+  being retrieved for regular stats and for system stats.
+  the conversion to JSON picks up one timestamp array out of the two
+  (the one for regular stats, because it comes first)
+  so for 2 timestamps we had just one entry for each system stat.
+  since the client simply concatenates stat arrays the system stat
+  samples were sliding against timestamps which caused
+  visible graph sliding against the time grid
+
+- also we don't have to drop the last sample if we retrieve
+  stats just for one node
+
+- this change effectively fixes the bug, but still there's
+  theoretical possibility that extra sample for system stats
+  will be archieved while we wait for the sample for regular
+  stats. I will submit the safeguard agains such situation
+  in the next commit
+
+Change-Id: I720f8ea25d8d33a7e7136055abc246ff5b4f3bde
+
+
+COMMENTS
+
+author: Philip Lara
+date: 2013-10-03 23:11:04.210000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Philip Lara
+date: 2013-10-03 23:11:41.769000000
+
+Patch Set 3: Verified+1
+
+-------------------------------------

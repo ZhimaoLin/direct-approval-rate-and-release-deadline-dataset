@@ -1,0 +1,84 @@
+DESCRIPTION
+
+MB-4889: Don't notify tap when shutting down
+
+On shutdown we delete the tapconnmap and tap connections before
+stopping the dispatcher threads. In this particular case the
+nio-dispatcher thread was notifying tap during shutdown. This fix
+causes us to check for shutdown before notifying tap.
+
+Change-Id: Icdb6ae3ca5f2ade9632f88853a03e5d40be6df90
+
+
+COMMENTS
+
+author: Nathalie Landry
+date: 2012-03-20 19:34:14.714000000
+
+Patch Set 1:
+
+and what will happen if shutdown is set after it's checked but before notifying?
+
+-------------------------------------
+author: Kenny Maynard
+date: 2012-03-20 19:40:36.015000000
+
+Patch Set 1:
+
+This is a good point and means that the above function check is also incorrect since it exhibits the same possible race condition as my fix. I will look into rearranging the delete order in the deconstructor, but I would like to do more testing before I push that code to Jasmin Rangel.
+
+-------------------------------------
+author: Abby Duran
+date: 2012-03-20 19:52:02.700000000
+
+Patch Set 1: Looks good to me, approved
+
+This looks right to me. The shutdown thread that sets shutdown flag to true is going to wait until the notification thread is terminated. Any dispatcher that tries to notify this notification thread will skip notify() call because shutdown flag is set to true by this fix.
+
+-------------------------------------
+author: Abby Duran
+date: 2012-03-20 19:56:37.967000000
+
+Patch Set 1:
+
+Mike, can you tell me if this fix resolves the bug?
+
+-------------------------------------
+author: Kenny Maynard
+date: 2012-03-20 19:57:37.594000000
+
+Patch Set 1: Verified
+
+Based on Chiyoungs comments and a review of the shutdown path I am pushing this through.
+
+-------------------------------------
+author: Tate Garrett
+date: 2012-03-20 19:57:37.855000000
+
+Your change could not be merged due to a path conflict.
+
+Please merge (or rebase) the change locally and upload the resolution for review.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2012-03-20 20:01:52.313000000
+
+Patch Set 1: Abandoned
+
+I suspect that it does, but I haven't tried to do a lot of testing yet. I will do that later today. Also, I'm abandoning this and moving it to the 1.8 branch. We can merge it to master later.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-03-20 20:11:25.685000000
+
+Patch Set 1:
+
+my intuition tells me it's wrong. One-side synchronization is almost never right.
+
+Looks like destroy() sets this flag and schedules dispatcher tasks to kill tap connections.
+
+Then ep engine destructor deletes tapconnmap and then it deletes dispatcher waiting on it's task end.
+
+If some thread (i.e. dispatcher is pre-empted after it checked shutdown) and later resumed after tapconnmap is deleted in sequence above, it'll crash in same way.
+
+-------------------------------------

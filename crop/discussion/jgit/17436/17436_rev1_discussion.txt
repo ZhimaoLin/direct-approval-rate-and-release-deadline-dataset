@@ -1,0 +1,104 @@
+DESCRIPTION
+
+Fix exception on conflicts with recursive merge
+
+When there are conflicts with a recursive merge, the conflicting paths
+are stored in unmergedPaths (field in ResolveMerger). Later, when the
+MergeResult is constructed in MergeCommand, getBaseCommit is called.
+
+In case of RecursiveMerger, getBaseCommit merges the multiple merge
+bases into one. It does this not by creating a new ResolveMerger but
+instead calling mergeTrees. The problem with mergeTrees is that at the
+end, it checks if unmergedPaths is non-empty and returns false in that
+case.
+
+Because unmergedPaths was already non-empty because of the real merge,
+it thinks that there were conflicts when computing the merge base again,
+when there really were none.
+
+This can be fixed by storing the base commit in Merger instead of
+computing it a second time for the MergeResult.
+
+Note that another possible fix would be to just use a new ResolveMerger
+for merging the merge bases instead. This would also remove the need to
+remember the old value of dircache, inCore and workingTreeIterator (see
+RecursiveMerger#getBaseCommit).
+
+Bug: 419641
+Change-Id: Ib2ebf4e177498c22a9098aa225e3cfcf16bbd958
+Signed-off-by: Danika Greer xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2013-10-16 22:18:07.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/egit/job/jgit.gerrit/4103/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-10-16 22:34:09.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/jgit.gerrit/4103/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2013-11-04 10:04:06.000000000
+
+Patch Set 1: Code-Review-1
+
+(1 comment)
+
+Line:217, org.eclipse.jgit/src/org/eclipse/jgit/merge/Merger.java -> This looks buggy to me. This method may be called from subclasses of Merger as often as they want and with arbitrary commits. In such a case the result of this method may be some intermediate commit and not the merge base used for the overall merge.
+
+I would rather make the getBaseCommitId() abstract and let the non-abstract implementations of Merger (InCore-, Resolve- and RecursiveMerger) decide when they have found the overall merge base.
+
+-------------------------------------
+author: Danika Greer
+date: 2013-11-12 22:49:52.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:217, org.eclipse.jgit/src/org/eclipse/jgit/merge/Merger.java -> You're right. But making getBaseCommitId abstract will break API, no? Or is it ok to add new methods to a base class because only extenders will break, but not users?
+
+We could also make it non-abstract and just return null in Merger.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2013-11-12 23:06:34.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:217, org.eclipse.jgit/src/org/eclipse/jgit/merge/Merger.java -> AFAIK breaking extenders is ok in a minor release according to OSGi semantic versioning rules [1]:
+
+"A change in the second (minor) part of the version signals that the change is 
+backward compatible with consumers of the API package but not with the providers of that API. That is, 
+when the API package goes from version 1.5 to 1.6 it is no longer compatible with a provider of that API but 
+consumers of that API are backward compatible with that API package"
+
+[1] see page 2 in http://www.osgi.org/wiki/uploads/Links/SemanticVersioning.pdf
+
+-------------------------------------
+author: Danika Greer
+date: 2013-11-13 10:51:05.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Rebased, made getBaseCommitId abstract and implemented it in ThreeWayMerger (which merges 2 trees) and OneSide (which just takes one side and therefore returns null). Merger#mergeBase is not needed anymore, removed.
+
+Line:217, org.eclipse.jgit/src/org/eclipse/jgit/merge/Merger.java -> Done.
+
+-------------------------------------

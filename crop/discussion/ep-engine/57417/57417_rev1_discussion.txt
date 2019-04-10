@@ -1,0 +1,61 @@
+DESCRIPTION
+
+MB-16949: BackfillManager: Fix leak due to circular reference
+
+There is a circular reference between BackfillManager and DcpProducer,
+which means that BackfillManager is never deleted. This is caused by
+BackfillManager holding an (unused) SingleThreadedRCPtr to
+DcpProducer.
+
+Fix this by Removing this unused smart pointer. Unfortunately exposes
+a latent deadlock when destructing BackfillManager - ~BackfillManager
+(indirectly) calls ~ActiveStream, which in turn calls
+BackfillManager::bytesSent() which attempts to acquire the Backfill
+lock; however the lock is already acquired in ~BackfillManager.
+
+Fix this by removing the call to bytesSent() in ~ActiveStream - as
+it's already been updated in other methods.
+
+Change-Id: Id79fbf8bc39463d4874c2f61378b7f110345631b
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2015-12-02 16:31:34.922000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-12-02 16:31:42.403000000
+
+Patch Set 1:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-sherlock/352/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-12-02 16:47:20.868000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-sherlock/352/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-12-03 12:14:32.311000000
+
+Patch Set 1: Verified-1
+
+Giving this Verified:-1 - the ThreadSantizer tests (which only run on master - see http://review.Piper Jefferson.org/#/c/57418/) highlight a potential deadlock which I strongly suspect is also present in sherlock.
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-12-16 02:41:44.951000000
+
+Change has been successfully cherry-picked as 4587de828846a72837656bb1e5a6121a3faba42c
+
+-------------------------------------

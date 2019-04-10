@@ -1,0 +1,178 @@
+DESCRIPTION
+
+Add support for custom merge drivers into JGit
+
+This extracts all "text only" logic from the ResolveMerger into a
+separate TextMergeDriver, and adds a built-in BinaryMergeDriver which
+only action is to keep the local content of a file in case of conflict.
+
+These two built-in merge drivers are not contributed as would the
+custom ones since they act as the default when no custom driver can
+be found for a file. Custom drivers will be contributed through the
+MergeDriverRegistry added by this commit.
+
+Bug: 418149
+Bug: 418150
+Signed-off-by: Gustavo Green xxx@xxx.xxx
+Change-Id: I1841dce144480822cf16b5b1100feffe40c6f907
+
+
+COMMENTS
+
+author: Gustavo Green
+date: 2013-10-23 07:38:41.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-10-23 07:38:47.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/egit/job/jgit.gerrit/4119/
+
+-------------------------------------
+author: Gustavo Green
+date: 2013-10-23 07:40:23.000000000
+
+Patch Set 3:
+
+Patch set 3 adds unit tests to make sure that binary files are indeed left untouched by auto-merges, fixes a small bug to that effect, and fixes my copyrights to the actual copyright owner of my contributed code (Obeo).
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-10-23 07:50:27.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/jgit.gerrit/4119/ : SUCCESS
+
+-------------------------------------
+author: Danika Greer
+date: 2013-11-15 15:47:37.000000000
+
+Patch Set 3: Code-Review-1
+
+(7 comments)
+
+Please see inline comments. Also, some high-level comments:
+
+- The changes in ResolveMerger are quite hard to read because they are mixed with refactorings: Making things static, rawPath, nonTreeO/nonTreeT, use of "else if" instead of separate "if" blocks. Could you split these into separate changes? Then this will become much less painful to review.
+
+- Please add tests for MergeDriverRegistry and the code paths for a custom merge driver.
+
+Line:59, org.eclipse.jgit/src/org/eclipse/jgit/merge/IMergeDriver.java -> JGit does not use the "I*" convention for interfaces, see other interfaces (e.g. Ref), please remove it.
+
+Line:86, org.eclipse.jgit/src/org/eclipse/jgit/merge/IMergeDriver.java -> I don't like that the return type is int, especially because the exact conflict count is not really used (the code just checks if it is 0 or not).
+
+Could you add a simple MergeDriverResult class which just has a boolean "conflicts" field for now?
+
+Line:94, org.eclipse.jgit/src/org/eclipse/jgit/merge/IMergeDriver.java -> Please also document that this will be used as an identifier by MergeDriverRegistry.
+
+Line:124, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeDriverRegistry.java -> Shouldn't this be lastIndexOf('/')?
+
+Line:381, org.eclipse.jgit/src/org/eclipse/jgit/util/FileUtils.java -> If this method was in the FS abstraction, we could use Files.copy in the Java 7 implementations.
+
+Line:30, org.eclipse.jgit/resources/org/eclipse/jgit/internal/JGitText.properties -> These should not be translated IMO, as the merge driver registry uses them as IDs. Just return "binary" from BinaryMergeDriver#getName, the same with "text".
+
+Line:564, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> This means that the files will also be created even when we're using a built-in merge driver, instead of just using the stages (as before). I think we should just create them when a custom merge driver is involved.
+
+-------------------------------------
+author: Gustavo Green
+date: 2013-11-18 12:35:39.000000000
+
+Patch Set 3:
+
+(7 comments)
+
+Regarding the high-level comments :
+
+- The changes in ResolveMerger are quite hard to read because they are mixed with refactorings: Making things static, rawPath, nonTreeO/nonTreeT, use of "else if" instead of separate "if" blocks.
+
+True, when I see "if (a) { return ...;} if (b) {return ...;}" I can't help but think that it cannot be read as easily as "if (a) { ... } else if (b) { ... } return ...;" since this second makes it clear that the flow will never enter both of the ifs, and that it will return once the branching taken care of. The ResolveMerger#processEntry method is a good example of having way too many returns and side-effects (populating/changing instance variables) to be easy to understand.
+
+When I code, I tend to refactor a lot to try and make the code more readable or its flow easier to follow... This is just my way of working and indeed I didn't take the time here to remove (or isolate in a separate commit) the bits that are unrelated to the change at hand. I'll try and separate them in a second review.
+
+
+- Please add tests for MergeDriverRegistry and the code paths for a custom merge driver.
+
+Will do. I'll prepare a second patch asap with all of these changes. I've opened some discussion on a few of your individual reviews, please let me know if I should refactor these parts too.
+
+Line:59, org.eclipse.jgit/src/org/eclipse/jgit/merge/IMergeDriver.java -> Done
+
+Line:86, org.eclipse.jgit/src/org/eclipse/jgit/merge/IMergeDriver.java -> I do not like the "int" return either, I blame that on C coders :p.
+
+Still, I used this in order to mimic the API expected of drivers contributed to CGit so that they would be interchangeable. Most of the API implemented in this patch has been made with this compatibility in mind. Please also see http://git-scm.com/docs/gitattributes.html ("The merge driver is expected to leave the result of the merge in the file named with %A by overwriting it, and exit with zero status if it managed to merge them cleanly, or non-zero if there were conflicts.").
+
+I can change this to a boolean if it would be preferred.
+
+Line:94, org.eclipse.jgit/src/org/eclipse/jgit/merge/IMergeDriver.java -> Done
+
+Line:124, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeDriverRegistry.java -> Indeed it should. Replaced.
+
+Line:381, org.eclipse.jgit/src/org/eclipse/jgit/util/FileUtils.java -> Should I move this as FS.copyFile(File, File) ? Where is the Java7 implementation located if so?
+
+Line:30, org.eclipse.jgit/resources/org/eclipse/jgit/internal/JGitText.properties -> Done
+
+Line:564, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> That was the point : make sure that even the built-in merge driver use what will be available to extenders ("eat your own dog food") to make sure they have everything needed.
+
+Basically, I would like for an extender to be capable of "just" sub-classing the text or binary merge drivers in order to reuse their logic. Doing things like this should also make it possible for a client to use the binary "built-in" driver for files that we would have otherwise considered textual.
+
+I could try and make these two built-in drivers use the stages data instead of temporary files, but that means we need to provide an API for custom merges that is entirely different than what we use internally and that the uilt-in drivers are not reusable in any way (they would not extend the MergeDriver interface).
+
+I'll change this if you still think it would be better.
+
+-------------------------------------
+author: Danika Greer
+date: 2013-11-24 15:47:53.000000000
+
+Patch Set 3:
+
+(3 comments)
+
+I understand the need to refactor things to understand them, but it's not that hard to do this in separate commits if you watch out for that from the start. Of course, afterwards it's harder to split it out. I don't object to small refactorings, but ResolveMerger is really quite hard to review because of this.
+
+Line:86, org.eclipse.jgit/src/org/eclipse/jgit/merge/IMergeDriver.java -> If one plans to use a driver for C Git, one has to wrap it and use Runtime.exec or something like that anyway. So I don't see why this should be tied to the C Git "API".
+
+Line:381, org.eclipse.jgit/src/org/eclipse/jgit/util/FileUtils.java -> Yes. See e.g. FS_POSIX_Java7 in the org.eclipse.jgit.java7 project.
+
+Line:564, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> I'm not sure, I would love to hear other opinions on this.
+
+If the API would have e.g. CanonicalTreeParser as input and would return the merged result and whether there are still conflicts, I think reuse would still be possible and we wouldn't have to have two different APIs.
+
+Merge drivers which *need* to write these out to files could easily do that using ObjectLoader.copyTo. If they want to call the built-in drivers, they can just pass the original input parameters instead.
+
+-------------------------------------
+author: Gustavo Green
+date: 2013-11-26 10:20:46.000000000
+
+Patch Set 3:
+
+(3 comments)
+
+Most of the work is done. While writing unit tests for the custom merge drivers I realized I had a blocking bug with the first implementation, so I needed to alter the MergeDriverRegistry to remove my "Pattern" usage and replace it with globs. That brought forth another change to the FS class in order to be able to use the PathMatchers of Java 7 while still providing a viable implementation to Java5/6 users.
+
+I still need to split the resolve merger changes into two (small, "cosmetic" changes on one hand, merge driver support on the other). Should be done soon now.
+
+Line:86, org.eclipse.jgit/src/org/eclipse/jgit/merge/IMergeDriver.java -> Changed to boolean.
+
+Line:381, org.eclipse.jgit/src/org/eclipse/jgit/util/FileUtils.java -> Done
+
+Line:564, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> I absolutely did not want to expose the CanonicalTreeParsers to the custom merge drivers. I do not wish to give implementers a mean to totally break the merging. With the tree parsers, an implementer could break something while telling us all went well : ignoring files, corrupting the index...
+
+Not to mention that it makes implementing a custom driver _much_ more difficult. Users shouldn't need to understand how to use the JGit innards in order to implement a merger for their custom file formats.
+
+Finally, I wish to remain as close as possible to the "merge drivers" as defined in Git itself ( https://www.kernel.org/pub/software/scm/git/docs/gitattributes.html#_performing_a_three_way_merge ) : it wouldn't do to have our own merge drivers totally differing from the merge drivers as known by other git implementations : users who stumble on these documents (or those that are used to these mechanisms) should be able to understand how to do things.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2013-11-26 16:16:35.000000000
+
+Patch Set 3:
+
+great! Then I'll wait for your split before review.
+
+-------------------------------------

@@ -1,0 +1,154 @@
+DESCRIPTION
+
+Invalidate DfsObjDatabase pack list when refs are updated
+
+Currently, there is a race where a user of a DfsRepository in a single
+thread may get unexpected MissingObjectExceptions trying to look up an
+object that appears as the current value of a ref:
+
+1. Thread A scans packs before scanning refs, for example by reading
+   an object by SHA-1.
+2. Thread B flushes an object and updates a ref to point to that
+   object.
+3. Thread A looks up the ref updated in (2). Since it is scanning refs
+   for the first time, it sees the new object SHA-1.
+4. Thread A tries to read the object it found in (3), using the cached
+   pack list it got from (1). The object appears missing.
+
+Allow implementations to work around this by marking the object
+database's current pack list as "dirty." A dirty pack list means that
+DfsReader will rescan packs and try again if a requested object is
+missing. Implementations should mark objects as dirty any time the ref
+database reads or scans refs that might be newer than a previously
+cached pack list.
+
+Change-Id: I06c722b20c859ed1475628ec6a2f6d3d6d580700
+
+
+COMMENTS
+
+author: Santos Moore
+date: 2016-07-14 16:12:19.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-07-14 16:12:29.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/8695/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-07-14 16:24:02.000000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/8695/ : FAILURE
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2016-07-14 16:49:57.000000000
+
+Patch Set 2: Code-Review-1
+
+(10 comments)
+
+Line:171, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsReader.java -> matches.size() <= MAX_RESOLVE_MATCHES
+
+The reverse ordering is harder to read now.
+
+Line:181, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsReader.java -> This seems unnecessary. The caller invokes us once on an empty set, and then again only if matches.size() < MAX_RESOLVE_MATCHES so we shouldn't need this redundant check.
+
+Line:322, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsReader.java -> Don't remove? We are just converting pending to FoundObject and returning to the caller where it shouldn't touch pending again?
+
+But I'm skeptical about that change because what if we have no packs, we findAllImpl() through this path, and then packList.dirty() is true and we rescan. pending is now empty but we maybe we could find what we wanted.
+
+If we left pending non-empty we'd produce duplicate results in r, one set of FoundObject saying its missing, and another set saying it exists. That wouldn't be good either.
+
+Line:364, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsReader.java -> Maybe somehow defer this line until after the packList.dirty second pass?
+
+Line:367, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsReader.java -> The sorts may have to be deferred until after the packList.dirty second pass
+
+Line:539, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsReader.java -> FWIW yes I agree this is safe.
+
+Line:293, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/InMemoryRepository.java -> Like below with the compareAndPut I don't see why we need to mark ourselves dirty if we successfully wrote a ref. We should have had the object in order to do the command.
+
+Line:320, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/InMemoryRepository.java -> Unlike the other places in this class, this one makes sense.
+
+But I wonder if we shouldn't just do this in the base DfsRefDatabase as part of the caller of scanAllRefs. IIRC the only caller of scanAllRefs is DfsRefDatabase.
+
+Line:399, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/InMemoryRepository.java -> I don't think we need to mark our object database as dirty after we store a ref. We should have the object(s) already visible for newRef.
+
+Line:459, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/InMemoryRepository.java -> Why are we marking ourselves dirty after deleting a ref? No new objects were introduced.
+
+-------------------------------------
+author: Santos Moore
+date: 2016-07-14 17:00:27.000000000
+
+Patch Set 2:
+
+(3 comments)
+
+Line:322, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsReader.java -> Yeah, I think this needs a further rewrite.
+
+Line:293, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/InMemoryRepository.java -> Duh, I was not thinking here.
+
+Line:320, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/InMemoryRepository.java -> In our DfsRepository implementation we are able to tell that a particular call to scanAllRefs should *not* mark the objdb dirty, in the case where all scanned refs have timestamps older than the newest packfile. If we unconditionally mark dirty in the caller of scanAllRefs, we can't apply that optimization. It would certainly simplify the implementation though, I agree.
+
+-------------------------------------
+author: Santos Moore
+date: 2016-07-14 17:47:32.000000000
+
+Patch Set 2:
+
+(9 comments)
+
+All done except one outstanding question on fine-grained invalidation.
+
+Line:171, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsReader.java -> Done
+
+Line:181, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsReader.java -> Done
+
+Line:302, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsReader.java -> I used a set here to avoid quadratic removal behavior, but I realized this is actually a behavior change. Previously we would happily emit results for an object multiple times if you listed it multiple times in the input; here we deduplicate.
+
+I guess a LinkedList is the way to go here then. Or a BlockList; I have no idea what the distribution of input sizes is.
+
+Line:322, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsReader.java -> Done. Pretty straightforward.
+
+* findAll with the first list, removing from pending only found items
+* findAll with the second list if applicable
+* add missing FoundObjects for all remaining pending
+* sort
+
+Line:364, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsReader.java -> Done.
+
+Line:367, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/DfsReader.java -> Done
+
+Line:293, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/InMemoryRepository.java -> Done
+
+Line:399, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/InMemoryRepository.java -> Done
+
+Line:459, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/InMemoryRepository.java -> Done
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2016-07-14 22:07:21.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:320, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/dfs/InMemoryRepository.java -> Right, good point. Ok lets go with this approach of markDirty in the scanAllRefs implementation.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-07-19 14:51:52.000000000
+
+Change has been successfully merged into the git repository by Santos Moore
+
+-------------------------------------

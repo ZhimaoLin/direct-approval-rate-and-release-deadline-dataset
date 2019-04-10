@@ -1,0 +1,205 @@
+DESCRIPTION
+
+Implement a Dircache checkout (needed for merge)
+
+This commit introduces classes with should replace WorkDirCheckout.
+WorkDirCheckout uses the deprecated GitIndex which cannot handle
+multiple stages and has to be replaced.
+A lot of effort went into testing to be able to reuse the existing
+test in ReadTreeTest. Now the tests for DirCacheCheckout subclass
+the ReadTreeTest and therefore inherit the existing tests.
+The tests have been enriched to check also for the work-dir state.
+
+Signed-off-by: Zachary Orozco xxx@xxx.xxx
+Change-Id: 	I13f0f23ad60d98e5168118a7e7e7308e066ecf9c
+
+
+COMMENTS
+
+author: Zachary Orozco
+date: 2010-06-11 05:34:28.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-06-11 05:35:48.000000000
+
+Patch Set 2: No score; No score
+
+just added a missing license header
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-06-14 16:41:29.000000000
+
+Patch Set 2: I would prefer that you didn't submit this; No score
+
+This is only a first pass review.  I found enough things that I gave up and didn't go through the detailed logic of the compare, because I suspect it will need to change if you take my suggestions and look at adding a WorkingTreeIterator into the process.
+
+Line:598, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheEntry.java -> FWIW, I never intended for this DirCacheEntry class to be responsible for this sort of status check code.  I meant for this to go into some other new class that was running a TreeWalk of some sort over a FileTreeIterator and a DirCacheIterator.
+
+For example, FileTreeIterator already has the ability to compute the ObjectId of the file on the fly.  This is derived through the WorkingTreeIterator base class.
+
+By doing this sort of stuff through the WorkingTreeIterator, we can use the Eclipse IResource APIs to access the files when inside of EGit, rather than relying on java.io.File.  This means we could rely on the Eclipse stat cache rather than always hitting stat() on the filesystem, and we could make use of the IResource APIs to modify the files, so the workbench would be properly notified of any edits we make.
+
+Relying on WorkingTreeIterator might also simplify some of the logic around the mode test.  Its already converted the filesystem mode into the raw mode format we use in the index, making direct compares easier.
+
+Line:649, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheEntry.java -> Our getLastModified() is returning milliseconds.  Dividing by 1000000L here is going to produce the wrong unit.
+
+Line:653, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheEntry.java -> We should also be looking for the "racy git" case here.
+
+If mightBeRacilyClean() returns true, we need to do a content check, no matter what forceContentCheck says.  This is to avoid the case where the index was written out with the same timestamp as the file itself, making the file timestamp somewhat in doubt about being modified or being clean.
+
+Line:664, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheEntry.java -> Please don't print stack traces to System.err.
+
+Line:670, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheEntry.java -> Again, don't print to System.err.
+
+Line:674, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheEntry.java -> This can happen if the user is racing with us and removes the file after we've checked for it existing.  Instead we should silently treat this as though length() ==0 and exists() == false.  Which above means "return true".  So we should just document why its OK to simply "return true" here, and return true.
+
+Line:690, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheEntry.java -> In light of Ifc4278078b298781d55cf5421e9647a21fa5db24 being merged first, we probably should be using the Repository's FS here.  Which means we might need to be passing it down.
+
+Line:707, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheEntry.java -> Like the status method above, I never meant for this to be in the DirCacheEntry code.  Instead I meant for it to be in some other class that is interacting with the TreeWalk and the WorkingTreeIterator.  That way we can write out through the IResource APIs and properly notify the workbench of an edit.
+
+Line:709, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheEntry.java -> This returns null if the object doesn't exist in the repository.  This could happen in the case of repository corruption on disk.  We should at least give a better error message than NullPointerException when the object isn't present, like throwing back a MissingObjectException.
+
+In hindsight this is a mess.  The open family on Repository should be throwing that MissingObjectException and never return null.  Every single caller wants the object, or throws.  We really need to fix that in the API, and then fix the callers.  But until then, callers are responsible for checking.  *sigh*
+
+Line:710, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheEntry.java -> Using getCachedBytes() is faster, it doesn't make a copy, but you have to promise you won't modify the array.  :-)
+
+Line:711, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheEntry.java -> I think its dangerous to delete the file and rewrite it in place.  Its safer to write to a temporary file in the target directory, and rename the temporary file over to the real name.  If the rename fails (e.g. due to Windows stupidity), you can try deleting the target and then renaming.
+
+IIRC C git takes this approach to file writing.  It almost always writes to a temporary file in the same directory and then tries to rename over to the target.  That way if you crash while writing, the user isn't left with a half-written file that might somehow be taken as an edit.  Instead they are left with a file that isn't updated at all.
+
+Line:713, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheEntry.java -> Why are we writing out through a channel?  Why not just write to the file stream?
+
+Line:715, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheEntry.java -> This needs to be in a try/finally so that we ensure the file was closed.
+
+Line:729, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheEntry.java -> I'm pretty sure our setLastModified takes milliseconds.
+
+Line:112, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> You should document that the caller is expected to lock the DirCache before they pass it into you.
+
+Line:134, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> If we already passed these arguments to the constructor, why do we have to pass them again to this method?
+
+Line:206, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> I think its going to be faster to add a WorkingTreeIterator to the same walk, and using the existence of its WorkingTreeIterator on the current path name to tell you if the file exists, or not.
+
+That strategy is based off doing a directory listing and testing set contents in memory, rather than doing a stat() call to test for the name being present.  It also lets you avoid the (relatively expensive) getEntryPathString() call.
+
+Line:252, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> You probably should apply removed first.
+
+If we have foo/bar turning into just foo, we need to safely delete the file bar, and safely delete the directory foo, before we can safely create the file called foo.
+
+Also, we should try to apply these in order, starting from the bottom of the tree up.  That way you can avoid doing removeEmptyParents() until the last name scheduled for removal in that directory is removed.
+
+Its not all that hard.  Since removed is a List<String>, and its built during the name traversal, these are already sorted properly.  We just have to keep track of the directory prefix as we walk through the names:
+
+  String last = "";
+  for (String r : removed) {
+    if (!samePrefix(r, last))
+      removeEmptyParents(last);
+    ... delete r
+    last = r;
+  }
+  removeEmptyParents(last);
+
+  private boolean isSamePrefix(String a, String b) {
+    int as = a.lastIndexOf('/');
+    int bs = b.lastIndexOf('/');
+    return a.substring(0, as + 1).equals(bs.substring(0, bs + 1));
+  }
+
+Line:289, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> Like with the 2-tree form of processEntry, I think you want actually a 4th tree here, the WorkingTreeIterator.
+
+Yea, its ugly.  You are trying to do a merge across 4 things:
+
+ * HEAD
+ * index
+ * working directory
+ * target tree
+
+And the rules are about how working directory needs to match index and/or HEAD in order for an edit from target to be applied.
+
+Line:344, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> Clever!
+
+Line:464, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> tabs here, but spaces on next few lines, makes it harder to read.
+
+Line:491, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> tabs here, but spaces on next few lines, makes it harder to read.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-07-05 23:51:57.000000000
+
+Patch Set 2: (20 inline comments)
+
+
+
+Line:598, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheEntry.java -> I moved this method into the WorkingTreeIterator
+
+Line:649, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheEntry.java -> Done
+
+Line:653, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheEntry.java -> yes, that's true. But couldn't we do that in another proposal? I would like not to more topics to this proposal. WorkDirCheckout was not handling it and this proposal is about a port of the semantics of WorkDirCheckout. I agree think we should not make use of this Checkout without racy git situations are handled.
+
+Line:664, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheEntry.java -> sure, you are right. This is blindly copied from GitIndex where we do the same. This this code went into WorkingTreeIterator where we can compare IDs this may even not be needed anymore
+
+Line:670, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheEntry.java -> same as  aboth
+
+Line:674, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheEntry.java -> we don't check for existence anymore in the new location of this method - the WorkingTreeIterator
+
+Line:690, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheEntry.java -> Done
+
+Line:707, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheEntry.java -> that's different from isModified. The isModified() method can be put to the WorkingTreeIterator. But this method writes to the WorkingTree and that's not what WorkingTreeIterator is intendet for, or? So, for know, as I would really like to a first merge out I move this method to the DirCacheCheckout class, knowing that we need a better place for it.
+One problem I faced here: we do have an abstraction to access the WorkTree when walking (reading) on it. Applications could use non-filesystem working-trees in that case. But we don't have an working-tree abstraction which allows to create/update/delete files. Do we need it?
+I was trying out a first attempt to have WorkingTreeWriters and one implementation for it, but it grew big enough that I decided I would like seperate this issue from the important merge.
+
+Line:709, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheEntry.java -> Done
+
+Line:710, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheEntry.java -> Done
+
+Line:711, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheEntry.java -> same argument as with "racy git". I agree but would like to do it in a follow-up proposal
+
+Line:713, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheEntry.java -> cause I saw it like that in GitIndex#checkoutEntry. Do you remember why they did so - performance?
+
+Line:715, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheEntry.java -> Done
+
+Line:729, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheEntry.java -> Done
+
+Line:112, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> Done
+
+Line:134, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> Done
+
+Line:252, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> ok, did what you suggested. One thing I did different: in the loop I deleted the file before I deleted the emptyParents.
+
+Line:289, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> Done
+
+Line:464, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> Done
+
+Line:491, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> Done
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-06-15 15:07:58.000000000
+
+MISMATCHED INLINE COMMENT
+Line:206, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> Sorry about the lagging replies.  I've had more code review requests than I know what to do with, when you sum up all of the projects that I'm working on.  Some stuff just slips through the cracks, and unfortunately you lost time for it.
+
+I think you are right, most compares don't require that 4th working tree iterator.  But a handful do.  Its probably better to keep that 4th working tree iterator running in parallel so that those compares are cheaper.  Unfortunately, we may wind up doing a stat() of each path to determine if its a file or a directory, and that stat is wasted if you later don't need to look at that particular path name.  However, I would rather the code be correct and easy to follow (it really is a 4-way join) than fast and obtuse.  We can always try to improve the working tree performance later.
+
+WorkDirCheckout predates the WorkingTreeIterator class, so it couldn't use it.  However, it does still have to hit the filesystem to figure out what is going, on and do that 4th join.
+
+Anyway, let me try to reply to [2] in context, rather than here.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-06-15 09:57:12.000000000
+
+MISMATCHED INLINE COMMENT
+Line:206, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> Argh, ... quite lately I removed the workTreeIterator. My first version had the four iterators in the walk. Also your description on the algorithm in [1] contained the WorkingTreeIterator ... but this description was always walking over three tree's leaving out the head-commit. And I was always wondering why the WorkDirCheckout which had to solve the same problem didn't make use of the WorkingTreeIterator.
+I tried on my own with 4 trees and detected that in dozens of cases I don't need a working tree iterator (because I detect conflicts without looking at the workingdir). I thought: maybe iterating costly over the filesystem by default is not worth the effort and looking at files only when I need it is more performant.
+When I later got some problems during implementing I asked in you in [2] but couldn't wait for your answer before doing the proposal.
+
+Anyhow: I'll propose another patchset with the WorkDirIterator. I'll enhance the interface so that EGit can pass it's own Iterator.
+
+[1] http://dev.eclipse.org/mhonarc/lists/jgit-dev/msg00220.html
+[2] http://dev.eclipse.org/mhonarc/lists/jgit-dev/msg00377.html
+
+-------------------------------------

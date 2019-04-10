@@ -1,0 +1,107 @@
+DESCRIPTION
+
+[sync] Add drag-n-drop (un)staging into Git Change Set model
+
+Adds support for staging/unstaging changes by drag-and-drop them from
+'<working tree>' node into '<staged changes>' node and other way around.
+
+Also changes the behavior of showing '<working node>' and '<staged
+changes>' node. Now both nodes will be shown when ever one of contains
+data.
+
+Change-Id: I8db8b95bcd17ad6e7a89169d88f08758a9467d98
+Signed-off-by: Leslie Stephenson xxx@xxx.xxx
+
+COMMENTS
+
+author: Leslie Stephenson
+date: 2011-08-07 11:17:50.000000000
+
+Uploaded patch set 8.
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-08-07 11:17:54.000000000
+
+Patch Set 8:
+
+Build Started https://hudson.eclipse.org/sandbox/job/egit.gerrit/1375/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-08-07 11:27:49.000000000
+
+Patch Set 8: Build Successful
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/egit.gerrit/1375/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2011-08-07 20:23:49.000000000
+
+Patch Set 8: I would prefer that you didn't submit this
+
+I played with this change using the jgit repository with around 15 new files and a couple of dirty files, tried to stage and unstage, here what I came across:
+
+- once I hit an NPE
+
+java.lang.NullPointerException
+	at org.eclipse.team.core.variants.AbstractResourceVariantTree.mergedMembers(AbstractResourceVariantTree.java:211)
+	at org.eclipse.team.core.variants.AbstractResourceVariantTree.collectChanges(AbstractResourceVariantTree.java:173)
+	at org.eclipse.team.core.variants.AbstractResourceVariantTree.collectChanges(AbstractResourceVariantTree.java:177)
+	at org.eclipse.team.core.variants.AbstractResourceVariantTree.collectChanges(AbstractResourceVariantTree.java:177)
+	at org.eclipse.team.core.variants.AbstractResourceVariantTree.collectChanges(AbstractResourceVariantTree.java:177)
+	at org.eclipse.team.core.variants.AbstractResourceVariantTree.collectChanges(AbstractResourceVariantTree.java:177)
+	at org.eclipse.team.core.variants.AbstractResourceVariantTree.collectChanges(AbstractResourceVariantTree.java:177)
+	at org.eclipse.team.core.variants.AbstractResourceVariantTree.collectChanges(AbstractResourceVariantTree.java:113)
+	at org.eclipse.team.core.variants.ResourceVariantTree.access$0(ResourceVariantTree.java:1)
+	at org.eclipse.team.core.variants.ResourceVariantTree$1.run(ResourceVariantTree.java:112)
+	at org.eclipse.team.core.variants.ResourceVariantByteStore.run(ResourceVariantByteStore.java:128)
+	at org.eclipse.team.core.variants.ResourceVariantTree.collectChanges(ResourceVariantTree.java:110)
+	at org.eclipse.team.core.variants.AbstractResourceVariantTree.refresh(AbstractResourceVariantTree.java:90)
+	at org.eclipse.team.core.variants.AbstractResourceVariantTree.refresh(AbstractResourceVariantTree.java:54)
+	at org.eclipse.team.core.variants.ResourceVariantTreeSubscriber.refresh(ResourceVariantTreeSubscriber.java:159)
+	at org.eclipse.team.core.variants.ResourceVariantTreeSubscriber.refresh(ResourceVariantTreeSubscriber.java:126)
+	at org.eclipse.team.core.subscribers.Subscriber.refresh(Subscriber.java:466)
+	at org.eclipse.egit.core.synchronize.GitSubscriberMergeContext.update(GitSubscriberMergeContext.java:114)
+	at org.eclipse.egit.core.synchronize.GitSubscriberMergeContext.access$0(GitSubscriberMergeContext.java:95)
+	at org.eclipse.egit.core.synchronize.GitSubscriberMergeContext$1.repositoryChanged(GitSubscriberMergeContext.java:52)
+	at org.eclipse.egit.core.project.GitProjectData$1.run(GitProjectData.java:162)
+	at org.eclipse.core.internal.jobs.Worker.run(Worker.java:54)
+
+- it seems it's possible to run into a situation with many "Git repository changed job"s, I ran into a situation where around 10-15 of these jobs ran concurrently which consumed 100% CPU for all 4 cores of my laptop for at least 5 minutes, I killed the debug session to stop this, the debugger logged a warning that 8 jobs were still active when the workbench was killed. I also did a couple of d&d operations with multi-selecting a couple of resources. Probably only one job of this type should run at a given time
+- decorators flicker a lot in synchronize view, when dragging a dirty file from unstaged to staged or vice versa, resource decorators of all resources change at least 2 or 3 times, this looks weird, I would expect that only the decorators of the resource(s) being staged or unstaged by the d&d operation should be affected
+- would be better to have the "flat presentation" supported as otherwise quite big parts of the display tree may change when all resources under a given folder are staged/unstaged, hence I had to scroll a lot
+
+-------------------------------------
+author: Leslie Stephenson
+date: 2011-08-07 22:35:40.000000000
+
+Patch Set 8:
+
+- this NPE isn't connected with this change. I'll soon provide separate change that will fit it.
+- yes it is possible to have more then one "Git repository change job" at once but they should not block each other. Maybe some repository change listeners were fired and was consuming CPU
+- sync view is reusing default egit decorator and this is how it works now. In feature we could replace it with specialized one, that would be decorating resources based on parent node type
+- yes, in deed flat presentation would be good here, but this is rather topic for separate change
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2011-08-08 22:25:24.000000000
+
+Patch Set 8: (4 inline comments)
+
+ok to all your explanations, some minor issues, will upload fixes for them in a minute
+
+couldn't reproduce the many jobs eating all CPU problem I reported
+
+Line:63, org.eclipse.egit.core/src/org/eclipse/egit/core/project/GitProjectData.java -> for consistency this should go in another JobFamilies class in core bundle
+
+Line:40, org.eclipse.egit.core/src/org/eclipse/egit/core/op/RemoveFromIndexOperation.java -> these are no longer paths, so better: list of resources that should be ...
+
+Line:125, org.eclipse.egit.core/src/org/eclipse/egit/core/coretext.properties -> typo: s/Taks/Task/
+
+Line:3404, org.eclipse.egit.ui/plugin.xml -> typo: s/Assistan/Assistant/
+
+-------------------------------------

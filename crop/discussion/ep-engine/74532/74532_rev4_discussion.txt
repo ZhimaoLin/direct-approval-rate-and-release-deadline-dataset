@@ -1,0 +1,88 @@
+DESCRIPTION
+
+OrderedStoredValue [1/N]: Remove 'key' from StoredValues members
+
+To allow us to add next/prev pointers to StoredValues for Ephemeral
+buckets, we want to be able to "subclass" the StoredValue class to
+create a OrderedStoredValue class. This subclass would have the two
+extra fields at the end of the object (compared to StoredValue).
+
+However, to permit this we need to make the layout of
+OrderedStoredValue be a superset of StoredValue - i.e.
+
+    class StoredValue {
+        // Fixed fields - value_t, next, cas, revSeqno, ...
+        SerializedDocKey key; // - variable
+    }
+
+    class OrderedStoredValue : public StoredValue {
+        StoredValue* next;
+        StoredValue* prev;
+    }
+
+The issue with the code as it stands is that SerializedDocKey is a
+variable-length member - we allocate extra memory "off the end" of the
+StoredValue object which is used for SerializedDocKey. This means that
+OrderedStoredValue can't directly inherit from StoredValue and have
+next/prev in the place we think they are - the compiler doesn't know
+about the variable-length and hence they would collide with the key.
+
+We also want to try to keep the next/prev pointers towards the front
+of the object - so they are ideally in the same cache-line, and at a
+constant offset.
+
+Therefore to permit this subclassing, we modify StoredValue to *not*
+explicitly include SerialisedDocKey in the end of StoredValue.  It
+would still physically lie at the end of that object (i.e. layout in
+memory is the same), but it wouldn't be a member variable of
+StoredValue - instead we would add a method which "Adrianna Holmesally" does the
+appropriate pointer calculation to get the address of it.
+
+The net result of this is that the two different classes should end up
+laid out in memory as:
+
+     StoredValue:
+
+     0                    53          53 + KeyLen
+     +--------------------+-----------+
+     | StoredValue[fixed] | key bytes |
+     +--------------------+-----------+
+
+    OrderedStoredValue:
+
+     0                    53     61     69          69 + KeyLen
+     +--------------------+------+------+-----------+
+     | StoredValue[fixed] | next | prev | key bytes |
+     +--------------------+------+------+-----------+
+
+The first step of this is to remove `key` from the member variables of
+StoredValue, and Adrianna Holmesally allocate it at the end of StoredValue (and
+in future) OrderedStoredValue.
+
+Change-Id: I72ce6247b22e9d9485b010070a26a607c7db1d6c
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2017-03-03 10:01:11.441000000
+
+Patch Set 4: Patch Set 3 was rebased
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-03-03 10:12:14.910000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/3084/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/4259/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/3828/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/4480/ : SUCCESS
+
+-------------------------------------

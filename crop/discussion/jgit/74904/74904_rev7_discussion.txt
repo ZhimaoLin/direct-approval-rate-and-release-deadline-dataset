@@ -1,0 +1,114 @@
+DESCRIPTION
+
+Time based eviction strategy for repository cache
+
+When Repository.close() decrements the useCount to 0 currently the cache
+immediately evicts the repository from WindowCache and RepositoryCache.
+This leads to I/O overhead on busy repositories because pack files and
+references are inserted and deleted from the cache frequently.
+
+This commit defers the eviction of a repository from the caches until
+last use of the repository is older than time to live. The eviction is
+handled by a background task running periodically.
+
+Add two new configuration parameters:
+* core.repositoryCacheExpireAfter: cache entries are evicted if the
+cache entry wasn't accessed longer than this time in milliseconds
+* core.repositoryCacheCleanupDelay: defines the interval in milliseconds
+for running a background task evicting expired cache entries. If set to
+-1 the delay is set to min(repositoryCacheExpireAfter, 10 minutes). If
+set to 0 the time based eviction is switched off and no background task
+is started. If time based eviction is switched off the JVM can still
+evict cache entries if heap memory is running low.
+
+Change-Id: I4a0214ad8b4a193985dda6a0ade63b70bdb948d7
+Also-by: Douglas Trujillo xxx@xxx.xxx
+Also-by: Mitchell Griffith xxx@xxx.xxx
+Also-by: Dillon Cross xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Douglas Trujillo
+date: 2016-07-07 14:59:30.000000000
+
+Uploaded patch set 7: Patch Set 6 was rebased.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-07-07 14:59:39.000000000
+
+Patch Set 7:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/8650/
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2016-07-07 15:01:46.000000000
+
+Patch Set 7: Code-Review+2 Verified+1
+
+* tested in production
+* we observe negative useCnt in rare cases, add logging for this in follow up change to enable finding the root cause
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2016-07-07 15:06:26.000000000
+
+Patch Set 7:
+
+(1 comment)
+
+Line:869, org.eclipse.jgit/src/org/eclipse/jgit/lib/Repository.java -> looks like we need Java 8's AtomicInteger.updateAndGet(IntUnaryOperator updateFunction) [1] to  prevent that useCnt can drop below 0 without introducing a lock
+
+[1] https://docs.oracle.com/javase/8/docs/api/java/util/concurrent/atomic/AtomicInteger.html#updateAndGet-java.util.function.IntUnaryOperator-
+
+-------------------------------------
+author: Mitchell Griffith
+date: 2016-07-07 15:07:45.000000000
+
+Patch Set 7:
+
+(1 comment)
+
+Line:136, org.eclipse.jgit/src/org/eclipse/jgit/lib/RepositoryCacheConfig.java -> Should this change be rebase on top of the config time unit change and  use config.getTimeUnit here?
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-07-07 15:18:40.000000000
+
+Patch Set 7: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/8650/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2016-07-07 15:24:19.000000000
+
+Patch Set 7: Code-Review-1
+
+(1 comment)
+
+Line:136, org.eclipse.jgit/src/org/eclipse/jgit/lib/RepositoryCacheConfig.java -> yes, this was my intention when cherry-picking the time unit change but obviously I missed to do the rebase and actually use config.getTimeUnit
+
+Will do this later today
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2016-07-07 15:43:18.000000000
+
+Patch Set 7:
+
+(1 comment)
+
+Line:136, org.eclipse.jgit/src/org/eclipse/jgit/lib/RepositoryCacheConfig.java -> Done
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-07-12 13:16:36.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

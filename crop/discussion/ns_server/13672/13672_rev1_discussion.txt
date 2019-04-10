@@ -1,0 +1,81 @@
+DESCRIPTION
+
+Added 7 stats to bucket analytics to cover couch disk usage
+
+Document data size, view data size, total view and docs disk
+size, view and docs fragmentation percentage and total size
+of view + docs data.
+
+Change-Id: I18708d895a8a20a27c2222a2fa3fde918cbe2851
+
+
+COMMENTS
+
+author: Nathalie Landry
+date: 2012-02-29 18:47:55.424000000
+
+Patch Set 1:
+
+I don't see reason for doing wildcard matching for grabbing views disk size.
+
+Also it is possible to mess things up a bit by naming bucket "set_views_default_design".
+
+I've discussed with Filipe and it seems that much easier would be if we put index files like this <couch_index_dir>/<bucket-name>/indexes/<index files are here>.
+
+It should be trivial change to do in couchdb and Filipe is ok if we do it ourselves.
+
+It can go in either before this commit is adjusted (and then view disk stat code needs to be adjusted here) or later (and then view disk stat code will be adjusted separately).
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-02-29 19:07:45.344000000
+
+Patch Set 1: (6 inline comments)
+
+had few other notes as well.
+
+And Filipe mentioned that you need to grab replica index stats as well and at least add them main index stats. I'm sure code can be spotted in compaction daemon. Or view merger.
+
+Line:82, src/couch_stats_reader.erl -> iolist_to_binary will flatten things more efficiently
+
+Line:89, src/couch_stats_reader.erl -> bad indentation here
+
+Line:115, src/couch_stats_reader.erl -> close should always be done in "after" block
+
+Line:146, src/couch_stats_reader.erl -> Lets extract this to some helper. And we actually have per-bucket servers that keep track of design docs efficiently. Lets ask that guy instead.
+
+Filipe also noted that this stop case is not needed here. Because we're doing end_key_gt
+
+Line:156, src/couch_stats_reader.erl -> this is cut&pasted as well. Makes sense to extract somewhere.
+
+But I see not clear need to do at least i2b. And l2b is just alias for list_to_binary.
+
+Line:722, src/menelaus_stats.erl -> indentation issue
+
+-------------------------------------
+author: Porter Oconnor
+date: 2012-02-29 19:09:57.254000000
+
+Patch Set 1: (3 inline comments)
+
+
+
+Line:100, src/couch_stats_reader.erl -> You need to check the replica index data and disk sizes as well.
+Inside the group info propslist, there's a property named 'replica_group_info' if the index has replica support.
+
+Line:133, src/couch_stats_reader.erl -> Disagree a bit with this.
+Lets say you index 1M documents and get a disk size of 10Gb. Then you delete all the documents, trigger an index update - data size will be 0 and disk size 10Gb, fragmentation is basically 100% then. After compaction file size won't be 0 bytes however, since an header will be written (less than 1 or 2Kb however).
+
+Line:150, src/couch_stats_reader.erl -> Can we stop having this i2b and l2b in every module you write/update? :)  why not just in a .hrl file?
+
+-------------------------------------
+author: Meghan Vazquez
+date: 2012-02-29 19:13:39.155000000
+
+Patch Set 1: (1 inline comment)
+
+
+
+Line:154, src/couch_stats_reader.erl -> l2b macro is defined in couch_db.hrl. And btw type spec is wrong.
+
+-------------------------------------

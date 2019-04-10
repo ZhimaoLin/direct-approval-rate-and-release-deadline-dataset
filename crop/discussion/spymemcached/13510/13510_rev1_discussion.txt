@@ -1,0 +1,116 @@
+DESCRIPTION
+
+Decode TAP mutation flags as host byte order.
+
+In trying to decode the item flags from a tap mutation, it was found
+that the flags are stored in the server in network byte order, but when
+sent over tap it goes through htonl() conversion, making it a double
+conversion.  Since TAP is pretty well baked, we'll decode differently.
+
+:(
+
+Change-Id: I63b69273cac194163b784211474ec2ff77bd7959
+
+
+COMMENTS
+
+author: Jeffrey Roth
+date: 2012-02-24 18:43:59.110000000
+
+Patch Set 1: Looks good to me, but someone else must approve
+
+(1 inline comment)
+
+
+
+Line:253, src/main/java/net/spy/memcached/tapmessage/BaseMessage.java -> I don't know if this should make a difference with 32 and 64 bit architectures, but, wondering if we need to test on both (if not already)?
+
+-------------------------------------
+author: Kenny Maynard
+date: 2012-02-24 19:08:24.404000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+It sounds to me like the server is doing something wrong here and if that's the case I think we should fix the server before tap becomes used by a wider audience.
+
+-------------------------------------
+author: Noah Dean
+date: 2012-02-24 19:32:00.308000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(1 inline comment)
+
+-1 for lack of a test.  This is a pretty awful bug, though, because it can't possibly do the right thing.  If we're actually doing an htonl() on big-endian data, the result is sometimes big-endian and sometimes little-endian.  We can't say it's network byte order or host byte order because we don't know the host byte order (which is why the terms host and network byte order exist).
+
+Line:253, src/main/java/net/spy/memcached/tapmessage/BaseMessage.java -> Java fairly insulates this.  Although I find this confusing, because I didn't think java had endianess issues.
+
+-------------------------------------
+author: Noah Dean
+date: 2012-02-24 19:42:53.096000000
+
+Patch Set 1:
+
+Trond suggested fixing this and sending an opaque to straighten it out.  If anyone ever runs a client or server on a big endian box and tries to run the other end on a little endian box, this would not work.
+
+-------------------------------------
+author: Andreas Short
+date: 2012-02-24 19:52:02.001000000
+
+Patch Set 1:
+
+I know this will be effectively architecture specific, but at the moment there's no way to deal with http://www.couchbase.com/issues/browse/MB-4834.  We have customer needs to make this work with 1.8.0.  
+
+Is an acceptable solution to introduce a server fix and a client fix based on some other flag?  The "I really ordered this correctly" flag?
+
+-------------------------------------
+author: Noah Dean
+date: 2012-02-24 19:59:02.859000000
+
+Patch Set 1:
+
+I agree.  Let's define the "doesn't have ordering bug" flag and switch on that.  We'll set it to 1 when we don't have the bug.  Lots of stuff will probably break right when we do that.
+
+-------------------------------------
+author: Asher Vang
+date: 2012-03-06 09:44:57.999000000
+
+Patch Set 1:
+
+Ehh.. why are we dealing with endianness ourself instead of using the ByteBuffer thingie?
+
+-------------------------------------
+author: Asher Vang
+date: 2012-03-07 12:42:54.791000000
+
+Patch Set 1: Do not submit
+
+Use the new flags to your tap connection. if the server knows about the bug it'll tell you the byteorder of the flags
+
+-------------------------------------
+author: Andreas Short
+date: 2012-03-07 20:17:42.293000000
+
+Patch Set 1:
+
+Yes, that's my plan.  I have an updated patch here that does that already.  I just need to add a test.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2012-03-15 03:34:14.841000000
+
+Patch Set 1:
+
+I think something got submitted to memcached for this. Can we abandon?
+
+-------------------------------------
+author: Andreas Short
+date: 2012-03-15 20:24:06.169000000
+
+Patch Set 1: Do not submit
+
+I'll have to have a look, but over the last few days in not-so-spare time I wrote a solid test for ResponseMessage and found a few other bugs in the process.  I don't think the code on spymemcached likely covers this.
+
+I'll try to have this up later this afternoon.
+
+-------------------------------------

@@ -1,0 +1,161 @@
+DESCRIPTION
+
+Fix expansion problems and provide auto selection support.
+
+Bug: 451216
+Change-Id: I748f61ec41fe34b3cee9612ed8dc156bd29b5812
+Signed-off-by: Ronan Romero xxx@xxx.xxx
+
+COMMENTS
+
+author: Ronan Romero
+date: 2016-08-13 17:51:32.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-08-13 17:51:38.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/8970/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-08-13 18:15:29.000000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/8970/ : SUCCESS
+
+-------------------------------------
+author: Ronan Romero
+date: 2016-08-13 19:30:53.000000000
+
+Patch Set 4:
+
+Oops! Yes of course!!
+
+-------------------------------------
+author: Alayna Houston
+date: 2016-08-15 22:28:58.000000000
+
+Patch Set 4: Code-Review+1
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2016-08-16 22:53:18.000000000
+
+Patch Set 4: Code-Review-1
+
+(16 comments)
+
+I like the improvements you did here.
+
+Though it seems this change slows down staging/unstaging considerably (so far I didn't measure times, will try to do this soon).
+I used a clone of jgit to test this on Mac: I randomly changed/added/removed around 30 files in different packages and then staged/unstaged these entries and compared performance with/without this change.
+
+Line:1941, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/staging/StagingView.java -> s/as/has/
+
+Line:2053, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/staging/StagingView.java -> s/an/a/
+
+Line:2062, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/staging/StagingView.java -> we only need to visit all children if no child is visible or only the last one
+
+Line:2078, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/staging/StagingView.java -> I think this comment isn't needed, you mentioned this already above and the code is pretty clear
+
+Line:2081, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/staging/StagingView.java -> break the loop as soon as the first visible child was found ?
+
+Line:2105, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/staging/StagingView.java -> s/ it,/, it/
+
+Line:2114, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/staging/StagingView.java -> s/uses/used/
+
+Line:2116, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/staging/StagingView.java -> s/stated/state/
+
+Line:2133, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/staging/StagingView.java -> looks like something is missing here, not sure what this means
+
+Line:2216, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/staging/StagingView.java -> bad formatting, this could be moved up to the previous line
+
+Line:2269, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/staging/StagingView.java -> unnecessary comment
+
+Line:2277, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/staging/StagingView.java -> unnecessary comment
+
+Line:2285, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/staging/StagingView.java -> unnecessary comment
+
+Line:2290, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/staging/StagingView.java -> unnecessary comment
+
+Line:3521, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/staging/StagingView.java -> style nit: missing braces
+
+Line:9, /COMMIT_MSG -> This is a very short commit message for a large change. In order to facilitate reading and understanding the history I would appreciate if you could describe also in this commit message what this change improves (essentially https://bugs.eclipse.org/bugs/show_bug.cgi?id=451216#c4). This will allow to understand the purpose of this change by looking at the git history without needing to open the linked bug which is only possible when being online.
+
+-------------------------------------
+author: Ronan Romero
+date: 2016-08-17 05:32:34.000000000
+
+Patch Set 4:
+
+(3 comments)
+
+I'll address all the issues with an updated patch, and I've replied to a few of the review comments.  I'll also do some more measurements.
+
+Line:2062, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/staging/StagingView.java -> No, we must visit all visible descendants so we can't stop as soon as we hit one visible descendant.
+
+Line:2081, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/staging/StagingView.java -> No, the logic isn't there just to return true or false, it's there to actually visit all the children.  If any are visible, then the overall parent has visible children, but we must visit them all, even after the first visible one is found.
+
+Line:3521, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/staging/StagingView.java -> They're missing also in the block of code I copied, and at line 3507 above.  I tried to keep the style in line with what I saw, but that's not totally consistent.
+
+-------------------------------------
+author: Ronan Romero
+date: 2016-08-17 06:07:09.000000000
+
+Patch Set 4:
+
+I added logic to record the overall cost of the setStagingViewerInput as well as the overall cost of just inner setInput and expandPreviousExpandedAndPaths, i.e., the later being the cost that existed before the change, and the former being that plus all the new logic to compute old and new content for view change analysis as well as tree traversal for scroll correction.  With a very large set of changes (CDO's repo with ~10,000 unstaged changed files and ~50 staged changes) I get results like this:
+
+Full viewer update took 1744ms of which the setInput and reexpansion took 1689ms
+Full viewer update took 27ms of which the setInput and reexpansion took 26ms
+
+So the overhead is absolutely minimal even for this very large scenario.
+
+Using the jgit repo with roughly 30 added/removed/changed items and dragging things back and forth produces results like this:
+
+Full viewer update took 2ms of which the setInput and reexpansion took 1ms
+Full viewer update took 1ms of which the setInput and reexpansion took 0ms
+Full viewer update took 2ms of which the setInput and reexpansion took 2ms
+Full viewer update took 0ms of which the setInput and reexpansion took 0ms
+Full viewer update took 8ms of which the setInput and reexpansion took 6ms
+Full viewer update took 1ms of which the setInput and reexpansion took 1ms
+Full viewer update took 15ms of which the setInput and reexpansion took 10ms
+Full viewer update took 1ms of which the setInput and reexpansion took 1ms
+Full viewer update took 11ms of which the setInput and reexpansion took 9ms
+Full viewer update took 1ms of which the setInput and reexpansion took 1ms
+Full viewer update took 14ms of which the setInput and reexpansion took 12ms
+Full viewer update took 0ms of which the setInput and reexpansion took 0ms
+Full viewer update took 21ms of which the setInput and reexpansion took 19ms
+Full viewer update took 1ms of which the setInput and reexpansion took 0ms
+Full viewer update took 22ms of which the setInput and reexpansion took 16ms
+Full viewer update took 2ms of which the setInput and reexpansion took 1ms
+Full viewer update took 8ms of which the setInput and reexpansion took 7ms
+Full viewer update took 20ms of which the setInput and reexpansion took 18ms
+Full viewer update took 2ms of which the setInput and reexpansion took 2ms
+Full viewer update took 25ms of which the setInput and reexpansion took 23ms
+Full viewer update took 30ms of which the setInput and reexpansion took 23ms
+Full viewer update took 9ms of which the setInput and reexpansion took 9ms
+Full viewer update took 26ms of which the setInput and reexpansion took 21ms
+Full viewer update took 2ms of which the setInput and reexpansion took 2ms
+Full viewer update took 26ms of which the setInput and reexpansion took 24ms
+Full viewer update took 1ms of which the setInput and reexpansion took 1ms
+Full viewer update took 16ms of which the setInput and reexpansion took 15ms
+Full viewer update took 4ms of which the setInput and reexpansion took 3ms
+
+Here all the update costs, regardless of the overhead for the new logic, are so small that one could not possibly perceive a time difference.  In the end, a 5-10% overhead appears to be the case, i.e., in the worst case adding a 1/10 of a second to an operation that takes more than 1.5 seconds.
+
+-------------------------------------
+author: Gerrit Johnathan Pham
+date: 2016-09-07 06:02:47.000000000
+
+Change has been successfully merged into the git repository by Alayna Houston
+
+-------------------------------------

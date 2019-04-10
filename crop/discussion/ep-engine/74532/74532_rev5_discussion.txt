@@ -1,0 +1,152 @@
+DESCRIPTION
+
+OrderedStoredValue [1/4]: Remove 'key' from StoredValues members
+
+To allow us to add next/prev pointers to StoredValues for Ephemeral
+buckets, we want to be able to "subclass" the StoredValue class to
+create a OrderedStoredValue class. This subclass would have the two
+extra fields at the end of the object (compared to StoredValue).
+
+However, to permit this we need to make the layout of
+OrderedStoredValue be a superset of StoredValue - i.e.
+
+    class StoredValue {
+        // Fixed fields - value_t, next, cas, revSeqno, ...
+        SerializedDocKey key; // - variable
+    }
+
+    class OrderedStoredValue : public StoredValue {
+        StoredValue* next;
+        StoredValue* prev;
+    }
+
+The issue with the code as it stands is that SerializedDocKey is a
+variable-length member - we allocate extra memory "off the end" of the
+StoredValue object which is used for SerializedDocKey. This means that
+OrderedStoredValue can't directly inherit from StoredValue and have
+next/prev in the place we think they are - the compiler doesn't know
+about the variable-length and hence they would collide with the key.
+
+We also want to try to keep the next/prev pointers towards the front
+of the object - so they are ideally in the same cache-line, and at a
+constant offset.
+
+Therefore to permit this subclassing, we modify StoredValue to *not*
+explicitly include SerialisedDocKey in the end of StoredValue.  It
+would still physically lie at the end of that object (i.e. layout in
+memory is the same), but it wouldn't be a member variable of
+StoredValue - instead we would add a method which "Adrianna Holmesally" does the
+appropriate pointer calculation to get the address of it.
+
+The net result of this is that the two different classes should end up
+laid out in memory as:
+
+     StoredValue:
+
+     0                    53          53 + KeyLen
+     +--------------------+-----------+
+     | StoredValue[fixed] | key bytes |
+     +--------------------+-----------+
+
+    OrderedStoredValue:
+
+     0                    53     61     69          69 + KeyLen
+     +--------------------+------+------+-----------+
+     | StoredValue[fixed] | next | prev | key bytes |
+     +--------------------+------+------+-----------+
+
+The first step of this is to remove `key` from the member variables of
+StoredValue, and Adrianna Holmesally allocate it at the end of StoredValue (and
+in future) OrderedStoredValue.
+
+Change-Id: I72ce6247b22e9d9485b010070a26a607c7db1d6c
+
+
+COMMENTS
+
+author: Ashlee Kent
+date: 2017-03-03 14:42:33.042000000
+
+Uploaded patch set 5: Commit message was updated.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-03-03 15:02:07.518000000
+
+Patch Set 5: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/3094/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/4268/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/3837/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/4489/ : SUCCESS
+
+-------------------------------------
+author: Keira Washington
+date: 2017-03-03 15:03:08.258000000
+
+Patch Set 5: Code-Review-1
+
+(3 comments)
+
+Line:109, src/stored-value.h -> Why not just do a fully const version of key()?
+
+Line:502, src/stored-value.h -> I think you need to do this bit with a placement new for it to be within spec as the memory location which key() refers to isn't a a value yet.
+
+Line:525, src/stored-value.h -> This violates strict aliasing
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-03-03 15:17:39.374000000
+
+Patch Set 5:
+
+(3 comments)
+
+Line:109, src/stored-value.h -> Not sure I follow - we need a non-const one for constructing the key in the first place.
+
+Line:502, src/stored-value.h -> I believe this is ok because SerialisedDocKey is POD - but I agree it's not ideal. Let me see if I can adjust.
+
+Line:525, src/stored-value.h -> I don't think it really matters - and it might not strictly be violating - as the pointer returned doesn't actually alias anything else - it's off the end of the object conceptually.
+
+-------------------------------------
+author: Keira Washington
+date: 2017-03-03 15:28:33.391000000
+
+Patch Set 5:
+
+(2 comments)
+
+Line:109, src/stored-value.h -> Sure, but you can have both a const and a non-const variant without resorting to const_cast.
+
+Line:502, src/stored-value.h -> SerialisedDocKey isn't POD - it's StandardLayout. It would need to have a trivial default constructor. As it stands it has a protected default constructor so there's actually no way for key()'s lifetime to start before a constructor is explicitly called.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-03-03 15:31:18.021000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:525, src/stored-value.h -> If this blog is correct then this doesn't violate strict-aliasing: http://dbp-consulting.com/tutorials/StrictAliasing.html
+
+> For C++ only, a possibly CV (const and/or volatile) qualified base class type of a dynamic type can alias the child type. (Example: if class dog has class animal for a base class, pointers or references to  class dog and class animal can alias.)
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-03-03 15:35:55.794000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:109, src/stored-value.h -> So the problem with that is that if the non-const one is protected/private (which we want), then any instances in the code where we try to call getKey() on a non-const StoredValue will fail to compile now, as they will bind to the non-const one (which is private).
+
+I hit this in AccessScanner (and possibly other places). I think it's simpler to just name them differently; esp given the non-const one is never needed outside this class.
+
+-------------------------------------

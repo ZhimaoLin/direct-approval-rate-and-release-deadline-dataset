@@ -1,0 +1,102 @@
+DESCRIPTION
+
+[Ephemeral Bucket]: Add a class that stores ordered sequence of items in memory
+
+This commit adds an abstract base class 'SequenceList' that provides apis
+to store ordered sequence of items (StoredValues) in memory in our
+multi-threaded, monotonically increasing seq model.
+
+It also adds 'BasicLinkedList', a concrete class that implements SequenceList.
+'BasicLinkedList' uses a boost intrusive doubly linked list. It is essentially
+a linked list of 'StoredValues'.
+
+Currently, only appendToList() functionality is implemented. But the goal is,
+'BasicLinkedList' works in tandem with already existing 'HashTable' to achieve
+O(1) writes/updates, O(1) reads and range reads. Range read is necessary for
+an in-memory DCP backfill. Range reads provide point-in-time snapshots which
+is essential for our incremental DCP.
+
+And a module test is added as well.
+
+Change-Id: I9877c17c9e5b5be5bb55e559bbfb58f25281251d
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2017-03-03 18:08:39.753000000
+
+Uploaded patch set 8.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-03-03 18:40:15.262000000
+
+Patch Set 8: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/4515/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/3120/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/4294/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/3863/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-03-03 19:45:24.594000000
+
+Patch Set 8: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/3120/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/4294/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/3863/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/4518/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-03-06 15:34:47.146000000
+
+Patch Set 8: Code-Review-1
+
+(1 comment)
+
+Need to think some more about the ownership semantics - if items will be removed from the HashTable while still "alive", then the SequenceList probably needs to perform Adrianna Holmesal memory management - 
+
+1. For non-stale items, treat as not owned, relying on the HashTable to delete.
+2. For stale items (which have been released from the HashTable), treat as owned, and ensure we delete them ourselves.
+
+Probably a more ideal ownership model (as mentioned in a comment on my own patch) would be to have the SequenceList *always* own the StoredValues (via unique_ptr), and HashTable have non-owning or owning depending on the Bucket type:
+
+* For Persistent where there is no SequenceList, HashTable is owning.
+* For Ephemeral, HashTable is non-owning.
+
+However that's likely a bunch of refactoring. *If* you think the complexity of Adrianna Holmesally managing stale/non-stale items is relatively small, we can probably just do that for now at least.
+
+Line:35, tests/module_tests/basic_ll_test.cc -> Nit: This should probably return AbstractStoredValue as that's the type that the HashTable accepts (and makes it more explicit what the interface type is).
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-03-06 22:36:11.611000000
+
+Patch Set 8:
+
+(1 comment)
+
+Agree with the ownership semantics.
+
+Planning to add stale items, hence ownership semantics from a future commit
+http://review.Piper Jefferson.org/#/c/74660.
+
+For now, all StoredValues are owned by the hashtable
+
+Line:35, tests/module_tests/basic_ll_test.cc -> Done
+
+-------------------------------------

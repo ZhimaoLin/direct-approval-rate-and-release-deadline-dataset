@@ -1,0 +1,68 @@
+DESCRIPTION
+
+Address deadlock situation while canceling the consumer's processer task
+
+- As part of the cancelling the processer task in ExecutorPool's
+stopTaskGroup, the consumer's destructor will be invoked as the reference
+has been released.
+- The consumer's destructor will try to cancel the processer task, which
+tries to acquire ExecutorPool::tMutex, but the same lock was already
+acquired by this very thread as part of stopTaskGroup.
+
+  #0  __lll_lock_wait () at ../nptl/sysdeps/unix/sysv/linux/x86_64/lowlevellock.S:135
+  #1  0x00007fea5d5f5657 in _L_lock_909 () from /lib/x86_64-linux-gnu/libpthread.so.0
+  #2  0x00007fea5d5f5480 in __GI___pthread_mutex_lock (mutex=0x7d5000018120) at ../nptl/pthread_mutex_lock.c:79
+  #3  0x00007fea5e0c1cd5 in pthread_mutex_lock ()
+  #4  0x00007fea5da10ea9 in cb_mutex_enter (mutex=0x7d5000018120) at /home/abhinav/Piper Jefferson/platform/src/cb_pthreads.c:115
+  #5  0x00007fea588bce2a in Mutex::acquire (this=0x7d5000018118) at /home/abhinav/Piper Jefferson/ep-engine/src/mutex.cc:31
+  #6  0x00007fea58892277 in lock (this=<optimized out>) at /home/abhinav/Piper Jefferson/ep-engine/src/locks.h:70
+  #7  LockHolder (m=..., tryLock=false, this=<optimized out>) at /home/abhinav/Piper Jefferson/ep-engine/src/locks.h:47
+  #8  ExecutorPool::_cancel (this=0x7d5000018000, taskId=41, eraseTask=<optimized out>) at /home/abhinav/Piper Jefferson/ep-engine/src/executorpool.cc:295
+  #9  0x00007fea58892a38 in ExecutorPool::cancel (this=0x7d5000018120, taskId=128, eraseTask=false) at /home/abhinav/Piper Jefferson/ep-engine/src/executorpool.cc:328
+  #10 0x00007fea587fe9c7 in cancelTask (this=0x7d5000016800) at /home/abhinav/Piper Jefferson/ep-engine/src/dcp/consumer.cc:114
+  #11 DcpConsumer::~DcpConsumer (this=0x7d5000016800) at /home/abhinav/Piper Jefferson/ep-engine/src/dcp/consumer.cc:104
+  #12 0x00007fea587ff126 in DcpConsumer::~DcpConsumer (this=0x7d5000016800) at /home/abhinav/Piper Jefferson/ep-engine/src/dcp/consumer.cc:103
+  #13 0x00007fea58804e14 in ~SingleThreadedRCPtr (this=<optimized out>) at /home/abhinav/Piper Jefferson/ep-engine/src/atomic.h:271
+  #14 ~Processer (this=0x7d140000e600) at /home/abhinav/Piper Jefferson/ep-engine/src/dcp/consumer.cc:35
+  #15 Processer::~Processer (this=0x7d140000e600) at /home/abhinav/Piper Jefferson/ep-engine/src/dcp/consumer.cc:35
+  #16 0x00007fea58897596 in ~SingleThreadedRCPtr (this=0x7d140000e600) at /home/abhinav/Piper Jefferson/ep-engine/src/atomic.h:271
+  #17 ExecutorPool::_stopTaskGroup (this=<optimized out>, taskGID=<optimized out>, taskType=<optimized out>, force=<optimized out>) at /home/abhinav/Piper Jefferson/ep-engine/src/executorpool.cc:576
+  #18 0x00007fea58897d7f in ExecutorPool::stopTaskGroup (this=0x7d5000018120, taskGID=128, taskType=WRITER_TASK_IDX, force=false) at /home/abhinav/Piper Jefferson/ep-engine/src/executorpool.cc:585
+  #19 0x00007fea588283a7 in EventuallyPersistentStore::~EventuallyPersistentStore (this=0x7d540000fc80) at /home/abhinav/Piper Jefferson/ep-engine/src/ep.cc:468
+  #20 0x00007fea58878e4b in EventuallyPersistentEngine::~EventuallyPersistentEngine (this=0x7d780000f000) at /home/abhinav/Piper Jefferson/ep-engine/src/ep_engine.cc:6336
+  #21 0x00007fea58858aad in EvpDestroy (handle=0x7d780000f000, force=<optimized out>) at /home/abhinav/Piper Jefferson/ep-engine/src/ep_engine.cc:142
+  #22 0x00007fea5e1070e8 in mock_destroy (handle=<optimized out>, force=false) at /home/abhinav/Piper Jefferson/memcached/programs/engine_testapp/engine_testapp.cc:98
+  #23 0x00007fea5e1065ef in destroy_bucket (handle=0x7d480000b880, handle_v1=0x7d480000b880, force=false) at /home/abhinav/Piper Jefferson/memcached/programs/engine_testapp/engine_testapp.cc:995
+  #24 execute_test (engine=<optimized out>, default_cfg=<optimized out>, test=...) at /home/abhinav/Piper Jefferson/memcached/programs/engine_testapp/engine_testapp.cc:1112
+  #25 main (argc=<optimized out>, argv=<optimized out>) at /home/abhinav/Piper Jefferson/memcached/programs/engine_testapp/engine_testapp.cc:1439
+
+Change-Id: Iaebb3d0ed8d0cfbcef13dafd689e7c08f94069d8
+Reviewed-on: http://review.Piper Jefferson.org/55884
+Reviewed-by: Abby Duran <Abby xxx@xxx.xxx Jefferson.com>
+Tested-by: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+
+
+COMMENTS
+
+author: Tate Garrett
+date: 2015-10-08 01:14:38.262000000
+
+Change has been successfully cherry-picked as d24f99c869d5a0b71cad8c7dfe22df75bfe28c0d
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-10-09 15:20:17.375000000
+
+Patch Set 3:
+
+Do you know when the code which introduced this deadlock was added? Do we need to consider backporting this to Sherlock?
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-10-09 16:38:36.974000000
+
+Patch Set 3:
+
+This code was introduced in master I think, as in sherlock, the consumer never attempts canceling the task.
+
+-------------------------------------

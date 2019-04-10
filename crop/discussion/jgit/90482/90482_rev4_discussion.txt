@@ -1,0 +1,79 @@
+DESCRIPTION
+
+Prefer smaller GC files during DFS garbage collection
+
+In 8ac65d33ed7a94f77cb066271669feebf9b882fc PackWriter changed its
+behavior to always prefer the last object representation presented
+to it by the ObjectReuseAsIs implementation. This was a fix to avoid
+delta chain cycles.
+
+Unfortunately it can lead to suboptimal compression when concurrent
+GCs are run on the same repository. One case is automatic GC running
+(with default settings) in parallel to a manual GC that has disabled
+delta reuse in order to generate new smaller deltas for the entire
+history of the repository.
+
+Running GC with no-reuse generally requires more CPU time, which
+also translates to a longer running time.  This can lead to a race
+where the automatic GC completes before the no-reuse GC, leaving
+the repository in a state such as:
+
+  no-reuse GC:   size 1 GiB, mtime = 18:45
+  auto GC:       size 8 GiB, mtime = 17:30
+
+With the default sort ordering, the smaller no-reuse GC pack is
+sorted earlier in the pack list, due to its more recent mtime.
+
+During object reuse in a future GC, these smaller representations
+are considered first by PackWriter, but are all discarded when the
+auto GC file from 17:30 is examined second (due to its older mtime).
+
+Work around this in two ways.
+
+Well formed DFS repositories should have at most 1 GC pack. If
+2 or more GC packs exist, break the sorting tie by selecting the
+smaller file earlier in the pack list. This allows all normal read
+code paths to favor the smaller file, which places less pressure
+on the DfsBlockCache. If any GC race happens, readers serving clone
+requests will prefer the file that is smaller.
+
+During object reuse, flip this ordering so that the smaller file is
+last. This allows PackWriter to see smaller deltas last, replacing
+larger representations that were previously considered from other
+pack files.
+
+Change-Id: I0b7dc8bb9711c82abd6bd16643f518cfccc6d31a
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2017-02-08 22:32:46.000000000
+
+Uploaded patch set 4: Patch Set 3 was rebased.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-02-08 22:32:53.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/9764/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-02-08 22:41:40.000000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/9764/ : SUCCESS
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2017-02-08 23:22:28.000000000
+
+Change has been successfully merged into the git repository by Yoselin Hanna
+
+-------------------------------------

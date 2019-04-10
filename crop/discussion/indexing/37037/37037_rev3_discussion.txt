@@ -1,0 +1,284 @@
+DESCRIPTION
+
+end-to-end from upr interface to indexer endpoint.
+
+Patchset:
+- changed NewHTTPServer() to use timeout values from const.go
+- improved logging.
+
+Change-Id: I2f5453eca18522c37a64e944dcdf063ce4173ea6
+
+
+COMMENTS
+
+author: Leonel Abbott
+date: 2014-05-14 11:14:48.547000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Dominique Stanton
+date: 2014-05-16 16:16:54.080000000
+
+Patch Set 3:
+
+(53 comments)
+
+Line:155, secondary/projector/adminport.go -> Do you need to close the feed upon error?  The goroutine within the feed would be started and they need to be stopped.
+
+Line:185, secondary/projector/adminport.go -> What is the guarantee that UpdateFeed() provides when encounter the error?   Will UpdateFeed() ensures that its state remains pristine after error? Or the Feed is left in a limbo state?   Does adminport need to do something to ensure a consistent state?
+
+Line:99, secondary/projector/bucket_feed.go -> There is a single goroutine that gather events from different vbucket.  Since, each vbucket stream is independent, will this become a single bottleneck to have just one goroutine?
+
+Line:155, secondary/projector/bucket_feed.go -> Don't you need to stop the Feed first before starting a new one?
+
+Line:215, secondary/projector/bucket_feed.go -> If the command is bCmdCloseFeed and it calls bfeed.doClose().  If doClose() itself panic, the recovery logic will try to call doClose() again?
+
+Line:239, secondary/projector/bucket_feed.go -> No need to send back a response on the channel?  How would the caller knows if there is an error?
+
+Line:283, secondary/projector/bucket_feed.go -> If this function is being  called twice, bfeed.kvfeeds can be nil
+
+Line:287, secondary/projector/bucket_feed.go -> If this function is being called twice, close(bfeed.finch) will panic.
+
+Line:289, secondary/projector/bucket_feed.go -> If the BucketFeed is closed, it will also make the main Feed to close?  Note that, when the main Feed is closed, it will also call all bucket feeds to close, including this one.
+
+Line:298, secondary/projector/bucket_feed.go -> No need to notify the caller of an error?   This is the main routine that moves the mutation to the router.   So if this goroutine dies, it will stop procesing procesing the mutations for the bucket.
+
+Line:315, secondary/projector/bucket_feed.go -> Why not calling delete() directly? Does this need to be invoked asynchronously?
+
+Line:324, secondary/projector/bucket_feed.go -> What if e.Close() panic?  Will other engines being closed eventually?
+
+Line:332, secondary/projector/bucket_feed.go -> What if engine.Close() panic?  How to clean up the remaining engine?
+
+Line:130, secondary/projector/endpoint.go -> It only send out the mutations at timeout? Won't this affect latency?
+
+Line:46, secondary/projector/engine.go -> check input args on public function
+
+Line:69, secondary/projector/engine.go -> I guess it is a TODO for handling failure.   Otherwise we are running risk of missing mutations.
+
+Line:82, secondary/projector/engine.go -> This does not check if kv is nil which is the return value if KeyVersions encounters an error?
+
+Line:102, secondary/projector/engine.go -> Why do we want a timeout?
+
+Line:111, secondary/projector/projector.go -> I originally thought that evaluator is not a function of the subscriber, but that's ok if you do it this way.
+
+Line:141, secondary/projector/projector.go -> Why do you need to pass p.reqch as an arugument?  You will be able to get reqch within p.genServer() anyway.
+
+Line:155, secondary/projector/projector.go -> Who is freeing/closing the bucket?
+
+Line:220, secondary/projector/projector.go -> Why do we need  goroutine for adding feed?   Is this for serializing calls?  In other words, just another way to mimic mutex?
+
+Line:103, secondary/projector/kvfeed.go -> Do you need to close the bucket upon error at this time?
+
+Line:181, secondary/projector/kvfeed.go -> Should this call be put in the beginning of the function and use defer (defer close(killch))  This is just to ensure that you will terminate the runReceiver goroutine
+
+Line:199, secondary/projector/kvfeed.go -> If the node is being shut down and the vbucket is being rebalanced, you will not get back an vbnos.  So it is not necessary an issue of bad vb map.   There is a race condition between KVFeed is being initialized versus rebalancing.
+
+Line:255, secondary/projector/kvfeed.go -> Since sync message is the only message that is broadcasted, why you would only send out sync message for vbucket that has been timed out?  Regular MutationEvent won't be necessarily reached all the nodes and it would be difficult to build a stability timestamp with sync msg being broadcasted.  Delete msg does not guarantee to be broadcasted either.
+
+Line:288, secondary/projector/kvfeed.go -> There are multiple cases where runReceiver will receive from killch.  For example, at line 272, runReceiver will call kvfeed.CloseFeed() when you encounter an error.   This, in turn, will send a bool to killch.    At 288, you now call sendStreamEnd().  Note that after you call kvfeed.CloseFeed() at line 272, you will also call sendStreamEnd().  So you will end up calling sendStreamEnd() twice.
+
+Line:33, secondary/projector/endpoint_buffer.go -> Why creating a new buffer when you encounter a control message?
+
+Line:73, secondary/projector/endpoint_buffer.go -> Is Vbuuid unique among vb?  vbuuid is unique for a vbucket (across takeover).   Is it guaranteed to be universally unique?
+
+Line:100, secondary/projector/endpoint_buffer.go -> By doing this, will it be possible that you disturb the ordering of mutation (based on seqNo)?
+
+Line:23, secondary/projector/feed.go -> Is there a reason for Feed to maintain the list of endpoints by itself?  Should list of endpoints be retreived from Engine or Engine.router instead?
+
+Line:50, secondary/projector/feed.go -> ?? Who is listening to the finch channel?
+
+Line:61, secondary/projector/feed.go -> Why you need to pass Feed.reqch into a function of Feed?
+
+Line:214, secondary/projector/feed.go -> What if type assertion req.(Subscriber) fails?  Why not exposing the Subscriber as an argument to function NewFeed()?  Making it explicit as function argument is easier to understand if someone want to reuse your code.
+
+Line:216, secondary/projector/feed.go -> Do you expect that the caller of RequestFeed() will get the error (from respch) and then they call CloseFeed() for cleanup?
+
+Line:231, secondary/projector/feed.go -> Can feed.failoverTimestamps[bucket] be nil?   I see that you set it later in this function, but is it possible that you try to look it up before it is being put in the map?
+
+Line:238, secondary/projector/feed.go -> Why you need to send the vbmap to the endpoints?
+
+Line:266, secondary/projector/feed.go -> What if type assertion req.(Subscriber) fails?  Why not exposing the Subscriber as an argument to function NewFeed()?  Making it explicit as function argument is easier to understand if someone want to reuse your code.
+
+Line:287, secondary/projector/feed.go -> For Timestamp.Union(), it will take preference on feed.failoverTimestamps[bucket] (over failTs).  But this is an update operation, don't you want failTs to overwrite the existing feed.failoverTimestamps (which are created in requestFeed()
+
+Line:291, secondary/projector/feed.go -> You are going through a loop and you are mutating the internal state of the Feed (failoverTimestamps/kvTimestamps).   If there is an error during the loop, Feed will not be in a consistent state.   But on the other hand, the caller of UpdateFeed() is not close or restarting the Feed either.
+
+Line:295, secondary/projector/feed.go -> Why do you need to rebuild the engines and endpoints again when updating feeds?
+
+Line:438, secondary/projector/feed.go -> This statement can probably be put inside the if !ok block.
+
+Line:453, secondary/projector/feed.go -> Need error handling.  This means that some end point is not going to received mutations.  Should fail NewFeed() all together.
+
+Line:184, secondary/indexer/streamd.go -> genServer pattern internally serialize all the commands.   In other words, even though vbucket stream are independently, it will end up blocking each other (the processing is being mutex'ed).  All the worker thread will need to send its buffer to the genServer in order to flush it downstream.  This can be a bottleneck.
+
+Line:205, secondary/indexer/streamd.go -> If handleClose panic(), then the defer func at the top will call handleClose again.
+
+Line:241, secondary/indexer/streamd.go -> 1) Is VBuuid guarantee to be universally unique?
+
+Line:285, secondary/indexer/streamd.go -> Is the old worker still running?
+
+Line:317, secondary/indexer/streamd.go -> Why do we need the buffer?  Why not passing the mutation immediately downstream?
+
+Line:34, secondary/common/timestamp.go -> Should check if input arg is nil (public function)
+
+Line:56, secondary/common/timestamp.go -> Should check if input arg is nil
+
+Line:78, secondary/common/timestamp.go -> 1) should check if input arg is nil
+
+2) This function checks for equality.  Do we need a function that checks as least as recent?
+
+Line:93, secondary/common/timestamp.go -> check input arg == nil
+
+Line:116, secondary/common/timestamp.go -> The ordering of the timestamps in the input will affect the result TS.   It is good to have a word to mention about it in the comment, since it is not a true "union".
+
+-------------------------------------
+author: Leonel Abbott
+date: 2014-05-20 11:20:15.204000000
+
+Patch Set 3:
+
+(53 comments)
+
+Line:155, secondary/projector/adminport.go -> Done
+
+Line:185, secondary/projector/adminport.go -> 1. On the upstream, only side effects are to start/end streams.
+2. On the downstream new set of engines are created and updated with BucketFeed.
+3. New endpoints are created and old endpoints are let go of.
+
+a. If there is error during 1. failoverTs and kvTs are not remembered.
+b. Engine creation does not return an error (have removed the redundant error parameter)
+c. If there is an error while connecting with endpoint, it is not started.
+
+Since we are creating side-effects all the way into the KV node. it is better to advice coordinator to shutdown the stream and retry/fallback in cases of error.
+
+Line:99, secondary/projector/bucket_feed.go -> runGatherScatter() is a light-weight loop that gathers all mutations from subset of vbuckets for a bucket.
+
+This is not an ideal way to scale, but I felt we can reason with program behaviour during development and initial demonstrations.
+
+Line:155, secondary/projector/bucket_feed.go -> In previous discussions I got to learn that we may have to update a live feed with topology changes, paritition changes and upstream changes.
+
+Line:215, secondary/projector/bucket_feed.go -> Done
+
+Line:239, secondary/projector/bucket_feed.go -> Right now there is no error on this execution path. Only requirement is that sendSideBand() needs to be synchronous.
+
+Line:283, secondary/projector/bucket_feed.go -> doClose() pattern used with gen-server cannot be called twice, because finch is closed. Btw, I have added panic handling for gen-servers and its doClose() functions.
+
+Line:287, secondary/projector/bucket_feed.go -> doClose() cannot be called twice. If there is a code path that will lead to this, then it is a bug.
+
+gen-server, doClose(), finch all part of the same pattern.
+
+Line:289, secondary/projector/bucket_feed.go -> This is a bug. Cyclic close can lead to dead lock. Remove bfeed.feed.CloseFeed() call.
+
+Line:298, secondary/projector/bucket_feed.go -> The general idea is that dowstream (coordinator/indexer) will detect this via timeout and restart the streams.
+
+Line:315, secondary/projector/bucket_feed.go -> since kvfeeds field is accessed by two routines, we are serializing access to this field.
+
+Line:324, secondary/projector/bucket_feed.go -> execution path in engine.Close() does not panic.
+
+Line:332, secondary/projector/bucket_feed.go -> Same as above.
+
+Line:130, secondary/projector/endpoint.go -> We can do a bit of optimization on payload size if we can batch them together. If we decide to push KeyVersions as and when it arrives, we have to sacrifice on the bandwidth.
+
+I will register this tradeoff in TODO document.
+
+Line:46, secondary/projector/engine.go -> Done
+
+Line:69, secondary/projector/engine.go -> Send() will always return nil as error. logging is used to catch if this contract is broken in future. We can actually replace log.Printf() with panic()
+
+Line:82, secondary/projector/engine.go -> Done
+
+Line:102, secondary/projector/engine.go -> In case engine does not see any activity we allow engine to commit suicide. A way to enforce system heartbeat.
+
+But there is a bug, I have to move time.After() within for{} loop.
+
+Line:111, secondary/projector/projector.go -> Yes Subscriber is a bit misleading. We can rename it, will think about it.
+
+Line:141, secondary/projector/projector.go -> :) just to highlight that genServer act on reqch.
+
+Line:155, secondary/projector/projector.go -> This is a gray area. I have registered this issue as a TODO for this function doc.
+
+Line:220, secondary/projector/projector.go -> yes.
+
+Line:103, secondary/projector/kvfeed.go -> This is a gray area. We have to first figure out whether we can reuse the same bucket instance across all KVFeed.
+
+I have registered is as TODO item over getBucket() implementation.
+
+Thanks.
+
+Line:181, secondary/projector/kvfeed.go -> Done
+
+Line:199, secondary/projector/kvfeed.go -> I guess the idea is to tell the original caller about this race condition, should we handle this differently ?
+
+Line:255, secondary/projector/kvfeed.go -> Done
+
+Line:288, secondary/projector/kvfeed.go -> In both cases after sendStreamdEnd() execution will exit the loop. Will it still be a problem ?
+
+Line:33, secondary/projector/endpoint_buffer.go -> Right now we are assuming that []*KeyVersions will be a single element slice if it has control message. This simplifies the logic on the other side, but we can come back and optimize this.
+
+Line:73, secondary/projector/endpoint_buffer.go -> will capture this in email.
+
+Line:100, secondary/projector/endpoint_buffer.go -> This algorithm is broken. I have simplified it to group keyversions for a subset of index.
+
+I will optimize this later.
+
+Line:23, secondary/projector/feed.go -> endpoints are union set of router.UuidEndpoints(), built by buildEndpoints() function.
+
+engines are instantiated by supplying this list of endpoint. Since engines are immutable it needs to be re-instantiated with the latest set of endpoints.
+
+feed maintains a list of endpoints and engines to be able to close them during FeedShutdown.
+
+Line:50, secondary/projector/feed.go -> finch is used by FailsafeOp() to avoid indefinite blocking and avoid panic due to close(reqch).
+
+finch is used by control-paths and control/data paths.
+
+Line:61, secondary/projector/feed.go -> Nothing specific. Just a way to highlight that genServer acts on reqch.
+
+Line:214, secondary/projector/feed.go -> This is a good point. We can make this contract explicit. I will add this assertion in NewFeed().
+
+Line:216, secondary/projector/feed.go -> Fixed it. Now projector's admin port will call CloseFeed() when error is returned.
+
+Line:231, secondary/projector/feed.go -> super catch !
+Fixed it in NewFeed(), now initializes an empty Timestamp for each bucket.
+
+Line:238, secondary/projector/feed.go -> 1. To let the endpoint (server) know what vbuckets are mapped to which connection.
+2. To detect bugs that might lead to vbuckets shifting connection.
+
+Line:266, secondary/projector/feed.go -> Done
+
+Line:287, secondary/projector/feed.go -> super catch!
+I will fix Timestamp:Union function, since it is semantically correct when RHS override LHS.
+
+Line:291, secondary/projector/feed.go -> Yes, like mentioned else where this side effect is too deep to be meaningfully handled by projector. In case of fresh start of the feed, the feed is closed by projector itself, in other cases it is up to the caller (coordinator/indexer) to decide what to do.
+
+Line:295, secondary/projector/feed.go -> UpdateFeed() can also update downstream. We are rebuilding engines (but endpoints are only added or let go off) in any case.
+
+This can be optimized. But since rebuilding engines is mostly a mS operation and this is part of control path, I was planning to optimize it later.
+
+Line:438, secondary/projector/feed.go -> Done
+
+Line:453, secondary/projector/feed.go -> If we do that then we are building an all or nothing system, isn't it ? I am okay with it.
+
+Line:184, secondary/indexer/streamd.go -> This is not part of datapath. Although, streamgCmdError, streamgCmdVbcontrol are communicated from data-path back to genserver.
+
+Line:205, secondary/indexer/streamd.go -> Done
+
+Line:241, secondary/indexer/streamd.go -> `uuid` is universally unique id. I remembered that CouchDB was generating such UUID that is always unique and its conflict detection relied on that. Hence I am assuming it here as well.
+
+Line:285, secondary/indexer/streamd.go -> No it doesn't. It is not supposed to be running.
+
+Line:317, secondary/indexer/streamd.go -> Sorry for this confusion. During implementation I was worried that StreamBegin and StreamEnd for a vbucket might come out of order. In which case, daemon should buffer mutations from new connection until StreamEnd is observed on the older connection.
+
+Right now this buffering is not done, since we assume that this out of ordering is not going to happen, in which case I will clean up this code.
+
+Line:34, secondary/common/timestamp.go -> Done
+
+Line:56, secondary/common/timestamp.go -> Done
+
+Line:78, secondary/common/timestamp.go -> Done
+
+Line:93, secondary/common/timestamp.go -> Done
+
+Line:116, secondary/common/timestamp.go -> Done
+
+-------------------------------------

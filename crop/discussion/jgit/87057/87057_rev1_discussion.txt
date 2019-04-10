@@ -1,0 +1,160 @@
+DESCRIPTION
+
+Fix one case of missing object
+
+When a repository is being GCed and a concurrent push is received, there
+is the possibility of having a missing object. This is due to the fact
+that after the list of objects to delete is built, there is a window of
+time when an unreferenced and ready to delete object can be referenced
+by the incoming push. In that case, the object would be deleted because
+there is no way to know it is no longer unreferenced. This will leave
+the repository in an inconsistent state and most of the operations fail
+with a missing tree/object error.
+
+Given the incoming push change the last modified date for the now
+referenced object, verify this one is still a candidate to delete
+before actually performing the delete operation.
+
+Change-Id: Iadcb29b8eb24b0cb4bb9335b670443c138a60787
+Signed-off-by: Beatrice Lester xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Beatrice Lester
+date: 2016-12-13 15:48:11.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-12-13 15:48:17.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/9532/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-12-13 16:00:00.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/9532/ : SUCCESS
+
+-------------------------------------
+author: Mitchell Griffith
+date: 2016-12-13 16:05:31.000000000
+
+Patch Set 1: Code-Review+1
+
+-------------------------------------
+author: Zachary Orozco
+date: 2016-12-14 11:08:42.000000000
+
+Patch Set 1:
+
+I can imagine that we do have still some race conditions with a GC running in parallel to push ... but I am not sure whether the situation you describe here can occur and especially how the fix helps.
+
+Maybe I misunderstand something in the handling of push/gc. Let me describe how I see this:
+
+A) GC is done with JGit
+- In a situation where we have a JGit GC running in parallel to a push how could we see more or modified loose objects? JGit's GC is not creating any loose objects (in contrast to native gits gc) and is also not touching (changing the modtime) of existing loose objects.
+The same is true for a push. I thought a push will create one more packfile ... but no loose objects. You say that "a incoming push change the last modified ... for the now referenced object". Really? And why should we. A loose object is immutable, it will never change. If we have written it once to disk why should the modification time ever change? If we receive the same object again will we not see that it is already there in t the filesystem and just ignore the just received object? (I am not an export in JGit push handling, so please correct me if my assumption is wrong)
+
+So to help me understanding which problem you want to fix maybe describe exactly the flow of action like:
+
+t00: loose object X created with mtime t00
+t01: X becomes unreferenced
+t08: JGIT gc starts. ExpirationDate=t05
+t09: JGIT gc has reached GC-line365 and has determined deletion candidate X with mtime t00
+t10:  Push is beeing processed bringing X again. X is now referenced again because ref Y is changed by the push. But since X was already persisted as loose object ist still there and it's mtime is still t00
+t11: JGit gc reaches line 445 and finds that Y is new. Objects referenced by Y (including X) are removed from deletion candidates.
+...
+
+Maybe if the push arrives while GC is between 436..458 we do have problems? But in this case your fix doesn't help because the mtime of the loose object doesn't change 
+
+B) GC is done with native git
+
+- If you would run a native Git GC in parallel to a gerrit server serving push requests then the situation is different. Native git's gc make sure that all objects which are detected to be unreferenced are persisted as loose objects. If the unreferenced object is already a loose object ... nothing is done. If not the object is persisted as loose object (having the current time as mtime). When later in the process of the GC it comes to pruning loose objects it will be checked that the loose objects mtime is older that expirationDate. But that's unlikely because the mtime of the object is actually  very young.
+
+-------------------------------------
+author: Beatrice Lester
+date: 2016-12-14 23:36:22.000000000
+
+Patch Set 1:
+
+The case we are seeing with a specific repository is this:
+
+t05: loose object 58bb27 is present in repo with mtime t00
+t08: JGIT gc starts. ExpirationDate=t07
+t09: JGIT gc has reached GC-line 429 and has determined deletion candidate 58bb27 with mtime t00 < t07
+t10: Push is being processed with commit 802701f referencing object 58bb27. Now loose object 58bb27 mtime is t10 > t07.
+t11: Given 58bb27 mtime changed after the list of candidates for deletion was built (i.e., mtime modification was done at or just after GC reached line 429), object 58bb27 is deleted even if it is now referenced by 802701f.
+t12: User tries to fetch/clone from repo. User receives missing tree error.
+
+We have reproduced this by artificially stopping GC at line 429; object 58bb27 is in the list of objects to delete. Direct inspection of file system shows object 58bb27 has mtime t00. After push has been processed, object 58bb27 has now mtime t10. Letting GC operation finish causes object 58bb27 to be deleted and repository is then on
+inconsistent state (missing tree error).
+
+After this change, given object mtime is greater (newer) than expiration time, object 58bb27 is not deleted and repository is consistent.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2016-12-16 10:13:10.000000000
+
+Patch Set 1:
+
+I think this change is not harmful and improves the situation only. So +1 from my side.
+
+Still I cannot understand fully what happened in your situation. Normally a push leads to a new packfile and not to new loose objects in the server side repo. 
+
+ > t10: Push is being processed with commit 802701f referencing object
+ > 58bb27. Now loose object 58bb27 mtime is t10 > t07.
+How this happens is not clear to me. A push (at least when handled through JGit) will bring a new packfile. And even if it would bring a loose object: why should we update the mtime of the existing loose object. The content of the loose object doesn't change so why write it again and update it's mtime?
+
+I could explain that better if the gc is done with native git. When native git detects that a loose object is became unreferenced it will unpack the object (persist the object previously persisted in a packfile as loose object). This is the situation I know of where a already persisted object is again persisted as loose object with a current mtime.
+
+The following scripts downloads and initializes a new gerrit on your local push, creates a repo and pushes 100times into it and counts how many loose/packed objects exist afterwards. This doesn't show that pushes create loose objects. This shows for me the pushes only produce new packs. Where is my misunderstanding?
+
+  cd /tmp
+  [ -f gerrit.war ] || wget -O gerrit.war http://gerrit-releases.storage.googleapis.com/gerrit-2.13.1.war
+  [ -d gerrit ] || java -jar gerrit.war init --batch --dev -d gerrit
+  ssh-keygen -f ~/.ssh/known_hosts -R localhost:29418
+  ssh-keyscan -p 29418 localhost >>~/.ssh/known_hosts
+
+  ssh -p 29418 xxx@xxx.xxx gerrit create-project --empty-commit testPrj
+  git clone xxx@xxx.xxx
+  date >testPrj/a
+  git -C testPrj add a
+  git -C testPrj commit -q -m add_a
+  git -C testPrj push -q origin HEAD:refs/heads/master
+  git -C gerrit/git/testPrj.git count-objects -v | grep -E count:\|packs:\|in-pack:
+
+  for i in {1..100} ;do
+        echo $i >>testPrj/a
+        git -C testPrj commit -q -a -m mod_a_$i
+        git -C testPrj push -q origin HEAD:refs/heads/master 2>/dev/null
+  done
+  git -C gerrit/git/testPrj.git count-objects -v | grep -E count:\|packs:\|in-pack:
+
+-------------------------------------
+author: Zachary Orozco
+date: 2016-12-16 10:13:55.000000000
+
+Patch Set 1: Code-Review+1
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2016-12-23 23:27:55.000000000
+
+Patch Set 1: Code-Review+2
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-12-23 23:28:00.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------

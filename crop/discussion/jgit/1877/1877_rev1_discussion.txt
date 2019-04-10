@@ -1,0 +1,63 @@
+DESCRIPTION
+
+Fix null ref exception in DirCacheCheckout
+
+Added missing null check for getDirCacheEntry(). This method may
+return null for example if the curernt entry is a subtree.
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2010-11-10 18:15:07.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(1 inline comment)
+
+
+
+Line:277, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> I don't think this is the solution.  From what I know of how this code works, we shouldn't be here for a directory name.  If we are and i.getDirCacheEntry() == null, we would execute the else case below and call keep(null), which should also then NPE, or NPE very late downstream when the new index contains an empty slot.
+
+I think the better question is, why are we looking at a subtree here in "i" and in this code path?
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-11-10 21:54:03.000000000
+
+Patch Set 1: Looks good to me, but someone else must approve
+
+(1 inline comment)
+
+
+
+Line:277, org.eclipse.jgit/src/org/eclipse/jgit/dircache/DirCacheCheckout.java -> Hmmm, why shouldn't we be here for an subtree path? This method is only called from prescanOneTree() (when we ignore HEAD during clone or reset operations). There we create a non-recursive treewalk for merge, index and worktree and jump for every path into this method. In the clone use-case worktree and index should be empty, right? But during a reset it is likely that we are here because e.g. the worktree contains a folder for that path.
+
+Now the good news: keep() tests for null values and therefore will not lead to an NPE.
+And the bad news: f.isModified() doesn't test for null values and will NPE. So, I would guess this check is ok and needed.
+
+I think we really need tests here. DirCacheCheckout.prescanTwoTrees is well tested. But prescanOneTree is not. I try to create some tests which improve test coverage.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-11-11 21:41:15.000000000
+
+Patch Set 1: Looks good to me, approved
+
+The dependent change 1888 fixes additional stuff and finally brings a tests. This testcase proofs that we need this fix. Without Lluis fix that testcase will fail. Shawn, are you convinced? (I know it would be more convenient to have a seperate test for just this fix - but that would be to much work for no good reason since I touch again the lines added here and test the whole thing in 1888)
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-11-12 16:29:31.000000000
+
+Patch Set 1: Looks good to me, approved; IP review completed
+
+OK, thanks Christian.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-11-12 16:29:32.000000000
+
+Change has been successfully merged into the git repository.
+
+-------------------------------------

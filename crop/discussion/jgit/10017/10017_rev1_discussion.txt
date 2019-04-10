@@ -1,0 +1,73 @@
+DESCRIPTION
+
+Speed up bitmap creation time in GC.
+
+Previously, bitmap indexes were created from scratch on every run of GC.
+Update the PackWriter to reuse previously computed bitmaps, by mapping
+the old positions to the new positions on the fly and caching the
+result.
+
+On the linux kernel, this decreased time to create a bitmap
+from about 60 seconds to 10 seconds.
+
+Change-Id: I413774adbdb7e66e7046010b6fd651afb8dff11b
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2013-01-29 23:56:12.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2848/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-01-30 00:02:26.000000000
+
+Patch Set 1: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/2848/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2013-01-30 01:45:07.000000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(4 inline comments)
+
+
+
+Line:117, org.eclipse.jgit/src/org/eclipse/jgit/storage/pack/PackWriterBitmapPreparer.java -> Shouldn't this do some sort of work to favor commits we already have bitmaps on? Especially further back in history?
+
+Line:1, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/PackBitmapIndexRemapper.java -> Missing EDL header.
+
+Line:106, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/PackBitmapIndexRemapper.java -> Do this init work in mapBitmap before you start walking through a million bits. Its a million less compare and jump needed to be done per bitmap.
+
+Line:113, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/PackBitmapIndexRemapper.java -> Why wouldn't you just do build this entire array once? It is very likely that everything in the old index will be mapped into the new one. Given that, if the prevToNewMapping hasn't yet been created in mapBitmap() why not build the entire array at once?
+
+Allocate it, walk through every object in the old index, find its position in the new one, and store it in the array. Actually, can't you merge the two indexes here? Open iterators on each source index to go through the objects in ObjectId order. Where the iterators are equal, lookup the two positions and store them into the array. I think that saves you an O(log N) lookup on the inside of the loop reducing the complexity.
+
+And then mapping a BitSet from one index to the other becomes a very tight brute force array indexing loop.
+
+-------------------------------------
+author: Warren Watkins
+date: 2013-01-31 19:20:29.000000000
+
+Patch Set 1: (4 inline comments)
+
+
+
+Line:117, org.eclipse.jgit/src/org/eclipse/jgit/storage/pack/PackWriterBitmapPreparer.java -> We traverse in the graph in reverse and usually pick the same commits.  I need to do more investigation on how we can decrease the number of commits on an incremental update.
+
+Line:1, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/PackBitmapIndexRemapper.java -> Done
+
+Line:106, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/PackBitmapIndexRemapper.java -> Done
+
+Line:113, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/PackBitmapIndexRemapper.java -> findPosition for the PackBitmapBuilder is constant time, since it is just a lookup in a map. Other ideas are Done.
+
+-------------------------------------

@@ -1,0 +1,102 @@
+DESCRIPTION
+
+RefDirectory: Retry acquiring ref locks with backoff
+
+If a repo frequently uses PackedBatchRefUpdates, there is likely to be
+contention on the packed-refs file, so it's not appropriate to fail
+immediately the first time we fail to acquire a lock. Add some logic to
+RefDirectory to support general retrying of lock acquisition.
+
+Currently, there is a hard-coded wait starting at 100ms and backing off
+exponentially to 1600ms, for about 3s of total wait. This is no worse
+than the hard-coded backoff that JGit does elsewhere, e.g. in
+FileUtils#delete. One can imagine a scheme that uses per-repository
+configuration of backoff, and the current interface would support this
+without changing any callers.
+
+Change-Id: I4764e11270d9336882483eb698f67a78a401c251
+
+
+COMMENTS
+
+author: Santos Moore
+date: 2017-07-27 13:34:50.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-07-27 13:34:55.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/10705/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-07-27 13:46:10.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/10705/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2017-07-28 04:07:39.000000000
+
+Patch Set 2: Code-Review-1
+
+(2 comments)
+
+A follow-on change could be to add a ReentrantLock inside RefDirectory to create a queue of threads that want to interact with this RefDirectory instance in an atomic way and need to win a bunch of locks. Acquire the lock before messing with the packed-refs file, and release it in the finally.
+
+Most JGit applications treat Repository as a singleton reused across threads. So the RefDirectory instance will be the same, and we'll manage most lock contention inside the JVM by waiting on that ReentrantLock instead of fighting it out in the filesystem.
+
+This commit is good by itself to be friendly with a competing JGit process, or a git-core process, where the ReentrantLock can't help.
+
+Line:1246, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> ms <= 0?
+
+Thread.sleep(0) may or may not be a scheduling yield. Its undefined in the platform docs.
+
+Line:1253, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> Maybe InterruptedIOException?
+
+-------------------------------------
+author: Eden Lin
+date: 2017-07-28 05:33:23.000000000
+
+Patch Set 2: Code-Review+1
+
+(1 comment)
+
+Looks good after the tweaks spearce suggested.
+
+Line:1253, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> Good call. That would also save us from responsibility for calling Thread.currentThread().interrupt(). Sorry for the churn.
+
+-------------------------------------
+author: Santos Moore
+date: 2017-07-28 11:49:47.000000000
+
+Patch Set 2:
+
+(2 comments)
+
+> A follow-on change could be to add a ReentrantLock inside
+ > RefDirectory to create a queue of threads that want to interact
+ > with this RefDirectory instance in an atomic way and need to win a
+ > bunch of locks. Acquire the lock before messing with the
+ > packed-refs file, and release it in the finally.
+ > 
+ > Most JGit applications treat Repository as a singleton reused
+ > across threads. So the RefDirectory instance will be the same, and
+ > we'll manage most lock contention inside the JVM by waiting on that
+ > ReentrantLock instead of fighting it out in the filesystem.
+
+Good idea. This will absolutely help avoid retries in the Gerrit Code Review case.
+
+Line:1246, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> Done
+
+Line:1253, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/RefDirectory.java -> Done
+
+-------------------------------------

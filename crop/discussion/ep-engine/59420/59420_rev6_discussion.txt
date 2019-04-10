@@ -1,0 +1,90 @@
+DESCRIPTION
+
+MB-17631: Fix sporadic ep-engine unit test failures
+
+Fix resolves ep_engine testcase failures triggered by request to
+access couch-db before it is being created. This commit fixes
+failures of the following CV regression testcases:
+- test_est_vb_move
+- test_tap_takeover
+Change-Id: Ibe20b471a12afea559b319671599076b0f2a0876
+
+
+COMMENTS
+
+author: Cora Mccarty
+date: 2016-03-03 23:32:19.003000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-03-03 23:32:25.481000000
+
+Patch Set 6:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2771/ (2/2)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-03-03 23:51:40.119000000
+
+Patch Set 6: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2026/ : SUCCESS
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/2771/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-03-04 08:44:58.419000000
+
+Patch Set 6:
+
+Could you elaborate on what the actual underlying problem here was? 
+
+It sounds like Couch-KVStore sometimes isn't immediately able to access a file if it's not yet created - is this a scenario which sound also occur in the "normal" (non-test) code? If so then  we also need to fix it in ep_engine itself.
+
+-------------------------------------
+author: Cora Mccarty
+date: 2016-03-04 21:12:06.547000000
+
+Patch Set 6:
+
+Here is more info about underlying problem. 
+1. Thread A.
+Testcase (actually couple of them) fails in "CouchKVStore::getNumPersistedDeletes" proc right after calling openDB( ) api with RDONLY mode for bucket 0. It fails because this call does not complete with success, and the reason is that couch-db "0.couch.1" file attempted to be opened does not exist, to be exact has not been created yet, and is not being created in this call because the api has RDONLY mode. 
+2. Thread B.
+This thread runs "test_setup" proc, as part of which file "0.couch.1" for bucket 0 should be created. What we do here is schedule task which will create file "0.couch.1" and without waiting till it completes start testcase itself (see Thread A). 
+And so basically there is a racing condition between threads A & B.
+Though request to schedule task for file "0.couch.1" creation in Thread B happens before we start testcase in Thread A, this request is not being completed by the time openDB call is being issued in Thread A.
+
+Code committed with check-in allows to fix the testcase, and in particularly wait till couch-db file "0.couch.1" created, so testcase can check that the content of this file is correct (numPersistedDeletes == 0) for bucket 0.
+
+Described race conditions not specific for "test-code" only, it can happen in "normal" code as well, because same code is being used in both cases. We have already discussed several ways how this issue can be solved in "normal" code, and it should be planned as an independent task. Here are few possible solutions: a) return ep_engine error code from low level CouchKVStore proc and have a caller to decide how to handle situation; b) add error/warning message in CouchKVStore that file to be opened does not exist and return some specific value agreed with the calling proc (-1 for example, this is more like a hack which will allow to solve problem with minimum amount of code changes); c) synchronize threads A and B thru condition variables, i.e. Thread A waits till Thread B creates file and sends wake up signal to Thread A after that. This approach can be dangerous if file names are differ in threads A and B, and user or QA folks can easily come up with testcase like that.
+
+-------------------------------------
+author: Abby Duran
+date: 2016-03-04 21:43:12.957000000
+
+Patch Set 6: -Code-Review
+
+Norair,
+
+Thanks for the detailed explanation. Can you add the first two paragraphs, which describes the issue and the fix, to the commit body?
+
+Regarding the solution, I prefer the approach (a) as it is more generic and comprehensive solution. As this approach requires more invasive changes, let's make it as a separate enhancement task.
+
+Note that "CouchKVStore::getNumPersistedDeletes" API, which caused the sporadic unit test failure, is only called during the vbucket takeover in rebalance or compaction, as of now. Therefore, this issue mostly won't be seen in the normal scenarios, but should be addressed to make this API robust. The two unit tests that you mentioned in the commit message assume that a vbucket file is already created.
+
+As CouchKVStore layer also throws exceptions in some of its APIs, we need to make their callers catch those exceptions and process them gracefully, as part of this enhancement task.
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-03-12 00:18:40.200000000
+
+Change has been successfully cherry-picked as b4c873b53a1fe57c72651bcf6d9a12f16894aec4
+
+-------------------------------------

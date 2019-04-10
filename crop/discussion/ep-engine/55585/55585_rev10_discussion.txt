@@ -1,0 +1,125 @@
+DESCRIPTION
+
+MB-14191: Implement warmup using ForestKVStore
+
+Change-Id: I16b5e374c25969291d16e3dbaf9e9a1a37cf9c17
+
+
+COMMENTS
+
+author: Bobby Buck
+date: 2015-09-30 23:40:48.778000000
+
+Uploaded patch set 10.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-09-30 23:40:53.200000000
+
+Patch Set 10:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1084/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-10-01 00:13:10.348000000
+
+Patch Set 10: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/1084/ : SUCCESS
+
+-------------------------------------
+author: Ellie Kidd
+date: 2015-10-01 00:47:20.010000000
+
+Patch Set 10: Code-Review+1
+
+The forestdb api use looks ok to me.
+
+-------------------------------------
+author: Abby Duran
+date: 2015-10-01 02:38:06.705000000
+
+Patch Set 10: Code-Review-1
+
+(17 comments)
+
+Line:448, src/warmup.cc -> Please remove loadVBucketState() as it is no longer used.
+
+Line:993, src/warmup.cc -> hmm, I think it will be better to define 'getNumKvsForWarmup' in Warmup class and have it return the corresponding value depending on the underlying storage engine (i.e., couch or forestdb). As you know, we have an engine parameter that represents the underlying storage engine.
+
+Line:730, src/forest-kvstore/forest-kvstore.cc -> I think it would be better to rename 'dbId' to 'vbucketId' as this function returns the DB info at a vbucket level as of this time.
+
+Line:752, src/forest-kvstore/forest-kvstore.cc -> I'm not sure if this is correct. Doest 'kvConfig.getMaxVBuckets()' return the actual number of vbuckets? I think it always returns 1024 by default.
+
+Line:757, src/forest-kvstore/forest-kvstore.cc -> As this returns the uninitialized dbInfo to the caller, the caller will get the garbage information. We should reset it properly before returning it to the caller.
+
+Line:762, src/forest-kvstore/forest-kvstore.cc -> ditto
+
+Line:769, src/forest-kvstore/forest-kvstore.cc -> ditto
+
+Line:828, src/forest-kvstore/forest-kvstore.cc -> Please avoid using abort() as we discussed, but instead return NULL and have the caller handle this failure.
+
+Line:881, src/forest-kvstore/forest-kvstore.cc -> To be consistent with the changes from DaveR, let's put the function's name at the beginning of the error message.
+
+Line:883, src/forest-kvstore/forest-kvstore.cc -> I think std::logic_error might be better.
+
+Line:898, src/forest-kvstore/forest-kvstore.cc -> I think we need to check 'status' before accessing the document.
+
+Line:904, src/forest-kvstore/forest-kvstore.cc -> We should free rdoc before continue.
+
+Line:906, src/forest-kvstore/forest-kvstore.cc -> We should free rdoc and close the iterator before return
+
+Line:933, src/forest-kvstore/forest-kvstore.cc -> static_cast<uint64_t>
+
+Line:950, src/forest-kvstore/forest-kvstore.cc -> As a separate commit, we can avoid the repetitive alloc and free operations by pre-allocating fdb_doc instance and reusing it for fdb_iterator_get API call.
+
+Line:952, src/forest-kvstore/forest-kvstore.cc -> We should close the iterator before return.
+
+Line:231, src/forest-kvstore/forest-kvstore.h -> It is probably better to rephrase it as follows:
+
+ForestKVStore manages vbucket states per shard. Therefore, all the shards should be iterated in order to get all vbucket states.
+
+-------------------------------------
+author: Bobby Buck
+date: 2015-10-01 03:04:27.465000000
+
+Patch Set 10:
+
+(1 comment)
+
+Line:757, src/forest-kvstore/forest-kvstore.cc -> Constructor for DBFileInfo initializes all the variables. So, am not too sure if it would contain garbage.
+
+-------------------------------------
+author: Bobby Buck
+date: 2015-10-01 03:12:06.198000000
+
+Patch Set 10:
+
+(1 comment)
+
+Line:752, src/forest-kvstore/forest-kvstore.cc -> Is there a good way to find out how many KV store instances are present in a given forestdb file? That would be a better number to use as opposed to this method.
+
+-------------------------------------
+author: Abby Duran
+date: 2015-10-01 05:00:39.257000000
+
+Patch Set 10:
+
+(2 comments)
+
+Line:752, src/forest-kvstore/forest-kvstore.cc -> At this time, you can use fdb_get_kvs_name_list API to get the number of KV store instances for a given shard file, which should be paired with fdb_free_kvs_name_list to free up the memory allocated by fdb_get_kvs_name_list API.
+
+However, as the future enhancement, we need to extend fdb_get_file_info API in ForestDB to provide the number of KV store instances for a given shard file.
+
+Line:757, src/forest-kvstore/forest-kvstore.cc -> Yeah, you're right. As a separate commit, I think we may need to add a variable to DBFileInfo to represent the return status (e.g., FILE_NOT_FOUND, FILE_CORRUPTION, etc.)
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-10-02 01:55:44.721000000
+
+Change has been successfully cherry-picked as 797c9e0d55af7b4aef371c2eca3b4deac6547251
+
+-------------------------------------

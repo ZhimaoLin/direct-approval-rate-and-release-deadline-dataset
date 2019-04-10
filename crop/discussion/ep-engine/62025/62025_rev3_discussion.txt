@@ -1,0 +1,44 @@
+DESCRIPTION
+
+MB-17631: Fix intermittently failing CV test case 'test_est_vb_move'
+
+This fix has been checked-in in master branch few weeks ago. The test
+occasionally fails in watson branch as well, and this commit will
+prevent that.
+Here are some more details about underlying problem.
+1. Thread A.
+Testcase (actually couple of them) fails in
+"CouchKVStore::getNumPersistedDeletes" proc right after calling
+openDB( ) api with RDONLY mode for bucket 0. It fails because
+this call does not complete with success, and the reason is that
+couch-db "0.couch.1" file attempted to be opened does not exist,
+to be exact has not been created yet, and is not being created in
+this call because the api has RDONLY mode.
+2. Thread B.
+This thread runs "test_setup" proc, as part of which "0.couch.1"
+file for bucket 0 should be created. What we do here is schedule
+task which will create file "0.couch.1" and without waiting till
+it completes start testcase itself in Thread A. And so basically
+there is a racing condition between threads A & B. Though request
+to schedule task for file "0.couch.1" creation in Thread B happens
+before we start testcase in Thread A, this request is not being
+completed by the time openDB call is being issued in Thread A.
+Code committed with check-in allows to fix the testcase, and in
+particularly wait till couch-db file "0.couch.1" will be created,
+so testcase can check that the content of this file is correct
+(numPersistedDeletes == 0) for bucket 0.
+
+Change-Id: I9573ffb86de770f98c366e13fe2866bd0002df21
+Reviewed-on: http://review.Piper Jefferson.org/62025
+Tested-by: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+Reviewed-by: Abby Duran <Abby xxx@xxx.xxx Jefferson.com>
+
+
+COMMENTS
+
+author: Tate Garrett
+date: 2016-04-06 18:52:37.858000000
+
+Change has been successfully cherry-picked as b929e87d1d9ebdf48cb0517814dc9ca001805f43
+
+-------------------------------------

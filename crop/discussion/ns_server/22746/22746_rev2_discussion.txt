@@ -1,0 +1,64 @@
+DESCRIPTION
+
+MB-67{26,99}: implemented index aware vbucket move scheduling
+
+We figured out that MB-6726 is because of not good enough vbucket move
+scheduling and insufficient parallelism of index updates.
+
+Particularly if there's rebalance out 4->3 without replicas all
+vbucket movements are from rebalanced out node to one of remaining
+nodes and old approach would do that one by one. Where vbucket
+movement would be complete (and unblock next movement) only after
+indexing is complete for entire vbucket.
+
+Another problem was view compaction happening at unpredictable times
+competing with view building of moved vbuckets.
+
+New approach features the following:
+
+a) we limit both incoming and outgoing backfills (compared to just
+outgoing before). We planned to have that feature but now we could do
+it as necessary part of this work
+
+b) we limit only backfill phase of vbucket move, allowing
+parallelization of rest (indexing, actual takeover)
+
+c) we disable view compaction on source and destination of vbucket
+move and we explicitly schedule and spawn view compaction as part of
+overall rebalance process. So that we prevent concurrent bulk indexing
+of moved vbuckets and compaction. Making disk usage more predictable
+and understandable and improving overall efficiency.
+
+As part of this work we separate entire aspect of rebalance actions
+scheduling into it's own module. That new module is purely functional
+(except some logging of course) and is covered by it's own set of unit
+tests.
+
+Also as part of this work we attempt round of vbucket move scheduling
+improvements that was requested multiple times in past for which we
+have some MB- or CBD- which as usual are impossible to find :)
+
+Particularly we attempt to prioritize movements into new node in
+rebalance in so that cluster's balance on active vbuckets is equalized
+sooner. Previous code tended to start with building new replicas
+without actually moving active vbuckets first.
+
+Change-Id: Iad6da3be018e9e6dd66e1698b358dbd04515fbaa
+
+
+COMMENTS
+
+author: Nathalie Landry
+date: 2012-11-21 21:55:45.365000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Jasmin Rangel
+date: 2012-11-21 21:55:48.414000000
+
+Patch Set 2:
+
+New patchset patch-id matches previous patchset, but commit message has changed.
+
+-------------------------------------

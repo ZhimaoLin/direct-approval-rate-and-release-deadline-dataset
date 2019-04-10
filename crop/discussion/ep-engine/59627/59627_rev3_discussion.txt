@@ -1,0 +1,119 @@
+DESCRIPTION
+
+MB-17766: Incorrect ordering of messages during ActiveStream's takeover-send phase
+
+A race between the step() and ActiveStreamCheckpointProcessorTask
+can cause mutations to be queued into the readyQ after the
+setVBucketState(active) message.
+
+Here's the scenario in chronology (T: Front-end thread, BT: IO thread):
+1. T1: ActiveStream::setVBucketStateAckRecieved()
+2. T1: transitionState(takeoverSend) => schedules ActiveStreamCheckpointProcessorTask
+3. BT1: manageConnections() notifies memcached about specific conn (max idle time: 5s)
+4. BT2: ActiveStreamCheckpointProcessorTask runs, gets all Items For Cursor
+5. T1: step() -> takeoverSendPhase() -> readyQ is empty
+        => nextCheckpointItem() return false, as getNumItemsForCursor returns 0
+        => setVbucketState(active) added to readyQ
+6. BT2: ActiveStreamCheckpointProcessorTask continues, adds mutations acquired into readyQ
+        -> Note the mutations were acquired in step 4
+        => Notified memcached connections
+7. T1: step() .. ships messages in incorrect order
+
+On the new master, the vbucket is promoted to active state and then more
+mutations are received from the old master. If there were front end ops
+at this time, there could be an inconsistency in highSeqno or in worst
+cases crashes in checkpoint manager due to highSeqno not belonging in
+the designated range.
+
+The fix: Add an atomic flag that is also checked for along with
+getNumItemsForCursor in nextCheckpointItem(). This flag is set before
+retrieving all items for a cursor (getAllItemsForCursor) and unset after
+all the retrieved items have been added to the ready queue of the stream.
+
+Change-Id: I5c04d47cc99c7dd3b2d87cb68dd30d36473226e5
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2016-02-09 22:32:45.616000000
+
+Uploaded patch set 3: Patch Set 2 was rebased.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-09 22:32:55.948000000
+
+Patch Set 3:
+
+Permission granted to commit to restricted branch
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-02-09 22:34:04.070000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:696, src/dcp-stream.cc -> Note that this function has been split into 2 sub functions to facilitate testing. The dependent change contains a module test for this, here: http://review.Piper Jefferson.org/#/c/59666/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-09 22:35:55.811000000
+
+Patch Set 3:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/364/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-02-09 22:50:47.664000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/364/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-02-10 09:17:40.132000000
+
+Patch Set 3: Code-Review-1
+
+(1 comment)
+
+Line:696, src/dcp-stream.cc -> I think it's worth keeping this in it's own patch, as mixing refactors (which don't change behaviour) and actual behaviour-changing bug-fixes is undesirable. 
+
+I'll upload a split patch and try to get it through CV today.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-02-10 09:18:43.265000000
+
+Patch Set 3: Code-Review-2
+
+(1 comment)
+
+Line:696, src/dcp-stream.cc -> Moreover, there's a bug here - you need to unconditionally call processItems() so it can call producer->notifyStreamReady() (line 723).
+
+This is why it's best to do refactoring separate from behaviour change ;)
+
+-------------------------------------
+author: Emerson Nolan
+date: 2016-02-10 16:37:51.810000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:696, src/dcp-stream.cc -> If the vbucket has been deleted, notifyStreamReady doesn't need to be called, even in earlier code it was never called : )
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-02-10 19:05:35.194000000
+
+Change has been successfully cherry-picked as ba305c4f083b3910d12f470bf9b39b3f4c2f2b97
+
+-------------------------------------

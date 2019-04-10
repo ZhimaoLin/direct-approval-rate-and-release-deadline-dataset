@@ -1,0 +1,135 @@
+DESCRIPTION
+
+Bug 489382 - [Databinding] Provide a composite ISideEffect
+
+Change-Id: Ia10cc2baf6f978a3d6a41e3a54338615236a5338
+Signed-off-by: Krista Shepherd xxx@xxx.xxx
+
+COMMENTS
+
+author: Krista Shepherd
+date: 2016-03-12 23:38:59.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-03-12 23:39:05.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/8607/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-03-13 00:01:58.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/platform/job/eclipse.platform.ui-Gerrit/8607/ : SUCCESS
+
+-------------------------------------
+author: Kelly Potter
+date: 2016-03-14 00:32:45.000000000
+
+Patch Set 3: Code-Review-1
+
+(20 comments)
+
+Line:12, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/databinding/observable/ICompositeSideEffect.java -> Idea: Should we create a new org.eclipse.core.databinding.observable.sideeffect package for these classes? I can't decide if we have enough classes to make this worthwhile or not...
+
+Line:20, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/databinding/observable/ICompositeSideEffect.java -> Suggested new wording:
+
+All xxx@xxx.xxx ISideEffect} methods called on an instance of
+xxx@xxx.xxx ICompositeSideEffect} will be invoked on all of the
+individual xxx@xxx.xxx ISideEffect}s within the composite.
+<p>
+For example: invoking xxx@xxx.xxx #dispose()} on the composite
+will cause xxx@xxx.xxx #dispose()} to be invoked on all of its
+constituent side-effects.
+<p>
+The main use of this class is to manage a group of
+side-effects that share the same life-cycle. For example,
+all side-effects used to populate widgets within a workLeon Ochoach
+part would likely be paused and resumed when the part is made
+visible or invisible, and would all be disposed together
+when the part is closed.
+
+Line:24, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/databinding/observable/ICompositeSideEffect.java -> Missing required text:
+
+@noimplement This interface is not intended to be implemented by clients.
+
+Line:26, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/databinding/observable/ICompositeSideEffect.java -> Suggest using add and remove methods instead of the Consumer interface. Add and remove are more common for collections (and this has collection semantics) whereas a Consumer is much more general.
+
+Line:11, bundles/org.eclipse.jface.databinding/.settings/.api_filters -> Why is this necessary?
+
+Line:11, bundles/org.eclipse.jface.databinding/META-INF/MANIFEST.MF -> Why is this needed?
+
+Line:28, bundles/org.eclipse.jface.databinding/src/org/eclipse/jface/databinding/observable/WidgetSideEffectFactory.java -> I believe by the existing DataBinding naming conventions, this should probably be named "WidgetSideEffects". It should probably also be a final class rather than an interface, for consistency with the rest of the library.
+
+Line:31, bundles/org.eclipse.jface.databinding/src/org/eclipse/jface/databinding/observable/WidgetSideEffectFactory.java -> Remove the comma
+
+Line:39, bundles/org.eclipse.jface.databinding/src/org/eclipse/jface/databinding/observable/WidgetSideEffectFactory.java -> Suggest naming this "createComposite" since everything on this class will create sideEffects.
+
+Line:41, bundles/org.eclipse.jface.databinding/src/org/eclipse/jface/databinding/observable/WidgetSideEffectFactory.java -> Suggest returning an ISideEffectFactory rather than an ICompositeSideEffect. It could be named "createFactory".
+
+There could be a hidden ICompositeSideEffect attached to the Widget via Widget.setData(someUniqueKey, compositeSideEffect). The Consumer could check if the composite is already present and lazily create it on the first addition if not. Subsequent additions would go to the same composite and multiple factories created on the same widget would insert into the same composite.
+
+That would probably be easier for clients to use since they wouldn't need to wrap the result in their own factory.
+
+Line:24, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/databinding/observable/ISideEffectFactory.java xxx@xxx.xxx This interface is not intended to be implemented by clients.
+
+Line:30, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/databinding/observable/ISideEffectFactory.java -> Reword. Don't mention that it is usually used for ICompositeSideEffect since that's just one possible use of this class. If you wish to provide it as an example, label it as an example.
+
+
+Suggested wording:
+---
+
+Creates a new {@link ISideEffectFactory} which will notify the given {@link Consumer} of every xxx@xxx.xxx ISideEffect} that is constructed by the factory. 
+<p>
+For example, a {@link Consumer} could be passed to this method which automatically inserts every {@link ISideEffect} into the same xxx@xxx.xxx ICompositeSideEffect}, allowing their lifecycle to be managed automatically by the object which provides the factory.
+
+@param sideEffectConsumer a consumer which will be notified
+about every xxx@xxx.xxx ISideEffect} constructed by this factory.
+
+Line:32, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/databinding/observable/ISideEffectFactory.java -> @return a newly constructed xxx@xxx.xxx ISideEffectFactory}
+
+Line:35, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/databinding/observable/ISideEffectFactory.java -> We also need a 0-argument version of this method which does not receive a Consumer. That will probably be the one which clients use most often.
+
+Line:37, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/databinding/observable/ISideEffectFactory.java -> Just a thought: Should we rename the "create" method in order to avoid confusion with the instance method of the same name? Or is the fact that it's static and its argument types sufficient to disambiguate its purpose?
+
+Line:26, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/internal/databinding/observable/CompositeSideEffect.java -> Suggest adding "add" and "remove" methods.
+
+Line:28, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/internal/databinding/observable/CompositeSideEffect.java -> Suggest using a normal list, not an observable one. We don't expose this through any tracked getters so we don't really care about observing it and a normal list would be slightly more efficient.
+
+We could always switch it back to an IObservableList the first time we care about reacting to its contents.
+
+Line:75, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/internal/databinding/observable/CompositeSideEffect.java -> Suggest renaming to "add"
+
+Line:28, bundles/org.eclipse.jface.databinding/src/org/eclipse/jface/internal/databinding/observable/WidgetCompositeSideEffect.java -> We don't need a second implementation of ICompositeSideEffect.
+
+The code that instantiates this could just call ICompositeSideEffect.create(realm) and attach the dispose listener to the widget. That ICompositeSideEffect itself could be used rather than having this implementation with delegating method stubs.
+
+Line:43, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/internal/databinding/observable/SideEffectFactory.java -> Suggest adding a 0-arg constructor that fills in the consumer with a no-op.
+
+-------------------------------------
+author: Krista Shepherd
+date: 2016-03-14 02:59:48.000000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:12, bundles/org.eclipse.core.databinding.observable/src/org/eclipse/core/databinding/observable/ICompositeSideEffect.java -> Yes should we also move the ISideEffect itself to this new package, which should be handled by a new bug in case ISideEffect itself should be moved?
+
+What do you think?
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-04-20 22:10:47.000000000
+
+Change has been successfully merged into the git repository by Krista Shepherd
+
+-------------------------------------

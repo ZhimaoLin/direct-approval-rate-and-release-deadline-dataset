@@ -1,0 +1,163 @@
+DESCRIPTION
+
+Add builder-style API to jgit and Commit & Log cmd
+
+Added a new package org.eclipse.jgit.api and a builder-style API for
+jgit. Added also the first implementation for two git commands: Commit
+and Log.
+
+This API is intendet to be used by external components when
+functionalities of the standard git commands are required. It will also
+help to ease writing JGit tests.
+
+For internal usages this API may often not be optimal because the git
+commands are doing much more than required or they expect parameters of
+an unappropriate type.
+
+Change-Id: I71ac4839ab9d2f848307eba9252090c586b4146b
+Signed-off-by: Zachary Orozco xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Zachary Orozco
+date: 2010-04-26 11:40:31.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-04-26 15:15:55.000000000
+
+Patch Set 3: I would prefer that you didn't submit this; No score
+
+CommitCommand looks fine.  A couple of minor nits, but otherwise we can take it.  The logic is correct.
+
+Log is another animal.  I like the new add API, it reads pretty simple to me.  But I think just raised a lot more questions about RevWalk's current implementation.
+
+Line:58, org.eclipse.jgit/src/org/eclipse/jgit/api/Git.java -> s/run/call/
+
+Line:63, org.eclipse.jgit/src/org/eclipse/jgit/api/Git.java -> s/run/call/
+
+Line:77, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> Given the work being done by Dillon Cross to translate messages coming out of the JGit library, we shouldn't be doing this.
+
+If the caller needs to know this type of exception from other exceptions, this needs to be a custom exception type that they can catch with a try-catch block.  If the caller shouldn't need to handle this exception differently from other exceptions we throw, this message should simply be private to the package, with possibly a translation for presentation.
+
+Line:104, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> s/run/call/
+
+Line:106, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> s/run/call/
+
+Line:140, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> See my remarks below, we shouldn't reset the time.
+
+Line:143, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> See my remarks below, we shouldn't reset the time.
+
+Line:149, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> This call is pointless.  We're about to discard the Commit object, and all you really needed was that commitId anyway.
+
+Line:231, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> Style-nit: I think I would prefer this to be defined as:
+
+  public CommitCommand setCommitter(String name, String email) {
+    return setCommitter(new PersonIdent(name, email));
+  }
+
+Line:237, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> No.  If the caller gave us a PersonIdent, we should use that timestamp *exactly*.  The only time we should compute the timestamp on the fly is when we are creating the PersonIdent on behalf of the caller, e.g. because they used the setCommitter(name, email) overload, or because they allowed committer to be null and we're computing it during call() from the repository data.
+
+Line:270, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> Style-nit: Same as with setCommitter(name, email) overload.
+
+Line:276, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> Same issue as committer timestamp, we should be using exactly what is recorded in the PersonIdent.
+
+Line:73, org.eclipse.jgit/src/org/eclipse/jgit/api/LogCommand.java -> Unused, since add(boolean, ObjectId) below enqueues directly into the RevWalk.
+
+Line:95, org.eclipse.jgit/src/org/eclipse/jgit/api/LogCommand.java -> Always true since start is never assigned.
+
+Line:96, org.eclipse.jgit/src/org/eclipse/jgit/api/LogCommand.java -> This default is a great idea.  Unfortunately it doesn't work because start is never assigned, so its always triggering.
+
+Line:104, org.eclipse.jgit/src/org/eclipse/jgit/api/LogCommand.java -> Well, its technically an iteration of RevCommits, not a list.
+
+Line:124, org.eclipse.jgit/src/org/eclipse/jgit/api/LogCommand.java -> Should we be reusing the walk we've already setup?  Why create a new pool of revision objects when we can just reuse the one we already have?
+
+On the other hand, a walker could dispose of object bodies, and a reset and reuse might confuse the caller because the bodies are gone.  That's actually a bug in RevWalk that we should probably address and fix there rather than forcing an entire new pool to be created for a second invocation.
+
+Likewise, RevWalk discards the starting commits when it resets.  We probably should allow those to be retained somehow, so the same walk can be executed again without needing to maintain our own copy of the starting points (RevWalk calls them "roots" inside of itself.)
+
+Finally, RevWalk's implementation of Iterable is probably wrong.  It only works once.  Creating a 2nd Iterator fails.  So we probably should fix RevWalk first so its iterator() method resets the walk and starts it over again.
+
+Line:148, org.eclipse.jgit/src/org/eclipse/jgit/api/LogCommand.java -> Actually, any use of ObjectId as a parameter probably should be AnyObjectId instead.  This permits the mutable variant to be passed in.  Normally that might be a problem, since the caller can change its value after we return.  But it shouldn't be an issue here, because we're doing a lookup of the object in the RevWalk and holding onto the located result.  So we're copying the value we were given, which makes it OK to take the MutableObjectId variant.
+
+Line:177, org.eclipse.jgit/src/org/eclipse/jgit/api/LogCommand.java -> Should be xxx@xxx.xxx since..until}
+
+-------------------------------------
+author: Juliet Cantu
+date: 2010-04-26 21:38:43.000000000
+
+Patch Set 3: No score; No score
+
+Shawn asked Robin: I guess my question is, what is the motivation for putting the api code into its own bundle?
+
+I was thinking about this another layer. But if everyone wants to use both then the same bundle is ok. They are in different packages at least.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2010-04-26 21:45:08.000000000
+
+Patch Set 3:
+
+I just see an extra bundle as too much extra complexity.
+
+We're encouraging downstream consumers to use Import-Package rather than Require-Bundle to permit us to repackage easier.  Maven users might be impacted if we moved the API code in the future, but its a relatively minor thing to update in your application's pom.xml when you also update the version number.  So I think we're OK to split this later if/when it becomes necessary to do.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2010-04-27 20:41:19.000000000
+
+Patch Set 3: No score; No score
+
+I had to change the Exception handling and also changed the policy so that only one invocation (call to call()) is allowed per instance. Sorry, this makes the diff quite big.
+
+Line:58, org.eclipse.jgit/src/org/eclipse/jgit/api/Git.java -> Done
+
+Line:63, org.eclipse.jgit/src/org/eclipse/jgit/api/Git.java -> Done
+
+Line:77, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> I tried back and forth and finally came to the conclusion that we need something more for our exception handling. I invented Exceptions for prominent error situations which can happen with the new API and which are not covered by the existing exceptions. I also added, after some other trials, a JGitInternalException class. Whenever during command execution I receive exceptions on which a caller of our API can't react properly (e.g. low-level IOExceptions) I wrap them into a JGitInternalException. This should make our method signatures smaller and a user doesn't have to catch <n> exceptions which he all doesn't understand and which all lead to the same handling (throwing and error message)
+See the javadoc of JGitInternalException
+
+Line:104, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> Done
+
+Line:106, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> Done
+
+Line:140, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> Done
+
+Line:143, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> Done
+
+Line:149, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> removed this line
+
+Line:231, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> Done
+
+Line:237, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> Done
+
+Line:270, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> Done
+
+Line:276, org.eclipse.jgit/src/org/eclipse/jgit/api/CommitCommand.java -> Done
+
+Line:73, org.eclipse.jgit/src/org/eclipse/jgit/api/LogCommand.java -> this field was removed
+
+Line:95, org.eclipse.jgit/src/org/eclipse/jgit/api/LogCommand.java -> objectId was removed
+
+Line:96, org.eclipse.jgit/src/org/eclipse/jgit/api/LogCommand.java -> objectId was removed
+
+Line:104, org.eclipse.jgit/src/org/eclipse/jgit/api/LogCommand.java -> Done
+
+Line:124, org.eclipse.jgit/src/org/eclipse/jgit/api/LogCommand.java -> Your comments here and also the comments on PersonIdent's in CommitCommand make me think that it is maybe not so good to really allow multiple invocations of call() on a command. Some options (e.g. PersonIdents) don't make sense to be reused multiple times. Also coding wise it makes it complicated. If you set a field to it's default value during the first invocation, how to determine whether the field was ever set explicitly during the second invocation to call(). 
+
+Another problem are return values. If we dissallow multiple invocations on one instance we can more easily. Imagine RevWalks: I can easily write a command which has one RevWalk as field and which call() method returns this field. But this is not possible anymore if we have multiple invocations and for the first invocation you are still walking through the results and for the second invocation you start adding options (which will try to modify the RevWalk already passed to the caller).
+
+If we want to be able to reuse a preconfigured command object for multiple command invocations we (which I guess happens seldomly) we could even just provide a clone() method which allows to create a copy of your template command before you call call(). 
+
+My next proposal will tell at least in the javadoc not to call call() twice.
+
+The specific problem on which you comment here is solved. Have only one revwalk instance which I'll populate during the add(), not() ,... methods and which I will directly return in this method.
+
+Line:148, org.eclipse.jgit/src/org/eclipse/jgit/api/LogCommand.java -> As I said, my next proposal disallows multiple invocations with one command instance. In this case ObjectID is ok, you don't have the need to specify mutable options which can be altered during invocations.
+
+Line:177, org.eclipse.jgit/src/org/eclipse/jgit/api/LogCommand.java -> Done
+
+-------------------------------------

@@ -1,0 +1,93 @@
+DESCRIPTION
+
+Fix race between thread create/shutdown.
+
+Random hangs occuring on a small VM were caused by the
+executorthread code not handling shutdown whilst threads
+are still starting up.
+
+Fix is to remove the create state and construct ExecutorThread
+objects in the running state so there's no need to switch
+from create to running, overriding a shutdown.
+
+Normally:
+---------
+T1 start          |
+state = CREATING  |
+pthread_create    |
+                  | T2 start
+                  | state = RUNNING
+                  |
+                  | if state == RUNNING then state = SLEEPING else exit
+                  | if state == SLEEPING then state = RUNNING else exit
+                  |
+state = SHUTDOWN  |
+pthread_join      | exit
+exit              |
+
+Broken, T1 blocks forever in pthread_join:
+--------
+T1 start          |
+state = CREATING  |
+pthread_create    |
+                  | T2 start
+state = SHUTDOWN  |
+                  | state = RUNNING
+pthread_join      |
+                  | if state == RUNNING then state = SLEEPING else exit
+                  | if state == SLEEPING then state = RUNNING else exit
+                  | ...
+
+Fixed:
+---------
+T1 start          |
+state = RUNNING   |
+pthread_create    |
+                  | T2 start
+state = SHUTDOWN  |
+                  |
+pthread_join      |
+                  | if state == RUNNING then state = SLEEPING else exit
+                  | exit
+
+Change-Id: I37ecfe05cc0b5ed07c611efb614df4ed81c092cf
+
+
+COMMENTS
+
+author: Jim WNathalie Landryer
+date: 2015-05-26 13:55:17.690000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-05-26 13:55:21.290000000
+
+Patch Set 1:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/189/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-05-26 14:04:19.629000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master-multi/189/ : FAILURE
+
+-------------------------------------
+author: Abby Duran
+date: 2015-06-01 18:40:36.325000000
+
+Patch Set 2: Patch Set 1 was rebased
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-06-01 18:53:42.447000000
+
+Change has been successfully cherry-picked as e21d861a586b2bb512ded39f807a0a3c6b39f18b
+
+-------------------------------------

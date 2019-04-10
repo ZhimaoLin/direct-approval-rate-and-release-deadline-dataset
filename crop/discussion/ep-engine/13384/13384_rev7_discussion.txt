@@ -1,0 +1,102 @@
+DESCRIPTION
+
+Start on smart warmup (very rough WIP)
+
+Change-Id: I32adc1ab243c487a6ec54f27767e32d7c6acb763
+
+
+COMMENTS
+
+author: Asher Vang
+date: 2012-02-27 12:35:43.384000000
+
+Uploaded patch set 7.
+
+-------------------------------------
+author: Abby Duran
+date: 2012-02-28 10:01:35.825000000
+
+Patch Set 7: (12 inline comments)
+
+This looks great. I have some comments, but if you think any comment doesn't make sense, please ignore it :)
+
+Line:338, sqlite-kvstore/sqlite-strategies.cc -> This should be corrected to static_cast<int>(getDbShardIdForKey(key)) because MultiDBSingleTable has four shard files, each of which has a single kv table.
+
+Line:933, ep.cc -> I'm not sure if we need to schedule the background fetch here. Can we simply set the new value for a given key, and ignore the value fetched from the fast warmup?
+
+Line:2580, ep.cc -> It would be better to log this message at INFO level
+
+Line:2585, ep.cc -> I think writing to an access log file should be scheduled by the RW dispatcher. You thoughts?
+
+Line:2798, ep.cc -> How about trying the current access log file first if exists? If it fails with the current log file, then try the old access log file if exists:
+
+if (accessLog.exists()) {
+ ...
+}
+if (!success) {
+    warmup with the old file if exists
+}
+
+Line:2821, ep.cc -> How about promoting log level to INFO?
+
+Line:2827, ep.cc -> How about promoting log level to INFO?
+
+Line:45, win32/Makefile.mingw -> access_scanner.cc instead of its header file.
+
+Line:203, flusher.cc -> "Failed to load keys and their meta data from the underlying store. Falling back to full dump"
+
+Line:238, flusher.cc -> How about promoting the log level to WARNING?
+
+Line:56, access_scanner.cc -> As the default sync config is flush && sync and executed in commit2(), we don't need to call sync() and flush() separately here.
+
+Line:116, access_scanner.cc -> Right, If this task is scheduled frequently (I guess not), we should avoid scheduling another scanner task if its previous task was already running. We can maintain a flag that is similar to the one used in item pager.
+
+-------------------------------------
+author: Asher Vang
+date: 2012-02-28 19:15:08.544000000
+
+Patch Set 7: (12 inline comments)
+
+
+
+Line:338, sqlite-kvstore/sqlite-strategies.cc -> Ah thanks. Btw. are we actually using all of these different table strategies?
+
+Line:933, ep.cc -> No.. In this case the user called a CAS operation, but we don't have the CAS value for the object we want to operate on. In order to be able to execute the operation we need to read the CAS value first.
+
+Line:2580, ep.cc -> Hehe.. It shouldn't be there at all ;-)
+
+Line:2585, ep.cc -> Yeah.. problem is that the RW dispatcher will probably be very busy writing out the other elements? Dustin: what's your thoughs? Ideally this will be in its own dispatcher queue with the unified dispatcher model..
+
+Line:2798, ep.cc -> Yeah, that makes the code more readable...
+
+Line:2821, ep.cc -> sure
+
+Line:2827, ep.cc -> sure
+
+Line:45, win32/Makefile.mingw -> that's a good catch!!! hehe.. I was so proud of myself for remembering to update the windows makefile ;-)
+
+Line:203, flusher.cc -> hehe.. you really think the user deserves a sane message??
+
+Line:238, flusher.cc -> Makes sense :)
+
+Line:56, access_scanner.cc -> I'd really like a "close()" method that'll return the error instead of the destructor doing the work... (now I need a try catch and then set the pointer to NULL if it didn't throw an exception so that I know it isn't just a temp failure etc..
+
+Line:116, access_scanner.cc -> its intended to run every 30 minute or so... but what I really want is it to snooze x minutes from when it _finished_, not when it started.. I need to fix that..
+
+-------------------------------------
+author: Abby Duran
+date: 2012-02-28 20:34:41.479000000
+
+Patch Set 7: (4 inline comments)
+
+
+
+Line:338, sqlite-kvstore/sqlite-strategies.cc -> ShardedByVBucketSqliteStrategy (i.e., table per vbucket where each vbucket table exists in only one shard) is used by default. I don't think other strategies are used by our customers.
+
+Line:933, ep.cc -> yeah, that makes sense to me.
+
+Line:2585, ep.cc -> Agree. The RW dispatcher will have two additional tasks (mutation log and access log). We can do some performance tests to see how much overhead would be caused in various test cases from the QA team. The unified dispatcher model that you suggested would handle this in a much better way.
+
+Line:116, access_scanner.cc -> Yeah, sounds like a better idea.
+
+-------------------------------------

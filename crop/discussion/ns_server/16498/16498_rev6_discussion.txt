@@ -1,0 +1,119 @@
+DESCRIPTION
+
+MB-5264: Use correct ep_engine stats to check if XDCR items persisted
+
+This change-set removes using ep_engine checkpoint stat in CAPI before
+updating the document, which is unnecessary and has caused slow XDCR
+rate. Instead, it is using write queue size and number of completed
+flushes stats to make sure XDCR items have been persisted.
+
+Change-Id: I84ef3b002753597fb7fbb4b7dc73a73bad67e3f3
+
+
+COMMENTS
+
+author: Macie Morton
+date: 2012-05-30 22:10:24.587000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-05-30 22:22:14.100000000
+
+Patch Set 6: I would prefer that you didn't submit this
+
+Thanks for addressing one of my concerns. Another one remains.
+
+-------------------------------------
+author: Macie Morton
+date: 2012-05-30 22:24:11.687000000
+
+Patch Set 6:
+
+The other will be address by Damien and (possibly) Chiyoung. :-)
+
+-------------------------------------
+author: Macie Morton
+date: 2012-05-30 22:35:53.476000000
+
+Patch Set 6:
+
+Also, even if we need to make ep_startup_time a higher resolution, the fix should be in ep_engine, not in this commit.
+
+Chiyoung, I am under impression that when I add stat "ep_startup_time" , your comments suggested use epoch time instead of higher resolution time. Can you please explain this to Alk?
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-05-30 22:40:44.987000000
+
+Patch Set 6:
+
+much simpler than changing anything in ep-engine would be to use hash of pid of ns_memcached process for this bucket.
+
+Note you'll need to change other place that always returns 0 for instance startup time. Otherwise xdcr will not work at all (regardless of where you take this value)
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-05-31 01:08:40.348000000
+
+Patch Set 6:
+
+actually ns_memcached maintains (up-to-microseconds) start time. And using it seems like much better solution to me.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-05-31 17:43:46.346000000
+
+Patch Set 6:
+
+Also looks like you need to observe verify that start time at least before and after polling loop. I think you need to do it inside loop too. I.e. if memcached is crashed and restarted we'll be waiting for nothing. Observing start time will rectify that.
+
+Please also consider doing stats polling more centrally. AFAIK original problem was that 16 concurrent xdcr replication streams are currently hammering stats a bit too heavy. They all ask for same stats so we can do much better.
+
+-------------------------------------
+author: Macie Morton
+date: 2012-05-31 19:08:47.509000000
+
+Patch Set 6:
+
+The startup time is returned to XDCR to check if any engine crash between two checkpoints, which should happen with higher probability than crash when polling. If unfortunately engine crashed when polling, the waiting will be timed out. 
+
+We think it is better to use the stats from ep_engine as the token of each startup, that is why we introduce stat ep_startup_time in ep_engine. As of the resolution, epoch time should be fine at this time. 
+
+Centralizing all stats polling is a good idea, but this will be in another commit.
+
+-------------------------------------
+author: Broderick Chavez
+date: 2012-06-01 01:04:51.182000000
+
+Patch Set 6: Do not submit
+
+We definitely should do the checking of the ep_startup_time each time through the polling loop, then return it to the caller. We could poll once more for the ep_startup_time when successful, but that's just inefficient.
+
+However, misc:poll_for_condition doesn't quite support the right behavior. It either returns timeout or ok. I propose it should either return timeout, or return whatever the condition function return. So each time through the loop, our condition function either returns 1) false, or 2) {ok, StartupTime}, and once it returns result 2, the {ok, StartupTime} is returned. I searched through ns_server, and this is the only place misc:poll_for_condition is called, so it should be just fine to change that code to this new behavior.
+
+-------------------------------------
+author: Broderick Chavez
+date: 2012-06-01 01:17:06.968000000
+
+Patch Set 6: (2 inline comments)
+
+
+
+Line:142, src/capi_frontend.erl -> arg 2 is timeout milliseconds, not sleep time. We probably want something here much larger.
+
+Line:147, src/capi_frontend.erl -> I would change this line to be:
+{ok, <<>>}
+
+That way it matches the -spec.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-06-01 01:25:19.762000000
+
+Patch Set 6:
+
+alternatively poll_for_condition body (not actual implementation) can just throw exception when start time is bad.
+
+-------------------------------------

@@ -1,0 +1,97 @@
+DESCRIPTION
+
+MB-19616: Fix stats retrieval when no samples at required zoom level
+
+UI would show wrong nodes if no samples were found at the requested
+zoom level.
+
+Change-Id: I8522a639fb53aceb5da073475cad678a1a267ed6
+
+
+COMMENTS
+
+author: Leah Mcdaniel
+date: 2016-05-24 20:55:28.726000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Leah Mcdaniel
+date: 2016-05-24 20:56:17.400000000
+
+Patch Set 1: Verified+1
+
+-------------------------------------
+author: Ella Beltran
+date: 2016-05-24 22:43:51.566000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:397, src/menelaus_stats.erl -> In the worst case, the proposed change will iterate through all Kinds twice at higher zoom. I am wondering whether we can do something better performance wise.
+
+ If we knew which Kind the Stat belongs to right away then we will not need to iterate thru the kinds even once. 
+
+We do not want to hardcode {Kind, [<stat_list>]} information. But, it may be possible to build it dynamically. 
+
+One way to do this is as shown below: 
+Note I have not thought through this. This is just an idea.
+
+1.  Get list of stats for a specific kind i.e. {Kind, [<stats_list>]}  by calling -  stats_archiver:latest_sample(Kind, minute).
+
+2. Store this list - {Kind, [<stats_list>]} in a ETS table somewhere say stats_reader. Note we are not storing samples, just list of stat names. E.g. xxx@xxx.xxx [cpu_idle_ms, cpu_local_ms, …]}.
+
+3. Provide a new API – stats_reader:get_stats_list(Kind). It will return list of all stats for that Kind.
+
+4. In get_samples_for_system_or_bucket_stat(), identify the Kind for the StatName by calling  stats_reader:get_stats_list(Kind) for each Kind and checking which Kind the StatName belongs to. 
+Call menelaus_stats_gatherer:gather_stats() directly for that Kind.  
+If data is not available at specified Zoom then we can either return some appropriate message or get samples from lower Zoom - I have not thought about which of the two will be better.
+BTW, be sure to consider computed stats – checkout  build_stat_list_and_extractor(BucketName, StatName).
+
+
+Poonam
+
+-------------------------------------
+author: Ella Beltran
+date: 2016-05-24 22:52:32.134000000
+
+Patch Set 1:
+
+Also, if you decide to look into the idea I suggested, you need to consider the "section_nodes()" for the kind.  E.g. if local node is a index only node and the stat is bucket specific. stats_archiver:latest_sample(<bucket>, minute) will not be available.
+
+Again, just a suggestion  to explore.
+
+-------------------------------------
+author: Leah Mcdaniel
+date: 2016-05-25 00:47:31.590000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:397, src/menelaus_stats.erl -> This only happens during the first ~26 hours after the cluster is first initialized. So I am not that concerned about the performance impact.
+
+-------------------------------------
+author: Ella Beltran
+date: 2016-05-25 01:11:29.394000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:397, src/menelaus_stats.erl -> I would still recommend exploring ideas where we don't have to iterate through all kinds even the first time.
+
+Given that this is for Spock, we have time.
+
+-------------------------------------
+author: Leah Mcdaniel
+date: 2016-05-27 22:32:55.782000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:397, src/menelaus_stats.erl -> Fixed in a later commit
+
+-------------------------------------

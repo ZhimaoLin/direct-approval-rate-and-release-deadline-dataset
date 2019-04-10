@@ -1,0 +1,211 @@
+DESCRIPTION
+
+Reflog view: serialize asynchronous loading jobs
+
+Per bug 226343 the DeferredTreeContentManager has some problems.
+Avoid most of them by serializing jobs asynchronously loading the
+reflog, and once we have the reflog, don't re-load it but return
+it directly.
+
+Fix auto-updates of the view by re-setting the input on ref changes.
+Just calling refresh() doesn't work anymore if the reflog is loaded
+asynchronously.
+
+Bug: 519431
+Change-Id: I999616ea79068d5f4d0683e655231494d916cd83
+Signed-off-by: Alayna Houston xxx@xxx.xxx
+
+COMMENTS
+
+author: Alayna Houston
+date: 2017-07-11 07:38:31.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-07-11 07:38:37.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/10018/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-07-11 08:01:15.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/10018/ : SUCCESS
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-07-11 08:01:29.000000000
+
+Patch Set 2:
+
+> with this change I still get duplicate reflog entries
+
+I didn't, but I see how this could still happen.
+
+The basic problem is that this deferred tree content manager uses separate UI jobs to fill in the elements loaded asynchronously into the tree. Even if the loading job is canceled, that UI job isn't.
+
+There's three ways to resolve this:
+
+1. Give the viewer a comparator and make ReflogEntry a DTO, properly implementing equals(). The tree viewer will not add a child if an equal child already exists. Currently ReflogEntryImpl does not implement equals(), and thus two instances loaded separately are considered different and may thus end up multiple times in the tree.
+
+2. Don't use ReflogEntry as element type for the tree elements but a DTO wrapper that implement equals().
+
+3. Don't use a UI job but a Display.syncExec and ensure that we do set the children only once.
+
+Pros & cons:
+
+1. Pro: no need for a wrapper. Cons: it's a change in JGit; ReflogEntryImpl.equals() would need to consider the repo/ref the entry was loaded from, which we don't have there; and I already have enough open changes in JGit, so I prefer an EGit-local solution.
+
+2. Pro: EGit-local solution; the wrapper can implement equals() properly including repo/ref, and we could make it adaptable to Repository, which might help with the repository switch implementation. Cons: quite a bit of work.
+
+3: Pro: EGit-local solution; fairly easy. Cons: needs a subclass of DeferredTreeContentManager to avoid that UI jobs are used.
+
+In patch set 2, I have for now chosen option (3). I may revisit option (2) in the context of the repository switch https://git.eclipse.org/r/#/c/100045/ . (Or of course if you find that patch set 2 still doesn't resolve the display problem.)
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-07-11 09:04:45.000000000
+
+Patch Set 2: Code-Review+1
+
+> > with this change I still get duplicate reflog entries
+ > 
+ > I didn't, but I see how this could still happen.
+ > 
+ > The basic problem is that this deferred tree content manager uses
+ > separate UI jobs to fill in the elements loaded asynchronously into
+ > the tree. Even if the loading job is canceled, that UI job isn't.
+ > 
+ > There's three ways to resolve this:
+ > 
+ > 1. Give the viewer a comparator and make ReflogEntry a DTO,
+ > properly implementing equals(). The tree viewer will not add a
+ > child if an equal child already exists. Currently ReflogEntryImpl
+ > does not implement equals(), and thus two instances loaded
+ > separately are considered different and may thus end up multiple
+ > times in the tree.
+ > 
+ > 2. Don't use ReflogEntry as element type for the tree elements but
+ > a DTO wrapper that implement equals().
+ > 
+ > 3. Don't use a UI job but a Display.syncExec and ensure that we do
+ > set the children only once.
+ > 
+ > Pros & cons:
+ > 
+ > 1. Pro: no need for a wrapper. Cons: it's a change in JGit;
+ > ReflogEntryImpl.equals() would need to consider the repo/ref the
+ > entry was loaded from, which we don't have there; and I already
+ > have enough open changes in JGit, so I prefer an EGit-local
+ > solution.
+ > 
+ > 2. Pro: EGit-local solution; the wrapper can implement equals()
+ > properly including repo/ref, and we could make it adaptable to
+ > Repository, which might help with the repository switch
+ > implementation. Cons: quite a bit of work.
+ > 
+ > 3: Pro: EGit-local solution; fairly easy. Cons: needs a subclass of
+ > DeferredTreeContentManager to avoid that UI jobs are used.
+ > 
+ > In patch set 2, I have for now chosen option (3). I may revisit
+ > option (2) in the context of the repository switch
+ > https://git.eclipse.org/r/#/c/100045/ . (Or of course if you find
+ > that patch set 2 still doesn't resolve the display problem.)
+
+sorry, I didn't look carefully enough, patchset 1 already fixed the issue. I didn't notice that in the repository I looked at I had switched back and forth between the same set of branches several times and I didn't carefully look at the timestamp column of the reflog view. So patchset 1 and 2 both work for me. Should we merge ps 2 or do you want to go back to ps1 ?
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-07-11 09:25:08.000000000
+
+Patch Set 2:
+
+> > > with this change I still get duplicate reflog entries
+ > >
+ > > I didn't, but I see how this could still happen.
+ > >
+ > > The basic problem is that this deferred tree content manager uses
+ > > separate UI jobs to fill in the elements loaded asynchronously
+ > into
+ > > the tree. Even if the loading job is canceled, that UI job isn't.
+ > >
+ > > There's three ways to resolve this:
+ > >
+ > > 1. Give the viewer a comparator and make ReflogEntry a DTO,
+ > > properly implementing equals(). The tree viewer will not add a
+ > > child if an equal child already exists. Currently ReflogEntryImpl
+ > > does not implement equals(), and thus two instances loaded
+ > > separately are considered different and may thus end up multiple
+ > > times in the tree.
+ > >
+ > > 2. Don't use ReflogEntry as element type for the tree elements
+ > but
+ > > a DTO wrapper that implement equals().
+ > >
+ > > 3. Don't use a UI job but a Display.syncExec and ensure that we
+ > do
+ > > set the children only once.
+ > >
+ > > Pros & cons:
+ > >
+ > > 1. Pro: no need for a wrapper. Cons: it's a change in JGit;
+ > > ReflogEntryImpl.equals() would need to consider the repo/ref the
+ > > entry was loaded from, which we don't have there; and I already
+ > > have enough open changes in JGit, so I prefer an EGit-local
+ > > solution.
+ > >
+ > > 2. Pro: EGit-local solution; the wrapper can implement equals()
+ > > properly including repo/ref, and we could make it adaptable to
+ > > Repository, which might help with the repository switch
+ > > implementation. Cons: quite a bit of work.
+ > >
+ > > 3: Pro: EGit-local solution; fairly easy. Cons: needs a subclass
+ > of
+ > > DeferredTreeContentManager to avoid that UI jobs are used.
+ > >
+ > > In patch set 2, I have for now chosen option (3). I may revisit
+ > > option (2) in the context of the repository switch
+ > > https://git.eclipse.org/r/#/c/100045/ . (Or of course if you find
+ > > that patch set 2 still doesn't resolve the display problem.)
+ > 
+ > sorry, I didn't look carefully enough, patchset 1 already fixed the
+ > issue. I didn't notice that in the repository I looked at I had
+ > switched back and forth between the same set of branches several
+ > times and I didn't carefully look at the timestamp column of the
+ > reflog view. So patchset 1 and 2 both work for me. Should we merge
+ > ps 2 or do you want to go back to ps1 ?
+
+Let's use ps 2. I _am_ slightly worried about that UI job that gets spawned by the DeferredTreeContentManager. I think with ps 1 the following sequence is theoretically possible:
+
+* View gets loaded
+* Content provider getElements is called, spawns a job
+* Job takes a long time to load the reflog
+* User types something in the filter while we're still Pending...
+* getElements gets called again
+* First job still hasn't loaded the reflog: refLog == null. We'll spawn a second loading job.
+* First job just then is done loading. It's monitor isn't canceled yet, we add the elements. DeferredTreeContentManager spawns UI job.
+* Now the second load attempt cancels the first job. But UI job is already spawned and will add the elements.
+* First job ends and releases scheduling rule; second job starts
+* Second job loads the reflog again and elements get added a second time.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-07-11 09:31:20.000000000
+
+Patch Set 2: Code-Review+2
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-07-11 09:31:23.000000000
+
+Change has been successfully merged by Douglas Trujillo
+
+-------------------------------------

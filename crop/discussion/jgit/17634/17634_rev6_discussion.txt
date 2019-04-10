@@ -1,0 +1,398 @@
+DESCRIPTION
+
+Add support for custom merge drivers into JGit
+
+This extracts all "text only" logic from the ResolveMerger into a
+separate TextMergeDriver, and adds a built-in BinaryMergeDriver which
+only action is to keep the local content of a file in case of conflict.
+
+These two built-in merge drivers are not contributed as would the
+custom ones since they act as the default when no custom driver can
+be found for a file. Custom drivers will be contributed through the
+MergeDriverRegistry added by this commit.
+
+Bug: 418149
+Bug: 418150
+Signed-off-by: Gustavo Green xxx@xxx.xxx
+Change-Id: I1841dce144480822cf16b5b1100feffe40c6f907
+
+
+COMMENTS
+
+author: Gustavo Green
+date: 2013-11-27 14:44:35.000000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-27 14:44:41.000000000
+
+Patch Set 6:
+
+Build Started https://hudson.eclipse.org/egit/job/jgit.gerrit/4243/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-27 14:51:42.000000000
+
+Patch Set 6: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/egit/job/jgit.gerrit/4243/ : FAILURE
+
+-------------------------------------
+author: Gustavo Green
+date: 2013-11-27 15:03:02.000000000
+
+Patch Set 6:
+
+I haven't rebased this on master before pushing, I hope this will make it easier to review (comparing the new patch set with patch set 3).
+
+One of the tests for Java 7 does not compile : I wanted to just sub-class the corresponding 'Java 5' test and change the implementation used... but it didn't go as expected. Any idea about that?
+
+Main differences :
+
+- I have moved the changes I did in "FileUtils" to the "FS" abstraction instead. The Java 7 versions use the improved Java 7 API, Java 5 uses custom code through the old APIs.
+- The MergeDriverRegistry no longer uses "Pattern" as a key of its HashMaps. java.util.regex.Pattern overrides neither hashCode nor equals, so Pattern.compile(".*").equals(Pattern.compile(".*")) returns false. This made it a very bad idea for use as an HashMap key. I have instead switched the associations from "path" to "merge driver" to using globs; this better reflects what is used in the other implementations of git merge drivers as well as what is used in the git attributes. This should reduce the modifications needed when we include support for said git attributes...
+- I have added basic unit tests for the merge driver associations and the "java 5" support for globs (this is something that appeared in java 7; so what I use for Java 5 is again custom code).
+- The changes in "ResolveMerger" have been split in three. This review only includes changes related to the support for merge drivers, change https://git.eclipse.org/r/#/q/I7d2a90288696ee66887cc01d8a3ec2f6f28a0339,n,z includes a few visibility changes to ResolveMerger methods make it sub-classable, and finally change Ic69cfd3235f4ca656beb6b3aec9176839fb93666 includes "cosmetic" changes that should help (IMO) to make the class easier to read.
+
+-------------------------------------
+author: Gustavo Green
+date: 2013-11-27 15:03:52.000000000
+
+Patch Set 6:
+
+Do note that the Java 7 test compile and run on my machine, seems like the server somehow uses a different class path.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2013-11-28 08:14:59.000000000
+
+Patch Set 6: Code-Review-1
+
+(25 comments)
+
+I think this change still squashes several things which should come in separate changes:
+
+- path matcher
+- copy file utility method in FS
+- introduce merge driver and merge driver registry + text merge driver (using existing implementation)
+- introduce binary merge driver
+
+I didn't yet try this with a mix of binary and text files
+
+Line:1, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/MergeDriverTest.java -> missing license header
+
+Line:103, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/MergeDriverTest.java -> you are mixing comment styles, I'd say always use // since it  needs 2 lines less, several more of these below
+
+Line:52, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeDriverRegistry.java -> maybe better:
+
+Registry of all merge drivers
+
+Line:106, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeDriverRegistry.java -> style nit: trailing whitespace
+
+Line:119, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeDriverRegistry.java -> don't explain which code wants to use it but what this method does
+
+Line:61, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeDriver.java -> s/merger strategy/merge strategy/
+
+Line:91, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeDriver.java -> s/Take note/Note/
+
+Line:73, org.eclipse.jgit/src/org/eclipse/jgit/merge/TextMergeDriver.java -> remove these comments
+
+Line:113, org.eclipse.jgit/src/org/eclipse/jgit/merge/TextMergeDriver.java -> s/in/into/
+
+Line:415, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> this change is unrelated
+
+Line:436, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> missing blank after ,
+
+Line:552, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> why do we need temp files here ? We shouldn't need to write additional files for merge drivers. Ours, theirs and base versions are available in the object database and the result should end up in the working tree.
+
+We also want to be able to run a merge in-core, we don't use this in EGit but e.g. in Gerrit which also creates merge commits but doesn't have a working tree since it's operating on bare repositories only.
+
+Line:628, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> this line is way too wide and misses a blank after ,
+
+Line:719, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> use // for comments, since it needs less lines
+
+Line:782, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> don't we also need to consider the common base ?
+
+Line:896, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> this would break API, at the moment we plan to bump to 4.0 with Luna June next year
+
+Line:49, org.eclipse.jgit/src/org/eclipse/jgit/util/PathMatcher_Java5.java -> you mean Java 5, right ? Or is the class name wrong ?
+
+Line:62, org.eclipse.jgit/src/org/eclipse/jgit/util/PathMatcher_Java5.java -> this doesn't say much, I'd remove this text, I think the parameter description is sufficient
+
+Line:233, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/PathMatcherTest.java -> then move it there and add javadoc
+
+Line:53, org.eclipse.jgit/src/org/eclipse/jgit/merge/BinaryMergeDriver.java -> s/whatever the changes that happened/whatever changes happened/
+
+Line:59, org.eclipse.jgit/src/org/eclipse/jgit/merge/BinaryMergeDriver.java -> I think we don't use @inheritDoc xxx@xxx.xxx to refer to javadoc on superclass
+
+Line:46, org.eclipse.jgit/src/org/eclipse/jgit/util/PathMatcher.java -> Explain what the class does not what JGit will do with it
+
+Line:60, org.eclipse.jgit/src/org/eclipse/jgit/util/PathMatcher.java -> style nit: trailing whitespace
+
+Line:15, org.eclipse.jgit.java7.test/META-INF/MANIFEST.MF -> we prefer Import-Package and always use a range, for jgit internal dependencies from the current version until the next minor exclusive
+
+Line:93, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeResult.java -> this is weird and I don't understand your reasoning
+
+-------------------------------------
+author: Gustavo Green
+date: 2013-11-28 11:48:10.000000000
+
+Patch Set 6:
+
+(26 comments)
+
+There are a few individual comments I'd like feedback on before I push a new patch set on this.
+
+As for your general comments, well, yes, there are multiple things in this patch that "could" be split but... splitting a commit is a lot of work, especially on things that are so tied together : the merge driver support as I implemented it cannot work without these additions (path matcher, copy file), and they wouldn't really have a value of their own since they are not used (yet?) from elsewhere.
+
+Is splitting this commit necessary?
+
+Line:1, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/MergeDriverTest.java -> Done
+
+Line:103, org.eclipse.jgit.test/tst/org/eclipse/jgit/api/MergeDriverTest.java -> I tend to use "//" for single line comments and "/*" whenever what I consider as "one comment" must span multiple lines.
+
+The two above this are standalone comments, explaining what "a.txt" and "b.txt" are, respectively... while the one below is a single comment explaining why there is a conflict even though we have a custom merge driver that should be able to handle that case.
+
+I can easily change to always use "//", I just think we're losing some of the meaning when doing that. I'll still do the swap in the incoming patch set (except if someone tells me otherwise).
+
+Line:52, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeDriverRegistry.java -> I don't really have a preference here, I'll go with yours if its better (french here :)).
+
+Done.
+
+Line:106, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeDriverRegistry.java -> Done
+
+Line:119, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeDriverRegistry.java -> Done
+
+Line:61, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeDriver.java -> Done
+
+Line:91, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeDriver.java -> Done
+
+Line:73, org.eclipse.jgit/src/org/eclipse/jgit/merge/TextMergeDriver.java -> Done
+
+Line:113, org.eclipse.jgit/src/org/eclipse/jgit/merge/TextMergeDriver.java -> Done
+
+Line:415, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> Done
+
+Line:436, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> Done
+
+Line:552, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> See also discussions with Robin on patch set 3 https://git.eclipse.org/r/#/c/17634/3/org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java 
+
+Basically, I wanted to keep close to the definition of "merge drivers" as known by git : https://www.kernel.org/pub/software/scm/git/docs/gitattributes.html#_defining_a_custom_merge_driver . "A merge driver takes three files as parameters and leaves its result in the 'ours' version".
+
+Furthermore, I did not want to expose jgit innards and force implementers to learn what all of these concepts are : CanonicalTreeParser, index, object database, object inserter, ...
+
+As Robin mentionned, we "could" have the built-in drivers (text and binary) use a different API as what we provide to our clients so that we internally use the object database and create temporary files only when a custom, external merge driver is to be called. I don't think that is the best thing to do though, since it means "we" are not eating our own dog food...
+
+Should this discussion be moved to jgit-dev?
+
+Line:628, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> Seems like the formatter didn't kick in.
+
+Done
+
+Line:719, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> It needs less lines, but is seen differently by the formatter. I changed these to avoid the need to manually reformat each line each time I modified the comment.
+
+re-changed to single line comments.
+
+Line:782, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> There will not be any use for a merge driver if there is neither an "ours" nor a "theirs" : this would mean both have been deleted, in which case git considers it a trivial merge and does not call the merge drivers. So we know that at least one of the two is not null.
+
+We only use the file path to determine whether there is a custom merge driver defined for this merge. If there is one, we won't even consider ours and theirs here.
+
+Otherwise, we only check the first available version : if 'ours' is not null, then consider that its type is the same as theirs and base (if they exist : ours binary means that we'll use a binary merge driver. ours textual means that we'll use a textual merge driver.
+
+These last assumption (the content of the "if (driver == null)" branch) may need to be revised in order to check the kind of all available version? Namely, "if any of ours, theirs or base is not null and binary, then use the binary merge driver" ?
+
+Line:896, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> Yes, see my previous comments on https://git.eclipse.org/r/#/c/17634/6/org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeResult.java . I've left al of these in and just added FIXMEs in the affected spots. I've tried to cope with this during the implementation and worked around it when I could not ignore it :).
+
+Line:49, org.eclipse.jgit/src/org/eclipse/jgit/util/PathMatcher_Java5.java -> To be honest, I didn't know which number to use : this will be used with both Java 5 and Java 6 (it only changes with Java 7). Seems like I hesitated right till the end :p.
+
+I have changed the wording on these comments so there is no longer a confusion. As for the class name, I didn't really have an example to follow. Should I use "Java5" or "Java6"... or no qualifier at all?
+
+Line:62, org.eclipse.jgit/src/org/eclipse/jgit/util/PathMatcher_Java5.java -> Done
+
+Line:233, org.eclipse.jgit.test/tst/org/eclipse/jgit/util/PathMatcherTest.java -> This is an overlook, I intended to move it before pushing.
+
+Done.
+
+Line:53, org.eclipse.jgit/src/org/eclipse/jgit/merge/BinaryMergeDriver.java -> Done
+
+Line:59, org.eclipse.jgit/src/org/eclipse/jgit/merge/BinaryMergeDriver.java -> This is a javadoc template on my side, I'll avoid those when working on (J|E)Git.
+
+Line:46, org.eclipse.jgit/src/org/eclipse/jgit/util/PathMatcher.java -> Done.
+
+Also removed the second paragraph here since implementers of a Path Matcher can do so without relying on globs. I've moved that part to the Java 5 implementation.
+
+Line:60, org.eclipse.jgit/src/org/eclipse/jgit/util/PathMatcher.java -> Done
+
+Line:15, org.eclipse.jgit.java7.test/META-INF/MANIFEST.MF -> The problem with this is that hudson doesn't seem to find the "PathMatcherTest" class. I tried using a Require-Bundle directive to work around that, but to no avail. "PathMatcherJava7Test" in its current form cannot be run by hudson even though it works fine locally.
+
+Line:93, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeResult.java -> It _is_ weird, but it is due to the "API" I would like to remove : org.eclipse.jgit.api.MergeResult.getConflicts.
+
+Remove these two lines and run the "MergeCommandTest" tests, you will see two errors due to NPEs.
+
+The reason of which is that both "org.eclipse.jgit.api.MergeResult" and "org.eclipse.jgit.merge.MergeResult" consider that there are no conflicts if there are no sequences in conflit added to them ("containsConflict" is only set to true in "add" down below and if the conflictState != ConflictState.NO_CONFLICT).
+
+Now, consider where we create "MergeResult"s ?
+One very problematic case is on line 456 of ResolveMerger : http://git.eclipse.org/c/jgit/jgit.git/tree/org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java#n456 "we found a conflict on file modes, create a conflicting merge result". However, "containsConflict" will be false, and "org.eclipse.jgit.api.MergeResult" will reflect that with its "conflicts" Map null.
+The second problematic one "was" on line 672 http://git.eclipse.org/c/jgit/jgit.git/tree/org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java#n672 . It had nothing to do there, so I moved it out of 'updateIndex' back in 'processEntry'. You can see the result of that on https://git.eclipse.org/r/#/c/17634/6/org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java in the changes at line 581 on the right. Basically, this :
+
+if (driver instanceof TextMergeDriver)
+	mergeResults.put(tw.getPathString(), ((TextMergeDriver) driver).getLowLevelResults());	
+else
+	mergeResults.put(tw.getPathString(), new MergeResult<RawText>(Collections.<RawText> emptyList()));
+
+The "binary" merge driver does _not_ generate low level results since it does not act on "chunks" or "Sequences". Still, since "merge.MergeResult" has been thought for textual merges, it requires "Sequences" to have a conflict so that it is reflected in "api.MergeResult".
+
+Since "api.MergeResult" is API, I could not remove these "low level results" (that are only used in tests) without mandating a version bump. The easiest workaround I could find was this "weird" thing : if there are no Sequences, then it was a file mode conflict or a binary conflict. It is a conflict nonetheless.
+
+Line:169, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeResult.java -> This was actually no longer needed since I've switched the "MergeDriver" interface to use boolean instead of ints to tell whether there are conflicts or not.
+
+The next patch set will remove all corresponding changes.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2013-12-02 14:56:16.000000000
+
+Patch Set 6:
+
+Laurent, I understand that you feel that it may not be worth the effort to split the change. For a developer who has a finished feature in his commit and want's to bring it through this looks like too much effort. But together with code-review it makes sense to split it. Your changes to FS (PathMatcher, copyFile) are completely independent from what you do for MergeDrivers. If we separate them different set of people can review them. In the end we are faster
+
+And the best part:
+It's not that hard. To be able to review the merge drivers I did it. Here comes my receipe:
+
+git checkout -b refactor 2821733
+git reset HEAD~
+git add org.eclipse.jgit/src/org/eclipse/jgit/util/PathMatcher*
+git add org.eclipse.jgit.test/tst/org/eclipse/jgit/util/
+git add org.eclipse.jgit.java7/src/org/eclipse/jgit/util/PathMatcher_Java7.java
+git add org.eclipse.jgit.java7.test/src/org/eclipse/jgit/util/PathMatcherJava7Test.java
+git add -p org.eclipse.jgit.java7/src/org/eclipse/jgit/util/FS_*     ## choose only PathMatcher related stuff
+git add -p org.eclipse.jgit/src/org/eclipse/jgit/util/FS.java        ## choose only PathMatcher related stuff
+
+git commit -m patchmatcher
+
+git add org.eclipse.jgit/resources
+git add org.eclipse.jgit.java7*
+git add org.eclipse.jgit/src/org/eclipse/jgit/internal
+
+git commit -m copyFile
+
+git add .
+git reset HEAD -- org.eclipse.jgit/src/org/eclipse/jgit/merge/BinaryMergeDriver.java
+git reset HEAD -- org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java
+git add -p org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java   ## add all but BinaryMergerDriver stuff
+
+git commit -c 2821733
+
+git add .
+git commit -m binaryDriver
+
+-------------------------------------
+author: Zachary Orozco
+date: 2013-12-02 15:20:09.000000000
+
+Patch Set 6:
+
+sorry, on my last comment gerrit removed the intendet indention. Here is what I did:
+
+  
+  git checkout -b refactor 2821733
+  git reset HEAD~
+  git add org.eclipse.jgit/src/org/eclipse/jgit/util/PathMatcher*
+  git add org.eclipse.jgit.test/tst/org/eclipse/jgit/util/
+  git add org.eclipse.jgit.java7/src/org/eclipse/jgit/util/PathMatcher_Java7.java
+  git add org.eclipse.jgit.java7.test/src/org/eclipse/jgit/util/PathMatcherJava7Test.java
+  git add -p org.eclipse.jgit.java7/src/org/eclipse/jgit/util/FS_*     ## choose only PathMatcher related stuff
+  git add -p org.eclipse.jgit/src/org/eclipse/jgit/util/FS.java        ## choose only PathMatcher related stuff
+  
+  git commit -m patchmatcher  
+  
+  git add org.eclipse.jgit/resources
+  git add org.eclipse.jgit.java7*  
+  git add org.eclipse.jgit/src/org/eclipse/jgit/internal
+  
+  git commit -m copyFile
+  
+  git add .
+  git reset HEAD -- org.eclipse.jgit/src/org/eclipse/jgit/merge/BinaryMergeDriver.java
+  git reset HEAD -- org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java
+  git add -p org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java   ## add all but BinaryMergerDriver stuff
+  
+  git commit -c 2821733
+  
+  git add .
+  git commit -m binaryDriver
+
+-------------------------------------
+author: Zachary Orozco
+date: 2013-12-02 16:41:14.000000000
+
+Patch Set 6:
+
+(1 comment)
+
+Line:552, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> I would avoid creating new temp files. I can understand that you would like to be near to the native git merge driver interface. But here we are explicitly defining an interface for merge drivers implemented in Java. If such an MergeDriver would get three InputStreams and one outputStream --- wouldn't that be better? If I have to implement a MergeDriver in Java and I get three InputStreams instead of three java.io.File objects --- I wouldn't care much.
+
+We don't expose any internals and can avoid touching the filesystem. I looked at the merge drivers you have proposed up to now and they all don't have problems with this solution.
+
+In a lot of other places in JGit we thought a lot before touching the filesystem. We should not invent writing three new files without a good reason. Think about windows machines where sometimes all the content you write go through virus scanners.
+
+-------------------------------------
+author: Zachary Orozco
+date: 2013-12-02 20:32:57.000000000
+
+Patch Set 6:
+
+(5 comments)
+
+Line:54, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeDriver.java -> here you have to help me: if merge drivers are expected to determine whether they can handle a given entry then I would expect something like a "canHandle(Entry e)" method in this contract If I look only at this interface I would guess that merge drivers don't know which entries they can handle.
+
+Line:57, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeDriver.java -> The contract for merge drivers should also explain where to put the result of the merge.
+
+As I understood it In native git a merge driver get's 3 strings as input (base,current,other). These strings should be interpreted as pathes in the filesystem. The merge driver is expected to write the result into the file referred by "current".
+
+For a Java API we don't want Strings, but as discussed in other comments I suggest to have 3 InputStreams. And a fourth parameter is the outputstream where the mergedriver should write his result.
+
+I was not sure whether we need the repository. This gives merge drivers more rights than they need. They can also write to the repo. Do merge drivers realy create new git objects or change refs, ... . Maybe it's safer to give the merge driver only the Config object so he can look up parameters which control him. On the other hand: there may be merge drivers which really look up other objects from the object database. Do you already have a use case in mind for merge drivers which need more than the config?
+
+Line:88, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeDriver.java -> I know that this is also not handle by native git merge drivers, but have you thought about exposing the occurred conflicts here? The merge driver is the one who will decide which conflicts occur. But he has no way to tell that in this contract.
+
+Line:782, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> right, I also think we should look at all available versions and if any is binary then use the binary mode. But in this case you would need to pass also "base" into this method in order to check the base for binary content. That's what Matthias suggested.
+
+Line:783, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> One question: do we plan to handle renames? Maybe there is no single "filePath" but in base that file was call "src/a.txt", in ours it was renamed to "demo/x" and in theirs it was renamed to "ssh.bin". I am wondering whether we should simply only give three CanonicalTreeParsers into this method (you can ask them for the current path they are looking at). Then we would be prepared for situations where there is no single filepath.
+
+-------------------------------------
+author: Gustavo Green
+date: 2014-02-26 13:36:57.000000000
+
+Patch Set 6:
+
+(6 comments)
+
+Line:54, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeDriver.java -> I actually had a "canHandle" method in here originally... before realizing that it is not the driver's responsibility. Merge drivers are associated with file paths/extensions within the registry, and they are expected to be able to handle the files which paths they match.
+
+Line:57, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeDriver.java -> I'm back on this issue after a while; if I recall correctly, the consensus here was to try and avoid writing temporary files as much as possible. On my end, I think that exposing the CanonicalTreeParsers and the index here seems too dangerous for an API (and too complex for implementers).
+
+Exposing the repository offers some level of potential breakages too... and indeed I can't think of a driver that would need more than the config (and even that should only be needed by the textual merge driver). A shame that using the config also requires some knowledge about JGit innards though (and its constants).
+
+I've put in your suggestion of Input|OutputStreams in practice... seems flexible enough for the different use cases I could think of. I really don't like the idea of an "in/out" parameter though, but creating a specific Object for the driver result seems overkill. The next patch set implements the solution with streams, this discussion might probably be better suited there.
+
+Line:88, org.eclipse.jgit/src/org/eclipse/jgit/merge/MergeDriver.java -> The merge driver will decide which conflicts occur, yes... but I can't think of an API to properly return the information "up"... and I don't want to end up with another... sub-optimal... way of returning this such as the "low level results" that the text merge driver creates since "Sequences" are totally unrelated to other mergers.
+
+The binary merger will not have "sequences" in conflict, just complete files. The text merge driver will have individual sequences in conflict. A model would not have sequences either, it would have "objects" in conflicts, but the model itself doesn't know how he is serialized, so all it can tell is that the whole file is in conflict. xml mergers might also want to take the conflict to a higher level, to whole tags, though these can be converted back into a text sequence...
+
+Then again, even if we have this information... How to use it? We would also need specific editors or widgets to make use of any such info. That can even be seen with the text chunks the TextMergeDriver returns : they are totally unused outside of the unit tests.
+
+I've opted for a single boolean that tells the merge strategy whether there was a conflict on this file or not. I'm open to suggestions if this can be handled better though (or if you disagree with my earlier analysis :)).
+
+Line:552, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> Done
+
+Line:782, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> Done
+
+Line:783, org.eclipse.jgit/src/org/eclipse/jgit/merge/ResolveMerger.java -> This is a private method, so it can always change in the future if we need to handle renames. I don't think it is necessary to change it for now?
+
+-------------------------------------

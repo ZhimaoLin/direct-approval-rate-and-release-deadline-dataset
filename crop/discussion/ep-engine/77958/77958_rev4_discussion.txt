@@ -1,0 +1,99 @@
+DESCRIPTION
+
+MB-24246: Combine 'writeLock' & 'highSeqnosLock' into one in BasicLinkedList
+
+Functionally 'writeLock' and 'highSeqnosLock' both result in the
+serialization of the BasicLinkedList write and other list operations.
+Hence this commit combines the 2 locks into one lock.
+
+As a consequence this commit ensures that the writeLock is held on
+the BasicLinkedList until the sequence number for the newly added,
+updated and soft-deleted is generated. While this is strictly not
+needed in new add, it is necessary in update and soft delete as
+explained below.
+
+(a) New Add :
+   A1, B2, C3 and we are trying to add D4
+   A1, B2, C3, D added but no seqno yet.
+   Now we don't really care if range read starts here as it can read
+   only A1, B2, C3 in the snapshot.
+
+   But to maintain uniformity (hence simpler code) with update
+   and soft-delete we grab writeLock such that we append to list
+   + update highSeqno as an atomic operation.
+
+(b) Update (and Soft-delete):
+   A1, B2, C3 and we are trying to update B to B4
+   A1, B2, C3, B added but no seqno yet and/or no B2_stale yet
+   Now we cannot start the range read here because we do not wait
+   for range read to finish to mark the item stale (note that we
+   are planning to not send stale(duplicate) items in a snapshot).
+
+   This was already in case (b) using highSeqnosLock, this commit
+   uses just writeLock for the same.
+
+The commit also adds documentation regarding the desired heirarchy of
+the lock acquisition in BasicLinkedList.
+
+Change-Id: I10a80f55a763d1496adec24fa12bc75d83ea1573
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2017-05-12 00:06:09.336000000
+
+Uploaded patch set 4: Commit message was updated.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-05-12 00:06:22.090000000
+
+Patch Set 4:
+
+(5 comments)
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-05-12 00:08:10.448000000
+
+Patch Set 4:
+
+(1 comment)
+
+Line:27, /COMMIT_MSG -> As explained this is not a necessity.
+If you think we should not have the writeLock grabbed for append till update highSeqno, feel free to bring that up
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-05-12 00:46:36.797000000
+
+Patch Set 4: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6468/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5653/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4958/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/204/ : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-05-12 01:39:00.087000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5653/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4958/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/204/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6469/ : SUCCESS
+
+-------------------------------------

@@ -1,0 +1,123 @@
+DESCRIPTION
+
+MB-24246: update highestDedupedSeqno when an existing value is changed
+
+Change-Id: If6c57a86bab56ccc007b0fe17c9229218bb0c2c7
+
+
+COMMENTS
+
+author: Jace Townsend
+date: 2017-05-05 14:17:51.689000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-05-05 14:30:31.060000000
+
+Patch Set 1: Code-Review-1
+
+(1 comment)
+
+Line:348, src/ephemeral_vb.cc -> Didn't we conclude (at least for the baseline case) this only need to be done in the update case? i.e. can't this code be moved into SequenceList::updateListElem?
+
+(a sign that the current code is undesirable is the fact we are making a number of calls into seqList to "tell it to change stuff", where in general it's better to let an object manage it's own state - for example update those values in SequenceList::updateListElem().
+
+Another sign is the fact you're repeating essentially the same code in softDeleteStoredValue
+
+-------------------------------------
+author: Jace Townsend
+date: 2017-05-05 14:58:59.773000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:348, src/ephemeral_vb.cc -> I'll definitely look at a better organisation, but I don't think the value has the right seqno until after 342 - it is set in VBucket::queueDirty
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-05-05 14:59:35.662000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6332/ : FAILURE
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4841/ : FAILURE
+
+Failure of a CTest test  8/26 Test  #5: ep-engine_ep_unit_tests .................. ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-addresssanitizer-master/4841/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/91/ : FAILURE
+
+ThreadSanitizer issue: data race /home/Piper Jefferson/jenkins/workspace/ep-engine-threadsanitizer-master/ep-engine/src/monotonic.h:46 in Monotonic<long>::operator=(long const&)  ( http://cv.jenkins.couchbase.com//job/ep-engine-threadsanitizer-master/91/ )
+
+Failure of a CTest test  7/26 Test  #5: ep-engine_ep_unit_tests .................. ( http://cv.jenkins.Piper Jefferson.com//job/ep-engine-threadsanitizer-master/91/ )
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5536/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-05-05 15:28:54.855000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:348, src/ephemeral_vb.cc -> Ok, but you still need to make it conditional on the result of `seqList->updateListElem()` - line 304.
+
+-------------------------------------
+author: Jace Townsend
+date: 2017-05-05 15:38:22.287000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:348, src/ephemeral_vb.cc -> Oh I see -
+
+move to front: rangeRead has to include new location, immediate HDDS update
+
+append and mark stale: rangeRead can still stop prior to the new copy, no need to update HDDS, but then the /purger/ needs to update the HDDS when it removes the stale item?
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-05-05 16:06:26.155000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:348, src/ephemeral_vb.cc -> Not sure about the purger (I think that's covered by the other MB?) HDDS is essentially non-decreasing, and always "points" at a non-stale item.
+
+-------------------------------------
+author: Jace Townsend
+date: 2017-05-05 16:53:12.348000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:348, src/ephemeral_vb.cc -> Ahh, I assumed it was more strictly the first item which has replaced a previous one (i.e., you must read up to this to be valid, or you will be missing this key). So, if you move an item, it would definitely need updating, but also I thought we pondered the "pessimism" of updating the HDDS as soon as you mark an item stale and append a new version, vs /not/ immediately updating it (because you don't /need/ to read to this until the stale item goes away) at which point the purger needs to update it, or a rangeRead could go over where the stale item /was/, but not its replacement, leading to inconsistency?
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-05-05 17:00:21.045000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:348, src/ephemeral_vb.cc -> Sure, but again; wasn't that only necessary for the second MB - i.e. to prevent us sending dupes?
+
+-------------------------------------
+author: Jace Townsend
+date: 2017-05-08 14:40:45.785000000
+
+Patch Set 1:
+
+As discussed - is this okay as the temporary solution to fix the range while working on the wider changes? I agree that it is not nice to call in to change the seqList state, but just as a stand in....
+
+-------------------------------------

@@ -1,0 +1,91 @@
+DESCRIPTION
+
+MB-9612: handling remote_cluster_info error more gracefully
+
+Today during vb replicator initialization, if remote_cluster_info
+fails to grab remote bucket info for any reason, the vb
+replicator will crash on a badmatch error and the throttle
+will reschedule the next waiting one. This immediate-retry-
+after-failure behavior may cause more repeated errors from
+remote and vb replicators at source side may crash repeatedly
+for nothing.
+
+This commit will make vb replicator consume the error from
+remote_cluster_info. If any error returns, the vb replicator
+will pause for sometime (default is 30 seconds), and re-query
+remote_cluster_info. If the TMP error at remote resolves in
+30 seconds, the vb replicator will continue initialization
+without crash. If the error persists after 30 seconds, XDCR
+will not be able to start as expected.
+
+Change-Id: I39921754887686c0b969b53eb0e4a5764b385145
+
+
+COMMENTS
+
+author: Macie Morton
+date: 2013-12-02 21:07:16.477000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Macie Morton
+date: 2013-12-02 21:24:16.156000000
+
+Patch Set 2: Verified+1
+
+-------------------------------------
+author: Nathalie Landry
+date: 2013-12-02 21:52:22.605000000
+
+Patch Set 2: Code-Review+2
+
+ideally you would give replications to other nodes a chance to run while sleeping. But maybe this is good enough as well
+
+-------------------------------------
+author: Nathalie Landry
+date: 2013-12-02 22:01:58.481000000
+
+Patch Set 2: -Code-Review
+
+Removing +2.
+
+Actually consider remote cluster where just single node is down....
+
+First replicator trying to replicate to this node will go into sleep for 30 seconds. Then second, then third, etc. Eventually you'll have most of your active replicators in sleep because of that single node that's down.
+
+Arguably, that's not too critical. But it looks bad enough for me to revoke my +2.
+
+Please consider something cleaner.
+
+-------------------------------------
+author: Macie Morton
+date: 2013-12-02 23:31:27.428000000
+
+Patch Set 2:
+
+remote_cluster_info is a caching service, thus If just single node is down, it should return vbucket map from other live nodes, and we should not see error like "all nodes failed". 
+
+Remember we shuffle all replicators. What you said wont happen because we do not continuously schedule a list of vb to the same node. If single node is down and never come back, replicators to that node will sleep for 30 seconds and then crash, and concurrency_throttle will schedule other waiting replicators (high probability to a different node) and replication to other nodes will NOT be blocked. 
+
+What you said in earlier comment makes sense, and I will do that in another commit. If replicators to node A keep crashing after waiting for 30 secs, concurrency_throttle will avoid schedule replicators to node A for some time.
+
+That change will be in concurrency_throttle, and is independent of this one, which just avoid crash immediately on error msgs from remote_cluster_info.
+
+Does it make sense to you?
+
+-------------------------------------
+author: Nathalie Landry
+date: 2013-12-03 00:23:44.218000000
+
+Patch Set 2: Code-Review+2
+
+it does. But note that remote_clusters_info doesn't work 100% like that. At least yet.
+
+-------------------------------------
+author: Nathalie Landry
+date: 2013-12-03 00:24:07.994000000
+
+Change has been successfully merged into the git repository.
+
+-------------------------------------

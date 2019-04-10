@@ -1,0 +1,134 @@
+DESCRIPTION
+
+Add ICommitMessageProvider2 for caret positioning in commit messages
+
+The caret in the CommitMessageComponent is placed, according to the
+value of getCaretPosition() of the first implementation of
+ICommitMessageProvider2, that was discovered. In case there are multiple
+implementations available, they are ignored.
+
+Bug: 516867
+Change-Id: I1b0ffd33ef37196d53077d09774672c2b033835f
+Signed-off-by: James Mcgee xxx@xxx.xxx
+
+COMMENTS
+
+author: James Mcgee
+date: 2017-05-22 12:57:02.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-05-22 12:57:08.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/9882/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-05-22 13:20:17.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/9882/ : SUCCESS
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-05-22 21:02:52.000000000
+
+Patch Set 3: Code-Review-1
+
+(1 comment)
+
+Line:18, org.eclipse.egit.ui/src/org/eclipse/egit/ui/ICommitMessageProvider2.java -> This is not good. It means that the commit message provider has to be stateful. I'd prefer an interface returning a data object:
+
+  public static class CommitMesssageWithPosition {
+
+    public static final int UNDEFINED_POSITION = -1;
+
+    private final String text;
+    private final int desiredCaretPosition;
+    // Constructor(String, int), getters, equals, hashCode
+  }
+
+  CommitMessageWithPosition getCommitMessageWithPosition(IResource[] resources);
+
+The CommitMessageCalculator can assemble the messages and determine the position, if any, and then return a CommitMessageWithPosition.
+
+This will also greatly simplify the calculator since you won't need to remember which message came from which provider. The logic will basically stay the same: one function to instantiate them from the extension points, then basically loop through the providers:
+
+  StringBuilder finalMessage = ...;
+  int pos = CommitMessageWithPosition.UNDEFINED_POSITION;
+  for (IComitMessageProvider provider : providers) {
+    String msg = null;
+    int p = CommitMessageWithPosition.UNDEFINED_POSITION;
+    if (provider instanceof ICommitMessageProvider2) {
+      CommitMessageWithPosition c = ((ICommitMessageProvider2) provider).getCommitMessageWithPosition(resources);
+      if (c == null) {
+        continue;
+      }
+      msg = c.getText();
+      p = c.getDesiredCaretPosition();
+    } else {
+      msg = provider.getCommitMessage(resources);
+    }
+    if (msg != null && !msg.isEmpty()) {
+      // Append msg to finalMessage
+      if (p >= 0 && pos < 0) {
+        // Update pos
+      }
+    }
+  }
+  return new CommitMessageWithPosition(finalMsg.toString(), pos);
+
+and then EGit gets the message and the final position. (Of course in production code again with try-catch around the calls to the contributed providers.)
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-05-23 10:44:14.000000000
+
+Patch Set 3:
+
+> > (1 comment)
+ > 
+ > Good point, keeping the CommitMessageProviders stateless.
+ > In this case, it doesn't make sense, that ICommitMessageProvider2
+ > extends ICommitMessageProvider.
+ > Is it okay, if one Extension Point accepts two different interface
+ > types?
+
+No. Keep it an extension interface.
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-05-24 10:15:36.000000000
+
+Patch Set 3:
+
+> > > Is it okay, if one Extension Point accepts two different
+ > > interface
+ > > > types?
+ > >
+ > > No. Keep it an extension interface.
+ 
+BTW, the reason is that as far as I know, the extension point schema can define a restriction for only one supertype.
+
+ > Another short question... What do you prefer:
+ > 
+ > CommitMessageComponent could keep track of the caret position,
+ > analog to commitMessage (introduce new fields caretPosittion &
+ > previousCaretPosition. Add a field caretPosition in
+ > CommitMessageComponentState).
+ > 
+ > or
+ > 
+ > Use the type CommitMessageWithCaretPosition instead of these two
+ > separate fields?
+
+After a brief look at the code, I have the feeling that doing the first might be a little easier...
+
+-------------------------------------

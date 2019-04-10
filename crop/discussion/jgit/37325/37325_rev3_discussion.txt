@@ -1,0 +1,111 @@
+DESCRIPTION
+
+Extract path info from requests without decoding
+
+Gitiles malfunctions in conjunction with jgit and guice
+because of a recent guice bug fix. Work around the problem
+by parsing the URI directly, bypassing the unescaping
+performed by the getPathInfo method.
+
+This rest of this message is copied from
+https://gerrit-review.googlesource.com/#/c/60820/ :
+
+The fix for Guice issue #745[1] causes getPathInfo() within the
+GuiceFilter to return decoded values, eliminating the difference
+between "foo/bar" and "foo%2Fbar". This is in spec with the servlet
+standard, whose javadoc for getPathInfo[2] states that the return
+value be "decoded by the web container".
+
+Work around this by extracting the path part directly from the request
+URI, which is unmodified by the container. This is copying the Guice
+behavior prior to the bugfix. We do this with a static method rather
+than using our own HttpServletRequestWrapper as we don't want to
+produce a request wrapper that is not in spec.
+
+[1] https://github.com/google/guice/issues/745
+[2] http://docs.oracle.com/javaee/7/api/javax/servlet/http/HttpServletRequest.html#getPathInfo()
+
+Change-Id: I7fdb291bda377dab6160599ee537962d5f60f1e8
+Signed-off-by: Parker James xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2014-12-04 00:57:42.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/5805/
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-12-04 01:05:38.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/5805/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2014-12-09 00:14:40.000000000
+
+Patch Set 3: Code-Review-1
+
+(7 comments)
+
+Line:118, org.eclipse.jgit.http.test/tst/org/eclipse/jgit/http/server/ServletUtilsTest.java -> Given how hard it is to get a CQ for EasyMock, its easier to not mock.
+
+Line:114, org.eclipse.jgit.http.server/src/org/eclipse/jgit/http/server/glue/RegexPipeline.java -> Since we call this "often", maybe its worth holding in a private request attribute?
+
+Line:193, pom.xml -> Per http://download.eclipse.org/tools/orbit/downloads/drops/R20140525021250/ only EasyMock 2.4.0 is permitted for use at Eclipse.
+
+If you want to use 2.4.0, we need to file a CQ to ask for reuse of 2.4.0.
+
+Or we file a CQ to ask for 3.2.
+
+Or you remove EasyMock.
+
+Line:240, org.eclipse.jgit.http.server/src/org/eclipse/jgit/http/server/ServletUtils.java -> Drop this. JGit style demands it be written differently anyway. And the basic logic is the only way to write this.
+
+Line:242, org.eclipse.jgit.http.server/src/org/eclipse/jgit/http/server/ServletUtils.java -> Defer computing this until its actually required on the condition below.
+
+Line:245, org.eclipse.jgit.http.server/src/org/eclipse/jgit/http/server/ServletUtils.java -> Is [] really necessary here? / is not a special regex character.
+
+Line:254, org.eclipse.jgit.http.server/src/org/eclipse/jgit/http/server/ServletUtils.java -> Awkward. I would suggest early return pattern:
+
+  if (!pathInfo.startsWith(servletPath))
+    return null;
+
+  pathInfo = pathInfo.substring(servletPath.length());
+  if (pathInfo.isEmpty() && servletPath.length() > 0)
+    return null;
+  return pathInfo;
+
+.length() on a string is essentially free. I see no value in holding it into a local variable the way you originally proposed.
+
+-------------------------------------
+author: Parker James
+date: 2014-12-09 20:00:39.000000000
+
+Patch Set 3:
+
+(7 comments)
+
+Line:118, org.eclipse.jgit.http.test/tst/org/eclipse/jgit/http/server/ServletUtilsTest.java -> Done
+
+Line:114, org.eclipse.jgit.http.server/src/org/eclipse/jgit/http/server/glue/RegexPipeline.java -> I've contemplated this suggestion with interest. I lean against doing this because it increases the statefulness (and complexity) of the system for a negligible efficiency gain. I would be more enthusiastic if this cached an expensive computation.
+
+Line:193, pom.xml -> Done
+
+Line:240, org.eclipse.jgit.http.server/src/org/eclipse/jgit/http/server/ServletUtils.java -> Done
+
+Line:242, org.eclipse.jgit.http.server/src/org/eclipse/jgit/http/server/ServletUtils.java -> Done
+
+Line:245, org.eclipse.jgit.http.server/src/org/eclipse/jgit/http/server/ServletUtils.java -> Done
+
+Line:254, org.eclipse.jgit.http.server/src/org/eclipse/jgit/http/server/ServletUtils.java -> Done
+
+-------------------------------------

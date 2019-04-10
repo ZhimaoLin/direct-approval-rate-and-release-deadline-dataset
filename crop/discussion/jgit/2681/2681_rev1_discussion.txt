@@ -1,0 +1,79 @@
+DESCRIPTION
+
+ObjectIdSubclassMap: Use & rather than % for hashing
+
+Bitwise and is faster than integer modulus operations, and since
+the table size is always a power of 2, this is simple to use for
+index operation.
+
+Change-Id: I83d01e5c74fd9e910c633a98ea6f90b59092ba29
+Signed-off-by: Jaycee Hickman xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Brenden Conley
+date: 2011-03-10 00:57:44.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/48/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2011-03-10 00:59:55.000000000
+
+Patch Set 1: Build Successful
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/48/ : SUCCESS
+
+-------------------------------------
+author: Zachary Orozco
+date: 2011-03-10 09:48:39.000000000
+
+Patch Set 1: (2 inline comments)
+
+
+
+Line:217, org.eclipse.jgit/src/org/eclipse/jgit/lib/ObjectIdSubclassMap.java -> this change also means that we use a different subset of the bits in the id as input for our hashing. The least significant was ignored before - now some high bits are ignored. I don't see a problem with that now because I guess the bits in our SHA1's are equally good as input for hashes.
+
+Line:241, org.eclipse.jgit/src/org/eclipse/jgit/lib/ObjectIdSubclassMap.java -> If I would forget about performance I would add a check here to make sure that sz is some power of 2. It would be disastrous for the performance if this is not true. A size of 1025 would lead to a mask with one bit set and therefore only one bucket.
+Am I guessing right that you left out these checks for performance reasons because you know you'll call this method always with powers of 2?
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-03-10 17:37:40.000000000
+
+Patch Set 1: (2 inline comments)
+
+
+
+Line:217, org.eclipse.jgit/src/org/eclipse/jgit/lib/ObjectIdSubclassMap.java -> The old code uses >>> 1 because -1 % 32 is negative. So if the high bit was set we would get a negative array index, and that doesn't work in Java. :-)
+
+Doing >>> 1 to "clear" the high bit and force the value positive is faster than any other means of making the value positive, especially when you know w1 is coming from SHA-1 and all of the bits are about equally as good for our hash code.
+
+The old code used % rather than & because I think the table used to use a prime number for its length, rather than a power of 2. But we have since changed to using a power of 2, so & is faster.
+
+And yes, all of the bits are about equally as good coming from w1, and the newer code is 1 fewer instructions and the remaining instruction is faster to execute for most processors.
+
+Line:241, org.eclipse.jgit/src/org/eclipse/jgit/lib/ObjectIdSubclassMap.java -> Correct. I'm avoiding a check here for the size being a power of 2 because the class is only 250 lines of code, including copyright notices and documentation. If you are changing the size such that initTable gets called with a non-power of 2, and you can't read this much code, well... :-\
+
+As it is this class has some strange restrictions, like callers of the class *MUST* ensure they use add() *ONLY* if contains() would return false for the object. Otherwise its unpredictable what happens when there are duplicate mappings for an ObjectId.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-03-10 18:02:59.000000000
+
+Patch Set 1: Looks good to me, approved; IP review completed
+
+
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2011-03-10 18:03:01.000000000
+
+Change has been successfully merged into the git repository.
+
+-------------------------------------

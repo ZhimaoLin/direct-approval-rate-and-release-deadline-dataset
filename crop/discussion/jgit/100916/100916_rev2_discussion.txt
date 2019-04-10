@@ -1,0 +1,165 @@
+DESCRIPTION
+
+Send a detailed event on working tree modifications
+
+Currently there is no way to determine the precise changes done
+to the working tree by a JGit command. Only the CheckoutCommand
+actually provides access to the lists of modified, deleted, and
+to-be-deleted files, but those lists may be inaccurate (since they
+are determined up-front before the working tree is modified) if
+the actual checkout then fails halfway through. Moreover, other
+JGit commands that modify the working tree do not offer any way to
+figure out which files were changed.
+
+This poses problems for EGit, which may need to refresh parts of the
+Eclipse workspace when JGit has done java.io file operations.
+
+Provide the foundations for better file change tracking: the working
+tree is modified exclusively in DirCacheCheckout. Make it emit a new
+type of RepositoryEvent that lists all files that were modified or
+deleted, even if the checkout failed halfway through. We update the
+'updated' and 'removed' lists determined up-front in case of file
+system problems to reflect the actual state of changes made.
+
+EGit thus can register a listener for these events and then knows
+exactly which parts of the Eclipse workspace may need to be refreshed.
+
+Two commands manage checking out individual DirCacheEntries themselves:
+checkout specific paths, and applying a stash with untracked files.
+Make those two also emit such a new WorkingTreeModifiedEvent.
+
+Bug: 500106
+Change-Id: I7a100aee315791fa1201f43bbad61fbae60b35cb
+Signed-off-by: Alayna Houston xxx@xxx.xxx
+
+COMMENTS
+
+author: Alayna Houston
+date: 2017-07-13 10:58:26.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-07-13 10:58:31.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/10459/
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-07-13 11:00:21.000000000
+
+Patch Set 2:
+
+I know that tests are still missing. Was that about what you had in mind?
+
+Sample usage over in EGit https://git.eclipse.org/r/#/c/100917/ updated.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-07-13 11:12:34.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/10459/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-07-13 12:41:34.000000000
+
+Patch Set 2:
+
+> I know that tests are still missing. Was that about what you had in
+ > mind?
+
+yes, this looks good
+ 
+ > Sample usage over in EGit https://git.eclipse.org/r/#/c/100917/
+ > updated.
+
+I didn't observe a big performance boost on a Mac, playing with a clone of jgit + 100000 generated files in an ignored folder
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-07-13 13:02:45.000000000
+
+Patch Set 2:
+
+> > I know that tests are still missing. Was that about what you had
+ > in
+ > > mind?
+ > 
+ > yes, this looks good
+ > 
+ > > Sample usage over in EGit https://git.eclipse.org/r/#/c/100917/
+ > > updated.
+ > 
+ > I didn't observe a big performance boost on a Mac, playing with a
+ > clone of jgit + 100000 generated files in an ignored folder
+
+See bug 500106, comment 4. You won't notice anything on Mac. This is exclusively a Windows problem. On Linux or Mac, normal operations are fast enough not to make a difference.
+
+But Windows is gruesome. With a single project in the package explorer with such a huge git-ignored folder, staging/unstaging even a single file takes a couple of seconds (ca. 3-6s) because index diff computations are blocked on the workspace lock held by the full projects refresh. With this change, this doesn't occur anymore, and staging/unstaging files outside of this git-ignored folder is as fast as on Mac/Linux, i.e., no perceptible delay. I attribute this to not refreshing that large folder.
+
+If there should be several such projects in the workspace, the difference on Windows should be even greater.
+
+Admittedly Windows then blocks another ~15-20 secs or sometimes even longer in label updates of invisible elements in that large folder in the package explorer :-( . That's not solved yet. I'll have to examine more what exactly happens on Windows, and under what circumstances this occurs.
+
+Of course there's also the question why these Node.js projects need this node_modules folder in the project (it looks a bit like a mvn cache), and if so, why it can't be hidden like JDT bin folders or be dealt with similar to the JDT's "JRE System library". I don't know the answer to that; I don't do Node.js development.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-07-13 13:20:15.000000000
+
+Patch Set 2:
+
+> > > I know that tests are still missing. Was that about what you
+ > had
+ > > in
+ > > > mind?
+ > >
+ > > yes, this looks good
+ > >
+ > > > Sample usage over in EGit https://git.eclipse.org/r/#/c/100917/
+ > > > updated.
+ > >
+ > > I didn't observe a big performance boost on a Mac, playing with a
+ > > clone of jgit + 100000 generated files in an ignored folder
+ > 
+ > See bug 500106, comment 4. You won't notice anything on Mac. This
+ > is exclusively a Windows problem. On Linux or Mac, normal
+ > operations are fast enough not to make a difference.
+ > 
+ > But Windows is gruesome. With a single project in the package
+ > explorer with such a huge git-ignored folder, staging/unstaging
+ > even a single file takes a couple of seconds (ca. 3-6s) because
+ > index diff computations are blocked on the workspace lock held by
+ > the full projects refresh. With this change, this doesn't occur
+ > anymore, and staging/unstaging files outside of this git-ignored
+ > folder is as fast as on Mac/Linux, i.e., no perceptible delay. I
+ > attribute this to not refreshing that large folder.
+ > 
+ > If there should be several such projects in the workspace, the
+ > difference on Windows should be even greater.
+ > 
+ > Admittedly Windows then blocks another ~15-20 secs or sometimes
+ > even longer in label updates of invisible elements in that large
+ > folder in the package explorer :-( . That's not solved yet. I'll
+ > have to examine more what exactly happens on Windows, and under
+ > what circumstances this occurs.
+ > 
+ > Of course there's also the question why these Node.js projects need
+ > this node_modules folder in the project (it looks a bit like a mvn
+ > cache), and if so, why it can't be hidden like JDT bin folders or
+ > be dealt with similar to the JDT's "JRE System library". I don't
+ > know the answer to that; I don't do Node.js development.
+
+npm puts dependencies under ./node_modules of the current package root for local installation which is the default [1]
+
+[1] https://docs.npmjs.com/files/folders
+
+-------------------------------------

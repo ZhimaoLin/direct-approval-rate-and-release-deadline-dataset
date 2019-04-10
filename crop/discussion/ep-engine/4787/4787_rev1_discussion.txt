@@ -1,0 +1,90 @@
+DESCRIPTION
+
+Implemented SYNC on replication
+
+First version of the SYNC on replication only operation.
+SYNC on "replication AND persistence" and SYNC on "replication OR
+persistence" are still to be done.
+
+Change-Id: I12e34f74d525910812f043eda8c23e12202b976e
+
+
+COMMENTS
+
+author: Abby Duran
+date: 2011-03-04 18:00:12.873000000
+
+Patch Set 1: I would prefer that you didn't submit this
+
+(2 inline comments)
+
+
+
+Line:565, stored-value.hh -> If possible, we should avoid adding additional fields to StoredValue class. This is the main class used for maintaining items in the hash table. I think you can instead maintain this replica count in your sync_registry related classes.
+
+Line:1563, ep_engine.cc -> I don't think this will guarantee that a given item is replicated successfully. This part will be executed iff an item is resident in memory hashtable. If not resident, we actually schedule a background fetch from disk and replicate that item once it is loaded from disk.
+
+If sync on replication means that the client will be notified once a given item is replicated on the slave node, I think that we need to look at the TAP ACK part to support it correctly.
+
+-------------------------------------
+author: Porter Oconnor
+date: 2011-03-04 18:29:20.290000000
+
+Patch Set 1: (2 inline comments)
+
+Thanks for the review Chiyoung :)
+My comments are inline following yours.
+
+Line:565, stored-value.hh -> Right, Dustin warned about increasing the size of StoredValue and/or Item instances. However keeping this sort of counter in one of them, was a suggestion I understood from him (maybe I misunderstood or it's not really the best approach).
+
+If I maintain the replica count in the SyncRegistry, it means I must maintain the replica count for every single item. Imagine the following:
+
+1) an item X is replicated N times
+2) a client sends the SYNC command telling it wants to get notified when item X was replicated N times (or more)
+
+For this case I would have to keep a replica count for item X in the SyncRegistry even before any client asks to be SYNCed on X replication, and then when a client requests SYNC replication N times for that item, I check the count in registry. If it is >= N, I don't block the client, otherwise I block.
+
+So I would have to maintain some sort of std::map<key_spec_t, uint8_t> (mapping key to number of replicas) in the SyncRegistry - wouldn't this be more memory consuming than storing an adittional byte in StoredValue?
+
+Line:1563, ep_engine.cc -> Right, I'm considering it is replicated after sent to a tap client. That was my understanding from tNathalie Landrying to Dustin.
+
+When the item is not resident in memory, we end up in the EWOULDBLOCK else branch below which will trigger the background fetch:
+
+            connection->queueBGFetch(key, gv.getId(), *vbucket,
+                                     epstore->getVBucketVersion(*vbucket));
+            // This can optionally collect a few and batch them.
+            connection->runBGFetch(epstore->getRODispatcher(), cookie);
+
+After the fetch completes, a notifyIOcomplete is done and we will eventually end up in the if clause for ENGINE_SUCCESS, so that's why I do the following in that clause:
+
+gv.getStoredValue()->incrementNumReplicas();
+syncRegistry.itemReplicated(*gv.getValue());
+
+Is this understanding wrong? If yes, where should I look at?
+
+-------------------------------------
+author: Abby Duran
+date: 2011-03-04 18:47:29.864000000
+
+Patch Set 1: (2 inline comments)
+
+
+
+Line:565, stored-value.hh -> My understanding on sync on replication is that the client first sends sync on replication command, and then update a given item, and finally will be notified when the replication is completed.
+
+But, looks like your description of sync on replication is more general than I thought.
+
+Okay, then I'm okay with having the counter in StoredValue class.
+
+Line:1563, ep_engine.cc -> Once the background fetch is completed for replication, it will go to the different execution path.
+
+Please look at line 1555 in ep_engine.cc:
+
+if (connection->hasItem()) {
+        ret = TAP_MUTATION;
+        Item *item = connection->nextFetchedItem();
+        ....
+
+This is the code snippet that replicates each bgfetched item.
+
+-------------------------------------

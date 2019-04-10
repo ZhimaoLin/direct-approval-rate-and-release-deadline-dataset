@@ -1,0 +1,126 @@
+DESCRIPTION
+
+tmf: fix concurrency issue in analyses modules (bug 447434)
+
+The access of member fTrace in class TmfAbstractAnalysesModul was
+not thread-safe. The attribute was set to null when cancelling
+the analyses (e.g. in the UI thread). This was done without
+synchronization lock. Moreover, this attribute wasn't read with a
+synchronization lock from other threads, either.
+
+With this patch this attribute will be accessed (read and write)
+using a synchronization lock and it will be checked for null
+references before using it.
+
+Change-Id: If7a7c7685e4123747357b9fe8040a599ccc95c3a
+Signed-off-by: Ricky Reeves <Meredith xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Ricky Reeves
+date: 2014-10-15 18:26:55.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-10-15 18:27:01.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/9202/
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-10-15 18:51:29.000000000
+
+Patch Set 1: Code-Review-1
+
+Extracting a mutable field to a local variable before using it is very good practice in general.
+
+One question though: the existing 'syncObj' in TmfAbstractAnalysisModule controls the execution of the analysis (not a big fan of a lock called "syncObj" it's really not clear what it does...) Shouldn't it be a separate lock for the setting/unsetting of the trace?
+
+Also, would it be worth using a ReadWriteLock? (probably not if it's only for doing getTrace())
+
+-------------------------------------
+author: Brenden Conley
+date: 2014-10-15 19:11:05.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/9202/ : SUCCESS
+
+-------------------------------------
+author: Ricky Reeves
+date: 2014-10-15 19:35:10.000000000
+
+Patch Set 1:
+
+Hi Alex
+
+> One question though: the existing 'syncObj' in TmfAbstractAnalysisModule controls the execution of the analysis (not a big fan of a lock called "syncObj" it's really not clear what it does...) Shouldn't it be a separate lock for the setting/unsetting of the trace?
+It's kind of related. When cancelling the analysis the trace attribute is also reset to null. Both goes together. I don't think we need two different sync objects. Having more sync objects increases the chance of having a deadlock if the locks are not used correctly.
+
+> Also, would it be worth using a ReadWriteLock? (probably not if it's only for doing getTrace())
+I'm not sure if we would gain anything by using a ReadWriteLock. fTrace is not read very often.
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2014-10-15 20:14:03.000000000
+
+Patch Set 1: -Code-Review
+
+Ok, if it was considered and there is a reason for it, then that's good.
+
+Although throwing everything on the same lock can indirectly cause deadlocks too: if one thread hangs on something, it can hang many other, potentially unrelated, callers. Until you have one that is also waiting on the first thread. It's never simple ;)
+
+In general I think it's cleaner if the locks are correctly separated and identified. Having only one syncObj used everywhere in a class is barely better than just putting synchronized everywhere.
+
+-------------------------------------
+author: Luciana Barry
+date: 2014-10-15 21:03:49.000000000
+
+Patch Set 1: Code-Review-1
+
+(7 comments)
+
+Line:108, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/TmfAbstractAnalysisModule.java -> I think reference assignment is atomic so this change and some other below don't make any difference.
+
+Line:118, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/TmfAbstractAnalysisModule.java -> Unnecessary?
+
+Line:137, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/TmfAbstractAnalysisModule.java -> Unnecessary?
+
+Line:185, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/TmfAbstractAnalysisModule.java -> Unnecessary?
+
+Line:331, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/TmfAbstractAnalysisModule.java -> Unnecessary?
+
+Line:335, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/TmfAbstractAnalysisModule.java -> If traceClosed() is handled concurrently to this method, we might create the job and call executeAnalysis() after the trace has set to null and cancel() has been called with no effect. Perhaps this whole method should be synchronized on syncObj?
+
+Line:407, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/TmfAbstractAnalysisModule.java -> Unnecessary?
+
+-------------------------------------
+author: Ricky Reeves
+date: 2014-10-16 01:11:17.000000000
+
+Patch Set 1:
+
+(7 comments)
+
+Line:108, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/TmfAbstractAnalysisModule.java -> Good point about the atomic assignment. However, I think we should mark fTrace as volatile so that each thread is guaranteed to see updates of the variable.
+
+Line:118, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/TmfAbstractAnalysisModule.java -> Done
+
+Line:137, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/TmfAbstractAnalysisModule.java -> Done
+
+Line:185, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/TmfAbstractAnalysisModule.java -> Done
+
+Line:331, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/TmfAbstractAnalysisModule.java -> yes, to avoid warnings for null annotation of execute()
+
+Line:335, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/TmfAbstractAnalysisModule.java -> I see your point and this was causing the NPE because the job and call to executeAnalysis was executed regardless if it was cancelled in the meantime.
+
+Line:407, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/tmf/core/analysis/TmfAbstractAnalysisModule.java -> Done
+
+-------------------------------------

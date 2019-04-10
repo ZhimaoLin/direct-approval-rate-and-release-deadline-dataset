@@ -1,0 +1,103 @@
+DESCRIPTION
+
+CBD-1148: Migrate all NonIO tasks into Common Pool
+
+This removes per-bucket threads from the NonIO dispatcher
+into the global thread pool shared by all buckets
+Following tasks handled by the non-io thread are now migrated
+into the common shared thread pool...
+1) Backfill task
+2) Hash Table Resizer
+3) Checkpoint remover
+4) ExpiredItemPager
+5) Item Pager
+6) VBCBAdaptor (async task spawned by daemon tasks 1-4)
+7) Tap Connection Notification (daemon task)
+8) Tap Resume
+9) Tap Connection Reaper
+10) VBucket Memory Deletion
+11) FlushAll task
+12) Checkpoint Stats
+Change-Id: Ic5cbbfb6d1a140335b0ff1a7c7dc31e20ca47186
+
+
+COMMENTS
+
+author: Ellie Kidd
+date: 2013-12-04 00:34:31.771000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Kenny Maynard
+date: 2013-12-04 00:37:50.983000000
+
+Patch Set 2:
+
+Once this change is in can we remove the dispatcher or are there still tasks using it? In any case I think that should be done in another commit.
+
+-------------------------------------
+author: Ellie Kidd
+date: 2013-12-04 00:52:52.164000000
+
+Patch Set 2:
+
+Yes Mike, there are no other users of the Dispatcher module and we can remove it once this change is in, and if everyone is ok with it
+Thanks
+
+-------------------------------------
+author: Kenny Maynard
+date: 2013-12-04 23:07:08.850000000
+
+Patch Set 2:
+
+(2 comments)
+
+You may also need to rebase this.
+
+Line:3211, src/ep_engine.cc -> Are xxx@xxx.xxx comments useful?
+
+Line:142, src/ep.cc -> The vbucket contains the vbid so we can remove this variable.
+
+-------------------------------------
+author: Ellie Kidd
+date: 2013-12-04 23:14:28.618000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:3211, src/ep_engine.cc -> Just a copy paste result - I guess they aren't useful... will remove it.
+
+Line:142, src/ep.cc -> The run() method above is doing a vbucket.reset() which sets the vbucket RCPtr to NULL. So if a stats thread does a getDescription() above after the run() method has executed then we hit a crash. The vbid variable was added to fix that crash.
+thanks
+
+-------------------------------------
+author: Abby Duran
+date: 2013-12-04 23:27:05.615000000
+
+Patch Set 2: Code-Review-1
+
+(2 comments)
+
+Line:510, src/ep.h -> So, we don't need isDaemon and sleepTime parameters anymore?
+
+Line:256, src/item_pager.cc -> This will always return the new task id, which means that the set  instance grows continuously. Why do we need to keep all the tasks ids?
+
+-------------------------------------
+author: Ellie Kidd
+date: 2013-12-04 23:48:27.369000000
+
+Patch Set 2:
+
+(2 comments)
+
+Line:510, src/ep.h -> We don't need isDaemon and taskStart time anymore, but sleepTime is used for deciding the snooze interval when a pauseVisitor is called, say if we want to pause backfill or item pager when the disk persistence queue grows too large.
+
+I will remove the isDaemon and internalize taskStarttime. thanks
+
+Line:256, src/item_pager.cc -> We need to make sure that all non-io tasks spawned are cancelled during shutdown, otherwise the unregisterBucket() function will hang, thinking that there are unfinished tasks.
+
+Also if there is an expired Item VBCBAdaptor task then it needs to run first before we stop flusher, so the only way was to track all the tasks spawned. I agree that this will cause overhead, so will try to come up with another solution. thanks
+
+-------------------------------------

@@ -1,0 +1,115 @@
+DESCRIPTION
+
+Performance enhancment: avoid synthetic accessors
+
+I ran JProfiler on the pack bitmap index code. I observed that ~64% of the
+time spent in PackWriterBitmapPreparer.selectCommits() was spent in
+BitmapIndexImpl$CompressedBitmapBuilder.contains(), and that method showed
+multiple hotspots in .access$N synthetic functions for inner classes.
+
+By removing the "private" visibility modifiers in inner classes, the time in
+CompressedBitmapBuilder.contains() went from ~64% to ~24%. Over five runs,
+the total time for "selecting bitmaps" for the msm-3.10 Linux repository went
+from 441.0 to 429.2 seconds. That isn't huge, but it is a fairly cheap win.
+
+Interestingly, the use of "private" on inner class members not accessed
+directly by the outer class caused the Eclipse compiler to generete synthetic
+accessors. An article in JavaWorld indicated that this is not true for javac,
+but I did not directly verify that. To remove the inefficiency for
+ECJ-generated code, I removed "private" specifiers on all inner class members.
+
+Change-Id: Idfbdecd63f12936f74637a2d57e117ec095c8a37
+Signed-off-by: Ariel Sawyer xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Ariel Sawyer
+date: 2015-10-26 17:01:19.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-10-26 17:01:25.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7297/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-10-26 17:09:52.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7297/ : SUCCESS
+
+-------------------------------------
+author: Eden Lin
+date: 2015-10-26 17:57:00.000000000
+
+Patch Set 1: Code-Review-1
+
+(6 comments)
+
+Thanks for finding these --- a nice speedup.
+
+Line:333, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackBitmapIndexBuilder.java -> Worth a comment to say these are only package-public for performance reasons
+
+Line:461, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> Worth a javadoc comment to say whether callers should use the getter in preference to these (or perhaps eliminating the getter and having callers use the fields directly).
+
+Line:119, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/BitmapIndexImpl.java -> This one makes the code shorter and is otherwise a no-op except for the performance effect. Obviously good.
+
+Do we want to encourage doing this jgit-wide? Is there a tool that can detect accidental inclusion of redundant 'private' qualifiers? (e.g., SmartServiceInfoRefs.Chain.filterIdx, UrlPipeline.Chain.filters, etc).
+
+Line:298, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/BitmapIndexImpl.java -> This was formerly a private implementation detail with public accessor getEwahCompressedBitmap(). Making it package-public would allows people to use the bitmap field directly instead.
+
+Please add a javadoc indicating whether callers should do that (I have no strong opinion either way).
+
+Line:7, /COMMIT_MSG -> enhancement
+
+Or the subject could name the subsystem to make the effect of the patch more obvious: e.g.,
+
+
+ Bitmap builder: avoid synthetic accessors
+
+Line:76, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/BasePackBitmapIndex.java -> This changes the visibility of these fields because StoredBitmap is visible outside the current file.
+
+I think that's okay (especially since this code is all package-private), but maybe it's worth a javadoc comment to say they are internal fields that are only visible for performance reasons? (Or alternatively, should calling code start accessing StoredBitmap.flags directly instead of using getFlags?)
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2015-10-26 22:22:29.000000000
+
+Patch Set 1:
+
+(5 comments)
+
+Line:333, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackBitmapIndexBuilder.java -> I removed all the accessors. Reduced StoredEntry to package private since it isn't used outside of the package.
+
+Line:461, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> Removed the getters in favor of direct access to the inner class members.
+
+Line:119, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/BitmapIndexImpl.java -> I don't know of any tools that detect this. For consistency between inner and outer classes you would actually want to keep the "private" modifier here, since it is not accessed outside of this class. It is only because the Eclipse compiler introduces overhead that we want to remove it. If you hoisted this out to be an independent class you would want to add it back.
+
+You want to do something xxx@xxx.xxx here. Short of that I just added per-line comments.
+
+Line:298, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/BitmapIndexImpl.java -> No, it was already accessed directly from CompressedBitmapBuilder. I removed the accessor and replaced the single usage.
+
+Line:76, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/BasePackBitmapIndex.java -> Much of the JGit code doesn't use accessors and instead directly references the member variables of inner classes. I'll propagate that style and remove the getter methods in these inner classes. That bypasses the performance problem with no additional commentary needed. (It would be good to explicitly document these types of coding style considerations. The EGit contributor guide is already crowded. Maybe the JGit README.md file?)
+
+In other places (like bitmapContainer) where there is not external access to the inner class's member variable, I'll annotate with a "visible for performance" comment.
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2015-10-26 22:23:33.000000000
+
+Patch Set 1:
+
+(1 comment)
+
+Line:7, /COMMIT_MSG -> Done
+
+-------------------------------------

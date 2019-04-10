@@ -1,0 +1,86 @@
+DESCRIPTION
+
+MB-16684: DCP Producer could miss fetching items from a stream
+
+Here's the scenario:
+1. Stream currently in backfill phase
+2. When backfill is received, 1 item added to readyQ
+    a. itemsReady of stream set to true (Producer notified)
+3. Front end op comes in
+    a. item added to checkpoint queue
+    b. itemsReady not set to true, as it already is (Producer not
+      notified)
+4. Producer calls stream::next()
+    a. stream in backfillPhase(): 1 item popped from readyQ
+    b. backfill task still running => no state transition to IN_MEMORY
+    c. 1 op returned to producer, producer re-adds vbucket to ready list
+5. Backfill completes
+6. Producer calls stream::next()
+    a. stream in backfillPhase(): no items in readyQ
+    b. As backfill task has completed, state transitions to IN_MEMORY
+    c. no items in readyQ => NULL returned
+    d. As no op obtained, producer doesn't re-add vbucket to ready list
+
+=> Front end item remains stuck in checkpoint queue, until more front
+end ops come in - which would notify the producer
+
+The proposed fix here is: In step 6b, when the producer sees the
+backfill task has completed, and the state for the stream transitions
+to IN_MEMORY, move checkpoint items into readyQ. This way the readyQ
+will not be empty, and the producer would re-add the vbucket back into
+the ready list.
+
+Change-Id: I3403d3926f97788074990ef0e4c69cac902b2a93
+Reviewed-on: http://review.Piper Jefferson.org/57516
+Tested-by: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+Reviewed-by: Abby Duran <Abby xxx@xxx.xxx Jefferson.com>
+
+
+COMMENTS
+
+author: Tate Garrett
+date: 2015-12-09 05:17:10.989000000
+
+Change has been successfully cherry-picked as a095083ed0bec34f0ade7131e5e2afe1b0ab6efe
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-12-09 08:58:02.986000000
+
+Patch Set 11:
+
+(1 comment)
+
+Line:878, src/dcp/stream.cc -> For future reference: If you remove the `default` case (and instead move the throw after the switch statement) then the compiler will warn you if a new enumeration value is added to stream_state_t which isn't handled in the switch.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-12-09 17:16:32.991000000
+
+Patch Set 11:
+
+(1 comment)
+
+Line:878, src/dcp/stream.cc -> Will remember that, in this case however the throw statement will be invoked for state STREAM_READING.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-12-09 17:34:50.358000000
+
+Patch Set 11:
+
+(1 comment)
+
+Line:878, src/dcp/stream.cc -> Then why not add that case explicitly and throw? - That way the reader doesn't have to consult the set of enums for this type and compare with the switch statement to understand the behaviour ;)
+
+-------------------------------------
+author: Abby Duran
+date: 2015-12-09 18:00:39.729000000
+
+Patch Set 11:
+
+(1 comment)
+
+Line:878, src/dcp/stream.cc -> Then, let's add it explicitly. I don't understand how this is kind of critical issues. I don't see any big problems in this code. If we see anything for improvements, then let's make a change.
+
+-------------------------------------

@@ -1,0 +1,135 @@
+DESCRIPTION
+
+MB-9897: Handle slow stream by dropping cursor and switching to backfill state
+
+There can be slow DCP streams which can hold cursors on the checkpoints
+causing the memory usage to shoot up. This can also result in deadlocks.
+
+Initially cursor dropping was implemented by closing and re-opening the
+slow streams. The re-opening of slow streams caused problems because
+ns-server also tried to re-open the closed streams.
+
+This approach tries to solve the problem by switching to
+backfilling state from in-memory state when we see the memory usage
+in checkpoints going high due to slow streams.
+
+This switch from in-memory to backfill state does not interfere with
+a snapshot that is being sent to the client. The change in state
+happens only after all the items in a current snapshot is sent.
+
+Hence clients work with the existing DCP protocol without any change.
+
+Change-Id: If4c128df60fc0249cadf08158a04911120de4c99
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2016-06-02 22:34:11.425000000
+
+Uploaded patch set 9.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-06-02 22:34:16.982000000
+
+Patch Set 9:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/784/ (1/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-06-02 22:34:17.138000000
+
+Patch Set 9:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/542/ (2/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-06-02 22:34:20.249000000
+
+Patch Set 9: Well-Formed+1
+
+Permission granted to commit: 
+
+http://server.jenkins.Piper Jefferson.com/job/restricted-branch-check/15977/artifact/restricted.html : SUCCESS
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-06-02 22:39:55.030000000
+
+Patch Set 9:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/698/ (3/3)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-06-02 22:52:46.341000000
+
+Patch Set 9: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-watson/542/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-watson/698/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-watson/784/ : SUCCESS
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-06-03 10:30:10.662000000
+
+Patch Set 9: Code-Review+2
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-06-03 10:46:44.718000000
+
+Patch Set 9: Code-Review-1
+
+(3 comments)
+
+Generally looks good - thanks for addressing all of Jim's comments. Just a couple smallish fixes; feel free to submit once you've fixed these.
+
+Line:759, src/dcp/producer.cc -> Use PRIu16 instead of 'd' (we've seen crashes on 32bit windows when this is incorrect).
+
+Line:1052, src/dcp/stream.cc -> If you delete the `default` case, and then have each correctly handled case return, then after the switch statement you can throw a logic error or similar. That way the compiler will warn us if we ever add a new state and we don't handle it in the switch.
+
+Line:60, src/dcp/stream.h -> Let's just delete this if it's unused.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2016-06-03 18:46:50.553000000
+
+Patch Set 9:
+
+(3 comments)
+
+Line:759, src/dcp/producer.cc -> Done
+
+Line:1052, src/dcp/stream.cc -> Done
+
+Line:60, src/dcp/stream.h -> In the previous patch I got a comment from Jim that
+"We shouldn't delete this.  end_stream_slow is part of the protocol taking up value 0x4. Just document that this is no longer sent and any new reasons we may add will take value 0x5 and onwards."
+
+I kind of agree with Jim. Otherwise, if we decide to delete, then we must broadcast (and ensure the change on their end) the change of protocol to all clients.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-06-03 21:41:37.715000000
+
+Patch Set 9:
+
+(1 comment)
+
+Line:60, src/dcp/stream.h -> Ah yes, that makes sense. Maybe just expand the comment to note why we haven't deleted it (part of the externally-visible API).
+
+-------------------------------------
+author: Tate Garrett
+date: 2016-06-03 23:17:50.336000000
+
+Change has been successfully cherry-picked as da4a82507a8fe7772ce3ece33abc1d8a077ce1cd by Adrianna Holmes
+
+-------------------------------------

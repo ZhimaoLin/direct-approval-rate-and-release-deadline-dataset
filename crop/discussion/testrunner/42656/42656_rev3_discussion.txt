@@ -1,0 +1,141 @@
+DESCRIPTION
+
+CBQE-2411:
+1. Added code for XDCRRemoteCluster, XDCReplication classes
+2. Created wrapper function for rebalance operations for master and non-master nodes separately to avoid any mistake
+3. add code for views/create/query/compaction/monitor-fragmentation
+
+Change-Id: Iaa9bf0a453298fb92dc3d236016d5d3375fb510e
+
+
+COMMENTS
+
+author: Fisher Vargas
+date: 2014-11-03 11:41:52.855000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2014-11-03 11:42:00.174000000
+
+Patch Set 3:
+
+Build Started http://factory.couchbase.com/job/testrunner-Jasmin Rangel-master/2898/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2014-11-03 11:58:56.787000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+http://factory.couchbase.com/job/testrunner-Jasmin Rangel-master/2898/ : SUCCESS
+
+-------------------------------------
+author: Angelina Mayer
+date: 2014-11-04 01:24:39.860000000
+
+Patch Set 3: Code-Review-1
+
+(20 comments)
+
+Overall looks good except for some minor changes. If you are planning to extend the topologies to include bi-xdcr, feel free to merge and then add code after addressing comments on existing code.
+
+Line:362, pytests/xdcr/xdcrnewbasetests.py -> in previous method, you've declared master as src_master. In all other methods of this class it is master.
+
+Line:374, pytests/xdcr/xdcrnewbasetests.py -> FYI - active_vbreps is going away in Sherlock. We may have to rewrite the pause resume verfication logic but then again we need to keep active, waiting vb_reps for backward compatibility esp during upgrades(a particular scenario where we pause an older version, upgrade and resume replication on newer version.
+
+Line:377, pytests/xdcr/xdcrnewbasetests.py -> Pls add one line description for all methods. We want new users of this class also to understand the functionality.
+
+Line:738, pytests/xdcr/xdcrnewbasetests.py -> Can we change the batch size to 1000 or higher(if there's significant improvement in loading speed). THis is imperative to avoiding the not_my_vbucket errors as discussed before. We have to do this sooner or later, better done now with the rewrite.
+
+Line:766, pytests/xdcr/xdcrnewbasetests.py -> nice, like this method, not sure if it existed earlier. can this be renamed load_all_buckets_till_dgm?
+
+Line:777, pytests/xdcr/xdcrnewbasetests.py -> active_resident_threshold should probably be less than 100 as default value? say 90 or 95? Reason being, the method does nothing when active_resident_ratio = 100 anyway.
+
+Line:811, pytests/xdcr/xdcrnewbasetests.py -> Well, I had to google to http://stackoverflow.com/questions/2257441/random-string-generation-with-upper-case-letters-and-digits-in-python to understand how exactly you are generating the keys. :)  I was thinking why not keep it simple by just using load key prefix as "loadDgm" and suffix with this logic- 
+
+Instead of having a random key for every load of the while loop, can we start where we stopped and load more instead?
+
+say we loaded 100K, key suffix 0-99K, if we have not reached dgm, can we load from suffix 99001 keeping the same prefix? It would tell us which key was loaded first.
+
+Line:1048, pytests/xdcr/xdcrnewbasetests.py -> why have a public wrapper for these commonly called methods? Can we not make them public? If we are looking to only change the private method the I understand. Say for adding 'graceful' option, we would have to edit both the methods. I would like to understand your point of view in making these methods  private and adding a public wrapper.
+
+Line:1081, pytests/xdcr/xdcrnewbasetests.py -> pls also include delta recovery. We need to have 2-3 tests with delta recovery after failover
+
+Line:1206, pytests/xdcr/xdcrnewbasetests.py -> where will revID comparison among clusters be handled?
+
+Line:1210, pytests/xdcr/xdcrnewbasetests.py -> can this not be a part of Couchbase cluster class?
+
+Line:1300, pytests/xdcr/xdcrnewbasetests.py -> With more than 2 clusters in the picture, One Two and Three can be confusing. How about making gen_create, gen_delete etc part of CouchbaseCluster itself? If every cluster is referenced by a name, we can have load<cluster_name> as key name for gen_*.
+
+Line:1337, pytests/xdcr/xdcrnewbasetests.py -> I like this selective initialization of required values.
+
+Line:1383, pytests/xdcr/xdcrnewbasetests.py -> I see that  A --->B <--->C would not work.
+
+Line:1407, pytests/xdcr/xdcrnewbasetests.py -> call it hub instead of main_cluster?
+
+Line:1414, pytests/xdcr/xdcrnewbasetests.py -> Same problem as above, bi-xdcr from B/D/C would not work. To address this problem, we need to have a topology keyword that could probably do a second pass and create bi-xdcr for required clusters.
+
+Line:1431, pytests/xdcr/xdcrnewbasetests.py -> remote_cluster to remote_cluster_ref again.
+
+Line:1445, pytests/xdcr/xdcrnewbasetests.py -> Ok I see that you are defining the prefix cluster-wise here. Looks ok. Then why are we defining gen_create etc above?
+
+Line:1452, pytests/xdcr/xdcrnewbasetests.py -> Need to support bi-xdcr from some and all spoke clusters, will need to support loading. However this can be done separately.
+
+Line:1491, pytests/xdcr/xdcrnewbasetests.py -> Can __merge_keys take a bucket list instead for merging? So we don't have to do 2 buckets at a time. But then, if we are planning for bi-xdcr in the middle, then we have a problem.
+
+-------------------------------------
+author: Fisher Vargas
+date: 2014-11-05 09:33:15.770000000
+
+Patch Set 3:
+
+(20 comments)
+
+Line:362, pytests/xdcr/xdcrnewbasetests.py -> Done
+
+Line:374, pytests/xdcr/xdcrnewbasetests.py -> Done
+
+Line:377, pytests/xdcr/xdcrnewbasetests.py -> Done. Tried to keep function close to description. Will add description for the function(s) whose name (is large) or functionality differs from name.
+
+Line:738, pytests/xdcr/xdcrnewbasetests.py -> Done
+
+Line:766, pytests/xdcr/xdcrnewbasetests.py -> Done
+
+Line:777, pytests/xdcr/xdcrnewbasetests.py -> Done. making active_resident_ratio a mandatory parameter will help here
+
+Line:811, pytests/xdcr/xdcrnewbasetests.py -> Done. Cool.
+
+Line:1048, pytests/xdcr/xdcrnewbasetests.py -> Idea was to hide the implementation details (into private function) and keep user interface simple and readable. First it will increase usability of the interface and readability of interface (public methods). If we will create one function, it will be have master=True/False, num_nodes, graceful as parameters. In case of master node failover, num_nodes parameter is confusing and in that num_nodes parameter have no use for user.
+
+Line:1081, pytests/xdcr/xdcrnewbasetests.py -> Done
+
+Line:1206, pytests/xdcr/xdcrnewbasetests.py -> In XdcrNewBaseTest Class. Since verfiy rev id needs both source and destination cluster as input so its better to move out this function. CouchbaseCluster class has function, which a cluster can do by its own or have interfaces which end user want a cluster should perform. If I am contradicting with any of the function, feel free to point out, I will correct it.
+
+Line:1210, pytests/xdcr/xdcrnewbasetests.py -> Its a neutral function, This function not using any data member of CouchbaseCluster. Additionally Idea to expand this function to create views for our choice. I was wondering where to put. So kept in the separate class.
+
+Line:1300, pytests/xdcr/xdcrnewbasetests.py -> Idea is good. Changed the logic.
+
+1. Remove self.gen_create etc. parameter.
+ 2. add num_items, value_size as parameter to load_all_bucket(s) functions in CouchbaseCluster class.These function will itself create kv_generator and load data.
+
+Line:1337, pytests/xdcr/xdcrnewbasetests.py -> Done
+
+Line:1383, pytests/xdcr/xdcrnewbasetests.py -> Done. added function set_topology_hybrid()
+
+Line:1407, pytests/xdcr/xdcrnewbasetests.py -> Done
+
+Line:1414, pytests/xdcr/xdcrnewbasetests.py -> Done
+
+Line:1431, pytests/xdcr/xdcrnewbasetests.py -> Done
+
+Line:1445, pytests/xdcr/xdcrnewbasetests.py -> Changed the logic now.
+
+Line:1452, pytests/xdcr/xdcrnewbasetests.py -> Agree changed now.
+
+Line:1491, pytests/xdcr/xdcrnewbasetests.py -> Can discuss more on this.
+
+-------------------------------------

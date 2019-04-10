@@ -1,0 +1,123 @@
+DESCRIPTION
+
+CBD-485: Move DB file compaction into EP-Engine
+
+As detailed in CBD-485, the compactor module is moved into EP-Engine
+New Memcached Command:
+-> CMD_COMPACT_DB with protocol_binary_request_compact_db
+New Stats:
+-> ep_pending_compactions
+-> compaction timing histogram
+New unit test case to exercise the code path
+New command line utility to perform compaction:
+cbcompact 127.0.0.1:12000 compact <vbid> --wait
+
+Change-Id: I0606a6e06edc41c5265f3661d97d178165c7f19a
+
+
+COMMENTS
+
+author: Ellie Kidd
+date: 2013-10-03 22:08:51.081000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Ellie Kidd
+date: 2013-10-03 22:10:49.022000000
+
+Patch Set 5:
+
+No use of protocol_binary_request in couch store
+using compaction_ctx struct instead
+uncommented the resetVBucket function - unit tests pass BUT unless NS server changes are made this code will not work
+thanks
+
+-------------------------------------
+author: Abby Duran
+date: 2013-10-03 23:57:30.996000000
+
+Patch Set 5: Code-Review-1
+
+(14 comments)
+
+Line:845, src/ep_engine.cc -> Please also check if ext_len is 20 bytes or not.
+
+Line:853, src/ep_engine.cc -> these are both 8 bytes. We should use ntohll instead.
+
+Line:47, src/ep.h -> Please remove it as we don't need to know the packet structure.
+
+Line:492, src/ep.h -> Not the cookie. It contains compaction-related parameters.
+
+Line:500, src/ep.h -> The same comment as above.
+
+Line:502, src/ep.h -> Why should it be const void *? Shouldn't we use compaction_ctx?
+
+Line:620, src/couch-kvstore/couch-kvstore.cc -> We should not pass 'CREATE' flag to the couchstore for the source file, but instead pass 'COUCHSTORE_OPEN_FLAG_RDONLY' to it.
+
+Line:683, src/couch-kvstore/couch-kvstore.cc -> We should not invoke resetVBucket here. It is only used for resetting a vbucket.
+
+Please use CouchNotifier directly here and add "VB_COMPACTION_DONE" to couch-notifier.h:
+
+uint64_t newHeaderPos = couchstore_get_header_position(db);
+RememberingCallback<uint16_t> lcb;
+
+VBStateNotification vbs(0, 0,
+                        "VB_COMPACTION_DONE", vbucketId);
+
+couchNotifier->notify_update(vbs, newfileRev, newHeaderPos, lcb);
+if (cb.val != PROTOCOL_BINARY_RESPONSE_SUCCESS) {...}
+
+mc-couch in the eralng side should be adapted to understand "VB_COMPACTION_DONE".
+
+Line:663, tests/ep_test_apis.cc -> htonll
+
+Line:664, tests/ep_test_apis.cc -> htonll
+
+Line:2310, tests/ep_testsuite.cc -> I rather switch this check with while loop above. We should check ep_pending_compactions to be one after calling compact_db, and then while sleep until the compaction is completed, which means that ep_pending_compactions becomes zero.
+
+Line:23, src/couch-kvstore/couch-kvstore.h -> We should not include this header file anymore.
+
+Line:242, src/kvstore.h -> Please change "const void *" to "const compact_ctx *"
+
+Line:231, src/tasks.h -> The order of initialization is wrong. It should be aligned with the order of member variable declaration below.
+
+-------------------------------------
+author: Ellie Kidd
+date: 2013-10-04 21:57:05.415000000
+
+Patch Set 5:
+
+(14 comments)
+
+Thanks Chiyoung, all your comments should now be addressed in Patchset 7.
+
+Line:845, src/ep_engine.cc -> Done
+
+Line:853, src/ep_engine.cc -> Done
+
+Line:47, src/ep.h -> Done
+
+Line:492, src/ep.h -> Done
+
+Line:500, src/ep.h -> Done
+
+Line:502, src/ep.h -> Done
+
+Line:620, src/couch-kvstore/couch-kvstore.cc -> Done
+
+Line:683, src/couch-kvstore/couch-kvstore.cc -> Done
+
+Line:663, tests/ep_test_apis.cc -> Done
+
+Line:664, tests/ep_test_apis.cc -> Done
+
+Line:2310, tests/ep_testsuite.cc -> Done
+
+Line:23, src/couch-kvstore/couch-kvstore.h -> Done
+
+Line:242, src/kvstore.h -> Done
+
+Line:231, src/tasks.h -> Done
+
+-------------------------------------

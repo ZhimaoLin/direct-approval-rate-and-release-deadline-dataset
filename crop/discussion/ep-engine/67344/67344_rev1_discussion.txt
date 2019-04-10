@@ -1,0 +1,113 @@
+DESCRIPTION
+
+MB-20751: Fix lock cycle (deadlock) during bucket delete & client disconnect
+
+MB-20716 recently fixed an issue where idle DCP connections (in
+EWOULDBLOCK state) would not be notified (woken up) in the frontend
+when a bucket was deleted. The fix for this was to trigger a notify
+(via producer->notifyPaused()) as part of ep-engine bucket delete.
+
+Unfortunately this introduced a lock-order-inversion (deadlock)
+between two mutxes, which caused memcached to hang during shutdown,
+as one (or more) worker threads would never terminate.
+
+The issue is between:
+
+1. Frontend_worker thread mutex (threadLock)
+2. ConnMap::connsLock
+
+And at least two threads (although normally 3 in the wild):
+
+T1: Frontend worker thread
+T2: DestroyBucket thread
+(optional T3: A NONIO thread running ConnManager)
+
+During bucket delete, the follow sequence occurs which creates a cycle
+between threadLock and connsLock:
+
+T1<Worker>:
+    event_handler() ... conn_pending_close()
+      -> LOCK(threadLock)
+    DcpConnMap::disconnect()
+      -> ACQUIRE(connsLock)
+
+T2<DeleteBucket>:
+    EventuallyPersistentEngine::handleDeleteBucket() ...
+    DcpConnMap::shutdownAllConnections()
+      -> LOCK(connsLock)
+    notifyIOComplete() ... DcpProducer::notifyPaused()
+      -> ACQUIRE(threadLock)
+
+Part of the issue here is that DcpProducer::notifyPaused() *must* be
+called with schedule==false, as there is no longer a ConnNotifier task
+running on another thread (which never acquires the connsLock and
+hence avoids any deadlock), as the ConnNotifier has been shutdown in
+DcpConnMap::shutdownAllConnections previously. Therefore we need to
+use the variant of notifyPaused which calls notify_IO_complete in the
+same thread.
+
+The solution chosen is to essentially drop the connsLock in
+shutdownAllConnections before calling notify. We achive this by taking
+a _copy_ of the connections map (under connsLock), and then iterating
+over this copy and calling notify etc. This is safe as the elements of
+the map are all ref-counted pointers.
+
+Change-Id: I3031254eb9b695957184c4f4381adacfa51bffa5
+
+
+COMMENTS
+
+author: Bobby Buck
+date: 2016-09-02 22:33:18.808000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-09-02 22:33:26.793000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/64/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-09-02 22:33:26.948000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1257/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-09-02 22:33:27.095000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1166/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-09-02 22:33:27.237000000
+
+Patch Set 1:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/992/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-09-02 22:35:27.676000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/992/ : ABORTED
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/1257/ : ABORTED
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/1166/ : ABORTED
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/64/ : ABORTED
+
+-------------------------------------

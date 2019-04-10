@@ -1,0 +1,130 @@
+DESCRIPTION
+
+Avoid multiple seek to the same location.
+
+There is multiple instance of seeking to the same location twice.
+To solve this issue the seek method check if the current location is the same.
+Here is the explanation:
+[CtfTmfContext.java]
+    public void setLocation(ITmfLocation location) {
+        curLocation = (CtfLocation) location;
+        if (curLocation != null) {
+            getIterator().seek(curLocation.getLocationInfo());
+        }
+    }
+GetIterator  --> will force a seek to curLocation
+.seek        --> force an other seek to curLocation
+Here are the called method:
+    private CtfIterator getIterator() {
+        return CtfIteratorManager.getIterator(fTrace, this);
+    }
+    public static synchronized CtfIterator getIterator(final CtfTmfTrace trace,
+            final CtfTmfContext ctx) {
+        return map.get(trace).getIterator(ctx);
+    }
+    public CtfIterator getIterator(final CtfTmfContext context) {
+            [...]
+            if (context.getLocation() != null) {
+                final CtfLocationInfo location = (CtfLocationInfo) context.getLocation().getLocationInfo();
+                retVal.seek(location);   /// FORCE SEEK!!!!!!!!!!!!
+            }
+Change-Id: Ib5ad6d05eb47045660c7ab5076930a30e829c7a0
+Signed-off-by: Jordon Obrien xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Jordon Obrien
+date: 2013-11-20 22:50:39.000000000
+
+Uploaded patch set 7.
+
+-------------------------------------
+author: Jordon Obrien
+date: 2013-11-20 22:52:57.000000000
+
+Patch Set 7:
+
+Ok, the patch 7 is supposed to be the right one.
+A quick fix to the double seek issue.
+
+This improve the scrolling in the EventsViewer by a factor of two.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-21 00:05:10.000000000
+
+Patch Set 7:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4060/
+
+-------------------------------------
+author: Bradyn Guerra
+date: 2013-11-21 00:29:24.000000000
+
+Patch Set 7: Code-Review+1
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-21 00:48:55.000000000
+
+Patch Set 7: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4060/ : SUCCESS
+
+-------------------------------------
+author: Tessa Dickson
+date: 2013-11-21 02:37:37.000000000
+
+Patch Set 7: Code-Review+1
+
+I confirm that this takes care of a duplicated seek to the same location. This should bring an interesting performance improvement for the event view.
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2013-11-21 17:58:17.000000000
+
+Patch Set 7: Code-Review+1
+
+Nice one liner. I need to test it and I will at a later time. (within the metric week)
+
+-------------------------------------
+author: Jordon Obrien
+date: 2013-11-22 02:21:56.000000000
+
+Patch Set 7:
+
+I did the benchmarking by opening only the EventTraceViewer.
+Each scroll forces two seek operations and costs about 2,500 ms for both of them. By applying this patch it is about 1,250 ms (surprise!).
+
+You can add a print to count/view the number of time this case is hit, you will observe.... one time on two.
+
+And, you can read the explanation why this happen. Still one time on two.
+
+Thus, obviously this patch improve the speed of scrolling in the EventViewer by a factor 2. Which significantly improve the <_user_> experience.
+
+By the way, I also try it with lttng traces, and I observe the same behavior.
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2013-11-22 19:22:05.000000000
+
+Patch Set 7: Verified+1 Code-Review+2 IP-Clean+1
+
+Looks fine for me. I recommend Patrick try it out to see if it pleases him
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-11-23 08:37:18.000000000
+
+Patch Set 7: Verified+1 Code-Review+1
+
+Nice fix. Unfortunately we don't have benchmarks for Event-list-type requests (and we don't have any kind of automated benchmarks, but that's another issue...), but the logic looks good.
+
+Imo, maybe the .seek() should actually not do any operation if it detects we're asking it to seek to where it currently is. By looking quickly at the code, this doesn't seem trivial to do however. The TraceReader in ctf.core doesn't know its current position, and the ctfadaptor code is highly coupled with TmfContext, which is another API altogether.
+
+tl;dr Code's a mess, but this patch is a good short/medium-term workaround.
+
+-------------------------------------

@@ -1,0 +1,80 @@
+DESCRIPTION
+
+MB-23714: Make VBucketPtr deletion schedule the delete of the VBucket
+
+Using the std::shared_ptr Deleter this patch hooks into the deletion
+of the VBucket so that a specific AUXIO (for persistent buckets) or a
+NONIO (for ephemeral buckets) task performs the removal of VBucket
+resources. This to ensure that no front-end thread runs the removal of
+memory and more specifically the deletion of the disk data.
+
+The aim of this commit is also to ensure there's no "race" between a
+background task deleting the VB disk file when the VB has itself been
+recreated. This is achieved now by having the creation of a VB to
+increment the revision of the file and ensuring a delete can only
+delete the older revision of the VB.
+
+This has a few subtle changes, as only compaction or creation are
+moving the revision forward, no code paths move the revision back.
+
+1. A flush of the bucket which calls KVStore::reset would previously
+return all vbuckets to a revision of 1. Again to ensure a delete task
+cannot delete a "live" file, the flush doesn't reset the revision
+number. So a flush of the bucket will result in deleted data, but
+with x.couch.4 etc...
+
+2. A delete of an individual vbucket has the same change. Previously
+after a delete, the revision was reset to 1. This is no longer the
+case and after the delete completes the revision is left unchanged.
+
+Change-Id: I40d2f5fd658d9f8dd28a671028544831518a90d0
+
+
+COMMENTS
+
+author: Jim WNathalie Landryer
+date: 2017-04-27 14:44:35.351000000
+
+Patch Set 13: Published edit on patch set 12.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-04-27 15:12:50.733000000
+
+Patch Set 13: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/6025/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/5502/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/6285/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/4805/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/16.04-ep-engine-threadsanitizer-master/56/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-04-27 15:46:05.960000000
+
+Patch Set 13: Code-Review+2
+
+(1 comment)
+
+Would be good if you could do a quick follow-up and fix the ordering below.
+
+Line:53, src/tasks.def.h -> Nit: This should really be sorted by priority.
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2017-04-27 15:47:50.799000000
+
+Patch Set 13:
+
+(1 comment)
+
+Line:53, src/tasks.def.h -> noted - will do when i'm back
+
+-------------------------------------

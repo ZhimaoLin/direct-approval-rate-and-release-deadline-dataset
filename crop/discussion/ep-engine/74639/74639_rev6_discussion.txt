@@ -1,0 +1,168 @@
+DESCRIPTION
+
+[Ephemeral Bucket]: Add point-in-time snapshot enabled range read to LinkedList
+
+Monotonically point-in-time snapshots which can be used for incremental DCP.
+This is implemented in the sequential data structure 'BasicLinkedList' in
+EphemeralVBuckets. This is equivalent to DCP disk backfill in Piper Jefferson
+buckets.
+
+To get a point-in-time snapshot from the list, the main requirement is no
+de-deduplication be allowed on the list in the range where the read for the
+snapshot is happenning. We try to achieve it by not blocking the writes
+on the list during the time of the range read.
+
+This commit implements only the range read part. The non-blocking write
+during a range read will be evident with implementation of updateListElem
+in an upcoming commit.
+
+Change-Id: I80eeb760e94730645f4d20ec6a8de5ce81da7d26
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2017-03-07 03:54:55.853000000
+
+Uploaded patch set 6: Patch Set 5 was rebased.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-03-07 04:26:14.716000000
+
+Patch Set 6: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/3229/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/4401/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/3967/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/4625/ : SUCCESS
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-03-07 13:08:46.004000000
+
+Patch Set 6: Code-Review-1
+
+(21 comments)
+
+Line:49, src/linkedlist.cc -> Prefer the global logging style "vb:XX" for new code (see https://docs.google.com/document/d/1idd2SwLpjVaIC075Qdz00XNEoKyNRkONzipyD_naogQ/edit#heading=h.ml625fn9l342).
+
+Line:64, src/linkedlist.cc -> ditto
+
+Line:74, src/linkedlist.cc -> I don't think you should need the static_cast<> here - isn't highSeqno already of that type?
+
+Line:75, src/linkedlist.cc -> Ditto
+
+Line:111, src/linkedlist.cc -> Similar comment to previous - just perform the push_back in the scope, removing the need for itmCpy to have a larger lifetime than necessary.
+
+Actually - thinking about this further - you don't need the clear() call as when `items` goes out of scope it'll get cleared anyways.
+
+Line:49, src/linkedlist.h -> You could validate the input here - that max >= min or whatever.
+
+Line:54, src/linkedlist.h -> Probably more idiomatic to replace this with an assignment operator (taking an initializer_list).
+
+Line:57, src/linkedlist.h -> Suggest renaming to a verb to make it more obvious this is a predicate - e.g. `overlaps` or `intersects`.
+
+Line:61, src/linkedlist.h -> Can be simplified:
+
+ return std::max(min, other.min) <= std::min(max, other.max);
+
+Line:64, src/linkedlist.h -> Worth documenting if the range is considered open or closed (i.e. is max inclusive or exclusive).
+
+Line:69, src/linkedlist.h -> Similar here:
+
+ return (seqno >= min) && (seqno <= max);
+
+Line:78, src/linkedlist.h -> Personally I think `start/end`, or `begin/end` is slightly better terminology than min/max (fits with normal C++ naming, and our own DCP terminology better).
+
+Line:126, src/linkedlist.h -> happening
+
+Line:128, src/linkedlist.h -> de-de-de-duplicate? ;)
+
+Line:130, src/linkedlist.h -> For start and end, or just one?
+
+Line:50, tests/module_tests/basic_ll_test.cc -> Probably worth a brief comment for this function, given it does a reasonable amount of stuff.
+
+Line:53, tests/module_tests/basic_ll_test.cc -> The usage will be more idiomatic if you make this the return parameter.
+
+File Comment: /COMMIT_MSG -> Wrap at 72.
+
+Line:11, /COMMIT_MSG -> Couchbase
+
+Line:16, /COMMIT_MSG -> Weasel words - we either achieve it or we don't we shouldn't try ;)
+
+Line:16, /COMMIT_MSG -> happening
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-03-08 01:58:13.148000000
+
+Patch Set 6:
+
+(17 comments)
+
+Line:49, src/linkedlist.cc -> Done
+
+Line:64, src/linkedlist.cc -> Done
+
+Line:74, src/linkedlist.cc -> Needed, compiler not happy. highSeqno is a Monotonic<seqno_t>
+
+Line:75, src/linkedlist.cc -> Needed, compiler not happy. highestDedupedSeqno is a Monotonic<seqno_t>
+
+Line:111, src/linkedlist.cc -> Done
+
+Line:49, src/linkedlist.h -> Done
+
+Line:54, src/linkedlist.h -> Wrote a regular assignment operator. Didn't get why we need initializer list
+
+Line:57, src/linkedlist.h -> Done
+
+Line:61, src/linkedlist.h -> Done
+
+Line:64, src/linkedlist.h -> Documented at the beginning. Range is closed
+
+Line:69, src/linkedlist.h -> Done
+
+Line:78, src/linkedlist.h -> Done
+
+Line:126, src/linkedlist.h -> Done
+
+Line:128, src/linkedlist.h -> lol, done
+
+Line:130, src/linkedlist.h -> Done.
+Actually made some changes, so that we always work on a range with begin >= 1
+
+Line:50, tests/module_tests/basic_ll_test.cc -> Done
+
+Line:53, tests/module_tests/basic_ll_test.cc -> Done
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-03-08 02:04:14.866000000
+
+Patch Set 6:
+
+(3 comments)
+
+File Comment: /COMMIT_MSG -> Done
+
+Line:11, /COMMIT_MSG -> Done
+
+Line:16, /COMMIT_MSG -> Done
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-03-08 02:06:03.631000000
+
+Patch Set 6:
+
+(1 comment)
+
+Line:16, /COMMIT_MSG -> Done
+
+-------------------------------------

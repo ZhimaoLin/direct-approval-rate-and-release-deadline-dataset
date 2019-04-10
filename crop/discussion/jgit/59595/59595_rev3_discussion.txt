@@ -1,0 +1,157 @@
+DESCRIPTION
+
+Use 'reused' bitmap to filter tip commit setup walk
+
+When garbage collecting, we decide to reuse some bitmaps in older
+history from the previous pack to save time.  The remainder of commit
+selection only involves commits not covered by those bitmaps.
+
+Currently we carry that out in two ways:
+
+1. by building a bitmap representing the already-covered commits,
+   for easy containment checks and AND-NOT-ing against
+2. by marking the reused bitmap commits as uninteresting in the
+   RevWalk that finds new commits
+
+The mechanism in (2) is less efficient than (1): rw.next() will walk
+back from reused bitmap commits to check whether the commit it is
+about to emit is an ancestor of them, when using the bitmap from (1)
+would let us perform the same check with a single contains() call.
+Add a RevFilter teaching the RevWalk to perform that same check
+directly using the bitmap from (1).
+
+The next time the RevWalk is used, a different RevFilter is installed
+so this does not break that.
+
+A later commit will drop the markUninteresting calls.
+
+No functional change intended except a possible speedup.
+
+Change-Id: Ic375210fa69330948be488bf9dbbe4cb0d069ae6
+
+
+COMMENTS
+
+author: Eden Lin
+date: 2015-11-04 02:09:01.000000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-11-04 02:09:07.000000000
+
+Patch Set 3:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7386/
+
+-------------------------------------
+author: Brenden Conley
+date: 2015-11-04 02:17:34.000000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7386/ : SUCCESS
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2015-11-04 02:40:00.000000000
+
+Patch Set 3:
+
+(3 comments)
+
+Line:329, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> This is a change from before that concerns me.
+
+Line:400, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> I think this goes to far. Consider a long-lived branch that diverged from the mainline, and there are reusable bitmaps for both the mainline and the branch. By unioning them all here, you get incorrect bitmaps at the branch tips that report commits that aren't reachable at those tips. We probably need a test for this.
+
+Line:420, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> This is the line I am worried about.
+
+-------------------------------------
+author: Eden Lin
+date: 2015-11-04 02:47:01.000000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:400, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> Gerrit does a bad job of showing the right context for changes between rebased patchsets. The change you're commenting on comes from https://git.eclipse.org/r/59622 --- there's more context there. (If you diff against the base, the change goes away.)
+
+Probably we should discuss on that change. 'reuse' was always meant to be a union of the ancestry sets of reused bitmaps. Happy to add clarify the code and add tests if you have a good idea of what to test.
+
+-------------------------------------
+author: Eden Lin
+date: 2015-11-04 02:50:02.000000000
+
+Patch Set 3:
+
+(2 comments)
+
+Line:400, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> *add clarifying comments, I mean. Sorry, I'm doing a bad job of typing today.
+
+Line:420, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> On line 449 all the bits in 'reuse' are cleared. Definitely sounds worth a comment here. Will do.
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2015-11-04 19:59:09.000000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:351, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> UnsupportedOperationException?
+
+-------------------------------------
+author: Eden Lin
+date: 2015-11-04 20:08:58.000000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:351, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> Yeah, I suppose so. CompressedBitmapBuilder isn't thread-safe.
+
+Lots of other RevFilters 'return this' instead of admitting lack of support. Time to change habits.
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2015-11-05 20:12:32.000000000
+
+Patch Set 3: Code-Review-1
+
+(2 comments)
+
+Line:329, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> Withdraw my objection.
+
+Line:351, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> This is my remaining nit.
+
+-------------------------------------
+author: Eden Lin
+date: 2015-11-05 20:26:48.000000000
+
+Patch Set 3:
+
+(1 comment)
+
+Line:351, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/pack/PackWriterBitmapPreparer.java -> Done. Thanks again for catching it.
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-11-05 21:32:34.000000000
+
+Change could not be merged because of a missing dependency.
+
+The following changes must also be submitted:
+
+* I30844134bfde0cbabdfaab884c84b9809dd8bdb8
+
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-11-05 22:08:27.000000000
+
+Change has been successfully merged into the git repository by Eden Lin
+
+-------------------------------------

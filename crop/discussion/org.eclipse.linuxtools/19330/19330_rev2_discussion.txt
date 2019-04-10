@@ -1,0 +1,185 @@
+DESCRIPTION
+
+tmf : critical performance update to cache the history tree
+
+Before each application create more than 10,000 objects to use only one. With this cache we save this work. Increase by 20 or more the performance in the all views that query the State System.
+
+Change-Id: I9845bd457ff7e7bcbd59f7ab24914b0c2bd02553
+Signed-off-by: Ayanna Reed xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Ivy Mitchell
+date: 2013-12-04 21:16:57.000000000
+
+Patch Set 2:
+
+(1 comment)
+
+Line:111, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/backends/historytree/HT_IO.java -> I am unfamiliar with this, but if cacheBranch were an unmodifiableMap, then you could do "
+int i=0;
+
+if( tree.getCacheBranch().contains(sequenceNumber)){
+   return tree.getCacheBranch().get(sequenceNumber);
+}
+HTNode result = readNodeFromDisk()
+if( tree.isCacheFull()){
+  int seqToReplace = tree.getVictim();
+  tree.getCacheBranch().remove(seqToReplace);
+}
+tree.getCacheBranch().put(sequenceNumber, result);
+return result;
+}
+
+-------------------------------------
+author: Ayanna Reed
+date: 2013-12-04 21:23:21.000000000
+
+Patch Set 2:
+
+Thanks for the comment.
+
+Why I use a list and not a real cache, it's because the size of the cache is not static. In fact it's the height of the history tree.
+
+Why I don't use fifo methode it's because, for each query we must go to the root of the tree to the leaf, and to populate view in general we query the state system bt time order. So in fact in lot af time we access the same path, and change only the leaf, by a child leaf. If we use a FIFO method. So we use on average all the elements of this list.
+
+-------------------------------------
+author: Jordon Obrien
+date: 2013-12-04 21:25:16.000000000
+
+Patch Set 2:
+
+Explains why in the commit message and in the code.
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2013-12-04 21:37:38.000000000
+
+Patch Set 2:
+
+Florian, are we keeping the last branch in the memory? if that is the case, I would recommend something that would make it "getchild()" or something like that instead of iterating, it would be clearer... I think.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-12-04 22:35:02.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4409/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-12-04 22:59:42.000000000
+
+Patch Set 2: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4409/ : FAILURE
+
+-------------------------------------
+author: Ayanna Reed
+date: 2013-12-04 23:09:40.000000000
+
+Patch Set 2:
+
+Statistic : Cache miss : 25000/532912 (4.69%).
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2013-12-05 00:15:42.000000000
+
+Patch Set 2: Code-Review-1
+
+The fact that the test cases fail on query full is worrisome. Please investigate this.
+
+-------------------------------------
+author: Jordon Obrien
+date: 2013-12-05 00:59:26.000000000
+
+Patch Set 2:
+
+(2 comments)
+
+moar nits
+
+Line:122, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/backends/historytree/HT_IO.java -> still missing space after if
+
+Line:518, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/backends/historytree/HistoryTree.java -> still missing space after ,
+
+-------------------------------------
+author: Jordon Obrien
+date: 2013-12-05 01:07:57.000000000
+
+Patch Set 2:
+
+I think this patch doesn't support concurrent read/write.
+A write won't be visible to a cached read.
+
+-------------------------------------
+author: Ayanna Reed
+date: 2013-12-05 01:21:18.000000000
+
+Patch Set 2: Code-Review-1
+
+replace by https://git.eclipse.org/r/#/c/19351/
+
+-------------------------------------
+author: Bradyn Guerra
+date: 2013-12-06 16:04:47.000000000
+
+Patch Set 2: Code-Review-1
+
+(5 comments)
+
+Line:104, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/backends/historytree/HT_IO.java -> Add a description for t.
+
+Line:118, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/backends/historytree/HT_IO.java -> How many elements do you expect to have in tree.getCacheBranch()? Maybe you could try a binary search on timestamps, or a map as Matthew suggests?
+
+Line:123, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/backends/historytree/HT_IO.java -> If you do these queries:
+A[t_start=4 t_end=6]
+B[t_start=8 t_end=10]
+The cache will contain 2 elements: A, B
+
+At that point, if you try to read B again, you won't find it in the cache. I supposed that t=8 for this query (is it correct?). t=8 > A.getNodeEnd() ... break;
+
+Also, as Genevieve pointed out, you might not want to *replace* nodes in the cache. That means the cache only grows when you make queries for nodes with a timestamp > than the last node of the cache.
+
+Line:75, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/backends/historytree/HistoryTree.java -> Indicate that cacheBranch is supposed to be sorted by timestamp (begin timestamp?)
+
+Line:125, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/backends/historytree/HistoryTree.java -> Why is cacheBranch not initialized in the other constructor?
+
+-------------------------------------
+author: Ayanna Reed
+date: 2013-12-06 17:20:28.000000000
+
+Patch Set 2:
+
+(4 comments)
+
+Answers to Francois comments.
+
+Line:118, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/backends/historytree/HT_IO.java -> The number of element is exactly the depth of tree. We store in fact the last branch.
+
+Line:123, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/backends/historytree/HT_IO.java -> This cache is a "last branch" cache. So if you do the query t = 4, you have in the cache for example :
+N0 ; [1..16]
+N1 : [1..8]
+N2 : [3..5]
+
+After that to do the query t = 8, you have already N0 and N1, N2 cant be [5...8] and you have only one cache miss.
+We replace the node because we want always have the last branch.
+
+Line:75, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/backends/historytree/HistoryTree.java -> It's not sorted by the timestamp, it's store by the depth in the tree.
+
+Line:125, lttng/org.eclipse.linuxtools.tmf.core/src/org/eclipse/linuxtools/internal/tmf/core/statesystem/backends/historytree/HistoryTree.java -> I know that it's a problem, and it's because of that Hudson don't validate the build. :)
+
+-------------------------------------
+author: Ayanna Reed
+date: 2013-12-06 17:23:54.000000000
+
+Abandoned
+
+The patch is abandoned and replaced by a query2D method. We will have normaly the same impact on the performance.
+
+-------------------------------------

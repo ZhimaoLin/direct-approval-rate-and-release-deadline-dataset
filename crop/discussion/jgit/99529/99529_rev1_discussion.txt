@@ -1,0 +1,84 @@
+DESCRIPTION
+
+Fix pack index decoding problems
+
+In PackIndexWriters, we encode crc and offset using NB.encodeInt32,
+however, we decode them using NB.decodeUInt32 in PackIndex class. Offset
+is probably fine, but crc32 can be negative.
+
+Change-Id: Ie0a8c6bbcf2a1a84c5050681a0111d3e93b53f58
+Signed-off-by: Paloma Kennedy xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Paloma Kennedy
+date: 2017-06-17 00:28:27.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-06-17 00:28:32.000000000
+
+Patch Set 1:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/10364/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-06-17 00:42:13.000000000
+
+Patch Set 1: Verified-1
+
+Build Failed 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/10364/ : FAILURE
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2017-06-17 01:39:23.000000000
+
+Patch Set 1: Code-Review-1
+
+(3 comments)
+
+I'm not sure what problem you are trying to solve with this commit.
+
+Line:156, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackIndexV1.java -> This is an incorrect change. In idx v1 format the offset is a 32 bit unsigned integer, supporting pack files up to 4 GiB in size.
+
+decodeUInt32 is necessary to get the correct offset.
+
+Line:226, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackIndexV2.java -> This is also an incorrect change. In pack index v2 the level one offset is a 32 bit unsigned integer, and the level two offset is a 64 bit unsigned.
+
+Line:236, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackIndexV2.java -> The CRC used is actually treated as a 32 bit unsigned value by storing it in a signed long in Java. E.g. we use this in DfsPackFile:
+
+  crc1.getValue() != expectedCRC
+
+Where crc1 is a java.util.zip.CRC32, and its getValue() method returns long because the CRC is actually an unsigned 32 bit value.
+
+-------------------------------------
+author: Paloma Kennedy
+date: 2017-06-19 19:01:04.000000000
+
+Patch Set 1:
+
+(3 comments)
+
+Abandon this change. 
+
+Should we store the crc in PackedObjectInfo as a long to be consistent? Every time we set/compare the CRC value in PackedObjectInfo we need be careful about the inconsistent type with PackIndex.findCRC32 and CRC32.getValue.
+
+Line:156, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackIndexV1.java -> You're right. Offset needs to be decoded as unsigned.
+
+Line:226, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackIndexV2.java -> Done
+
+Line:236, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/file/PackIndexV2.java -> Right, I was comparing a PackIndex.findCRC32() which returns long directly with PackObjectInfo.getCRC() which returns int.
+
+-------------------------------------
+author: Paloma Kennedy
+date: 2017-06-21 00:19:37.000000000
+
+Abandoned
+
+-------------------------------------

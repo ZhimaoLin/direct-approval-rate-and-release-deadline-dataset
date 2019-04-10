@@ -1,0 +1,172 @@
+DESCRIPTION
+
+MB-16357: Prevent race of compaction's expiration and vb state change
+
+Test-case courtesy: JimWNathalie Landryer
+(Testcase that forces compaction expiry and DCP mutations to overlap)
+
+Change-Id: I1a1535c73475f2a9cc219ae3a5279e213220bde9
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2015-09-25 16:05:30.434000000
+
+Uploaded patch set 5.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-09-25 16:05:37.890000000
+
+Patch Set 5:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/115/
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-09-25 16:06:41.059000000
+
+Patch Set 5:
+
+DaveR, Jim, I haven't addressed the race scenarios yet with this patch, just corrected a mistake.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-09-25 16:19:55.145000000
+
+Patch Set 5: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/115/ : SUCCESS
+
+-------------------------------------
+author: Abby Duran
+date: 2015-09-25 18:40:00.688000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:486, src/ep.cc -> As we all know, this can still cause racing issues with vbucket state changes (e.g., active -> replica, active -> dead, ...) and might break the constraints on DCP vbucket sequence number.
+
+I remembered that we (Dustin, Steve, Trond, myself) discussed this racing issue on vbucket state change in Membase era, but we decided to ignore this racing issue at that time as there were no critical dependencies that require serialized and atomic change on vbucket state. However, now it seems an issue with DCP and its constraints on vbucket global sequence number.
+
+One of the approaches for addressing this issue is to guard each vbucket state change by maintaining a reader-writer spinlock per vbucket state. Any CRUD operations (including compactor's expiry deletions) should grab reader spinlock on the corresponding vbucket state, while a thread performing a vbucket state change should grab the writer spinlock. Given the fact that the vbucket state change is not frequent and managed by the ns-server, this approach won't introduce any significant performance regression on the normal CRUD operations.
+
+This is just one of my suggestions and there could be of course better approaches. Please feel free to suggest any better ideas if you have.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-09-25 21:51:14.749000000
+
+Patch Set 5:
+
+I will respond to the comments raised here in the ticket forum at MB-16357.
+
+-------------------------------------
+author: Abby Duran
+date: 2015-09-25 21:56:04.128000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:486, src/ep.cc -> Abhinav,
+
+As you emailed to Aliaksey, we need to understand all possible vb state transitions during the rebalance or failover, and then should see whether strictly serialized accesses on vbucket state among readers and writers must be enforced or not.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-09-25 22:05:15.501000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:486, src/ep.cc -> I agree with you Chiyoung, while we wait for Aliaksey to respond, I shall explain my thinking behind this change, and of the overall behavior during takeover on Jira.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2015-09-29 07:41:44.143000000
+
+Patch Set 5: -Code-Review
+
+In response to your email. 
+
+From your description on the MB I *think* you're right in that the specific data race situation we saw /should/ be solved by this patch.
+
+However, I believe we should be as robust as possible in ep-engine - we shouldn't assume that everything else will always work correctly - there may be other bugs or other things we have missed. 
+
+For example we shouldn't assume that it is *impossible* for ns_server to transition from active -> replica - maybe we missed an update (we were disconnected), maybe we have a bug in our decoding.
+
+In other words (in this specific case) we should try to guard against *any* mutations/deletions occurring to a non-active vBucket.
+
+I've dropped my -2 to 0 as I think this patch is ok as a hotfix on the 3.x branch, but we should consider what we can do on master to improve our robustness and attempt to prevent this class of issue ever triggering a crash again.
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2015-09-29 14:06:10.867000000
+
+Patch Set 5:
+
+I'm still not comfortable with this patch even after reading the MB updates. There's still a race here and we're now just gambling on active->dead->replica to not be "fast", I'm not comfortable with this going to the customer given the problems they've been hit with.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-09-30 18:22:44.875000000
+
+Patch Set 5:
+
+The reason why I feel the gamble is fine is because, while in the takeover phase, after ep-engine sets a vbucket state to dead (from active), it goes back into takeover send phase to ensure no mutations are left behind (on the dead vbucket). Only once all mutations have been processed, the stream is closed, after which ns_server gets to change the state of the vbucket (if need be) or delete the vbucket.
+
+-------------------------------------
+author: Abby Duran
+date: 2015-09-30 18:59:31.241000000
+
+Patch Set 5:
+
+If we think this change still bets on the timings of vbucket state change that can still cause this issue, then we should fix it in this change.
+
+-------------------------------------
+author: Abby Duran
+date: 2015-09-30 20:03:12.581000000
+
+Patch Set 5: Code-Review-1
+
+(1 comment)
+
+Line:486, src/ep.cc -> The possible issue was what if the vbucket state is quickly changed from active to dead to replica so quickly, right before the compactor thread pushes an expired item to the vbucket's checkpoint queue?
+
+-------------------------------------
+author: Abby Duran
+date: 2015-10-01 06:05:28.742000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:486, src/ep.cc -> Abhinav,
+
+To be more clear in my previous comment, I think there is still a potential race even with this fix. If a vbucket state is changed from active to dead to replica so quickly right before the compactor thread pushes any expired item to the checkpoint queue, then we might hit the assertion failure.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-10-01 18:36:36.273000000
+
+Patch Set 5:
+
+(1 comment)
+
+Line:486, src/ep.cc -> That is quite a narrow race condition, which in practical scenarios may not occur. But since it is possible in theory, we should just consider the RW lock implementation to resolve this issue.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-10-01 18:39:04.262000000
+
+Abandoned
+
+Consider: http://review.Piper Jefferson.org/#/c/55646/
+
+-------------------------------------

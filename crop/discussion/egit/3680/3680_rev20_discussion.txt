@@ -1,0 +1,218 @@
+DESCRIPTION
+
+Gracefully ignore linked resources
+
+A project may contain resources that are not located within the
+project's directory in the local file system. These resources are
+referred to as linked resources.
+This patch adds a few checks to gracefully ignore them in a few
+functional cases: iterator, handlers, actions, etc.
+
+Bug: 333338
+CQ: 6965
+Change-Id: I5005ed46cdfab47fc6913dbd46fc1291b2ac79ab
+Signed-off-by: Hamza Perez xxx@xxx.xxx
+Signed-off-by: Malia Sampson xxx@xxx.xxx
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+
+COMMENTS
+
+author: Kade Schaefer
+date: 2013-01-19 19:12:33.000000000
+
+Uploaded patch set 20.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-01-19 19:12:39.000000000
+
+Patch Set 20:
+
+Build Started https://hudson.eclipse.org/sandbox/job/egit.gerrit/4038/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-01-19 19:24:55.000000000
+
+Patch Set 20: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/egit.gerrit/4038/ : SUCCESS
+
+-------------------------------------
+author: Kade Schaefer
+date: 2013-01-19 19:28:18.000000000
+
+Patch Set 20:
+
+(I did nor rebase to facilitate comparison with previous patch set)
+
+> I tested the change a bit with a linked folder named root in org.eclipse.egit
+> pointing to .. (the root of the egit repository working directory) and with resource
+> filters for "org.eclipse.egit*".
+> This means that only the files such as README and the tools folder is visible.
+How did you do that? I could not create such linked folder, even when hacking the .project file...
+
+> * The files from the tools folder is marked as deleted in the Staging view.
+> Changing IteratorService to use isLinked(IResource.CHECK_ANCESTORS) fixes
+> that (it used isLinked() before). Do you agree with this change?
+Well, I've made this change in the new patch set. I probably though it was not
+necessary to check ancestors, due to the recursive nature of iterator when iterating from top to bottom. But now that I've made another change to RepositoryMapping I'm wondering if this would not also fix your problem. Since I'm not able to recreate your test case, could you please try again and see if isLinked() would work here?
+
+> * When editing README and saving, the change does not automatically
+> show up in the Staging view. This is caused by GitResourceDeltaVisitor
+> skipping the resource. When removing this, it works. What is the reason
+> behind this? I didn't notice anything being wrong with the lines removed.
+Well the line you removed effectively discard any linked resource, even
+those that point to a file in the same repo as the project. Now that we want
+EGit to be smart about linked resources (i.e. handle them if they point to files
+within the same repo as the project) removing such line makes sense, notably
+because the code just before checks we're pointing to the same repo.
+Once removed I then had to correct my test cases, and this led me to another
+important change I've missed: handle linked resources in RepositoryMapping.
+
+Thanks for reviewing this, we're getting further ;)
+
+-------------------------------------
+author: Danika Greer
+date: 2013-01-25 15:39:26.000000000
+
+Patch Set 20: I would prefer that you didn't submit this
+
+(6 inline comments)
+
+> How did you do that? I could not create such linked folder, even when hacking the .project file...
+
+Create the folder to point to tools initially (with an absolute path). Then change it to the root directory in the properties.
+
+> Well, I've made this change in the new patch set. I probably though it was not necessary to check ancestors, due to the recursive nature of iterator when iterating from top to bottom. But now that I've made another change to RepositoryMapping I'm wondering if this would not also fix your problem. Since I'm not able to recreate your test case, could you please try again and see if isLinked() would work here?
+
+I tried the new change but IResource.CHECK_ANCESTORS is still needed in IteratorService. The reason for this is in AdaptableFileTreeIterator, where findContainer is tried for each level.
+
+> Well the line you removed effectively discard any linked resource, even those that point to a file in the same repo as the project. Now that we want EGit to be smart about linked resources (i.e. handle them if they point to files within the same repo as the project) removing such line makes sense, notably because the code just before checks we're pointing to the same repo. Once removed I then had to correct my test cases, and this led me to another important change I've missed: handle linked resources in RepositoryMapping.
+
+Yes, makes sense.
+
+See inline comments, otherwise looks good now.
+
+Line:128, org.eclipse.egit.core/src/org/eclipse/egit/core/op/DiscardChangesOperation.java -> The message should also be removed from CoreText.
+
+Line:44, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/actions/AssumeUnchangedActionHandler.java -> This is not needed, AssumeUnchangedOperation can handle multiple repositories.
+
+Line:253, org.eclipse.egit.core/src/org/eclipse/egit/core/project/RepositoryMapping.java -> Why getRawLocation and not getLocation here?
+
+Line:170, org.eclipse.egit.core/src/org/eclipse/egit/core/ContainerTreeIterator.java -> I don't think this is necessary, as it's already checked by callers with findContainer.
+
+Line:104, org.eclipse.egit.core/src/org/eclipse/egit/core/project/RepositoryFinder.java -> If we really want to add that API (although there are no callers), it should have xxx@xxx.xxx 2.3.
+
+Line:140, org.eclipse.egit.core.test/src/org/eclipse/egit/core/test/GitResourceDeltaTestHelper.java -> Could put these println statements in an `if (expected.length != changedResources.size())`? We shouldn't be printing things in general (but in case of a test failure, it's ok).
+
+-------------------------------------
+author: Kade Schaefer
+date: 2013-01-26 14:32:55.000000000
+
+Patch Set 20:
+
+Patch Set 21:
+No rebase to facilitate comparison.
+See inline comments.
+Rebased version coming soon...
+
+-------------------------------------
+author: Danika Greer
+date: 2013-01-26 17:22:00.000000000
+
+Patch Set 20: (2 inline comments)
+
+
+
+Line:170, org.eclipse.egit.core/src/org/eclipse/egit/core/ContainerTreeIterator.java -> I would agree that checking doesn't hurt in general, but at this point it's already too late to check, because at least the current entry is already bad (linked). Even though we wouldn't create any child entries, it's already a bug. So it should be checked before even creating a ContainerTreeIterator (which is what is done in findContainer).
+
+By the way, JGit itself never creates such a ContainerTreeIterator, it's all under our control here.
+
+It doesn't hurt to add a big warning to the Javadoc of the constructors to NOT pass linked resources.
+
+Line:104, org.eclipse.egit.core/src/org/eclipse/egit/core/project/RepositoryFinder.java -> Ok. Well, the best way is to add it yourself to the following page as soon as this change is accepted:
+
+http://wiki.eclipse.org/EGit/New_and_Noteworthy/2.3
+
+-------------------------------------
+author: Kade Schaefer
+date: 2013-01-26 18:49:56.000000000
+
+Patch Set 20: (2 inline comments)
+
+
+
+Line:170, org.eclipse.egit.core/src/org/eclipse/egit/core/ContainerTreeIterator.java -> I don't know enough yet about the inner workings of jgit and iterators/treewalk to be as sure as you are, hence my overly cautious approach here. This class inherits from a jgit class and I assume it could be used within jgit operations.
+There is a case I'm having trouble understanding: in your test where you created a linked folder to the parent folder, have you tried using comparing the project with previous version? The problem I see is that the linked folder appears in the resulting git tree compare view, and I'm still searching why it appears. Linked files do not appear, so it's an issue with linked folders only.
+Anyway, I'm fine removing this check if you vouch for it, and since it does not help in the case I just mentioned, so there must be something else related to containers and iterators/treewalk that makes linked folder appear in the git tree compare view... Any idea?
+
+Line:140, org.eclipse.egit.core.test/src/org/eclipse/egit/core/test/GitResourceDeltaTestHelper.java -> I just removed these print statements, I did not mean to leave them here.
+This will be visible in the rebased patch set 22 as I forgot to do it before.
+
+-------------------------------------
+author: Danika Greer
+date: 2013-01-27 12:10:50.000000000
+
+Patch Set 20: (1 inline comment)
+
+
+
+Line:170, org.eclipse.egit.core/src/org/eclipse/egit/core/ContainerTreeIterator.java -> JGit just wants a WorkingTreeIterator. In EGit, we typically pass e.g. an AdaptableFileTreeIterator. For each iterator, the entries are passed via init() to the base class. Later, JGit calls createSubtreeIterator for each entry, where we can again return subclasses of AbstractTreeIterator. So JGit never directly creates an EGit iterator, it's always under our control.
+
+As to the problem with the compare tree view, the problem is in WorkbenchTreeContentProvider's getChildren, where the following should be added to the children for loop:
+
+				IResource childResource = (IResource) child;
+				if (childResource.isLinked())
+					continue;
+
+-------------------------------------
+author: Kade Schaefer
+date: 2013-01-27 20:23:44.000000000
+
+Patch Set 20: (1 inline comment)
+
+
+
+Line:170, org.eclipse.egit.core/src/org/eclipse/egit/core/ContainerTreeIterator.java -> I've made the change you suggested and indeed the linked resources no longer appear in the git tree view. I put your name in the license header, as I don't like to take credit for someone else's work, however small it is. Hope that's fine with you. This is in patch set 23, rebased.
+
+-------------------------------------
+author: Kade Schaefer
+date: 2013-01-26 14:30:44.000000000
+
+MISMATCHED INLINE COMMENT
+Line:128, org.eclipse.egit.core/src/org/eclipse/egit/core/op/DiscardChangesOperation.java -> Done.
+
+-------------------------------------
+author: Kade Schaefer
+date: 2013-01-26 14:30:44.000000000
+
+MISMATCHED INLINE COMMENT
+Line:44, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/actions/AssumeUnchangedActionHandler.java -> Done.
+
+-------------------------------------
+author: Kade Schaefer
+date: 2013-01-26 14:30:44.000000000
+
+MISMATCHED INLINE COMMENT
+Line:253, org.eclipse.egit.core/src/org/eclipse/egit/core/project/RepositoryMapping.java -> Done. Not sure what I was thinking.
+
+-------------------------------------
+author: Kade Schaefer
+date: 2013-01-26 14:30:44.000000000
+
+MISMATCHED INLINE COMMENT
+Line:170, org.eclipse.egit.core/src/org/eclipse/egit/core/ContainerTreeIterator.java -> Checking the call hierarchy I can see what you mean.
+However what's the hurt of leaving this safety check? Is it a performance penalty to have this checked each time a ContainerTreeIterator is instantiated? In other words are ContainerTreeIterators created so frequently that it's an issue?
+The primary reason for me to add this check is that instances of this class are used internally by jgit, and I wanted to make sure jgit never received any linked resources ever, meaning that tree walks should not follow linked resources and stick to the file system. So if there is no specifically good reason I'd rather leave this check in place just in case.
+
+-------------------------------------
+author: Kade Schaefer
+date: 2013-01-26 14:30:44.000000000
+
+MISMATCHED INLINE COMMENT
+Line:104, org.eclipse.egit.core/src/org/eclipse/egit/core/project/RepositoryFinder.java -> There are no callers within egit indeed. But the description of the behavior before clearly stated that linked resources were traversed. This was an issue in some specific cases, so I disabled this default behavior, and made the handling of linked resource explicit in the API. I have no idea if anything out there depends on the default behavior of traversing linked resources, but if one does, the way forward is simple. BTW, how do we flag that this must be mentioned in the What's new/release notes?
+
+-------------------------------------

@@ -1,0 +1,62 @@
+DESCRIPTION
+
+MB-14590: idle projector optimization.
+
+The optimization spans the situations where one or more indexes
+are created on one or more buckets but there are no mutation
+traffic.
+
+endpoint's bufferTimeout:
+  This timeout is used as one of the trigger (upper bound) to flush
+  mutation keys to downstream. It was configured @ 1ms, so that
+  Consistency queries can be served quickly.
+  With this patch, bufferTimeout is increased to 25ms.
+
+vbucket's syncTimeout:
+  This timeout is used by each vbucket-routine to generate the
+  sync pulse. having a timer-channel within select{} seem to
+  be a bad idea for go-runtime.
+
+  This patch is moving the sync pulse generation from vbucket-routine
+  to kvdata-routine (one step above in data-path).
+  On the upside, there will be one timer tick per bucket and
+  vbucket-routine don't have to use select{} statement.
+  On the downside, kvdata-routine will have to loop over all
+  vbucket-routines posting the sync-pulse. This implies that
+  the chance of vbucket-routines blocking on downstrem endpoint
+  should be minimized, hence bumping the i/p buffer size from
+  10K to 50K for endpoint routine.
+
+On mac, projector should consume < 10% when 20 index is defined
+on 10 buckets with 1024 vbuckets per bucket. In normal cases
+it should be < 5%.
+
+Change-Id: I4f087329b554c1173806ad6ef8109fe2fdd046f6
+
+
+COMMENTS
+
+author: Leonel Abbott
+date: 2015-04-22 11:28:59.102000000
+
+Uploaded patch set 2: Patch Set 1 was rebased.
+
+-------------------------------------
+author: Maliyah Fischer
+date: 2015-04-23 10:08:25.243000000
+
+Patch Set 2: Code-Review+1
+
+-------------------------------------
+author: Kinsley Fox
+date: 2015-04-23 10:15:10.640000000
+
+Patch Set 2: Code-Review+1
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-04-23 10:58:37.240000000
+
+Change has been successfully merged into the git repository.
+
+-------------------------------------

@@ -1,0 +1,90 @@
+DESCRIPTION
+
+Do not extend delta chains longer than limit
+
+When considering an object that is already used as a delta base
+for other objects, limit the maximum depth that object can have,
+based on the remainder of the delta chain length.
+
+Given the situation:
+
+  R <- S <- T
+
+  R is not a delta, and wants to delta compress;
+  S and T were already chosen for reuse as-is;
+  S is a delta based on R;
+  T is a delta based on S.
+
+If the configured delta depth is 4, R can only be delta compressed
+against a non-delta. Compressing on a delta would cause T to exceed
+the configured chain length, resulting in longer unpacking times.
+
+Change-Id: I5989d8de1849ebb85e64d7c24d7fca373f0f86ef
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2013-04-05 03:03:19.000000000
+
+Uploaded patch set 6.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-04-05 03:03:25.000000000
+
+Patch Set 6:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3301/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-04-05 03:09:01.000000000
+
+Patch Set 6: Verified
+
+Build Successful 
+
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/3301/ : SUCCESS
+
+-------------------------------------
+author: Eden Lin
+date: 2013-04-05 03:58:07.000000000
+
+Patch Set 6: Looks good to me, but someone else must approve
+
+You can avoid the extra flag using Floyd's tortoise-and-hare trick:
+
+  ObjectToPack b = otp.getDeltaCase();
+  ObjectToPack hare = b; // For cycle detection
+  while (b != null) {
+    if (d < b.getChainLength())
+      break;
+    b.setChainLength(++d);
+
+    hare = hare == null ? null : hare.getDeltaBase();
+    hare = hare == null ? null : hare.getDeltaBase();
+    if (b == hare) { // break any cycles in delta chain
+      reselectNonDelta(b);
+      break;
+    }
+    b = b.getDeltaBase();
+  }
+
+Not sure if it would be slower or not.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2013-04-05 07:06:06.000000000
+
+Patch Set 6: Do not submit
+
+I am still considering other alternatives to this commit, and it really needs a unit test to verify its capping chain lengths as expected.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2015-12-19 23:03:21.000000000
+
+Abandoned
+
+-------------------------------------

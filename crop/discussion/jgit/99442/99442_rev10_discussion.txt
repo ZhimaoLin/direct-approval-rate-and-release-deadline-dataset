@@ -1,0 +1,117 @@
+DESCRIPTION
+
+Do authentication re-tries on HTTP POST
+
+There is at least one git server out there (GOGS) that does
+not require authentication on the initial GET for
+info/refs?service=git-receive-pack but that _does_ require
+authentication for the subsequent POST to actually do the push.
+
+This occurs on GOGS with public repositories; for private
+repositories it wants authentication up front.
+
+Handle this behavior by adding 401 handling to our POST request.
+Note that this is suboptimal; we'll re-send the push data at
+least twice if an authentication failure on POST occurs. It
+would be much better if the server required authentication
+up-front in the GET request.
+
+Added authentication unit tests (using BASIC auth) to the
+SmartClientSmartServerTest:
+
+- clone with authentication
+- clone with authentication but lacking CredentialsProvider
+- clone with authentication and wrong password
+- clone with authentication after redirect
+- clone with authentication only on POST, but not on GET
+
+Also tested manually in the wild using repositories at try.gogs.io.
+That server offers only BASIC auth, so the other paths
+(DIGEST, NEGOTIATE, fall back from DIGEST to BASIC) are untested
+and I have no way to test them.
+
+* public repository: GET unauthenticated, POST authenticated
+  Also tested after clearing the credentials and then entering a
+  wrong password: correctly asks three times during the HTTP
+  POST for user name and password, then gives up.
+* private repository: authentication already on GET; then gets
+  applied correctly initially to the POST request, which succeeds.
+
+Also fix the authentication to use the credentials for the redirected
+URI if redirects had occurred. We must not present the credentials
+for the original URI in that case. Consider a malicious redirect A->B:
+this would allow server B to harvest the user credentials for server
+A. The unit test for authentication after a redirect also tests for
+this.
+
+Bug: 513043
+Change-Id: I97ee5058569efa1545a6c6f6edfd2b357c40592a
+Signed-off-by: Alayna Houston xxx@xxx.xxx
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+
+COMMENTS
+
+author: Alayna Houston
+date: 2017-08-22 21:57:21.000000000
+
+Uploaded patch set 10.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-08-22 21:57:28.000000000
+
+Patch Set 10:
+
+Build Started https://ci.eclipse.org/jgit/job/jgit.gerrit/11137/
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-08-22 22:05:48.000000000
+
+Patch Set 10: Verified-1
+
+Build Failed 
+
+https://ci.eclipse.org/jgit/job/jgit.gerrit/11137/ : FAILURE
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-08-22 22:16:06.000000000
+
+Patch Set 10:
+
+> Build Failed
+
+Unrelated failure: racy git tests. Please retrigger.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-08-23 05:26:28.000000000
+
+Patch Set 10: -Verified
+
+Build Started https://ci.eclipse.org/jgit/job/jgit.gerrit/11138/
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-08-23 05:27:07.000000000
+
+Patch Set 10: Code-Review+2
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-08-23 05:38:07.000000000
+
+Patch Set 10: Verified+1
+
+Build Successful 
+
+https://ci.eclipse.org/jgit/job/jgit.gerrit/11138/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-08-23 06:27:51.000000000
+
+Change has been successfully merged by Douglas Trujillo
+
+-------------------------------------

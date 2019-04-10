@@ -1,0 +1,54 @@
+DESCRIPTION
+
+MB-5408: use pool of ns_memcached workers to handle requests
+
+This change adds pool of workers per ns_memcached process. Each worker
+establishes it's own memcached connection. And most memcached calls
+are passed to this workers. And there's 100% fair queuing of this
+calls. I.e. calls are centrally queued and dispatched to first
+available worker.
+
+There are 3 separate queues for 3 different classes of requests.
+
+Very heavy requests are those that potentially may take minutes to run
+and perform work proportional to bucket quota. Examples are
+delete-vbucket & flush. Both this requests do lots of free() calls and
+amount of memory freeing is clearly larger for larger buckets. I was
+also told that delete-vbucket may be delayed by running eviction task.
+
+Heavy requests are any requests that may potentially take few seconds
+to run. Data operations (especially involving background fetch) are in
+this class. 1.8.x doesn't need any data ops, but I've put state
+mutation ops (set-vbucket-state) into this class just in case. This
+will be more heavily used by 2.0 HTTP CRUD.
+
+Fast requests are requests that should not take more then few
+milliseconds to perform. That's all kinds of stats requests.
+
+We always reserve at least one worker for fast requests. So that no
+amount of heavy requests can slow down fast but important requests.
+
+For very heavy requests current policy is to never allow more than 1
+in flight. That should prevent ep-engine overload and prevent worker
+processes from being occupied and thus not available for lighter
+requests.
+
+Change-Id: I463792726bb29a3aaaf7d5ababa832dff62ad154
+
+
+COMMENTS
+
+author: Nathalie Landry
+date: 2012-05-31 05:48:26.429000000
+
+Patch Set 1: Verified; Looks good to me, approved
+
+
+
+-------------------------------------
+author: Nathalie Landry
+date: 2012-05-31 05:48:26.929000000
+
+Change has been successfully cherry-picked as 0f1ba120aa64d707417b034a36381fd1d1602843.
+
+-------------------------------------

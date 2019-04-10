@@ -1,0 +1,192 @@
+DESCRIPTION
+
+[RFC] Garbage collector for FileRepositories
+
+This is work in progress. It is mainly a copy what Shawn wrote in
+DfsGarbageCollector which is enhanced by handling index and reflog
+entries. It's not ready at all but I want to share it fast to see
+whether I am heading in the right direction.
+
+Change-Id: I14ea5cb7e0fd1b5c50b994fd77f4e05bfbb9d911
+Signed-off-by: Zachary Orozco xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Zachary Orozco
+date: 2012-01-12 11:10:16.000000000
+
+Uploaded patch set 4.
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-01-12 11:10:26.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1368/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-01-12 11:14:04.000000000
+
+Patch Set 4: Build Successful
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1368/ : SUCCESS
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2012-01-13 00:35:46.000000000
+
+Patch Set 4: I would prefer that you didn't submit this
+
+(4 inline comments)
+
+
+
+-------------------------------------
+author: Juliet Cantu
+date: 2012-01-13 09:14:03.000000000
+
+Patch Set 4: (7 inline comments)
+
+
+
+Line:125, org.eclipse.jgit.test/tst/org/eclipse/jgit/storage/file/GCTest.java -> Doesn't this write a reflog entry for the second commit, thus
+it would keep both commits if you read the reflogs
+
+Line:141, org.eclipse.jgit.test/tst/org/eclipse/jgit/storage/file/GCTest.java -> fix indentation of comment
+
+Line:142, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Only wrap the ObjectId.fromString with the try-catch
+
+Line:180, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Do you need to take care of all id's in FETCHHEAD?
+
+Line:182, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> C Git does not pack data located in alternate-repos. Packing to much is not dangerous, so fixing that is not a high-priority.
+
+Line:204, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Though not "normal", I think a bare repo can have an index,
+and vice verse C Git does not complain much if there is no
+index in a non-bare repo. It's even possible to commit, so
+I the you should simply consider the non-precense of an index files as it being empty (EmptyTreeIterator).
+
+Line:241, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> pack.packSizeLimit might be relevant here.
+
+-------------------------------------
+author: Dillon Cross
+date: 2012-01-25 14:31:02.000000000
+
+Patch Set 4: I would prefer that you didn't submit this
+
+(3 inline comments)
+
+
+
+Line:121, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> This method prunes only loose objects.
+
+If all reachable objects are written into the new pack file then
+why don't delete the old pack files too?
+
+Line:140, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Looks like you want to test:
+
+ ! objectsToKeep.contains(id)
+
+instead of:
+
+ objectsToKeep.contains(id)
+
+Line:184, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Why do we need packHeads and packRest?
+
+Isn't it enough to pack all objects reachable from any (valid) reference as one step?
+
+-------------------------------------
+author: Dillon Cross
+date: 2012-01-25 17:01:21.000000000
+
+Patch Set 4: (1 inline comment)
+
+
+
+Line:140, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> If a loose object is not found in a pack it will not be deleted.
+And, if a loose object is not reachable then the repack method will not put it into the (new) pack.
+This means that the "prune" method can never prune non-reachable loose objects. Right?
+
+So, we either have a bug in this method or it should be named something like "deletePackedLooseObjects"
+
+-------------------------------------
+author: Zachary Orozco
+date: 2012-01-26 17:09:17.000000000
+
+Patch Set 4: (14 inline comments)
+
+
+
+Line:2, org.eclipse.jgit.test/tst/org/eclipse/jgit/storage/file/GCTest.java -> Done
+
+Line:125, org.eclipse.jgit.test/tst/org/eclipse/jgit/storage/file/GCTest.java -> It should - but we don't care for reflogs currently. Reflog handling will come but until it's there we ignore reflogs when writing tests.
+
+Line:141, org.eclipse.jgit.test/tst/org/eclipse/jgit/storage/file/GCTest.java -> Done
+
+Line:32, org.eclipse.jgit.pgm/META-INF/services/org.eclipse.jgit.pgm.TextBuiltin -> I wanted to hide this functionality from normal usage until we have enough experience with it so we can trust it. By putting it to the debug package I wanted to express that this is not (yet) a command for everyday usage. When we have enough experience and trust it I planned to move it from debug to pgm.
+
+Line:3, org.eclipse.jgit.pgm/src/org/eclipse/jgit/pgm/debug/Gc.java -> Done
+
+Line:2, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done
+
+Line:121, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> yes, it prunes only loose objects ... just as "git-prune". If one wants to get rid of unreachable packed objects "git-repack" has to be used.
+
+But you are right: in the end we want to get rid of the old pack files. This should maybe go into the repack method.
+
+Line:140, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> That's right. This method currently does what the native git command "git-prune-packed" [1] does. I'll propose in the nex propoasal a rename to prune_packed().
+
+[1] http://linux.die.net/man/1/git-prune-packed
+
+Line:142, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Done
+
+Line:180, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Yes, of course. FETCH_HEAD will not come with repo.getAllRefs. But we have an utility method RefDatabase.getAdditionalRefs(). I'll use that also.
+
+Line:182, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> Not sure whether I got that right: do you mean that allHeads will contain refs which only live in alternate-repos. And those heads we should not pack. Right?
+
+Line:184, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> I agree that we could also pack everything in one pack. I just copied the strategy of the DfsGarbageCollector. Here we are splitting our objects into two packs. One with all objects reachable from branches and another one with the rest of the objects reachable from tags, reflog, . In case of gerrit servers there may be quite a lot in the second pack - all the old proposals which never got accepted. I can imagine (but I am not sure) that there is a certain performance benefit if you don't have to deal with packfiles which are huge and contain everything but if there is a packfile which very likely contains all the objects needed for operations like submit, merge.
+
+Line:204, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> yes, I'll change it that repo.getIndexFile() is asked. But currently we don't support this setup. repo.readDirCache() and repo.lockDirCache() will all throw exceptions on a bare repo, regardless whether we have a index file or not. I think that's a different bug.
+
+Line:241, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> for sure! But I don't think that is currently supported. That should be a feature of the PackWriter, or?
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2012-07-29 13:39:12.000000000
+
+Your change could not be merged due to a path conflict.
+
+Please merge (or rebase) the change locally and upload the resolution for review.
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2012-01-13 00:35:45.000000000
+
+MISMATCHED INLINE COMMENT
+Line:2, org.eclipse.jgit.test/tst/org/eclipse/jgit/storage/file/GCTest.java -> update date to 2012
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2012-01-13 00:35:45.000000000
+
+MISMATCHED INLINE COMMENT
+Line:32, org.eclipse.jgit.pgm/META-INF/services/org.eclipse.jgit.pgm.TextBuiltin -> why is Gc a debug command ?
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2012-01-13 00:35:45.000000000
+
+MISMATCHED INLINE COMMENT
+Line:3, org.eclipse.jgit.pgm/src/org/eclipse/jgit/pgm/debug/Gc.java -> shouldn't that be your copyright header instead ?
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2012-01-13 00:35:45.000000000
+
+MISMATCHED INLINE COMMENT
+Line:2, org.eclipse.jgit/src/org/eclipse/jgit/storage/file/GC.java -> update date to 2012
+
+-------------------------------------

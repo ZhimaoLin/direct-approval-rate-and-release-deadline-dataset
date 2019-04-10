@@ -1,0 +1,125 @@
+DESCRIPTION
+
+[Refactor]: Split statsVKey() across KVBucket and VBucket classes
+
+Parts of statsVKey() that use ht, checkpt functions are moved to
+VBucket class
+
+Change-Id: I2e42cf43a57eb780989bf89c5060519517d77f21
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2017-01-13 23:10:22.133000000
+
+Uploaded patch set 3.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-13 23:10:31.760000000
+
+Patch Set 3:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1592/ (1/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-13 23:10:31.890000000
+
+Patch Set 3:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2393/ (2/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-13 23:10:32.020000000
+
+Patch Set 3:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2757/ (3/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-13 23:10:32.145000000
+
+Patch Set 3:
+
+Build Started http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/2920/ (4/4)
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-01-13 23:22:38.948000000
+
+Patch Set 3: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/2757/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/2393/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/1592/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/2920/ : SUCCESS
+
+-------------------------------------
+author: Keira Washington
+date: 2017-01-13 23:30:06.909000000
+
+Patch Set 3:
+
+(2 comments)
+
+Line:971, src/vbucket.cc -> Not really anything to do with this patch, but just an observation that this seems to be an incredibly common pattern.
+
+Since you're doing a lot of refactoring in this area I'm wondering if it might make sense to create a wrapper for `StoredValue*` that would also hold the hashtable lock so instead of all this you'd call a single function that looks like:
+
+    StoredValuePtr v = fetchValidValue(key, eviction true);
+
+StoredValuePtr would then look a bit like a unique_ptr:
+
+    class StoredValuePtr {
+        
+        StoredValuePtr(); // default, null constructor
+        StoredValuePtr(std::unique_lock<std::mutex> lck,
+                       StoredValue* val);
+
+        operator bool() const { return v == nullptr; }
+        StoredValue& operator*() const { return *v }
+        StoredValue& operator->() const { return *v }
+
+        private:
+        StoredValue* v;
+        std::unique_lock<std::mutex> ht_lock;
+    };
+
+It would then hold the hashtable lock in scope for as long as the StoredValue* is in scope. It would also hide some of the implementation details of hashtable locking.
+
+Line:596, src/vbucket.h -> please document
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-01-16 09:54:51.521000000
+
+Patch Set 3: Code-Review+2
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-01-16 18:04:06.582000000
+
+Patch Set 3:
+
+(2 comments)
+
+Line:971, src/vbucket.cc -> Noted to do this in future
+
+Line:596, src/vbucket.h -> Done
+
+-------------------------------------
+author: Tate Garrett
+date: 2017-01-16 20:11:27.039000000
+
+Change has been successfully cherry-picked as 47af4312255f7d1bd2606ce192a454bfe8613a3b by Adrianna Holmes
+
+-------------------------------------

@@ -1,0 +1,85 @@
+DESCRIPTION
+
+JVMCBC-265: Services need to be cleaned up after failed bucket open attempt.
+
+Motivation
+----------
+When a bucket open attempt fails for whatever reason, some resources like services
+are currently not cleaned up properly. This is not an issue in the "fail startup
+if bucket open doesn't work" approach, since most of the time the JVM exits.
+
+In the edge case though where you want to fall back to another bucket or just
+try to open one which does not exist and then keep going on, the core is
+in an invalid state. Some of the services are DEGRADED, letting specific
+ops not pass through as expected.
+
+Modifications
+-------------
+The actual change is quite simple: if the config provider reports back to
+the caller that the open bucket attempt was not successful, it now explicitly
+closes the bucket.
+
+This triggers a cleanup of services in the core layer as with a regular
+bucket close process, allowing subsequent open bucket attempts to progress
+as expected.
+
+Result
+------
+Subsequent open bucket attempts after a failed one now have the chance
+to succeed since the core now properly cleans up "stale" services and
+resources.
+
+Change-Id: I1e12fa233e543ab38e153586d11a2af83a15383e
+Reviewed-on: http://review.couchbase.org/56859
+Tested-by: Natasha Sullivan xxx@xxx.xxx
+Reviewed-by: Estrella Humphrey xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Natasha Sullivan
+date: 2015-11-10 15:05:26.548000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2015-11-10 15:05:53.062000000
+
+Patch Set 1: Verified+1
+
+-------------------------------------
+author: Andreas Short
+date: 2015-11-10 16:09:52.301000000
+
+Patch Set 1:
+
+How would this fix behave if there were multiple openBucket() calls?  Is it possible that the internal state could still be messed up if the second open arrives while the first one is still being attempted?
+
+-------------------------------------
+author: Natasha Sullivan
+date: 2015-11-10 16:48:40.958000000
+
+Patch Set 1:
+
+(note: this is the backport into the release11 branch, master one has already been merged):
+
+concurrent racing bucket opens are not possible, because the actual apply process of a new configuration is serialized through a subject in the configuration provider: https://github.com/couchbase/couchbase-jvm-core/blob/master/src/main/java/com/couchbase/client/core/config/DefaultConfigurationProvider.java#L415
+
+so even if the source configs come in wild order, they can't step on each others toes and be applied one after another (this is treated like any kind of config coming in).
+
+The case where you open the same bucket multiple times is now handled in the language bindings through concurrent hash map and friends: https://github.com/couchbase/couchbase-java-client/blob/master/src/main/java/com/couchbase/client/java/CouchbaseAsyncCluster.java#L370
+
+-------------------------------------
+author: Cory Peck
+date: 2015-11-10 18:04:21.904000000
+
+Patch Set 1: Code-Review+2
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2015-11-11 08:19:22.472000000
+
+Change has been successfully cherry-picked as 1018b7446e979358ad3c50a0114015c99bf2e53a
+
+-------------------------------------

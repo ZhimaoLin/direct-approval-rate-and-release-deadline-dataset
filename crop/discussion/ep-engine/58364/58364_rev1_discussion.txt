@@ -1,0 +1,97 @@
+DESCRIPTION
+
+MB-17273: Make add stream and close stream operations atomic.
+
+Before a new passive stream for a vbucket is added on DCP conusmer we should
+make sure that any existing stream for that vbucket, in that consumer conn
+or a different consumer connection should be completely closed.
+
+Change-Id: Ifb0d7230c26a087dc5e7a9522c6261000bf4ce70
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2016-01-08 02:36:03.144000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-01-08 02:53:20.590000000
+
+Patch Set 1:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/335/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2016-01-08 03:08:32.169000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/335/ : SUCCESS
+
+-------------------------------------
+author: Abby Duran
+date: 2016-01-08 05:45:17.352000000
+
+Patch Set 1: Code-Review-1
+
+Manu,
+
+This fix including the other two dependent changes are more complicated that I thought. I would like to understand it more before we decide whether we should ship this fix to 3.1.4 release or not. Let's discuss it more tomorrow.
+
+-------------------------------------
+author: Ashlee Kent
+date: 2016-01-08 09:09:12.989000000
+
+Patch Set 1: Code-Review-1
+
+(1 comment)
+
+I'm a bit nervous of the performance impact of adding *more* locks to the DCP code. 
+
+Note that `streams` is already an array of (atomic) RCPtrs, and hence the all the individual read / writes of members of it should already be thread-safe. 
+
+From what I can see, the unsafe code is where we read the current value, and then write a new value. One such case  is in add_stream(), where the check for an existing active stream isn't atomic:
+
+ passive_stream_t stream = streams[vbucket];
+    if (stream && stream->isActive()) {
+        LOG(EXTENSION_LOG_WARNING, "%s (vb %d) Cannot add stream because one "
+            "already exists", logHeader(), vbucket);
+        return ENGINE_KEY_EEXISTS;
+    }
+   streams[vbucket] = new PassiveStream(...);
+
+This could be fixed by changing the assignment into a compare_exchange. Similar instances exist in closeAllStreams(), and should be fixed in the same way.
+
+Line:119, src/dcp-consumer.cc -> Correct me if I'm wrong, but we only actually need to acquire the lock around accessing the `streams` structure - i.e. this can be moved down to just before line 130?
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2016-01-08 16:25:08.532000000
+
+Patch Set 1: Code-Review-1
+
+3.0.x has significant performance changes made to it which have been costly to defend. Mb-17273 is unapproved for 3.1.4 so i'm -1 until we have a clear picture of what fixes *should* be in 3.1.4
+
+-------------------------------------
+author: Abby Duran
+date: 2016-01-08 17:46:12.122000000
+
+Patch Set 1:
+
+This change tries to address the functional bug that caused the memcached crash in the production that deployed 4.1.0 version, but also can happen in 3.1.x. We will see and decide if this issue should be fixed for 3.1.4 release or not.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2016-01-08 20:12:22.381000000
+
+Abandoned
+
+Considering fix only in 4.1.1 and/or watson
+
+-------------------------------------

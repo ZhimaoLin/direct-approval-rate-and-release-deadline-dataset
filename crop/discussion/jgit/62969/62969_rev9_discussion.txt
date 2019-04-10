@@ -1,0 +1,160 @@
+DESCRIPTION
+
+RefTreeDb: Ref database using refs/txn/committed
+
+Instead of storing references in the local filesystem rely on the
+RefTree rooted at refs/txn/committed.  This avoids needing to store
+references in the packed-refs file by keeping all data rooted under
+a single refs/txn/committed ref.
+
+Performance to scan all references from a well packed RefTree is very
+close to reading the packed-refs file from local disk.
+
+Storing a packed RefTree is smaller due to pack file compression,
+about 49.39 bytes/ref (on average) compared to packed-refs using
+~65.49 bytes/ref.
+
+Change-Id: I75caa631162dc127a780095066195cbacc746d49
+
+
+COMMENTS
+
+author: Yoselin Hanna
+date: 2016-01-08 00:43:07.000000000
+
+Uploaded patch set 9.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-01-08 01:10:06.000000000
+
+Patch Set 9:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/7816/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-01-08 01:18:24.000000000
+
+Patch Set 9: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/7816/ : SUCCESS
+
+-------------------------------------
+author: Ariel Sawyer
+date: 2016-01-08 23:09:45.000000000
+
+Patch Set 9:
+
+(22 comments)
+
+This is a pretty thorough reading of everything outside of the test. I kind of fizzled out half way through it, but I'll look more closely next round.
+
+Line:188, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/Batch.java -> s/parentId/parentCommitId/
+
+Line:192, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/Batch.java -> Nit: For symmetry with the "if" clause move this below parentTree.
+
+Line:204, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/Batch.java -> Why a 2nd statusless execute function? It doesn't have any of the safety in the overridden execute() above.
+
+Line:237, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/Batch.java -> ObjectInserter appears to never return null. Are the "nextId != null" checks above really needed?
+
+Also, initially I thought "nextId" infered some kind of iteration. "newCommitId" makes this more readable, IMHO.
+
+Line:77, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/RefTreeDb.java -> @since required for non-API? There are only xxx@xxx.xxx in the jgit/internal/storage packages.
+
+Line:79, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/RefTreeDb.java -> All other RefDatabase- and ObjectDatabase-derived classes have the fully expanded "Database" suffix, so consider doing the same here.
+
+Line:83, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/RefTreeDb.java -> Undefined at this point. Explain how this RefDatabase is layered upon a "bootstrap" database in the class JavaDoc, e.g.,:
+The storage for RefTreeDatabase has two parts. The main part is a native Git tree object stored under the {@code refs/txn} namespace. To avoid cycles, references to xxx@xxx.xxx refs/txn} are not stored in that tree object, but instead in a "bootstrap" layer, which is a separate RefDatabase.
+
+Line:84, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/RefTreeDb.java -> This defines how a RefTreeDb handles references to the bootstrap layer. The bootstrap DB itself is passive so BootstrapBehavior isn't quite right. Maybe rename this "Layering" so comparisons can be "if (layering == SHOW_ALL || layering == HIDE_REFS_TXN || layering == REJECT_REFS_TXN)"
+
+Line:95, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/RefTreeDb.java -> s/.../and reject updates in its namespace/
+
+Line:98, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/RefTreeDb.java -> s/However updates/Updates/
+
+Line:111, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/RefTreeDb.java -> The motivation for this isn't clear yet.
+
+Line:67, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/Rename.java -> Please change to "src", "dst" to match RefRename's ctor.
+
+Line:101, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/Rename.java -> s/o/src/
+
+Line:67, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/Update.java -> "Update" is pretty generic. Subclasses are more specific, so maybe "RefTreeUpdate"?
+
+Line:134, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/Update.java -> s/result/desiredResult/
+
+Line:153, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/Update.java -> Seems like this would be useful in the base RefUpdate class.
+
+Line:74, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/Scanner.java -> In Javadoc, classes are nouns. This uses a verb phrase, which is appropriate for method Javadoc. So "A tree parser that extracts the list of references from a xxx@xxx.xxx RefTree}."
+
+Line:74, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/Scanner.java -> It builds a Scanner.Result object that contains the list of references in the tree.
+
+Line:81, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/Scanner.java -> More explicit as "refTreeId"?
+
+Line:93, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/Scanner.java -> Javadoc for these parameters would be helpful.
+
+Line:171, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/Scanner.java -> Seems like we should have a Paths.stripTrailingSeparator() utility method somewhere.
+
+Line:207, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/Scanner.java -> CanonicalTreeParser is an AbstractTreeIterator. curElementHasPeelSuffix(Parser|Iterator) reads easier.
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2016-01-09 00:58:40.000000000
+
+Patch Set 9:
+
+(21 comments)
+
+Line:188, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/Batch.java -> Done
+
+Line:192, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/Batch.java -> Done
+
+Line:204, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/Batch.java -> This is used by Update and Rename, which have already split out certain behaviors. Added Javadoc and a safety check in case caller that builds Update or Rename changes and violates the expected contract.
+
+Line:237, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/Batch.java -> Correct, ObjectInserter never returns null. The != null checks above are about the return true on line 224 above when the operation is a no-op.
+
+Renamed nextId to newCommitId.
+
+Line:77, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/RefTreeDb.java -> Good catch; this was from a prior version where the package was not declared internal. I since moved it internal and forgot to xxx@xxx.xxx
+
+Line:79, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/RefTreeDb.java -> Done
+
+Line:83, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/RefTreeDb.java -> Done
+
+Line:84, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/RefTreeDb.java -> Done
+
+Line:95, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/RefTreeDb.java -> Done
+
+Line:98, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/RefTreeDb.java -> Done
+
+Line:111, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/RefTreeDb.java -> Discussed offline today. Don't want to discuss on the review thread right now until more code is ready.
+
+Line:67, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/Rename.java -> Done
+
+Line:101, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/Rename.java -> Done
+
+Line:67, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/Update.java -> Done
+
+Line:134, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/Update.java -> Done
+
+Line:153, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/Update.java -> Probably so, but I'm hesitant to put that into public API right now. Lets see if anyone else winds up needing this before we commit to the method living around basically forever in such a public class as RefUpdate.
+
+Line:74, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/Scanner.java -> Done
+
+Line:81, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/Scanner.java -> Done
+
+Line:93, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/Scanner.java -> Done
+
+Line:171, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/Scanner.java -> Done. I've wanted to make that class for other reasons. Started with this method.
+
+Line:207, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/reftree/Scanner.java -> Done
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2016-01-12 00:01:06.000000000
+
+Change has been successfully merged into the git repository by Yoselin Hanna
+
+-------------------------------------

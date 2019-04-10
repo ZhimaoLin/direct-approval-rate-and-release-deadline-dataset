@@ -1,0 +1,83 @@
+DESCRIPTION
+
+Prevent finding wrong refs on case insensitive file systems
+
+If multiple refs existed in a repository which are not distinguishable
+on a case insensitive file system we found and returned a ref with the
+wrong case since the file system tricked us. 
+
+This leads to an infinite loop in EGit if a repository has two tags
+which are only different in case. We found that CDT's repository hits
+this problem with the tags refs/tags/cdt_8_0 and refs/tags/CDT_8_0. The
+RepositoryChangeScanner calling RefDirectory.getRefs("") doesn't see
+refs/tags/cdt_8_0 while RepositoriesViewLabelProvider.getStyledText() 
+calling RefDirectory.getRef("cdt_8_0") finds this tag since new
+File(parent, name) also matches a file with name CDT_8_0 having the
+wrong case on case insensitive file systems. This leads to refsChanged
+events being fired in both cases which implies the observed infinite
+loop driven by the periodically running RepositoryChangeScanner. Since
+refsChanged events lead to recomputation of IndexDiff this is consuming
+a lot of resources.
+
+Bug: 376270
+Change-Id: I48cddc527237cd2fc75b8f36dd2a49023d5b1868
+Signed-off-by: Douglas Trujillo xxx@xxx.xxx
+Signed-off-by: Zachary Orozco xxx@xxx.xxx
+
+COMMENTS
+
+author: Douglas Trujillo
+date: 2012-05-18 21:38:39.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-05-18 21:38:43.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1853/ 
+
+-------------------------------------
+author: Brenden Conley
+date: 2012-05-18 21:43:18.000000000
+
+Patch Set 2: Verified
+
+Build Successful 
+ 
+https://hudson.eclipse.org/sandbox/job/jgit.gerrit/1853/ : SUCCESS
+
+-------------------------------------
+author: Juliet Cantu
+date: 2012-05-19 16:24:24.000000000
+
+Patch Set 2: Verified; Looks good to me, approved; IP review completed
+
+For a networked file system the difference may be huge, but for local files systems the overhead seems neglible, even with cold cache (On OS X).
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2012-05-19 16:39:24.000000000
+
+Change could not be merged because of a missing dependency.
+
+The following changes must also be submitted:
+
+* I03f59d07bcc3338ef8d392cbd940799186ca03bd
+
+
+-------------------------------------
+author: Juliet Cantu
+date: 2012-05-20 21:18:07.000000000
+
+Patch Set 2: No score
+
+Does not work if the repo path is via a symbolic link. No loose refs will be read.
+
+Performance: 5-10% worse access on Apple's JDK wih 5000 loose refs (e.g. refs/changes). Better on OpenJDK (OSX too). Need If08f8e7b8ef94ec00023a3f78bbf502ebd9699fb for OpenJDK testing.
+
+Maybe fixing the refs-changed logic can be done some other way and as for really handling doublecased refs on a case-insensitive FS that will still not work. We'll just be surprised differently. An option would be to always pack perhaps, though that is not enough.
+
+-------------------------------------

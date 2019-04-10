@@ -1,0 +1,63 @@
+DESCRIPTION
+
+MB-21448: replace-with-CAS should return NOT_FOUND for deleted items
+
+Regression test for MB-21448 - if an attempt is made to perform a CAS
+operation on a logically deleted item we should return NOT_FOUND (aka
+KEY_ENOENT) and *not* INVALID_CAS (aka KEY_EEXISTS).
+
+The reason for this "intermittent" behaviour is that we are
+essentially racing with the writer thread. The sequence of events for
+deleting an item is as follows:
+
+1. User calls DELETE, which locates the key in the HashTable, and then
+   sets the deleted flag on that StoredValue (but crucially leaves the
+   StoredValue in the HashTable). A deletion operation is then
+   enqueued in the CheckpointManager (to write the deletion to disk).
+
+2. When the flusher runs for this vBucket, it calls
+   CouchKVStore::commit which after committing invokes
+   PersistenceCallback::callback to inform ep-engine that the item has
+   been persisted to disk (and we can now remove from the HashTable).
+
+3. The callback locates the item in the HashTable and finally
+   physically removes the StoredValue.
+
+The issue here is the client is essentially racing with (3) above. If
+the client replace-with-CAS operation is processed before (3), then
+the StoredValue is still in the HashTable, and hence unlocked_set
+returns NOT_FOUND (aka KEY_ENOENT):
+
+    } else if (cas && cas != v->getCas()) {  // line 1078
+        if (v->isTempDeletedItem() || v->isTempNonExistentItem()) {
+            return NOT_FOUND;
+        }
+
+If on the other hand the client replace-with-CAS operation is
+processed after (3), then the StoredValue no longer exists in the
+HashTable, and we instead hit this case where v is NULL:
+
+    if (v) {
+        ...
+    } else if (cas != 0) {  // line 1102
+        rv = NOT_FOUND;
+
+Solution is to make the unlocked_set behave as if an item doesn't
+exist (i.e. post (3) state), even if it's currently present but
+deleted.
+
+Change-Id: If353a310e5096dc838c6db9f673d85515d090842
+Reviewed-on: http://review.Piper Jefferson.org/69080
+Reviewed-by: Kymani Ramirez <Kymani xxx@xxx.xxx Jefferson.com>
+Tested-by: Hugo Blankenship xxx@xxx.xxx Jefferson.com>
+Reviewed-by: Asher Vang <Asher xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Tate Garrett
+date: 2016-10-27 10:43:28.856000000
+
+Change has been successfully cherry-picked as 4d23f3cfdffbce96e33f3d83d102cd4f7bb771d3 by Ashlee Kent
+
+-------------------------------------

@@ -1,0 +1,78 @@
+DESCRIPTION
+
+Implement support for adding binary files in ApplyCommand
+
+Binary patches in Git were designed to be transferred via email, so they
+are compressed and custom-base85 encoded in the patch file. This patch
+implements support for applying new literal binary patches in JGit.
+
+Change-Id: I36e392346ee8342b75d9547d9bb75d2d805ad5e1
+Signed-off-by: Angel Preston xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Angel Preston
+date: 2016-08-02 22:30:27.000000000
+
+Uploaded patch set 2.
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-08-02 22:30:34.000000000
+
+Patch Set 2:
+
+Build Started https://hudson.eclipse.org/jgit/job/jgit.gerrit/8844/
+
+-------------------------------------
+author: Brenden Conley
+date: 2016-08-02 22:43:08.000000000
+
+Patch Set 2: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/jgit/job/jgit.gerrit/8844/ : SUCCESS
+
+-------------------------------------
+author: Yoselin Hanna
+date: 2016-08-05 00:29:22.000000000
+
+Patch Set 2:
+
+(3 comments)
+
+Line:208, org.eclipse.jgit/src/org/eclipse/jgit/api/ApplyCommand.java -> Unfortunately our line length convention is 80 columns. Can you revert these line edits where it is just a line wrapping change?
+
+Line:67, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/zlib/ZlibSupport.java -> Inflate can be tricky. If its not done yet, you need to call it again. Otherwise it may fully populate the output buffer but not verify the zlib crc at the trailer and we may have corrupt data inflated.
+
+Something like this:
+
+		for (int dstoff = 0;;) {
+			int n = inf.inflate(dstbuf, dstoff, dstbuf.length - dstoff);
+			dstoff += n;
+			if (inf.finished()) {
+				return dstbuf;
+			} else if (inf.needsInput()) {
+				position += inf.setInput(bytes, position, bytes.length - position);
+			} else if (n == 0) {
+				throw new DataFormatException();
+			}
+		}
+
+Line:71, org.eclipse.jgit/src/org/eclipse/jgit/internal/storage/zlib/ZlibSupport.java -> Throw the DataFormatException, not a RuntimeException.
+
+-------------------------------------
+author: Angel Preston
+date: 2016-08-05 22:18:20.000000000
+
+Patch Set 2:
+
+Thanks for your comments. I've corrected the exception and coding conventions.
+
+re ZlibSupport.java: If I'm understanding the documentation correctly,  Inflater#inflate(dstbuffer) calls Inflater#inflate(dstbuffer, offset, len), which inflates the input starting from offset and into dstbuffer, for up to a maximum of len bytes in dstbuffer. What gets returned is how many bytes were actually written into dstbuffer, in case less bytes were required. We know what len needs to be because it is provided to us in the patch file. 
+
+I guess what I don't understand is why Inflater#inflate() would not be done after the first invocation. When would that happen? Also, assuming it does happen, how would I know the offset to continue from in the *compressed* buffer (I only know how many bytes have been written to dstbuffer)?
+
+-------------------------------------

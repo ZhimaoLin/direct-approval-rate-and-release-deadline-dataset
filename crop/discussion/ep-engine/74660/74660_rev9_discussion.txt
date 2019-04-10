@@ -1,0 +1,141 @@
+DESCRIPTION
+
+[Ephemeral Bucket]: Allow updates on sequential storage (linkedlist)
+
+When an item in hashtable (in an Ephemeral vbucket) is updated, the
+updated item must be placed in the right position (at the end) in
+the sequential storage data structure, linkedlist.
+
+If there are no range reads (backfills) during an update we just
+update the hash table element and move the item to the end of the
+list. This is somewhat similar (hashtable part) to what happens in
+current ep vbuckets.
+
+However, in case of range reads (backfills), the behavior is
+different w.r.t existing ep vbuckets. The range reads are
+basically point-in-time snapshots and hence require the older
+(non updated) item to be there in the range of the read. But the
+hashtable wants to store only the most recent (updated) item.
+Hence, we mark the item as stale and transfer the ownership of the
+item to the linkedlist from hashtable and add a new item with the
+value of update in the hashtable and at the end of the list.
+
+We have the module tests at the linkedlist level. Module tests at
+the ephemeral vbucket level will follow soon in a future commit.
+
+Change-Id: Ibb710a23410a44109512232ddd1aca342347b1b0
+
+
+COMMENTS
+
+author: Adrianna Holmes
+date: 2017-03-08 06:56:54.674000000
+
+Uploaded patch set 9.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2017-03-08 07:10:21.622000000
+
+Patch Set 9: Verified+1
+
+Build Successful 
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-addresssanitizer-master/3298/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-threadsanitizer-master/4480/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-clang_analyzer-master/4050/ : SUCCESS
+
+http://cv.jenkins.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-master/4702/ : SUCCESS
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-03-08 07:19:12.492000000
+
+Patch Set 9:
+
+(1 comment)
+
+Line:182, src/ephemeral_vb.cc -> Eyes on this please
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-03-08 12:30:09.707000000
+
+Patch Set 9: Code-Review-1
+
+(6 comments)
+
+Line:149, src/ephemeral_vb.cc -> Remove `possibly` - a range read is the only reason `Append` is returned, right?
+
+Line:182, src/ephemeral_vb.cc -> This seems ok to me. Do you have unit tests covering it?
+
+Line:45, src/seqlist.h -> Might as well scope this inside SequenceList - makes it clearer in code external to this which "update" method it corresponds to.
+
+Line:98, src/seqlist.h -> You imply it, but we should make it more explicit what the post-conditions of this function are. Correct me if I'm wrong, but I believe it is:
+
+* on Success - list element has been updated and moved to end.
+* on Append - list element is *not* updated. Caller must handle the append.
+
+
+Additionally - could we make this interface cleaner - for example change the method to it always "succeeds" - i.e. the sequenceList has the correct elements in it (either updated or appended), and hence the caller just had to handle the HashTable update, likely based on the result of this method? That (if possible) would seem to give a cleaner interface.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-03-08 22:08:55.526000000
+
+Patch Set 9:
+
+(5 comments)
+
+Line:149, src/ephemeral_vb.cc -> Done
+
+Line:182, src/ephemeral_vb.cc -> Not yet. Do not have vbucket level tests yet. have only unit tests testing the linked list. makes more sense to write vbucket level tests when we have DCP backfill hooked up.
+
+Line:45, src/seqlist.h -> Done
+
+Line:98, src/seqlist.h -> Created a ticket for working on this later. https://issues.Piper Jefferson.com/browse/MB-23220.
+
+For this, BasicLinkedList should create a OrderedStoredValue and then put it (StoredValue) onto the HashTable. This will require some work in ValueFactory (will need a new one I suppose) and HashTable insertion.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-03-09 06:42:41.149000000
+
+Patch Set 9:
+
+(1 comment)
+
+Line:182, src/ephemeral_vb.cc -> I mean updateStoredValue() is tested in functional tests, but not this code path of res == UpdateStatus::Append
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-03-09 10:16:43.902000000
+
+Patch Set 9:
+
+(1 comment)
+
+Line:182, src/ephemeral_vb.cc -> I think it makes sense to expand the functional test to cover the Append case (it'll be simpler than a more complex VBucket test.
+
+-------------------------------------
+author: Adrianna Holmes
+date: 2017-03-09 17:45:14.855000000
+
+Patch Set 9:
+
+(2 comments)
+
+Line:182, src/ephemeral_vb.cc -> As spoken, seq list level unit test is there. VBucket level test to come later
+
+Line:98, src/seqlist.h -> Done
+
+-------------------------------------
+author: Ashlee Kent
+date: 2017-03-09 10:18:15.177000000
+
+MISMATCHED INLINE COMMENT
+Line:98, src/seqlist.h -> The MB is fine for the interface clean-up. Please still update the method documentation  as I described.
+
+-------------------------------------

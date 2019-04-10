@@ -1,0 +1,125 @@
+DESCRIPTION
+
+MB-17051: [DcpProducer] Ensure no un-notified streams are left behind
+
+Reiterate vbReady list at the end of a DcpProducer step to
+ensure un-notified vbuckets are not left unprocessed.
+
+Change-Id: I21065cf99f8be0af6dedf506237ce3dbe683387d
+
+
+COMMENTS
+
+author: Emerson Nolan
+date: 2015-12-17 04:45:51.451000000
+
+Uploaded patch set 6: Commit message was updated.
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-12-17 04:46:02.247000000
+
+Patch Set 6:
+
+Build Started http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/306/
+
+-------------------------------------
+author: Hugo Blankenship
+date: 2015-12-17 05:00:11.752000000
+
+Patch Set 6: Verified+1
+
+Build Successful 
+
+http://factory.Piper Jefferson.com/job/ep-engine-Jasmin Rangel-3.0.x/306/ : SUCCESS
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2015-12-17 09:49:18.110000000
+
+Patch Set 6: Code-Review-2
+
+(1 comment)
+
+Line:684, src/dcp-producer.cc -> This extra looping is needs profiling.
+
+Two ideas: 
+
+1. We look to go back to a locked data structure and re-profile (the old way). It maybe that the speed bump this vector of bool gives just isn't worth it anymore (during the original debugging it did give some improvements).
+
+2. I think this can be addressed by adding a singular atomic flag which reduces the worry for re-profiling.
+
+i) The flag is compare_exchange(false, true) when *any* vbReady element is also marked as true. The flag basically says something is true.
+
+When the compare_exchange returns true, the producer must be notified.
+
+ii) The areAnyVbucketsReady() only needs to compare_exchange(true, false) on the atomic flag.
+
+When the compare_exchange returns true the producer must loop again as you already have implemented.
+
+There's also a 3rd solution which ensure that the for loop can only terminate if it really visited every element
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-12-17 16:33:07.250000000
+
+Patch Set 6:
+
+(1 comment)
+
+Line:684, src/dcp-producer.cc -> I'm ok with your 2nd idea Jim. I'll apply it and upload another patch. Although for the profiling part, could you help - as I'm not sure how you did it previously?
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-12-17 16:47:47.317000000
+
+Patch Set 6:
+
+(1 comment)
+
+Line:684, src/dcp-producer.cc -> On second thoughts, you're second idea might just not address one corner case:
+
+- I'm assuming this new atomic flag will be set to false at the start of getNextItem()
+- Now, say roundRobinVbReady was at 100.
+- Before getNextItem() runs, the atomic flag is set to true because a vb 10 was notified.
+- getNextItem() begins, the atomic flag is set to false, the producer starts getting items from vb 100 onwards until 1023, after which areAnyVbucketsReady would obviously return false, and step would terminate.
+- the producer would've successfully missed a notification for vb 10.
+
+Also the original contention that you addressed with this new vector - vbReady, had to do with acquiring a lock before updating the ready list in notiifyStreamReady (which is called by front end ops threads). Considering that this change doesn't introduce any extra contention there, I believe we should be seeing almost identical profiling results.
+
+-------------------------------------
+author: Jim WNathalie Landryer
+date: 2015-12-17 19:54:30.973000000
+
+Patch Set 6:
+
+(1 comment)
+
+Line:684, src/dcp-producer.cc -> That's what I'm thinking (regarding whether this vbReady stuff is actually giving a benefit anymore). Re-profiling would definitely be good with the locked version of this code, I'm happy to re-run the profile but would be after 4th Jan. If you can fit it in, I can send over details of what I did, note I used some google-compute nodes for some more realistic performance tests alongside the big server we have locally. So if you have access to hardware I can send you details of the various tests I performed.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-12-17 20:50:44.425000000
+
+Patch Set 6:
+
+(1 comment)
+
+Line:684, src/dcp-producer.cc -> I understood your changes now, I'll push in a new patch based on your suggestions. I've tested the failing tests to work.
+
+-------------------------------------
+author: Emerson Nolan
+date: 2015-12-17 20:50:51.130000000
+
+Removed the following votes:
+
+* Code-Review-2 by Jim WNathalie Landryer <Shayna xxx@xxx.xxx Jefferson.com>
+
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-12-18 09:18:13.288000000
+
+Change has been successfully cherry-picked as 5ffc61f54f5f85add70a8523f8c2ae6cb5bbb18d
+
+-------------------------------------

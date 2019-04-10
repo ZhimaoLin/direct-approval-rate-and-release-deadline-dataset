@@ -1,0 +1,146 @@
+DESCRIPTION
+
+ctf: BitBuffer.java api overhaul
+
+* Now 3 getters are public: get(length, extendSign), getInt(), and getLong().
+* No longer throws runtime exceptions, instead throws CTFReaderExceptions
+
+Change-Id: I6848b2bde4e37580c1327f03cd025ea2bae4e134
+Signed-off-by: Ivy Mitchell xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Ivy Mitchell
+date: 2013-11-27 20:48:41.000000000
+
+Uploaded patch set 10.
+
+-------------------------------------
+author: Braxton Mccarthy
+date: 2013-11-27 22:23:12.000000000
+
+Patch Set 10: Code-Review+1 IP-Clean+1
+
+Looks good, let's let Hudson build it when it gets over that backlog.
+
+-------------------------------------
+author: Jordon Obrien
+date: 2013-11-27 23:26:39.000000000
+
+Patch Set 10: Code-Review-1
+
+(1 comment)
+
+sorry, I found an other bug.
+
+Line:162, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/io/BitBuffer.java -> I think there is a bug here.
+The "signed" is ignore by the getInt because it return an "int".
+Thus, the sign-extension or truncate is ignored for value lower than 32-bits with getLong.
+
+You should add a test to cover this.
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-28 01:16:34.000000000
+
+Patch Set 10:
+
+Build Started https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4242/
+
+-------------------------------------
+author: Brenden Conley
+date: 2013-11-28 01:48:17.000000000
+
+Patch Set 10: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/linuxtools/job/linuxtools-gerrit/4242/ : SUCCESS
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2013-11-28 02:22:16.000000000
+
+Patch Set 10:
+
+Etienne, do not apologize for finding bugs, that is the point of code review. The correct solution will get in thanks to your  timely intervention.
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2013-11-28 19:22:50.000000000
+
+Patch Set 10:
+
+(1 comment)
+
+get(30, true) can return -1. 
+
+I don't know if that is the issue, but it looks like it works here.
+
+Line:162, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/io/BitBuffer.java -> I am sorry, I am really unclear on this, Could you please clarify, perhaps with an example?
+
+-------------------------------------
+author: Jordon Obrien
+date: 2013-11-28 19:28:24.000000000
+
+Patch Set 10:
+
+(1 comment)
+
+here is the example
+
+Line:162, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/io/BitBuffer.java -> get(32, false)  -- get 32-bits, unsigned.
+It will return, let say 0xFFFFFFFF.
+Which is -1 but unsigned.
+
+The cast to long will produce 0xFFFFFFFFFFFFFFFFL
+instead of 0x00000000FFFFFFFF.
+
+Do you see it?
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2013-11-28 19:49:45.000000000
+
+Patch Set 10:
+
+(1 comment)
+
+replied... I am going to consult the team to see if this behaviour is desirable or not.
+
+Line:162, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/io/BitBuffer.java -> Yes, and is that not the desirable number? The integerdefinition is a long internally. I shall consult the team here and come up with a better answer.
+
+-------------------------------------
+author: Jordon Obrien
+date: 2013-11-28 20:00:11.000000000
+
+Patch Set 10:
+
+(1 comment)
+
+here is the fix
+
+Line:162, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/io/BitBuffer.java -> No, this is not what you want.
+
+replace 
+  return getInt(length, signed);
+
+with
+
+long tmp = getInt(length, false); // false or true, no effect.
+if (!signed)
+  tmp &= 0xFFFFFFFFL;
+return tmp;
+
+-------------------------------------
+author: Ivy Mitchell
+date: 2013-11-28 20:33:20.000000000
+
+Patch Set 10:
+
+(1 comment)
+
+Line:162, lttng/org.eclipse.linuxtools.ctf.core/src/org/eclipse/linuxtools/ctf/core/event/io/BitBuffer.java -> You are correct, I originally understood that get(32, true) would give -1, which is what we wanted. I missed the not part, I appologize for the misunderstanding.
+
+-------------------------------------

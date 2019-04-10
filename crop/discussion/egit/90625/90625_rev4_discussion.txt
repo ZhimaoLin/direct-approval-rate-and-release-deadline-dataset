@@ -1,0 +1,196 @@
+DESCRIPTION
+
+Added branch normalizer to branch rename dialog
+
+* Moved branch normalize listener to own class
+* Added listener to rename branch dialog
+* Refactored create branch page to use the new class
+* Fixed test
+
+Bug: 509878
+Change-Id: I0ace8155b3921a6e48233f618da97ad6488ccaa3
+Signed-off-by: Rosa Carr xxx@xxx.xxx
+
+COMMENTS
+
+author: Douglas Trujillo
+date: 2017-02-17 22:21:37.000000000
+
+Uploaded patch set 4: Patch Set 3 was rebased.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-02-17 22:21:43.000000000
+
+Patch Set 4:
+
+Build Started https://hudson.eclipse.org/egit/job/egit.gerrit/9578/
+
+-------------------------------------
+author: Douglas Trujillo
+date: 2017-02-17 22:22:52.000000000
+
+Patch Set 4: Code-Review+2
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-02-17 22:43:54.000000000
+
+Patch Set 4: Verified+1
+
+Build Successful 
+
+https://hudson.eclipse.org/egit/job/egit.gerrit/9578/ : SUCCESS
+
+-------------------------------------
+author: Gerrit Johnathan Pham
+date: 2017-02-17 23:32:16.000000000
+
+Change has been successfully merged into the git repository by Douglas Trujillo
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-02-19 16:33:57.000000000
+
+Patch Set 4:
+
+(4 comments)
+
+Perhaps this got in a bit too early?
+
+Line:22, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/branch/BranchNormalizerModifyListener.java -> As Matthias had said, we don't xxx@xxx.xxx tags.
+
+Line:37, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/branch/BranchNormalizerModifyListener.java -> Missing braces.
+
+Line:53, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/branch/BranchNormalizerModifyListener.java -> Why does this not allow me to type a branch name with a slash? Note that "Fetch From Gerrit..." will create branch names like "change/92508/2".
+
+Line:114, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/dialogs/BranchRenameDialog.java -> How does this interact with the validation listener added just above? In CreateBranchPage, the normalizer is added first... besides we now have in both places two modifyListeners. The setText() inside the normalizer will post yet another modify event.
+
+I find this event flow confusing, and even though I don't notice any detrimental effects on Mac, I have no idea what happens with other SWT implementations (GTK, Windows).
+
+I'd feel safer if there was only one listener that did both, normalizing and then verifying. Besides, why are these ModifyListeners and not VerifyListeners? A VerifyListener gets a last-chance opportunity to change the text (by modifying event.text) *before* the widget's text is modified.
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-02-19 16:58:40.000000000
+
+Patch Set 4:
+
+(1 comment)
+
+Definitely too early. Resetting the text cursor position is a bloody nuisance.
+
+Line:55, org.eclipse.egit.ui/src/org/eclipse/egit/ui/internal/branch/BranchNormalizerModifyListener.java -> This makes editing somewhere inside the text nearly impossible.
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-02-19 19:08:28.000000000
+
+Patch Set 4:
+
+A less intrusive approach would be to leave all the validation logic as it was. Don't try to auto-normalize while the user is typing. Give the dialogs a button (not a checkbox) "Fix branch name", which would be enabled (or perhaps even shown only) when the validator detects an error. When the user clicks that button, then normalize the input once (and re-validate).
+
+No need for fiddling with text caret positions; no need for strange attempts to detect a paste, the user isn't surprised when consecutive blanks or underscores are collapsed to one, and no need to have multiple ModifyListeners (one of them even modifying the text again).
+
+Perhaps add a VerifyListener that changes blanks to underscores.
+
+-------------------------------------
+author: Rosa Carr
+date: 2017-02-20 09:08:09.000000000
+
+Patch Set 4:
+
+Yes, too early. I was still busy.
+
+I sent a mail to egit-dev which I was sure I also posted here and in bugzilla but I apparently did not.
+
+"I found a problems where checkPage is called twice due to the branch normalizer. The checkPage method is very costly on large repos so I am switching to another strategy."
+
+I want to stress again that the branch checking algo is very costly on repos with a lot of (remote) branches. The normalizer only takes a millisecond but the checkPage method can take up to a second (e.g. test creating a new branch on the SWT repo.)
+ 
+I will investigate your proposal for fixing the naming but what is more concerning is the fact that slashes in the branch name should be allowed. I will fix that first.
+
+-------------------------------------
+author: Rosa Carr
+date: 2017-02-20 16:43:30.000000000
+
+Patch Set 4:
+
+You are right. I should have worked with the VerifyListener all along. I am quite embarrassed I did not think of that myself.
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-02-20 19:34:05.000000000
+
+Patch Set 4:
+
+> You are right. I should have worked with the VerifyListener all
+ > along.
+
+Actually, I'm not sure that would work well either. In any case it shouldn't call the normalizer: since that collapses consecutive _or - into one, we'd risk screwing up with the text cursor position whatever we do.
+
+You could use a VerifyListener to prevent certain invalid characters, but to allow typing consecutively f-o-o-/-b-a-r, you'll even have to allow a / or a . at the end.
+
+So the existing validator (modify listener) must remain anyway, and thus a VerifyListener is probably not worth the trouble and we'd be better off with a "Fix" button.
+
+Or perhaps use content assist to propose a fixed name instead of a button, but this is likely to give a confusing UI when the branch name already is valid: user types a valid name, sees the content assist lightbulb, types Ctrl-Space, and then wonders why the popup shows the same name... unless we can enable content assist only when the name is invalid, and disable it (and hide the lightbulb) otherwise.
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-02-20 19:37:24.000000000
+
+Patch Set 4:
+
+> I sent a mail to egit-dev which I was sure I also posted here and
+ > in bugzilla but I apparently did not.
+
+In the future: if you detect problems with a change of yours before it is merged, post a -1 here in Gerrit on it.
+
+-------------------------------------
+author: Rosa Carr
+date: 2017-02-21 10:42:51.000000000
+
+Patch Set 4:
+
+I took your original idea of only converting blanks to underscores and supplying a button. I could get rid of most code.
+
+The original idea was: I want to be able to paste my bugzilla into the branchname and not have to work so hard to get a valid branch name.
+
+I think with this version most people will be happy. Again I have made a little video of how it works now.
+
+Original use case:
+https://www.youtube.com/watch?v=ZAPggrbGr5g
+
+Other uses:
+https://www.youtube.com/watch?v=aaq1yGZaVr8
+
+> Or perhaps use content assist to propose a fixed name instead 
+> ..
+> unless we can enable content assist only when the name is invalid,
+> and disable it (and hide the lightbulb) otherwise.
+
+I like that one too. Let me know what you think of the current version.
+
+-------------------------------------
+author: Alayna Houston
+date: 2017-02-21 11:12:28.000000000
+
+Patch Set 4:
+
+> Let me know what you think of the current version.
+
+Well, where is it? I don't see any Gerrit change...
+
+No need to create videos. I looked at one, but I prefer fetching the change from Gerrit and then running the code to see what it does.
+
+-------------------------------------
+author: Rosa Carr
+date: 2017-02-21 17:09:47.000000000
+
+Patch Set 4:
+
+https://git.eclipse.org/r/#/c/91559/
+
+This is the create branch dialog. When ok I will apply the same to rename. Tests could still be failing I will look at that later, I can't run them locally for some reason.
+
+-------------------------------------

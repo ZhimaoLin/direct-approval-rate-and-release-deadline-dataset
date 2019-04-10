@@ -1,0 +1,347 @@
+DESCRIPTION
+
+Bug 417142 - [Viewers] Update Viewer JUnit tests to use generics
+
+Updates the JUnittest for the JFace Viewer
+
+Change-Id: I767f9401ecf770e0844a4df03b44937374a2113c
+Signed-off-by: Lorenzo Marquez xxx@xxx.xxx
+
+COMMENTS
+
+author: Zaid Mosley
+date: 2013-09-13 13:39:30.000000000
+
+Patch Set 1:
+
+(3 comments)
+
+I think the JUnit tests show their age here. ViewerTestCase implemnet  a concreate example which is later modified by several other tests and leads to warnings. 
+
+For example protected abstract StructuredViewer<TestElement,TestElement> createViewer(Composite parent) is later overridden in Bug180504TreeViewerTest with a different type. 
+
+But I see no simple solution without a huge effort in re-working the tests.
+
+Line:56, tests/org.eclipse.ui.tests/Eclipse JFace Tests/org/eclipse/jface/tests/viewers/Bug138608Test.java -> Add type infos also the the createViewer?
+
+Line:117, tests/org.eclipse.ui.tests/Eclipse JFace Tests/org/eclipse/jface/tests/viewers/Bug138608Test.java -> Add xxx@xxx.xxx
+
+Line:36, tests/org.eclipse.ui.tests/Eclipse JFace Tests/org/eclipse/jface/tests/viewers/ViewerTestCase.java -> I feel that this should also be generified for the subclasses but I see a lot of issues with it done the test hierarchy, so I think it is ok to leave it like this. This unfortunately leads to several warnings in the subtests.
+
+-------------------------------------
+author: Zaid Mosley
+date: 2013-09-13 14:11:42.000000000
+
+Patch Set 1:
+
+I actually think the structure of the JFace Viewers could use a re-work. 
+
+Why not introduce a new GenericTestCase for example:
+
+/*******************************************************************************
+ * Copyright (c) 2005, 2013 IBM Corporation and others.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ *
+ * Contributors:
+ *     IBM Corporation - initial API and implementation
+ *     Zaid Mosley xxx@xxx.xxx - Bug 417142
+ *******************************************************************************/
+package org.eclipse.jface.tests.viewers;
+
+import junit.framework.TestCase;
+
+import org.eclipse.core.runtime.ISafeRunnable;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.jface.util.ILogger;
+import org.eclipse.jface.util.ISafeRunnableRunner;
+import org.eclipse.jface.util.Policy;
+import org.eclipse.jface.util.SafeRunnable;
+import org.eclipse.jface.viewers.ISelection;
+import org.eclipse.jface.viewers.IStructuredSelection;
+import org.eclipse.jface.viewers.StructuredSelection;
+import org.eclipse.jface.viewers.StructuredViewer;
+import org.eclipse.swt.SWT;
+import org.eclipse.swt.layout.FillLayout;
+import org.eclipse.swt.widgets.Composite;
+import org.eclipse.swt.widgets.Display;
+import org.eclipse.swt.widgets.Shell;
+
+public abstract class GenericViewerTestCase<E,I> extends TestCase {
+
+	Display fDisplay;
+	protected Shell fShell;
+	protected StructuredViewer<E,I> fViewer;
+
+
+	public GenericViewerTestCase(String name) {
+		super(name);
+	
+	}
+
+	protected void assertSelectionEquals(String message, TestElement expected) {
+	    ISelection selection = fViewer.getSelection();
+	    assertTrue(selection instanceof IStructuredSelection);
+	    IStructuredSelection expectedSelection = new StructuredSelection(
+	            expected);
+	    assertEquals("selectionEquals - " + message, selection, expectedSelection);
+	}
+
+	protected abstract StructuredViewer<E,I> createViewer(Composite parent);
+	protected abstract void configureViewer();
+
+	public void interact() {
+	    Shell shell = fShell;
+	    if (shell != null && !shell.isDisposed()) {
+	        Display display = shell.getDisplay();
+	        if (display != null) {
+	            while (shell.isVisible())
+	                display.readAndDispatch();
+	        }
+	    }
+	}
+
+	protected void openViewer() {
+	    fDisplay = Display.getCurrent();
+	    if (fDisplay == null) {
+	        fDisplay = new Display();
+	    }
+	    fShell = new Shell(fDisplay, getShellStyle());
+	    fShell.setSize(500, 500);
+	    fShell.setLayout(new FillLayout());
+	    fViewer = createViewer(fShell);
+	    configureViewer();
+	    fShell.open();
+	    //processEvents();
+	}
+
+	/**
+	 xxx@xxx.xxx
+	 */
+	protected int getShellStyle() {
+		return SWT.SHELL_TRIM;
+	}
+
+	public void processEvents() {
+	    Shell shell = fShell;
+	    if (shell != null && !shell.isDisposed()) {
+	        Display display = shell.getDisplay();
+	        if (display != null) {
+	            while (display.readAndDispatch()) {
+	            	// loop until there are no more events to dispatch
+	            }
+	        }
+	    }
+	}
+
+	public void setUp() {
+		Policy.setLog(new ILogger(){
+			public void log(IStatus status) {
+				fail(status.getMessage());
+			}});
+		SafeRunnable.setRunner(new ISafeRunnableRunner(){
+			public void run(ISafeRunnable code) {
+				try {
+					code.run();
+				} catch(Throwable th) {
+					throw new RuntimeException(th);
+				}
+			}});
+	    openViewer();
+	}
+
+	public void tearDown() {
+	    processEvents();
+	    fViewer = null;
+	    if (fShell != null) {
+	        fShell.dispose();
+	        fShell = null;
+	    }
+	    // leave the display
+	}
+
+}
+
+This would allow to write IMHO much more correct JUnit tests, for example
+
+Bug138608Test.java
+
+/*******************************************************************************
+ * Copyright (c) 2006 IBM Corporation and others.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ *
+ * Contributors:
+ *     IBM Corporation - initial API and implementation
+ *     Ivailo Abadjiev (bug 151857)
+ ******************************************************************************/
+
+package org.eclipse.jface.tests.viewers;
+
+import org.eclipse.jface.viewers.ITreeContentProvider;
+import org.eclipse.jface.viewers.LabelProvider;
+import org.eclipse.jface.viewers.StructuredViewer;
+import org.eclipse.jface.viewers.TreeNode;
+import org.eclipse.jface.viewers.TreeViewer;
+import org.eclipse.jface.viewers.Viewer;
+import org.eclipse.swt.layout.GridData;
+import org.eclipse.swt.widgets.Composite;
+
+/**
+ * Description of the bug: Initially tree is populated by way shown below and is
+ * completely expanded.
+ * 
+ * root |-a |-c |-d |-b |-c
+ * 
+ * Then 'd' model element is added as child of 'b' in model and through
+ * add(parent,child) method of TreeViewer to tree.
+ * 
+ * The problem - It seems that calling add(parent,child) has no desired efect.
+ * 'd' model element is not shown as child of 'b'!
+ * 
+ xxx@xxx.xxx 3.2
+ * 
+ */
+public class Bug138608TestCopy extends
+		GenericViewerTestCase<TreeNode<String>, TreeNode<String>> {
+
+	private TreeContentProvider contentProvider;
+	private TreeViewer<TreeNode<String>, TreeNode<String>> treeViewer;
+	private TreeNode<String> root;
+
+	/**
+	 xxx@xxx.xxx name
+	 */
+	public Bug138608TestCopy(String name) {
+		super(name);
+	}
+
+
+
+	protected StructuredViewer<TreeNode<String>, TreeNode<String>> createViewer(
+			Composite parent) {
+		final TreeViewer<TreeNode<String>, TreeNode<String>> viewer = new TreeViewer<TreeNode<String>, TreeNode<String>>(
+				parent);
+		viewer.getTree().setLayoutData(new GridData(GridData.FILL_BOTH));
+		contentProvider = new TreeContentProvider();
+		LabelProvider<TreeNode<String>> labelProvider = new LabelProvider<TreeNode<String>>();
+		viewer.setContentProvider(contentProvider);
+		viewer.setLabelProvider(labelProvider);
+		treeViewer = viewer;
+		return viewer;
+	}
+
+	protected void configureViewer() {
+		fViewer.setUseHashlookup(true);
+		root = buildDataModel();
+		fViewer.setInput(root);
+		getTreeViewer().expandAll();
+	}
+
+	/**
+	 xxx@xxx.xxx
+	 */
+	private TreeNode<String> buildDataModel() {
+		// setup the data
+		TreeNode<String> d = new TreeNode<String>("d");
+		TreeNode<String> c = new TreeNode<String>("c");
+		TreeNode<String> b = new TreeNode<String>("b");
+		TreeNode<String> a = new TreeNode<String>("a");
+		// build initial hierarchy
+		TreeNode<String> root = new TreeNode<String>("root");
+		root.setChildren(new TreeNode[] { a, b });
+		a.setChildren(new TreeNode[] { c, d });
+		b.setChildren(new TreeNode[] { c });
+		return root;
+	}
+	
+	/**
+	 xxx@xxx.xxx
+	 */
+	private TreeViewer<TreeNode<String>, TreeNode<String>> getTreeViewer() {
+		return treeViewer;
+	}
+
+	public void testBug138608() {
+		processEvents();
+		// Add 'd' as child of 'b' in data model first
+
+		root.getChildren()[1].setChildren(root
+				.getChildren()[0].getChildren());
+		// Then add 'd' as child of 'b' in tree itself
+		// THE PROBLEM IS HERE - after this call Tree will not show his
+		// new child
+
+		getTreeViewer().add(root.getChildren()[1],
+				root.getChildren()[1].getChildren()[1]);
+
+		assertEquals("expected two children of node b", 2, getTreeViewer()
+				.getTree().getItem(1).getItemCount());
+
+		getTreeViewer().add(root.getChildren()[1],
+				root.getChildren()[1].getChildren()[1]);
+
+		assertEquals("expected two children of node b", 2, getTreeViewer()
+				.getTree().getItem(1).getItemCount());
+
+	}
+
+	public void tearDown() {
+		contentProvider = null;
+		super.tearDown();
+	}
+
+	private static class TreeContentProvider implements
+			ITreeContentProvider<TreeNode<String>, TreeNode<String>> {
+
+		public TreeNode<String>[] getChildren(TreeNode<String> parentElement) {
+			return parentElement.getChildren();
+		}
+
+		public TreeNode<String> getParent(TreeNode<String> element) {
+			return element.getParent();
+		}
+
+		public boolean hasChildren(TreeNode<String> element) {
+			return element.hasChildren();
+		}
+
+		public TreeNode<String>[] getElements(TreeNode<String> inputElement) {
+			return getChildren(inputElement);
+		}
+
+		public void dispose() {
+		}
+
+		public void inputChanged(Viewer<? extends TreeNode<String>> viewer,
+				TreeNode<String> oldInput, TreeNode<String> newInput) {
+		}
+	}
+
+}
+
+-------------------------------------
+author: Kaylie Dunlap
+date: 2013-09-17 13:20:46.000000000
+
+Patch Set 1: Verified+1 Code-Review+2 IP-Clean+1
+
+-------------------------------------
+author: Gerrit Code Review
+date: 2013-09-17 13:20:47.000000000
+
+Project policy requires all submissions to be a fast-forward.
+
+Please rebase the change locally and upload again for review.
+
+-------------------------------------
+author: Kaylie Dunlap
+date: 2013-09-17 13:20:57.000000000
+
+Patch Set 2: Patch Set 1 was rebased
+
+-------------------------------------

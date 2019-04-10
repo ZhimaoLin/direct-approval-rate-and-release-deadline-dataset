@@ -1,0 +1,74 @@
+DESCRIPTION
+
+Fix matching ignores and attributes pattern of form a/*,
+add tests for this case and a/**/* case.
+
+Fix path matching for patterns of form a/* : this should
+match paths like a/b but not a/.
+
+Change-Id: I0132a032e145b4ae28b92c4aba1ac41fb86892b9
+Signed-off-by: Luis Lutz xxx@xxx.xxx
+
+
+COMMENTS
+
+author: Luis Lutz
+date: 2017-10-16 13:57:10.000000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-10-16 13:57:19.000000000
+
+Patch Set 1:
+
+Build Started https://ci.eclipse.org/jgit/job/jgit.gerrit/11417/
+
+-------------------------------------
+author: Luis Lutz
+date: 2017-10-16 14:12:24.000000000
+
+Patch Set 1:
+
+The tests pass, but still there're some comments from my side.
+
+1. When working with .gitignore and .gitattributes paths Git totally ignores actual node kind (file/directory) of the path and just checks whether the path ends with '/' or not (it's to find out when playing with "git check-attr" and "git check-ignore"). So in PathMatcher#iterate method 'assumeDirectory' parameter should always be equal to
+
+  path.substring(startIncl, endExcl).endsWith("/")
+
+and this value should be passed as 'assumeDirectory' but in the tests 'assumeDirectory' sometimes contradicts path... So I had to use path.endsWith("/") (what's by the way incorrect --- I've discovered that only after pushing, it should be path.substring(startIncl, endExcl).endsWith("/")).
+
+2. I had to change a test to 
+
+  assertMatch("a/\\", "a/", false)
+
+in IgnoreRuleSpecialCasesTest. It's easy to check that when creating .gitignore file with
+
+a/\
+
+content and .gitattributes with 
+
+a/\ attr=value
+
+git check-ignore a/
+
+command shows nothing that means that the pattern is not matched. The same is true for attributes:
+
+git check-attr attr a/
+
+shows "a/: attr: unspecified" that means that the pattern is not matched. So 'false' is the correct value in the test. I tried other checks that currently pass in the test and found out that many of them should be 'false' as well (e.g. "a\" pattern shouldn't match "a" path). So the fact that the test currently passes is rather an incorrect behaviour.
+
+I couldn't fix that because I don't fully understand the whole logic under PathMatcher#iterate. So I hope someone who understands it could update and fix the tests.
+
+-------------------------------------
+author: Brenden Conley
+date: 2017-10-16 14:20:48.000000000
+
+Patch Set 1: Verified+1
+
+Build Successful 
+
+https://ci.eclipse.org/jgit/job/jgit.gerrit/11417/ : SUCCESS
+
+-------------------------------------

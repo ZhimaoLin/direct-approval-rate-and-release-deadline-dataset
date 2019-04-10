@@ -1,0 +1,70 @@
+DESCRIPTION
+
+MB-14374: race between StreamBegin and ConnectionError.
+
+Following is the scenario, with 3 projector X,Y,Z and Indexer N.
+
+1. Z is already rebalanced out (ungraceful failure).
+2. N would have received 512 vbuckets (let us call this set as X')
+   StreamBegins from X.
+3. Y is rebalanced out (ungraceful failure).
+4. connection from Y to N would have broken and ConnectionError{X'}
+   would be sent to Indexer.
+5. Indexer starts a ShutdownVb/RestartVb with X for vbucket set X'.
+6. Meanwhile, MutationTopic is going on between N and X with full
+   set of 1024 vbuckets and due to Y rebalancing out (step 3) some
+   of the vbuckets from the other 512 (let us call this set as Y')
+   would have started.
+
+On the dataport-server.
+
+There are three doReceive() routines for 3 connections with X, Y, Z.
+Let us call this as connection M, N, O respectively.
+
+a. Z is rebalanced out before any of the vbuckets getting started from Z.
+b. No vbuckets will be marked for connection-error.
+c. M received StreamBegin for 512 vbuckets from X'.
+d. due to step 3, connection N gets broken and triggers a connection error
+   for all vbuckets in X', step 4 above.
+e. while connection N detects an EOF error and sends it to dataport-genserver
+   (that maintains the book-keeping), connection M has received StreamBegin
+   from some of the vbuckets in Y'.
+
+The race !
+- dataport-genserver has received EOF from N while StreamBegins for Y' are
+  still in i/p channel buffer.
+- the parallel-connection detection logic will detect all the connections
+  with the same remote belonging to N (which will be both connections M and N),
+  and close them all and send the ConnectionError{X'} to dataport-genserver
+  step d. above.
+- feed on the good Projector X will simply drain the mutation on closed
+  endpoint (refer above step).
+- Meanwhile, step 5. will repair the endpoint and Projector X's feed will
+  continue sending the mutations (albiet some of them are lost).
+- Meanwhile, dataport-genserver will receive the StreamBegins for Y'
+  and some of the mutation for these streams would have been lost.
+
+Fix !!
+- don't close good connection that has not received EOF, implies the
+  parallel-connection logic will be removed.
+- gaurantee that a StreamBegin would lead to unbroken stream of mutations.
+- gaurantee that if a mutation stream does get broken, send
+  ConnectionError{} for those streams and for those streams only.
+
+Change-Id: I9ee667e74c9a8c880469ec5b11241219d1afedfb
+
+
+COMMENTS
+
+author: Leonel Abbott
+date: 2015-04-30 16:58:43.861000000
+
+Uploaded patch set 1.
+
+-------------------------------------
+author: Tate Garrett
+date: 2015-05-05 04:59:30.153000000
+
+Change has been successfully merged into the git repository.
+
+-------------------------------------
